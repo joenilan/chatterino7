@@ -118,3 +118,12 @@ Only rendered live-tail rows request animation frames. History reading, selectio
 inactive windows and OS reduced motion suppress effects. This is implementation
 behavior, not a measured frame-rate or CPU performance claim. Native animation
 appearance and copy behavior must be observed on the updated Windows build.
+
+Windows fcf43ae: locked release build passed in 8.64s, saved login restored, both
+channels connected and HutchMF reached 240 messages. The global status visibly
+read Live / 2 connected panes. History rows stayed anchored while traffic arrived;
+drag selection and right-click copy returned clipboard_verified. Entrance motion
+was not visually verified: initial capture issues and an existing selection
+suppressed it. A collapsed selection anchor after Latest was found to suppress
+entrances unnecessarily; the condition now checks an actual selection or drag.
+Username-color and collapsed-anchor fixes await the next Windows build.

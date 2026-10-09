@@ -287,7 +287,7 @@ impl Render for ChannelPane {
         let now = Instant::now();
         self.entrances.retain(|(_, born)| now.duration_since(*born) < Duration::from_millis(180));
         let entrances = if following && !cx.reduce_motion() && window.is_window_active()
-            && self.selection.borrow().anchor.is_none()
+            && { let selection = self.selection.borrow(); !selection.dragging && selection.anchor == selection.head }
         { self.entrances.clone() } else { Vec::new() };
         div()
             .id("channel-pane")
