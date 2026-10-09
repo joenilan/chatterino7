@@ -93,3 +93,14 @@ connection status and send-pending booleans. The `offline` value reflects actual
 pane connection state, not a hardcoded preview label. No access/refresh tokens,
 message bodies or draft contents are included. Account restoration remains off
 for controlled launches; signing in or sending is a real account action.
+
+## Windows observation — 2026-10-09, 7466e04b
+
+The locked Rust 1.99.0 Windows release build passed. One responding native window
+was confirmed after the transient terminal-tool failures cleared. In the isolated
+signed-out instance, middle-click named the intended inactive workspace and its
+channel. Enter, Escape and Cancel kept the workspace; explicit Close removed only
+that workspace; Ctrl+Shift+T restored its stable ID and channel. The app was left
+open with Sign in with Twitch visible, connected=false and send_pending=false.
+No OAuth grant, credential restoration or chat send was performed in this pass.
+Live authentication, receiving/sending and emote rendering are still unverified.
