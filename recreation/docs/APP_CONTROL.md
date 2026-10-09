@@ -66,9 +66,14 @@ the one-shot command mode supports successive calls without a separate script.
 
 ## Current evidence
 
-The complete native workspace passed `cargo check --offline --locked -p chat-workbench`
-and `cargo build --offline --locked -p chat-workbench` on Linux on 2026-10-09.
-Native window inspection could not run: the cloud display server could not open
-its local sockets, including after a supported reviewed retry. No driver execution,
-Windows runtime or end-to-end success is claimed. Ordinary builds and direct app
-use are the development workflow; no CI or new test runner is required.
+The complete native workspace builds on Linux and Windows. A real Windows
+control-session run on 3edc6575 confirmed positive transcript height (503 px),
+visible composer, correct title-bar hamburger and restored workspaces. Earlier
+b92a50a inspection found the zero-height layout defect that prompted that fix.
+No real OAuth, token persistence or live chat result is claimed. Further manual
+interaction checks are in progress. Native screenshots remain local to the
+isolated profile. Cloud visual inspection remains blocked by display sockets.
+
+Control-session launches skip automatic account restoration. Account buttons
+still represent real actions; layout inspection does not authorize using them.
+Ordinary builds and direct app use are the workflow; no CI or new test runner.

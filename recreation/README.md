@@ -11,7 +11,9 @@ layout. The original C++ application remains untouched.
 - Add Twitch channel names or channel URLs. Each workspace supports two
   independently resizable channel splits, side-by-side or stacked.
 - Optional workspace sidebar, closed by default, with a hamburger toggle that
-  remembers its state. Tabs and channel controls work without it.
+  remembers its state. Opening/closing slides smoothly, including mid-motion
+  reversal, and respects OS reduced-motion preferences. Tabs and channel controls
+  work without it.
 - Multiline composers with ordinary cut/copy/paste, undo/redo and retained drafts.
 - Local saved tabs, active workspace, split sizes/orientation, sidebar, font size
   and separate drafts for the same channel in different workspaces.
@@ -45,8 +47,9 @@ cargo run -p chat-workbench --release --locked
 The built executable is `target/release/chat-workbench.exe` under this directory.
 Use ordinary builds and direct interaction with the real app for development.
 No CI/Actions or separate test-script workflow is required. Commits use `[skip ci]`.
-The native workspace compiles and links on Linux. It has not yet been run on
-Windows; cloud window inspection was blocked by the display environment.
+The native workspace compiles and links on Linux and Windows. Windows inspection
+confirmed the corrected transcript/composer layout and workspace restoration.
+The account flow and full daily-client behavior remain unverified.
 
 ## Shortcuts
 

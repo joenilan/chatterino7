@@ -582,6 +582,15 @@ fn valid_channel(value: &str) -> Option<String> {
 }
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Retarget from the current sampled width so rapid reversals stay smooth.
+        // GPUI's motion primitive honors the OS reduced-motion preference.
+        let sidebar_width = gpui_kit::base::motion::transition(
+            "jawjack-sidebar-width",
+            if self.sidebar { 190.0_f32 } else { 0.0_f32 },
+            gpui_kit::base::motion::Transition::new(Duration::from_millis(180)),
+            window,
+            cx,
+        );
         let menu_focus = self.focus.clone();
         let view_focus = self.focus.clone();
         let can_reopen = !self.closed_tabs.is_empty();
@@ -672,7 +681,10 @@ impl Render for Workbench {
                 .child(caption_control("maximize",if window.is_maximized(){IconName::WindowRestore}else{IconName::WindowMaximize},WindowControlArea::Max,false))
                 .child(caption_control("close",IconName::WindowClose,WindowControlArea::Close,true)))
             .child(div().h_flex().items_stretch().flex_1().min_h_0().overflow_hidden()
-                .when(self.sidebar,|el|el.child(self.render_sidebar(cx)))
+                .when(sidebar_width > 0.1, |el| el.child(
+                    div().w(px(sidebar_width)).h_full().flex_shrink_0().overflow_hidden()
+                        .child(div().relative().left(px(sidebar_width - 190.)).w(px(190.)).h_full()
+                            .child(self.render_sidebar(cx)))))
                 .child(div().v_flex().flex_1().h_full().min_w_0().min_h_0()
                     .child(div().h_flex().h(px(42.)).flex_shrink_0().bg(rgb(theme::PANEL)).border_b_1().border_color(rgb(theme::BORDER))
                         .child(div().flex_1().min_w_0().child(TabBar::new("workspace-tabs").selected_index(self.active).max_width(px(180.)).menu(true).track_scroll(&self.tab_scroll)

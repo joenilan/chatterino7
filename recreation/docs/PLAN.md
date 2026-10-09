@@ -2,7 +2,8 @@
 
 Status: initial plan and foundation, 2026-10-09. This is development in Joe's
 personal fork, not an upstream contribution or a released replacement.
-Working title: **Chat workbench**. Final name and branding are not selected.
+Selected product name: **Jawjack**, by Zombie Digital. Internal crate names
+remain stable while branding is rolled out.
 
 ## Goal and scope
 
@@ -25,10 +26,11 @@ custom Workspace/View menus, a collapsible scrolling sidebar, multiline drafts,
 font controls and versioned local persistence. Empty channels are honest offline
 states; synthetic sample messages and test-only controls are gone.
 
-This is implemented source, not a verified Windows run or a connected Twitch
-client. Next product work is the authenticated receive/send path and real emote
-rendering. A dedicated Twitch public client registration is still needed; no
-registration, OAuth grant or token persistence has been performed.
+Linux and Windows release builds have passed. Native Windows inspection of
+3edc6575 confirmed the corrected chat layout and restored workspaces. Remaining
+interactions are being inspected. The owner registered the Twitch public client;
+device-code sign-in and OS-vault handling are implemented but real authorization
+has not been exercised. Live receiving/sending and emote rendering remain next.
 
 ## Confirmed visual direction (owner feedback, 2026-10-09)
 
@@ -242,3 +244,35 @@ Owner-approved future scope is recorded in [MULTIPLATFORM.md](MULTIPLATFORM.md):
 Connections / Integrations, watching other creators as well as own streams, and
 optional combined feeds. Twitch implementation remains first. Provider capability
 research gates YouTube, Kick, TikTok and further integrations.
+
+## Motion is part of feature completion
+
+Owner direction: native UI polish includes animation when the feature is built,
+not a later decoration pass. Keep motion quick and functional: sidebar reveal,
+tab movement/selection, menu entry/exit, connection feedback, copy feedback and
+new-message arrival without interfering with reading or selection. Never animate
+every chat row gratuitously during busy streams. Support reversal and interrupted
+transitions, respect OS reduced motion, and stop requesting frames when idle.
+The sidebar now uses a target-based 180ms transition with a clipped sliding inner
+panel; its persisted setting represents the target, not an intermediate width.
+Actual Windows motion still needs direct inspection before claiming it polished.
+
+## Composer and channel switching contract
+
+Owner direction, 2026-10-09: one composer per visible chat pane, not an extra
+composer for every channel. In a single-pane workspace, changing the selected
+channel keeps the composer location and interaction stable. Explicit horizontal
+or vertical splits each own their own composer and destination.
+
+Each composer follows its active provider/account/channel context: restore that
+channel's draft, select its emote inventory and autocomplete, recalculate sending
+and moderation permissions, and clear or restore only a correctly scoped reply
+target. Never send the previous channel's draft or reply to the newly selected one.
+
+Cache emote metadata/assets by provider and channel. Show the correct cached set
+immediately on return, then refresh stale entries asynchronously. Channel switches
+invalidate request generations: late old-channel results cannot overwrite the
+current picker, completion list or permissions. Loading should not remount or
+steal focus from the composer, reset caret/selection, or jump the layout. These
+are delivery requirements for the live chat/emote integration, not implemented
+emote claims at this checkpoint.
