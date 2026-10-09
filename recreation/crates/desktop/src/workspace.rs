@@ -142,7 +142,7 @@ impl Workbench {
         Ok(())
     }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"save_status":self.save_status})
+        json!({"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending})
     }
     pub fn panes(&self) -> Vec<Entity<ChannelPane>> {
         self.tabs

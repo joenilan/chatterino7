@@ -84,3 +84,12 @@ and drop reordered two channels into a stacked layout while preserving the draft
 tab dragging changed tab order while retaining the active workspace and its panes.
 These are bounded observations, not complete docking, clipboard, Unicode, account
 or live-chat acceptance. The isolated controlled app remained open afterward.
+
+## Live-chat and middle-button inspection
+
+The native pointer command also accepts `button: "middle"` for actual tab-close
+interaction. Inspection reports `close_tab_pending` by stable tab ID, per-pane
+connection status and send-pending booleans. The `offline` value reflects actual
+pane connection state, not a hardcoded preview label. No access/refresh tokens,
+message bodies or draft contents are included. Account restoration remains off
+for controlled launches; signing in or sending is a real account action.
