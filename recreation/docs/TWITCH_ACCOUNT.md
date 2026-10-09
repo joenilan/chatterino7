@@ -113,7 +113,7 @@ original text if the static asset also fails.
 
 The anonymous media cache has two workers, a 32-job queue, a two-result queue,
 128 cache entries and a 48 MiB decoded-data budget. Individual responses are
-limited to 2 MiB, dimensions to 256 square pixels, and decoded animations to
+limited to 2 MiB, dimensions to 256 × 256 pixels, and decoded animations to
 120 frames / 8 MiB. Eviction releases associated GPUI image textures. This is a
 bounded design, not a measured whole-process memory or frame-rate claim.
 
@@ -145,7 +145,12 @@ clock, allowing visible unfocused chat to animate. Only visible image slots ask
 for frames; OS reduced motion selects frame zero/static media. The decoder also
 handles animated WebP rather than treating every WebP as a static illustration.
 This addresses two identified limitations; DinoDance's precise original format
-and failure were not captured. Runtime playback remains to be observed.
+and failure were not captured. Windows b7b744d passed its locked release build in 12.79s. Public catalogs loaded
+45 global, 735 HutchMF and 515 dreadedzombie emotes. Natural traffic loaded Twitch
+and 7TV images, with paired native snapshots showing pose changes on stable rows.
+A 32-frame Twitch asset advanced 14 → 24; 56- and 91-frame 7TV assets advanced
+41 → 0 and 12 → 54. DinoDance was not matched by name, so its exact reported
+case remains unconfirmed. Zero-width overlay appearance also remains unverified.
 
 7TV source contract: https://github.com/SevenTV/SevenTV/tree/e17332559c81d408b4881707f76968133a332761/apps/api/src/http/v3/rest
 Remaining: live 7TV event updates, personal emotes, paints/badges, FFZ/BTTV,

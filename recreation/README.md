@@ -50,7 +50,9 @@ failed or uncertain sends preserve the draft. Live receiving is verified; delive
 sends remain unverified. Twitch inline images, wrapping and source-token copying were verified on Windows.
 The next implementation adds 7TV channel/global catalogs, zero-width overlays and
 shared-clock GIF/WebP animation, including when the chat window is unfocused.
-Native 7TV and animated-image verification is pending. No synthetic chat is
+Windows verification confirmed loaded 7TV catalogs and visibly changing Twitch
+and 7TV emote poses. The specific DinoDance report and zero-width overlay
+appearance have not yet been individually verified. No synthetic chat is
 seeded. Emotes, moderation and Chatterino7 parity remain on [the roadmap](docs/PLAN.md). Planned multiplatform
 viewer and broadcaster workflows are in [MULTIPLATFORM.md](docs/MULTIPLATFORM.md).
 
