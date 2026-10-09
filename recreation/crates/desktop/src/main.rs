@@ -152,6 +152,16 @@ impl Render for ChannelPane {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, _, _, cx| {
+                            // Terminal-style copy preserves the current selection. Scope
+                            // this to the transcript so future input fields retain their
+                            // normal edit/context-menu behavior.
+                            this.copy(cx);
+                            cx.stop_propagation();
+                        }),
+                    )
                     .on_prepaint(move |bounds, _, _| {
                         *viewport_layout.borrow_mut() = Some(bounds);
                     })

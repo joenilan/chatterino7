@@ -35,7 +35,7 @@ opened, but default light appearance/OS titlebar were rejected and text selectio
 was reported barely usable. The screenshot alone does not prove replay/timeout
 results; the owner reported clicking those controls.
 
-New patch (not yet owner-run):
+Patch 7cb9e984 (owner subsequently reported running it and liking the design):
 - Dark-only Studio palette, Segoe UI 14px body, 40px custom caption, 46px Windows
   hit targets and a 6px top resize strip, based on Haiwire's documented design.
 - Model-owned independent per-pane UTF-8 byte selections; no ephemeral toolkit
@@ -49,3 +49,13 @@ Exact new native UI compile and runtime checks must be performed on Windows.
 Check dragging/resizing/maximizing, title controls, pane-isolated copying,
 selection while scrolling/bursting, and redaction. Automatic edge auto-scroll,
 full grapheme-aware word semantics, touch and screen-reader verification remain.
+
+## Terminal-style copy follow-up
+
+The owner requested highlight then right-click copying, alongside normal editing
+shortcuts. Right-click inside a transcript now invokes that pane's existing
+model-backed copy operation without changing the selection. Empty selection leaves
+the clipboard unchanged. Ctrl+C remains supported. Cut/paste belongs to editable
+fields; a live composer is still future work. Native right-click behavior remains
+pending Windows verification; the owner's design feedback is not full interaction
+acceptance.
