@@ -80,6 +80,7 @@ struct WorkspaceTab {
 pub struct Workbench {
     account: Entity<crate::auth::TwitchAccount>,
     live: crate::live::LiveChat,
+    catalog: std::rc::Rc<std::cell::RefCell<crate::catalog::Catalog>>,
     media: std::rc::Rc<std::cell::RefCell<crate::media::MediaCache>>,
     drop_edge: Option<DropEdge>,
     control_enabled: bool,
@@ -142,6 +143,7 @@ impl Workbench {
         }
         Ok(())
     }
+    pub fn media_inspection(&self) -> Value { json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()}) }
     pub fn inspection(&self, cx: &App) -> Value {
         json!({"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending})
     }
@@ -183,6 +185,7 @@ impl Workbench {
             .unwrap_or_default();
         let mut this = Self {
             live: crate::live::LiveChat::new(),
+            catalog: std::rc::Rc::new(std::cell::RefCell::new(crate::catalog::Catalog::new())),
             media: std::rc::Rc::new(std::cell::RefCell::new(crate::media::MediaCache::new())),
             account: cx.new(|cx| crate::auth::TwitchAccount::new(cx)),
             drop_edge: None,
@@ -296,6 +299,12 @@ impl Workbench {
     fn pump_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let identity = self.account.read(cx).identity();
         let panes = self.panes();
+        if self.catalog.borrow_mut().pump(panes.iter().map(|p|p.read(cx).name.to_string()).collect()) {
+            for pane in &panes { pane.update(cx, |p,cx| {
+                p.timeline.borrow_mut().enrich(|message| message.fragments = self.catalog.borrow().expand(&p.name, &message.fragments));
+                p.scroller.update(cx, |s,cx|s.remeasure(cx)); cx.notify();
+            }); }
+        }
         if self.media.borrow_mut().pump(cx) { for pane in &panes { pane.update(cx, |p, cx| { p.scroller.update(cx, |s, cx| s.remeasure(cx)); cx.notify(); }); } }
         if self.live.configure(
             identity.clone(),
@@ -322,6 +331,7 @@ impl Workbench {
                 continue;
             }
             match event {
+                crate::live::Event::Resolved(channel, id) => self.catalog.borrow_mut().channel(&channel, &id),
                 crate::live::Event::State(channel, status, ready) => {
                     for pane in &panes {
                         if pane.read(cx).name.as_ref() == channel {
@@ -361,7 +371,7 @@ impl Workbench {
     ) -> Entity<ChannelPane> {
         let key = format!("{tab_id}:{name}");
         let draft = self.drafts.get(&key).cloned().unwrap_or_default();
-        let pane = cx.new(|cx| ChannelPane::new(name, self.media.clone(), &draft, self.font_size, window, cx));
+        let pane = cx.new(|cx| ChannelPane::new(name, self.media.clone(), self.catalog.clone(), &draft, self.font_size, window, cx));
         let channel = name.to_owned();
         cx.subscribe(&pane, move |this, pane, event, cx| {
             if let PaneEvent::Send { request, text } = event {

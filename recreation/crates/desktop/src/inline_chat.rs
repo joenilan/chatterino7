@@ -1,5 +1,5 @@
 //! Pixel-sized inline media with original source byte offsets for selection.
-use crate::media::{EmoteKey, MediaCache};
+use crate::media::{DecodedMedia, EmoteKey, MediaCache};
 use chat_core::{
     Fragment, Message,
     selection::{Point as SelectionPoint, Selection},
@@ -11,14 +11,14 @@ use std::{cell::RefCell, ops::Range, rc::Rc, sync::Arc};
 struct Span {
     range: Range<usize>,
     author: bool,
-    media: Option<(EmoteKey, Option<Arc<RenderImage>>)>,
+    media: Option<Vec<(EmoteKey, Option<Arc<DecodedMedia>>)>>,
 }
 #[derive(Clone)]
 struct Piece {
     range: Range<usize>,
     bounds: Bounds<Pixels>,
     text: Option<ShapedLine>,
-    media: Option<Arc<RenderImage>>,
+    media: Vec<Option<Arc<DecodedMedia>>>,
 }
 #[derive(Default)]
 struct Layout {
@@ -70,7 +70,6 @@ pub struct InlineChat {
     focus: FocusHandle,
     viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
     layout: Rc<RefCell<Layout>>,
-    images: Vec<AnyElement>,
 }
 impl InlineChat {
     pub fn new(
@@ -107,37 +106,49 @@ impl InlineChat {
             },
         ];
         let mut offset = message.display_name.len() + 2;
-        for fragment in &message.fragments {
-            let end = offset + fragment.copy_text().len();
-            let asset = match fragment {
-                Fragment::Emote {
-                    provider,
-                    id,
-                    animated,
-                    ..
-                } if provider == "twitch" => EmoteKey::twitch(id, *animated && !cx.reduce_motion())
-                    .map(|key| {
-                        let image = media.get(&key, cx);
-                        (key, image)
-                    })
-                    .and_then(|(mut key, mut image)| {
-                        if image.is_none() && media.failed(&key) && key.animated {
-                            key.animated = false;
-                            image = media.get(&key, cx);
-                        }
-                        if image.is_none() && media.failed(&key) {
-                            None
+        for run in chat_core::emotes::group_for_layout(&message.fragments) {
+            let end = offset + run.copy_text().len();
+            let mut assets = Vec::new();
+            if let chat_core::emotes::RenderRun::EmoteStack { layers, .. } = &run {
+                for (index, layer) in layers.iter().enumerate() {
+                    let animated = layer.animated && !cx.reduce_motion();
+                    let key = if layer.provider == "twitch" {
+                        EmoteKey::twitch(&layer.id, animated)
+                    } else if layer.provider == "7tv" {
+                        layer
+                            .asset
+                            .as_ref()
+                            .and_then(|a| EmoteKey::seven(&layer.id, animated, a))
+                    } else {
+                        None
+                    };
+                    let Some(mut key) = key else {
+                        if index == 0 {
+                            break;
                         } else {
-                            Some((key, image))
+                            continue;
                         }
-                    }),
-                _ => None,
-            };
+                    };
+                    let mut image = media.get(&key, cx);
+                    if image.is_none() && media.failed(&key) && key.animated {
+                        key.animated = false;
+                        image = media.get(&key, cx);
+                    }
+                    if image.is_none() && media.failed(&key) && index == 0 {
+                        break;
+                    }
+                    assets.push((key, image));
+                }
+            }
             if end > offset {
                 spans.push(Span {
                     range: offset..end,
                     author: false,
-                    media: asset,
+                    media: if assets.is_empty() {
+                        None
+                    } else {
+                        Some(assets)
+                    },
                 });
             }
             offset = end;
@@ -155,7 +166,6 @@ impl InlineChat {
             focus,
             viewport,
             layout: Rc::default(),
-            images: vec![],
         })
     }
 }
@@ -213,8 +223,8 @@ impl Element for InlineChat {
                     let fragments: Vec<_> = spans
                         .iter()
                         .map(|s| {
-                            if s.media.is_some() {
-                                LineFragment::element(px(28.), s.range.len())
+                            if let Some(media) = &s.media {
+                                LineFragment::element(px(media[0].0.width()), s.range.len())
                             } else {
                                 LineFragment::text(&text[s.range.clone()])
                             }
@@ -239,8 +249,12 @@ impl Element for InlineChat {
                             if a >= b {
                                 continue;
                             }
-                            let (shaped, media, w) = if let Some((_, image)) = &span.media {
-                                (None, image.clone(), px(28.))
+                            let (shaped, media, w) = if let Some(layers) = &span.media {
+                                (
+                                    None,
+                                    layers.iter().map(|(_, image)| image.clone()).collect(),
+                                    px(layers[0].0.width()),
+                                )
                             } else {
                                 let mut run_style = style.clone();
                                 if span.author {
@@ -254,7 +268,7 @@ impl Element for InlineChat {
                                     None,
                                 );
                                 let w = shaped.width();
-                                (Some(shaped), None, w)
+                                (Some(shaped), Vec::new(), w)
                             };
                             result.pieces.push(Piece {
                                 range: a..b,
@@ -290,33 +304,9 @@ impl Element for InlineChat {
         bounds: Bounds<Pixels>,
         _: &mut (),
         window: &mut Window,
-        cx: &mut App,
+        _cx: &mut App,
     ) -> Hitbox {
         self.layout.borrow_mut().origin = bounds.origin;
-        self.images.clear();
-        for (index, piece) in self.layout.borrow().pieces.iter().enumerate() {
-            if let Some(asset) = &piece.media {
-                let mut image = img(asset.clone())
-                    .id((self.id.clone(), SharedString::from(index.to_string())))
-                    .w(px(28.))
-                    .h(px(28.))
-                    .object_fit(ObjectFit::Contain)
-                    .into_any_element();
-                let origin = bounds.origin
-                    + piece.bounds.origin
-                    + point(px(0.), (piece.bounds.size.height - px(28.)) / 2.);
-                image.prepaint_as_root(
-                    origin,
-                    size(
-                        AvailableSpace::Definite(px(28.)),
-                        AvailableSpace::Definite(px(28.)),
-                    ),
-                    window,
-                    cx,
-                );
-                self.images.push(image);
-            }
-        }
         let pointer = window.mouse_position();
         if self.selection.borrow().dragging
             && self.viewport.borrow().is_some_and(|v| v.contains(&pointer))
@@ -388,7 +378,7 @@ impl Element for InlineChat {
                     window,
                     cx,
                 );
-            } else if piece.media.is_none() {
+            } else if piece.media.iter().all(Option::is_none) {
                 // Fixed placeholder geometry keeps loading from shifting wrapped rows.
                 let label: String = self.text[piece.range.clone()].chars().take(3).collect();
                 let mut style = window.text_style();
@@ -409,9 +399,47 @@ impl Element for InlineChat {
                 );
             }
         }
-        for image in &mut self.images {
-            image.paint(window, cx);
+        for piece in &self.layout.borrow().pieces {
+            let slot = Bounds::new(
+                bounds.origin
+                    + piece.bounds.origin
+                    + point(px(0.), (piece.bounds.size.height - px(28.)) / 2.),
+                size(piece.bounds.size.width, px(28.)),
+            );
+            let clip = self.viewport.borrow().map_or(slot, |v| slot.intersect(&v));
+            if clip.size.width <= px(0.) || clip.size.height <= px(0.) {
+                continue;
+            }
+            for media in piece.media.iter().flatten() {
+                let frame = media.frame(cx.reduce_motion());
+                if media.image.frame_count() > 1 && !cx.reduce_motion() {
+                    window.request_animation_frame();
+                }
+                let image_bounds = ObjectFit::Contain.get_bounds(slot, media.image.size(frame));
+                let _ = window.paint_image(
+                    clip,
+                    image_bounds,
+                    Corners::all(px(0.)),
+                    media.image.clone(),
+                    frame,
+                    false,
+                );
+            }
         }
+        if let Some(range) = &selected {
+            for piece in &self.layout.borrow().pieces {
+                if piece.text.is_none()
+                    && range.start < piece.range.end
+                    && range.end > piece.range.start
+                {
+                    window.paint_quad(fill(
+                        Bounds::new(bounds.origin + piece.bounds.origin, piece.bounds.size),
+                        rgba(0x31516666),
+                    ));
+                }
+            }
+        }
+
         let layout = self.layout.clone();
         let selection = self.selection.clone();
         let text = self.text.clone();

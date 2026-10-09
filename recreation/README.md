@@ -47,8 +47,10 @@ is required or embedded.
 
 Live text transport is implemented. Sending is enabled only for connected channels;
 failed or uncertain sends preserve the draft. Live receiving is verified; delivered
-sends remain unverified. Twitch emote images now have an inline rendering path;
-its native verification is pending. Third-party emotes still display as text. No synthetic chat is
+sends remain unverified. Twitch inline images, wrapping and source-token copying were verified on Windows.
+The next implementation adds 7TV channel/global catalogs, zero-width overlays and
+shared-clock GIF/WebP animation, including when the chat window is unfocused.
+Native 7TV and animated-image verification is pending. No synthetic chat is
 seeded. Emotes, moderation and Chatterino7 parity remain on [the roadmap](docs/PLAN.md). Planned multiplatform
 viewer and broadcaster workflows are in [MULTIPLATFORM.md](docs/MULTIPLATFORM.md).
 

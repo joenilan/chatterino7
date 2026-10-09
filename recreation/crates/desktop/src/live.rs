@@ -27,6 +27,7 @@ struct Config {
 }
 pub enum Event {
     State(String, String, bool),
+    Resolved(String, String),
     Chat(String, ChatEvent),
     Sent(u64, Result<(), String>),
 }
@@ -284,6 +285,7 @@ fn subscribe(
                 if let Ok(mut names) = map.lock() {
                     names.insert(id.clone(), channel.clone());
                 }
+                let _ = tx.send((version, Event::Resolved(channel.clone(), id.clone())));
                 for kind in [
                     "channel.chat.message",
                     "channel.chat.message_delete",
@@ -549,7 +551,7 @@ fn twitch_fragments(message: &Value) -> Vec<Fragment> {
         if fragment["type"] == "emote" {
             if let Some(id) = fragment["emote"]["id"].as_str() {
                 if crate::media::EmoteKey::twitch(id, false).is_some() {
-                    return Fragment::Emote { provider: "twitch".into(), id: id.into(), label: text, overlay: false,
+                    return Fragment::Emote { provider: "twitch".into(), id: id.into(), label: text, overlay: false, asset: None,
                         animated: fragment["emote"]["format"].as_array().is_some_and(|formats| formats.iter().any(|f| f == "animated")) };
                 }
             }

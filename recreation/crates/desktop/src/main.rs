@@ -4,6 +4,7 @@ mod chat_text;
 mod control;
 mod live;
 mod media;
+mod catalog;
 mod inline_chat;
 mod storage;
 mod theme;
@@ -84,6 +85,7 @@ struct ChannelPane {
     send_status: String,
     timeline: Rc<RefCell<Timeline>>,
     media: Rc<RefCell<media::MediaCache>>,
+    catalog: Rc<RefCell<catalog::Catalog>>,
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
     draft: Entity<TextareaState>,
@@ -98,6 +100,7 @@ impl ChannelPane {
     fn new(
         name: &str,
         media: Rc<RefCell<media::MediaCache>>,
+        catalog: Rc<RefCell<catalog::Catalog>>,
         saved_draft: &str,
         font_size: f32,
         window: &mut Window,
@@ -128,6 +131,7 @@ impl ChannelPane {
         Self {
             name: name.to_owned().into(),
             media,
+            catalog,
             connection: "Sign in to connect".into(),
             connected: false,
             pending: None,
@@ -171,6 +175,7 @@ impl ChannelPane {
     }
     fn received(&mut self, mut event: chat_core::Event, cx: &mut Context<Self>) {
         if let chat_core::Event::Message(message) = &mut event {
+            message.fragments = self.catalog.borrow().expand(&self.name, &message.fragments);
             message.name_color = Some(theme::readable_name_color(&message.user_id, message.name_color));
         }
         let change = self.timeline.borrow_mut().apply(event);

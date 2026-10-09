@@ -57,7 +57,7 @@ References:
 ## Current transport limits
 
 The renderer preserves Twitch EventSub emote fragments and has a first native
-inline image path. Third-party emote catalogs and overlays are not integrated yet.
+inline image path. 7TV channel/global catalogs and overlays are implemented; native observation is pending.
 Adding/removing an open channel rebuilds the shared subscription connection; missed
 messages cannot be recovered from Twitch. Authentication revalidation currently
 also briefly disconnects channels. Incremental subscription updates, full room
@@ -121,4 +121,32 @@ Mixed rows reserve 28px image boxes, wrap text around them and preserve original
 source-byte selection/copy semantics. Unloaded slots show a short label until
 ready; failed assets regain their full original text. Double-clicking an emote
 selects its source token. Deleted messages take the plain redacted-text path.
-The native Windows image/selection observation is pending for this implementation.
+Windows 6631b27 passed its locked release build in 10.62s. A real PogChamp
+rendered inline; long messages wrapped; selecting/copying an emote-bearing row
+returned clipboard_verified and preserved PogChamp in the source text.
+
+## 7TV catalogs and image animation
+
+Public global/channel catalogs load independently of authenticated Twitch chat.
+Channel emote aliases override globals. Catalogs refresh every five minutes with
+bounded queues and preserve the last valid catalog on request failure. Missing
+channel sets are empty. Retained messages are enriched when a catalog arrives;
+Twitch fragments and exact original whitespace/copy text are preserved.
+
+Active-entry flags determine zero-width overlays; stacks retain a single base
+layout box and at most eight layers. Files come from returned WEBP variants and
+static_name metadata, preserving source aspect ratio with bounded display width.
+Only HTTPS cdn.7tv.app/emote/ URLs without credentials, queries or unsafe path
+characters are accepted. Twitch tokens are never shared with 7TV or either CDN.
+
+The initial native image widget paused animation on window focus loss. The chat
+renderer now paints explicitly timed GIF/WebP frames using a shared per-asset
+clock, allowing visible unfocused chat to animate. Only visible image slots ask
+for frames; OS reduced motion selects frame zero/static media. The decoder also
+handles animated WebP rather than treating every WebP as a static illustration.
+This addresses two identified limitations; DinoDance's precise original format
+and failure were not captured. Runtime playback remains to be observed.
+
+7TV source contract: https://github.com/SevenTV/SevenTV/tree/e17332559c81d408b4881707f76968133a332761/apps/api/src/http/v3/rest
+Remaining: live 7TV event updates, personal emotes, paints/badges, FFZ/BTTV,
+cheermotes, rich replies and full bidirectional mixed-text layout.

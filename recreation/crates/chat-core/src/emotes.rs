@@ -8,6 +8,8 @@ pub struct EmoteLayer {
     pub provider: String,
     pub id: String,
     pub label: String,
+    pub animated: bool,
+    pub asset: Option<crate::EmoteAsset>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,12 +45,15 @@ pub fn group_for_layout(fragments: &[Fragment]) -> Vec<RenderRun> {
                 id,
                 label,
                 overlay,
-                ..
+                animated,
+                asset,
             } => {
                 let layer = EmoteLayer {
                     provider: provider.clone(),
                     id: id.clone(),
                     label: label.clone(),
+                    animated: *animated,
+                    asset: asset.clone(),
                 };
                 let mut stack_index = runs.len();
                 if *overlay {
@@ -99,6 +104,7 @@ mod tests {
             label: name.into(),
             overlay,
             animated: false,
+            asset: None,
         }
     }
     fn copy(runs: &[RenderRun]) -> String {

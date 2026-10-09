@@ -3,6 +3,13 @@ pub mod emotes;
 pub mod selection;
 use std::collections::{HashSet, VecDeque};
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct EmoteAsset {
+    pub url: String,
+    pub static_url: String,
+    pub width: u16,
+    pub height: u16,
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Fragment {
     Text(String),
@@ -12,6 +19,7 @@ pub enum Fragment {
         label: String,
         overlay: bool,
         animated: bool,
+        asset: Option<EmoteAsset>,
     },
 }
 impl Fragment {
@@ -77,6 +85,10 @@ pub struct Timeline {
     ids: HashSet<String>,
 }
 impl Timeline {
+    pub fn enrich(&mut self, mut apply: impl FnMut(&mut Message)) {
+        for message in &mut self.messages { if !message.deleted { apply(message); } }
+    }
+
     pub fn new(channel_id: impl Into<String>, capacity: usize) -> Self {
         Self {
             channel_id: channel_id.into(),

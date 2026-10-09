@@ -190,7 +190,7 @@ pub fn dispatch(
                 json!({"channel":pane.name.to_string(),"messages":pane.timeline.borrow().messages().len(),"following":pane.scroller.read(cx).is_following_tail(),"viewport":bounds,"selection":format!("{:?}",pane.selection.borrow()),"draft_characters":pane.draft.read(cx).value().chars().count(),"last_copy_result":pane.last_copy_result,"connected":pane.connected,"connection_status":pane.connection,"send_pending":pane.pending.is_some(),"entrance_effects":pane.entrances.iter().filter(|entry| entry.active(std::time::Instant::now())).count(),"entrance_started":pane.entrances.iter().filter(|entry|entry.started.get().is_some() && entry.active(std::time::Instant::now())).count()})
             }).collect();
             Ok(
-                json!({"workspace":view.read(cx).inspection(cx),"visible_panes":panes,"offline":!view.read(cx).panes().iter().any(|p|p.read(cx).connected),"control":"session-only","reduced_motion":cx.reduce_motion(),"window_active":window.is_window_active()}),
+                json!({"workspace":view.read(cx).inspection(cx),"visible_panes":panes,"offline":!view.read(cx).panes().iter().any(|p|p.read(cx).connected),"control":"session-only","media":view.read(cx).media_inspection(),"reduced_motion":cx.reduce_motion(),"window_active":window.is_window_active()}),
             )
         }
         "focus" => {
