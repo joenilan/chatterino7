@@ -23,9 +23,10 @@ layout. The original C++ application remains untouched.
   cut/copy/paste, undo/redo and retained drafts. Pasted line breaks become spaces.
 - Local saved tabs, active workspace, split sizes/orientation, sidebar, font size
   and separate drafts for the same channel in different workspaces.
-- New live messages have bounded 180ms slide-and-fade entrances while following
-  the latest chat. History reading, selection, inactive windows and reduced motion
-  suppress effects; bursts skip animation rather than building a backlog.
+- New live messages have bounded 260ms slide-and-fade entrances while following
+  the latest chat, starting on first row presentation. History reading, selection
+  and reduced motion suppress effects. Busy chat retains the newest 12 effects
+  rather than disabling all motion; unfocused visible chat can still animate.
 - Twitch username colors with readable dark-theme contrast and stable fallback
   colors for accounts that have not selected one. Names are semibold while message
   text retains ordinary selection and copy behavior.

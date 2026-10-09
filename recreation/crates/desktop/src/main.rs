@@ -19,7 +19,7 @@ use gpui_kit::component::{
     notification::{Notification, NotificationDelivery},
 };
 use gpui_kit::*;
-use std::{cell::RefCell, rc::Rc, time::{Duration, Instant}};
+use std::{cell::{Cell, RefCell}, rc::Rc, time::{Duration, Instant}};
 
 gpui_kit::actions!(
     chat_workbench,
@@ -47,6 +47,20 @@ impl Render for DragPreview {
 }
 struct CopyFeedback;
 struct ComposerFeedback;
+#[derive(Clone)]
+struct MessageEntrance {
+    row: u64,
+    received: Instant,
+    started: Rc<Cell<Option<Instant>>>,
+}
+impl MessageEntrance {
+    fn active(&self, now: Instant) -> bool {
+        self.started.get().map_or_else(
+            || now.duration_since(self.received) < Duration::from_secs(1),
+            |start| now.duration_since(start) < Duration::from_millis(260),
+        )
+    }
+}
 fn twitch_message_text(text: &str) -> String {
     text.replace("\r\n", " ")
         .replace(['\r', '\n', '\u{2028}', '\u{2029}'], " ")
@@ -74,8 +88,7 @@ struct ChannelPane {
     last_copy_result: Option<&'static str>,
     scroller: Entity<MessageScrollerState>,
     next_id: usize,
-    entrances: Vec<(u64, Instant)>,
-    entrance_cooldown: Option<Instant>,
+    entrances: Vec<MessageEntrance>,
     viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
 }
 impl ChannelPane {
@@ -123,7 +136,6 @@ impl ChannelPane {
             scroller,
             next_id: 0,
             entrances: Vec::new(),
-            entrance_cooldown: None,
             viewport: Rc::new(RefCell::new(None)),
         }
     }
@@ -160,18 +172,16 @@ impl ChannelPane {
         match change {
             chat_core::Change::Appended { evicted } => {
                 let now = Instant::now();
-                self.entrances.retain(|(_, born)| now.duration_since(*born) < Duration::from_millis(180));
-                if self.scroller.read(cx).is_following_tail()
-                    && !cx.reduce_motion()
-                    && self.entrance_cooldown.is_none_or(|until| now >= until)
-                {
-                    if self.entrances.len() >= 8 {
-                        // Drop effects during bursts rather than queueing animation debt.
-                        self.entrances.clear();
-                        self.entrance_cooldown = Some(now + Duration::from_millis(300));
-                    } else {
-                        self.entrances.push((self.next_id as u64, now));
-                    }
+                self.entrances.retain(|entry| entry.active(now));
+                if self.scroller.read(cx).is_following_tail() && !cx.reduce_motion() {
+                    // Keep animating the newest visible arrivals even in busy chat.
+                    // Retire the oldest effect rather than disabling all motion.
+                    if self.entrances.len() >= 12 { self.entrances.remove(0); }
+                    self.entrances.push(MessageEntrance {
+                        row: self.next_id as u64,
+                        received: now,
+                        started: Rc::new(Cell::new(None)),
+                    });
                 }
                 self.next_id += 1;
                 self.scroller.update(cx, |scroller, cx| {
@@ -272,7 +282,7 @@ impl ChannelPane {
     }
 }
 impl Render for ChannelPane {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let timeline = self.timeline.clone();
         let retained = timeline.borrow().messages().len();
         let first_order = (self.next_id - retained) as u64;
@@ -285,8 +295,8 @@ impl Render for ChannelPane {
         let copy_viewport = self.viewport.clone();
         let following = self.scroller.read(cx).is_following_tail();
         let now = Instant::now();
-        self.entrances.retain(|(_, born)| now.duration_since(*born) < Duration::from_millis(180));
-        let entrances = if following && !cx.reduce_motion() && window.is_window_active()
+        self.entrances.retain(|entry| entry.active(now));
+        let entrances = if following && !cx.reduce_motion()
             && { let selection = self.selection.borrow(); !selection.dragging && selection.anchor == selection.head }
         { self.entrances.clone() } else { Vec::new() };
         div()
@@ -381,15 +391,22 @@ impl Render for ChannelPane {
                                 return div().into_any_element();
                             };
                             let row = first_order + index as u64;
-                            let progress = entrances.iter().find(|(id, _)| *id == row)
-                                .map(|(_, born)| (born.elapsed().as_secs_f32() / 0.18).clamp(0.0, 1.0))
-                                .unwrap_or(1.0);
+                            let progress = entrances.iter().find(|entry| entry.row == row)
+                                .map(|entry| {
+                                    let now = Instant::now();
+                                    let start = entry.started.get().unwrap_or_else(|| {
+                                        entry.started.set(Some(now));
+                                        now
+                                    });
+                                    (now.duration_since(start).as_secs_f32() / 0.26).clamp(0.0, 1.0)
+                                }).unwrap_or(1.0);
                             if progress < 1.0 { window.request_animation_frame(); }
                             let eased = 1.0 - (1.0 - progress).powi(3);
                             div()
                                 .relative()
-                                .left(px(6.0 * (1.0 - eased)))
-                                .opacity(0.55 + 0.45 * eased)
+                                .left(px(12.0 * (1.0 - eased)))
+                                .top(px(6.0 * (1.0 - eased)))
+                                .opacity(0.25 + 0.75 * eased)
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()

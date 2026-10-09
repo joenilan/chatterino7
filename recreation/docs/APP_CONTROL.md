@@ -131,3 +131,15 @@ account and received HutchMF messages (9 → 11). Colored, heavier usernames and
 the corrected live indicator were visibly confirmed. Entrance motion remains
 unverified; no extended recording was performed. Tabs and the 49-character owner
 draft were preserved, with no chat send.
+
+## Entrance visibility correction
+
+The owner reported messages still appearing without visible motion. Earlier
+code suppressed all effects in an unfocused window, cleared every effect on a
+burst, and spent its 180ms timer before first presentation. The updated path
+starts its 260ms clock when a row is rendered, uses a more visible 12px/6px
+slide and 25%-to-full opacity, and retains at most the newest 12 effects.
+Pending effects expire after one second if never presented. It respects history,
+nonempty selection/drag and reduced motion, without requiring window focus.
+These are identified implementation causes; the exact cause on the owner's
+previous screen was not established. Updated native appearance awaits observation.
