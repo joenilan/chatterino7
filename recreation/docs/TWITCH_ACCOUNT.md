@@ -39,12 +39,12 @@ Implementation:
   the replacement welcome; ordinary reconnect recreates subscriptions and shows
   a missing-history warning. Revocation waits for account/channel reconfiguration.
 - Native owner sign-in and authenticated channel subscriptions were verified on
-  Windows (7466e04b, 2026-10-09). Receiving actual traffic and confirmed message
-  delivery remain unverified.
+  Windows (7466e04b, 2026-10-09). Build b8379a6 subsequently restored the saved
+  owner account automatically and received visible HutchMF messages (counts
+  1 → 6 → 29 → 48 → 60). Confirmed message delivery remains unverified.
 
-Current limits: sign-in reached the post-vault-save signed-in state, but restart
-restoration, refresh rotation, interrupted login and vault-failure recovery are
-not independently verified. Linux and Windows builds passed; the cloud display
+Current limits: sign-in and restart restoration are verified. Refresh rotation,
+interrupted login and vault-failure recovery are not independently verified. Linux and Windows builds passed; the cloud display
 cannot start. Concurrent instances are not coordinated for refresh-token use yet;
 run one Jawjack instance for account work. This is not production-ready auth.
 
@@ -86,4 +86,6 @@ successful message delivery or live incoming traffic is made from this pass.
 The earlier native-control launch explicitly skipped the credential-vault read,
 which made an already-authorized account appear signed out after each controlled
 restart. That conditional path has been removed. Startup now behaves consistently
-across launch modes. The code change is not yet a verified Windows restart result.
+across launch modes. Windows b8379a6 locked release compilation passed in 9.03s,
+exit 0. A fresh native-control launch restored dreadedzombie without a new grant,
+and both channels connected. The owner independently saw incoming HutchMF chat.

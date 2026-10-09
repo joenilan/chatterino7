@@ -329,6 +329,7 @@ impl Workbench {
                             });
                         }
                     }
+                    cx.notify();
                 }
                 crate::live::Event::Chat(channel, event) => {
                     for pane in &panes {
@@ -909,6 +910,15 @@ impl Render for Workbench {
             window,
             cx,
         );
+        let panes = self.panes();
+        let connected = panes.iter().filter(|p| p.read(cx).connected).count();
+        let live_status = if panes.is_empty() {
+            "○ No channels open".to_owned()
+        } else if connected == panes.len() {
+            format!("● Live · {connected} connected panes")
+        } else if connected > 0 {
+            format!("◐ Live · {connected}/{} connected panes", panes.len())
+        } else { "○ Live chat disconnected".to_owned() };
         let menu_focus = self.focus.clone();
         let view_focus = self.focus.clone();
         let can_reopen = !self.closed_tabs.is_empty();
@@ -1051,6 +1061,6 @@ impl Render for Workbench {
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Tabs, splits, channel drafts and appearance are saved locally."))
                             .child(Button::new("close-settings").ghost().label("Done").on_click(cx.listener(|this,_,_,cx|{this.settings=false;cx.notify();}))))))))
             .child(div().h_flex().h(px(26.)).flex_shrink_0().px_3().gap_3().border_t_1().border_color(rgb(theme::BORDER)).text_size(px(10.)).text_color(rgb(theme::MUTED))
-                .child("○ Live chat disconnected").child(div().flex_1().child(self.save_status.clone())).child("Ctrl+K channels · Ctrl+T tabs"))
+                .child(live_status).child(div().flex_1().child(self.save_status.clone())).child("Ctrl+K channels · Ctrl+T tabs"))
     }
 }

@@ -105,3 +105,16 @@ that workspace; Ctrl+Shift+T restored its stable ID and channel. The app was lef
 open with Sign in with Twitch visible, connected=false and send_pending=false.
 No OAuth grant, credential restoration or chat send was performed in this pass.
 Live authentication, receiving/sending and emote rendering are still unverified.
+
+Windows b8379a6 (2026-10-09): locked release build passed in 9.03s. A new control
+session automatically restored the saved owner account without another grant.
+HutchMF receiving progressed 1 → 6 → 29 → 48 → 60 with visible real messages,
+independently observed by the owner. The earlier uncertain send was not retried.
+
+Message entrance polish uses arrival timestamps instead of row-mount animations:
+180ms, 6px horizontal slide, cubic ease-out and a restrained fade. At most eight
+entrances per pane are retained; overload clears effects and cools down for 300ms.
+Only rendered live-tail rows request animation frames. History reading, selection,
+inactive windows and OS reduced motion suppress effects. This is implementation
+behavior, not a measured frame-rate or CPU performance claim. Native animation
+appearance and copy behavior must be observed on the updated Windows build.

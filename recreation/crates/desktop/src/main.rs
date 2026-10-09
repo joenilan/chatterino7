@@ -19,7 +19,7 @@ use gpui_kit::component::{
     notification::{Notification, NotificationDelivery},
 };
 use gpui_kit::*;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, time::{Duration, Instant}};
 
 gpui_kit::actions!(
     chat_workbench,
@@ -74,6 +74,8 @@ struct ChannelPane {
     last_copy_result: Option<&'static str>,
     scroller: Entity<MessageScrollerState>,
     next_id: usize,
+    entrances: Vec<(u64, Instant)>,
+    entrance_cooldown: Option<Instant>,
     viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
 }
 impl ChannelPane {
@@ -120,6 +122,8 @@ impl ChannelPane {
             last_copy_result: None,
             scroller,
             next_id: 0,
+            entrances: Vec::new(),
+            entrance_cooldown: None,
             viewport: Rc::new(RefCell::new(None)),
         }
     }
@@ -152,6 +156,20 @@ impl ChannelPane {
         let change = self.timeline.borrow_mut().apply(event);
         match change {
             chat_core::Change::Appended { evicted } => {
+                let now = Instant::now();
+                self.entrances.retain(|(_, born)| now.duration_since(*born) < Duration::from_millis(180));
+                if self.scroller.read(cx).is_following_tail()
+                    && !cx.reduce_motion()
+                    && self.entrance_cooldown.is_none_or(|until| now >= until)
+                {
+                    if self.entrances.len() >= 8 {
+                        // Drop effects during bursts rather than queueing animation debt.
+                        self.entrances.clear();
+                        self.entrance_cooldown = Some(now + Duration::from_millis(300));
+                    } else {
+                        self.entrances.push((self.next_id as u64, now));
+                    }
+                }
                 self.next_id += 1;
                 self.scroller.update(cx, |scroller, cx| {
                     if evicted {
@@ -251,7 +269,7 @@ impl ChannelPane {
     }
 }
 impl Render for ChannelPane {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let timeline = self.timeline.clone();
         let retained = timeline.borrow().messages().len();
         let first_order = (self.next_id - retained) as u64;
@@ -263,6 +281,11 @@ impl Render for ChannelPane {
         let copy_owner = cx.weak_entity();
         let copy_viewport = self.viewport.clone();
         let following = self.scroller.read(cx).is_following_tail();
+        let now = Instant::now();
+        self.entrances.retain(|(_, born)| now.duration_since(*born) < Duration::from_millis(180));
+        let entrances = if following && !cx.reduce_motion() && window.is_window_active()
+            && self.selection.borrow().anchor.is_none()
+        { self.entrances.clone() } else { Vec::new() };
         div()
             .id("channel-pane")
             .v_flex()
@@ -349,12 +372,21 @@ impl Render for ChannelPane {
                         .child(div().text_color(rgb(theme::TEXT)).text_size(px(16.)).child(format!("#{} is ready", self.name)))
                         .child(if self.connected { "Connected. Waiting for messages…".to_string() } else { self.connection.clone() })))
                     .child(
-                        MessageScroller::new("chat", self.scroller.clone(), move |index, _, _| {
+                        MessageScroller::new("chat", self.scroller.clone(), move |index, window, _| {
                             let messages = timeline.borrow();
                             let Some(message) = messages.messages().get(index) else {
                                 return div().into_any_element();
                             };
+                            let row = first_order + index as u64;
+                            let progress = entrances.iter().find(|(id, _)| *id == row)
+                                .map(|(_, born)| (born.elapsed().as_secs_f32() / 0.18).clamp(0.0, 1.0))
+                                .unwrap_or(1.0);
+                            if progress < 1.0 { window.request_animation_frame(); }
+                            let eased = 1.0 - (1.0 - progress).powi(3);
                             div()
+                                .relative()
+                                .left(px(6.0 * (1.0 - eased)))
+                                .opacity(0.55 + 0.45 * eased)
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()

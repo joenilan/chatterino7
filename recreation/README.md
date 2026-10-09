@@ -23,6 +23,9 @@ layout. The original C++ application remains untouched.
   cut/copy/paste, undo/redo and retained drafts. Pasted line breaks become spaces.
 - Local saved tabs, active workspace, split sizes/orientation, sidebar, font size
   and separate drafts for the same channel in different workspaces.
+- New live messages have bounded 180ms slide-and-fade entrances while following
+  the latest chat. History reading, selection, inactive windows and reduced motion
+  suppress effects; bursts skip animation rather than building a backlog.
 - Dark-only appearance controls with 12–24px transcript sizing.
 - Custom Workspace and View menus; keyboard shortcuts for frequent operations.
 - Model-backed transcript selection with right-click/Ctrl+C copying and verified
@@ -34,12 +37,13 @@ layout. The original C++ application remains untouched.
 Twitch device-code sign-in is implemented using Jawjack’s public Client ID and the
 OS credential vault. It includes saved-account validation, cancellation, expiry,
 refresh-token rotation and local sign-out. Native Windows owner sign-in and
-authenticated channel subscriptions were verified on 2026-10-09. No client secret
+authenticated channel subscriptions, automatic saved-login restoration after restart,
+and live incoming HutchMF messages were verified on Windows on 2026-10-09. No client secret
 is required or embedded.
 
 Live text transport is implemented. Sending is enabled only for connected channels;
-failed or uncertain sends preserve the draft. Actual incoming traffic and delivered
-messages remain unverified, and emotes still display as text. No synthetic chat is
+failed or uncertain sends preserve the draft. Live receiving is verified; delivered
+sends remain unverified, and emotes still display as text. No synthetic chat is
 seeded. Emotes, moderation and Chatterino7 parity remain on [the roadmap](docs/PLAN.md). Planned multiplatform
 viewer and broadcaster workflows are in [MULTIPLATFORM.md](docs/MULTIPLATFORM.md).
 
@@ -57,7 +61,8 @@ Use ordinary builds and direct interaction with the real app for development.
 No CI/Actions or separate test-script workflow is required. Commits use `[skip ci]`.
 The native workspace compiles and links on Linux and Windows. Windows inspection
 confirmed the corrected transcript/composer layout and workspace restoration.
-The account flow and full daily-client behavior remain unverified.
+Refresh rotation, interrupted authentication, sending and full daily-client behavior
+remain unverified.
 
 ## Shortcuts
 
