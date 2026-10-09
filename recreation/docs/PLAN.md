@@ -412,3 +412,12 @@ Original source references: Notebook.cpp (live visibility and tab navigation),
 SplitContainer.cpp/.hpp (recursive splits, drag and proportional sizing),
 WindowDescriptors.cpp (recursive layout persistence).
 Twitch endpoint: https://dev.twitch.tv/docs/api/reference/#get-streams
+
+### Workspace navigation correction — 2026-10-09
+
+Owner explicitly removed the top workspace-tab strip. Workspaces now live only
+in the animated, persisted hamburger sidebar. Channel tabs are the only tab row
+above each chat group. Sidebar entries retain creation, selection, drag reorder,
+channel drop destinations, and confirmed close (button/middle-click). Keyboard
+workspace navigation remains. Live-only workspace filtering has an explicit
+Show all escape in the sidebar; channel filtering remains independent.

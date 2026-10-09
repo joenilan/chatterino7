@@ -8,7 +8,6 @@ use gpui_kit::component::{
     menu::DropdownMenu,
     notification::Notification,
     resizable::{ResizableState, h_resizable, resizable_panel, v_resizable},
-    tab::{Tab, TabBar},
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
@@ -101,7 +100,6 @@ pub struct Workbench {
     active: usize,
     next_id: u64,
     focus: FocusHandle,
-    tab_scroll: ScrollHandle,
     channel_input: Entity<InputState>,
     adding: bool,
     renaming: bool,
@@ -213,7 +211,6 @@ impl Workbench {
                 .filter(|id| *id > 0 && *id < 1_000_000)
                 .unwrap_or(1),
             focus: cx.focus_handle(),
-            tab_scroll: ScrollHandle::new(),
             channel_input: input,
             adding: false,
             renaming: false,
@@ -501,7 +498,6 @@ impl Workbench {
     fn select_tab(&mut self, ix: usize, cx: &mut Context<Self>) {
         if ix < self.tabs.len() {
             self.active = ix;
-            self.tab_scroll.scroll_to_item(ix);
             self.adding = false;
             self.renaming = false;
             self.schedule_save(cx);
@@ -902,6 +898,8 @@ impl Workbench {
                     .text_color(rgb(theme::MUTED))
                     .child("YOUR WORKSPACES"),
             )
+            .child(Button::new("new-workspace-sidebar").ghost().small().label("+ New workspace").tooltip("Ctrl+T").on_click(cx.listener(|this,_,window,cx|this.new_tab(window,cx))))
+            .when(self.live_workspaces,|el|el.child(Button::new("show-offline-workspaces").ghost().xsmall().label("Live only · show all").on_click(cx.listener(|this,_,_,cx|{this.live_workspaces=false;this.schedule_save(cx);cx.notify();}))))
             .child(
                 div()
                     .id("workspace-list")
@@ -910,7 +908,8 @@ impl Workbench {
                     .min_h_0()
                     .overflow_y_scroll()
                     .gap_1()
-                    .children(self.tabs.iter().enumerate().map(|(ix, tab)| {
+                    .children(self.shown_tabs(cx).into_iter().map(|ix| {
+                        let tab=&self.tabs[ix];
                         div()
                             .id(("sidebar-tab", tab.id))
                             .v_flex()
@@ -928,7 +927,15 @@ impl Workbench {
                                 this.select_tab(ix, cx);
                                 this.focus.focus(window, cx);
                             }))
-                            .child(tab.name.clone())
+                            .on_mouse_down(MouseButton::Middle,cx.listener({let id=tab.id;move|this,_,window,cx|{window.prevent_default();cx.stop_propagation();this.confirm_close_tab(id,window,cx);}}))
+                            .on_drag(DraggedTab{id:tab.id,name:tab.name.clone()},move|drag,_,_,cx|cx.new(|_|DragPreview(drag.name.clone())))
+                            .drag_over::<DraggedTab>(|style,_,_,_|style.border_t_2().border_color(rgb(0xA99CF4)))
+                            .on_drop(cx.listener({let id=tab.id;move|this,drag:&DraggedTab,_,cx|this.reorder_tab(drag.id,id,cx)}))
+                            .drag_over::<DraggedChannel>(|style,_,_,_|style.bg(rgb(theme::HOVER)))
+                            .on_drop(cx.listener({let id=tab.id;move|this,drag:&DraggedChannel,window,cx|{this.drop_target=None;this.move_pane(drag,id,None,window,cx);}}))
+                            .child(div().h_flex().gap_1().child(div().flex_1().min_w_0().overflow_hidden().child(tab.name.clone()))
+                                .child(Button::new(("close-sidebar-workspace",tab.id)).ghost().xsmall().label("×").tooltip("Close workspace · Middle-click / Ctrl+W")
+                                    .on_click(cx.listener({let id=tab.id;move|this,_,window,cx|{cx.stop_propagation();this.confirm_close_tab(id,window,cx);}}))))
                             .child(
                                 div()
                                     .text_size(px(11.))
@@ -996,8 +1003,6 @@ impl Render for Workbench {
         let can_discard = self.close_failed;
         let can_left = self.active > 0;
         let can_right = self.active + 1 < self.tabs.len();
-        let shown_tabs=self.shown_tabs(cx);
-        let selected_tab=shown_tabs.iter().position(|i|*i==self.active).unwrap_or(0);
         let tab = &self.tabs[self.active];
         let dock=tab.dock.clone();
         let content=if let Some(dock)=dock {
@@ -1042,7 +1047,7 @@ impl Render for Workbench {
                     .when(can_discard,|menu|menu.separator().menu("Discard unsaved changes and quit",Box::new(QuitWithoutSaving)))))
                 .child(Button::new("view-menu").ghost().small().label("View").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
                     .menu("Toggle sidebar",Box::new(ToggleSidebar)).menu("Appearance",Box::new(ToggleAppearance)).menu("Rotate split layout",Box::new(ToggleOrientation))
-                    .separator().menu(if live_workspaces{"Show all workspace tabs"}else{"Only show live workspace tabs"},Box::new(ToggleLiveWorkspaces))
+                    .separator().menu(if live_workspaces{"Show all workspaces"}else{"Only show live workspaces"},Box::new(ToggleLiveWorkspaces))
                     .menu(if live_channels{"Show all channel tabs"}else{"Only show live channel tabs"},Box::new(ToggleLiveChannels))))
                 .child(div().flex_1().mt(px(6.)).h(px(34.)).window_control_area(WindowControlArea::Drag))
                 .when(self.control_enabled,|el|el.child(div().px_3().text_size(px(10.)).text_color(rgb(theme::MUTED)).child("LOCAL CONTROL")))
@@ -1055,25 +1060,6 @@ impl Render for Workbench {
                         .child(div().relative().left(px(sidebar_width - 190.)).w(px(190.)).h_full()
                             .child(self.render_sidebar(cx)))))
                 .child(div().v_flex().flex_1().h_full().min_w_0().min_h_0()
-                    .child(div().h_flex().h(px(42.)).flex_shrink_0().bg(rgb(theme::PANEL)).border_b_1().border_color(rgb(theme::BORDER))
-                        .child(div().flex_1().min_w_0().child(TabBar::new("workspace-tabs").selected_index(selected_tab).max_width(px(180.)).menu(true).track_scroll(&self.tab_scroll)
-                            .last_empty_space(div().id("tab-drop-end").w(px(24.)).h_full()
-                                .drag_over::<DraggedTab>(|style,_,_,_|style.border_l_2().border_color(rgb(0xA99CF4)))
-                                .on_drop(cx.listener(|this,drag:&DraggedTab,_,cx|this.reorder_tab(drag.id,u64::MAX,cx))))
-                            .on_click(cx.listener(|this,ix:&usize,window,cx|{if let Some(ix)=this.shown_tabs(cx).get(*ix).copied(){this.select_tab(ix,cx);}this.focus.focus(window,cx);}))
-                            .children(shown_tabs.iter().map(|ix|&self.tabs[*ix]).map(|tab|Tab::new().label(tab.name.clone())
-                                .on_mouse_down(MouseButton::Middle,cx.listener({let id=tab.id;move|this,_,window,cx|{window.prevent_default();cx.stop_propagation();this.confirm_close_tab(id,window,cx);}}))
-                                .on_drag(DraggedTab{id:tab.id,name:tab.name.clone()},{let owner=cx.entity().downgrade();move|drag,_,_,cx|{
-                                    let _=owner.update(cx,|this,cx|{this.drop_edge=None;cx.notify();});
-                                    cx.new(|_|DragPreview(drag.name.clone()))
-                                }})
-                                .drag_over::<DraggedTab>(|style,_,_,_|style.border_l_2().border_color(rgb(0xA99CF4)))
-                                .on_drop(cx.listener({let target=tab.id;move|this,drag:&DraggedTab,_,cx|this.reorder_tab(drag.id,target,cx)}))
-                                .drag_over::<DraggedChannel>(|style,_,_,_|style.bg(rgb(theme::HOVER)))
-                                .on_drop(cx.listener({let target=tab.id;move|this,drag:&DraggedChannel,w,cx|{this.drop_target=None;this.move_pane(drag,target,None,w,cx);}}))
-                                .suffix(Button::new(("close-tab",tab.id)).ghost().xsmall().label("×").tooltip("Close workspace · Middle-click / Ctrl+W")
-                                .on_click(cx.listener({let id=tab.id;move|this,_,window,cx|{cx.stop_propagation();this.confirm_close_tab(id,window,cx);}})))))))
-                        .child(Button::new("new-tab").ghost().small().label("+").tooltip("New workspace · Ctrl+T").on_click(cx.listener(|this,_,w,cx|this.new_tab(w,cx)))))
                     .child(div().h_flex().h(px(42.)).flex_shrink_0().px_3().gap_2().border_b_1().border_color(rgb(theme::BORDER))
 
                         .child(Button::new("add-channel").small().label("+ Channel").tooltip("Add a channel tab · Ctrl+K; drag to an edge to split").on_click(cx.listener(|this,_,w,cx|this.open_add(false,w,cx))))
@@ -1107,6 +1093,6 @@ impl Render for Workbench {
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Tabs, splits, channel drafts and appearance are saved locally."))
                             .child(Button::new("close-settings").ghost().label("Done").on_click(cx.listener(|this,_,_,cx|{this.settings=false;cx.notify();}))))))))
             .child(div().h_flex().h(px(26.)).flex_shrink_0().px_3().gap_3().border_t_1().border_color(rgb(theme::BORDER)).text_size(px(10.)).text_color(rgb(theme::MUTED))
-                .child(live_status).child(div().flex_1().child(self.save_status.clone())).child("Ctrl+K channels · Ctrl+T tabs"))
+                .child(live_status).child(div().flex_1().child(self.save_status.clone())).child("Ctrl+K channels · Ctrl+T workspace"))
     }
 }
