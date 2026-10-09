@@ -1,0 +1,11 @@
+[package]
+name = "chat-workbench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+[dependencies]
+chat-core = { path = "../chat-core" }
+gpui-kit = "=0.7.1"
+[lints]
+workspace = true
