@@ -13,7 +13,8 @@ layout. The original C++ application remains untouched.
   area’s left/right/top/bottom edge to rearrange them, or onto a workspace tab to
   move it there. Drop previews show placement; full or duplicate targets reject
   the move without losing the source pane. Nested layouts beyond two panes remain
-  future work. Native drag behavior still needs Windows inspection.
+  future work. A Windows run verified a top-edge drop and tab reordering while
+  preserving the active workspace and channel draft.
 - Optional workspace sidebar, closed by default, with a hamburger toggle that
   remembers its state. Opening/closing slides smoothly, including mid-motion
   reversal, and respects OS reduced-motion preferences. Tabs and channel controls

@@ -77,3 +77,10 @@ isolated profile. Cloud visual inspection remains blocked by display sockets.
 Control-session launches skip automatic account restoration. Account buttons
 still represent real actions; layout inspection does not authorize using them.
 Ordinary builds and direct app use are the workflow; no CI or new test runner.
+
+Windows 7373edba locked release build passed (7.38s). Native interaction verified:
+Shift+Enter left a 34-character draft unchanged; a visible “Place above” preview
+and drop reordered two channels into a stacked layout while preserving the draft;
+tab dragging changed tab order while retaining the active workspace and its panes.
+These are bounded observations, not complete docking, clipboard, Unicode, account
+or live-chat acceptance. The isolated controlled app remained open afterward.

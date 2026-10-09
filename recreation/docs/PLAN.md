@@ -292,4 +292,6 @@ entity. Draft/scroller state follows that entity, and close/save resolve its cur
 owner rather than a captured original tab. The current two-pane limit remains;
 full/duplicate targets reject without deleting source state. Arbitrarily nested
 VS Code-style docking is not claimed. The View menu retains a keyboard-accessible
-layout alternative. This drag checkpoint requires native interaction verification.
+layout alternative. Windows 7373edba verified a top-edge drop with visible preview, preserved draft,
+and tab reordering with active-workspace identity intact. Other docking paths,
+including full/duplicate rejection and cross-workspace moves, remain unverified.
