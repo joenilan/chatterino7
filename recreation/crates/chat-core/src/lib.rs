@@ -28,6 +28,7 @@ pub struct Message {
     pub channel_id: String,
     pub user_id: String,
     pub display_name: String,
+    pub name_color: Option<u32>,
     pub fragments: Vec<Fragment>,
     pub deleted: bool,
 }
@@ -148,6 +149,7 @@ pub fn fixture(channel: &str, index: usize) -> Message {
         channel_id: channel.into(),
         user_id: format!("fixture-{}", index % 4),
         display_name: format!("viewer_{}", index % 4),
+        name_color: None,
         fragments: vec![Fragment::Text(body.into())],
         deleted: false,
     }

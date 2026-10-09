@@ -89,3 +89,14 @@ restart. That conditional path has been removed. Startup now behaves consistentl
 across launch modes. Windows b8379a6 locked release compilation passed in 9.03s,
 exit 0. A fresh native-control launch restored dreadedzombie without a new grant,
 and both channels connected. The owner independently saw incoming HutchMF chat.
+
+## Username presentation
+
+EventSub name colors are accepted only as six-digit hexadecimal RGB. The dark
+renderer lifts colors below 4.5:1 contrast against its chat canvas, and uses a
+stable user-ID-derived palette when Twitch supplies no color. Resolution happens
+once per received message, outside the animation/render loop. Username weight and
+color use the same shaped text and byte offsets as selection, preserving copied
+text and Unicode names. Windows visual verification is pending for this change.
+
+Contract: https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-message-event

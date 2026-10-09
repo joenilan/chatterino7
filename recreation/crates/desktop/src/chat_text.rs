@@ -16,6 +16,13 @@ pub struct ChatText {
     viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
 }
 impl ChatText {
+    pub fn with_author(mut self, name: &str, color: Option<u32>) -> Self {
+        if !self.text.starts_with(name) { return self; }
+        self.styled = StyledText::new(self.text.clone()).with_highlights([
+            (0..name.len(), HighlightStyle { color: Some(rgb(color.unwrap_or(crate::theme::MUTED)).into()), font_weight: Some(FontWeight::SEMIBOLD), ..Default::default() })
+        ]);
+        self
+    }
     pub fn new(
         id: impl Into<ElementId>,
         row: u64,

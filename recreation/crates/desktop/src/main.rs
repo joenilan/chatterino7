@@ -152,7 +152,10 @@ impl ChannelPane {
         cx.emit(PaneEvent::Send { request, text });
         cx.notify();
     }
-    fn received(&mut self, event: chat_core::Event, cx: &mut Context<Self>) {
+    fn received(&mut self, mut event: chat_core::Event, cx: &mut Context<Self>) {
+        if let chat_core::Event::Message(message) = &mut event {
+            message.name_color = Some(theme::readable_name_color(&message.user_id, message.name_color));
+        }
         let change = self.timeline.borrow_mut().apply(event);
         match change {
             chat_core::Change::Appended { evicted } => {
@@ -397,7 +400,7 @@ impl Render for ChannelPane {
                                     selection.clone(),
                                     focus.clone(),
                                     viewport.clone(),
-                                ))
+                                ).with_author(&message.display_name, message.name_color))
                                 .into_any_element()
                         })
                         .flex_1()

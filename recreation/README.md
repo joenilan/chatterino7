@@ -26,6 +26,9 @@ layout. The original C++ application remains untouched.
 - New live messages have bounded 180ms slide-and-fade entrances while following
   the latest chat. History reading, selection, inactive windows and reduced motion
   suppress effects; bursts skip animation rather than building a backlog.
+- Twitch username colors with readable dark-theme contrast and stable fallback
+  colors for accounts that have not selected one. Names are semibold while message
+  text retains ordinary selection and copy behavior.
 - Dark-only appearance controls with 12–24px transcript sizing.
 - Custom Workspace and View menus; keyboard shortcuts for frequent operations.
 - Model-backed transcript selection with right-click/Ctrl+C copying and verified

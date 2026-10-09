@@ -520,6 +520,9 @@ fn deliver(
             channel_id: channel.clone(),
             user_id: text("chatter_user_id"),
             display_name: text("chatter_user_name"),
+            name_color: e["color"].as_str().and_then(|s| s.strip_prefix('#'))
+                .filter(|s| s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+                .and_then(|s| u32::from_str_radix(s, 16).ok()),
             fragments: vec![Fragment::Text(
                 e["message"]["text"].as_str().unwrap_or("").to_owned(),
             )],
