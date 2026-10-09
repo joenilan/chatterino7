@@ -1,3 +1,19 @@
+## Native keyboard correction accepted — 2026-10-09 21:00 UTC
+
+Windows ba9bb3b675a9bb8a9e63163a1db33777c47416a8 built with Rust1.99 locked
+release, exit0 in12.08s. In a verified disconnected channel-not-found pane:
+- Arrows selected DansGame; Enter inserted DansGame once.
+- Tab completed :Di to DinoDance once.
+- Neither set send_pending or showed Sending/Not sent.
+The temporary pane was removed; original three tabs and both exact drafts were
+restored (49 and0 characters). No send was repeated. App left running.
+
+History controls are compiled, but saving another cap is not yet accepted.
+Deadlink returned `terminal request failed: Failed` on the Appearance click;
+two read-only reconciliation attempts failed. Click outcome is unknown. Last
+confirmed history limit10,000; counts0 and265. Do not claim settings persistence
+passed until the actual saved workspace and UI are inspected.
+
 ## Completion action-routing correction — 2026-10-09
 
 Native b5ad20e found a real defect: Enter completion also triggered a send attempt
