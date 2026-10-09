@@ -28,7 +28,7 @@ use std::{cell::{Cell, RefCell}, rc::Rc, time::{Duration, Instant}};
 
 gpui_kit::actions!(
     chat_workbench,
-    [CopyChatSelection, ClearChatSelection, SelectAllChat]
+    [CopyChatSelection, ClearChatSelection, SelectAllChat, CompleteEmote]
 );
 
 #[derive(Clone)]
@@ -120,12 +120,9 @@ impl ChannelPane {
             input.set_value(twitch_message_text(saved_draft), window, cx);
             input
         });
-        cx.subscribe_in(&draft, window, |this: &mut Self, _, event, window, cx| {
+        cx.subscribe_in(&draft, window, |this: &mut Self, _, event, _window, cx| {
             match event {
                 InputEvent::Change => { this.complete_query(false,cx); cx.emit(PaneEvent::DraftChanged); },
-                InputEvent::PressEnter { shift: false, .. } => {
-                    this.submit(window, cx);
-                }
                 _ => {}
             }
             cx.notify();
@@ -465,10 +462,9 @@ impl Render for ChannelPane {
                         .h_full(),
                     ),
             )
-            .child(div().v_flex().p_2().gap_2().bg(rgb(theme::PANEL)).border_t_1().border_color(rgb(theme::BORDER))
+            .child(div().key_context("JawjackComposer").v_flex().p_2().gap_2().bg(rgb(theme::PANEL)).border_t_1().border_color(rgb(theme::BORDER))
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                     if this.picker.open { return; }
-                    if this.completion_key(event,window,cx) {return;}
                     if event.keystroke.key == "enter" && event.keystroke.modifiers.shift {
                         window.prevent_default();
                         cx.stop_propagation();
@@ -482,8 +478,25 @@ impl Render for ChannelPane {
                         }
                     }
                 }))
-                .capture_action(cx.listener(|_, action: &gpui_kit::base::input::Enter, _, cx| {
-                    if action.shift { cx.stop_propagation(); }
+                .capture_action(cx.listener(|this, action: &gpui_kit::base::input::Enter, window, cx| {
+                    // Enter has exactly one semantic owner. Never also submit from
+                    // InputEvent::PressEnter after inserting a completion.
+                    if !action.shift {
+                        if this.picker.open {
+                            if let Some(choice)=this.picker.choices.get(this.picker.page*40).cloned(){this.insert_emote(&choice,false,window,cx);}
+                        } else if !this.completion_action("enter",window,cx) {this.submit(window,cx);}
+                    }
+                    cx.stop_propagation();
+                }))
+                .capture_action(cx.listener(|this,_: &gpui_kit::base::input::MoveDown,window,cx|{this.completion_action("down",window,cx);}))
+                .capture_action(cx.listener(|this,_: &gpui_kit::base::input::MoveUp,window,cx|{this.completion_action("up",window,cx);}))
+                .capture_action(cx.listener(|this,_: &gpui_kit::base::input::IndentInline,window,cx|{this.completion_action("tab",window,cx);}))
+                .capture_action(cx.listener(|this,_: &CompleteEmote,window,cx|{
+                    if !this.draft.read(cx).focus_handle(cx).is_focused(window)||!this.completion_action("tab",window,cx){window.focus_next(cx);}
+                    cx.stop_propagation();
+                }))
+                .capture_action(cx.listener(|this,_: &gpui_kit::base::input::Escape,window,cx|{
+                    if this.picker.open {this.toggle_picker(window,cx);cx.stop_propagation();}else{this.completion_action("escape",window,cx);}
                 }))
                 .capture_action(cx.listener(|this, _: &gpui_kit::base::input::Paste, window, cx| {
                     if this.picker.open {return;}
@@ -606,6 +619,7 @@ fn main() {
             workspace::bind_keys(cx);
             theme::install(cx);
             cx.bind_keys([
+                KeyBinding::new("tab", CompleteEmote, Some("JawjackComposer")),
                 KeyBinding::new("ctrl-c", CopyChatSelection, Some("ChatTranscript")),
                 KeyBinding::new("cmd-c", CopyChatSelection, Some("ChatTranscript")),
                 KeyBinding::new("ctrl-insert", CopyChatSelection, Some("ChatTranscript")),

@@ -183,19 +183,8 @@ impl ChannelPane {
         }
         cx.notify();
     }
-    pub fn completion_key(
-        &mut self,
-        event: &KeyDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        if event.keystroke.modifiers.control
-            || event.keystroke.modifiers.platform
-            || event.keystroke.modifiers.alt
-        {
-            return false;
-        }
-        let key = event.keystroke.key.as_str();
+    pub fn completion_action(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.picker.open {return false;}
         if key == "tab" && self.picker.suggestions.is_empty() {
             self.complete_query(true, cx);
         }
@@ -210,7 +199,7 @@ impl ChannelPane {
                 self.picker.selected = (self.picker.selected + self.picker.suggestions.len() - 1)
                     % self.picker.suggestions.len()
             }
-            "enter" | "tab" if !event.keystroke.modifiers.shift => {
+            "enter" | "tab" => {
                 let choice = self.picker.suggestions[self.picker.selected].clone();
                 self.insert_emote(&choice, true, window, cx);
             }
@@ -339,20 +328,7 @@ impl ChannelPane {
             .border_1()
             .border_color(rgb(theme::BORDER))
             .rounded(px(6.))
-            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                if event.keystroke.key == "escape" {
-                    this.toggle_picker(window, cx);
-                    window.prevent_default();
-                    cx.stop_propagation();
-                } else if event.keystroke.key == "enter" {
-                    if let Some(choice) = this.picker.choices.get(this.picker.page * PAGE).cloned()
-                    {
-                        this.insert_emote(&choice, false, window, cx);
-                    }
-                    window.prevent_default();
-                    cx.stop_propagation();
-                }
-            }))
+
             .child(
                 div()
                     .h_flex()

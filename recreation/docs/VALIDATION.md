@@ -1,3 +1,18 @@
+## Completion action-routing correction — 2026-10-09
+
+Native b5ad20e found a real defect: Enter completion also triggered a send attempt
+in HutchMF; Twitch rejected it as followers-only. No delivery or retry claimed.
+Both saved drafts were restored exactly. Tab navigated focus instead of completing,
+and arrows did not retain the selected candidate. Picker search/paging and Escape
+worked. Populated-cache inspection (15,590 bytes) and subsequent commands worked.
+
+Correction: composer Enter has a single semantic action owner. The independent
+InputEvent::PressEnter submit handler and raw-key completion handling are removed.
+Toolkit MoveUp/MoveDown/IndentInline actions and composer-scoped Tab now route to
+completion before editor/default focus actions. Picker Enter uses the same owner.
+Linux build passed; native corrected behavior is pending. Do not use public chat
+as a safe fallback when checking whether a key might send.
+
 ## Configurable history cap — 2026-10-09
 
 Linux offline locked build passed (5.87s). Added persisted per-channel history
