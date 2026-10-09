@@ -41,6 +41,12 @@ impl Drop for TwitchAccount {
     }
 }
 impl TwitchAccount {
+    pub fn identity(&self) -> Option<crate::live::Identity> {
+        self.account.as_ref().map(|a| crate::live::Identity {
+            user_id: a.tokens["user_id"].as_str().unwrap_or("").into(),
+            access: a.tokens["access_token"].as_str().unwrap_or("").into(),
+        })
+    }
     pub fn new(restore_saved: bool, cx: &mut Context<Self>) -> Self {
         if !restore_saved {
             return Self {
@@ -167,7 +173,7 @@ impl TwitchAccount {
                 this.saving = false;
                 match result {
                     Ok(()) => {
-                        this.status = format!("Signed in as {} · live chat transport is not connected yet", account.login);
+                        this.status = format!("Signed in as {} · chat connects to your open channels", account.login);
                         this.account = Some(account);
                         this.schedule_validation(generation, cx);
                     }

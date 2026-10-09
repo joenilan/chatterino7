@@ -82,3 +82,10 @@ relaunch. Twitch tokens use a separate OS-vault entry and never enter workspace.
 Minimum window size is 1050×640. Automatic selection edge scrolling, full Unicode
 grapheme semantics, accessibility/IME review and full daily-client parity remain
 unfinished. State inspection is not proof of visual correctness or a native run.
+
+### In development: authenticated live text chat
+
+The next batch wires the Twitch account to shared EventSub receiving and Helix
+sending. Real account authorization and live messages have not yet been verified;
+emotes still display as text. See [account details](docs/TWITCH_ACCOUNT.md).
+Tab closing now includes middle-click and a confirmation with the channel list.

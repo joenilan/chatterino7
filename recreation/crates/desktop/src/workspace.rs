@@ -79,6 +79,7 @@ struct WorkspaceTab {
 }
 pub struct Workbench {
     account: Entity<crate::auth::TwitchAccount>,
+    live: crate::live::LiveChat,
     drop_edge: Option<DropEdge>,
     control_enabled: bool,
     tabs: Vec<WorkspaceTab>,
@@ -99,6 +100,7 @@ pub struct Workbench {
     save_enabled: bool,
     save_status: String,
     close_failed: bool,
+    close_tab_pending: Option<u64>,
 }
 impl Workbench {
     pub fn focus_workspace(&self, window: &mut Window, cx: &mut App) {
@@ -179,6 +181,7 @@ impl Workbench {
             })
             .unwrap_or_default();
         let mut this = Self {
+            live: crate::live::LiveChat::new(),
             account: cx.new(|cx| crate::auth::TwitchAccount::new(!control_enabled, cx)),
             drop_edge: None,
             control_enabled,
@@ -207,6 +210,7 @@ impl Workbench {
             save_enabled,
             save_status,
             close_failed: false,
+            close_tab_pending: None,
         };
         if let Some(tabs) = state["tabs"].as_array() {
             for item in tabs.iter().take(16) {
@@ -271,7 +275,78 @@ impl Workbench {
             this.next_id += 1;
         }
         this.active = (state["active"].as_u64().unwrap_or(0) as usize).min(this.tabs.len() - 1);
+        cx.spawn_in(window, async move |view, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(50))
+                    .await;
+                if view
+                    .update_in(cx, |this, window, cx| this.pump_chat(window, cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
         this
+    }
+    fn pump_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let identity = self.account.read(cx).identity();
+        let panes = self.panes();
+        if self.live.configure(
+            identity.clone(),
+            panes.iter().map(|p| p.read(cx).name.to_string()).collect(),
+        ) {
+            for pane in &panes {
+                pane.update(cx, |p, cx| {
+                    p.connected = false;
+                    p.connection = if identity.is_some() {
+                        "Connecting…"
+                    } else {
+                        "Sign in to connect"
+                    }
+                    .into();
+                    cx.notify();
+                });
+            }
+        }
+        for _ in 0..500 {
+            let Ok((version, event)) = self.live.events.try_recv() else {
+                break;
+            };
+            if version != self.live.version() && !matches!(event, crate::live::Event::Sent(..)) {
+                continue;
+            }
+            match event {
+                crate::live::Event::State(channel, status, ready) => {
+                    for pane in &panes {
+                        if pane.read(cx).name.as_ref() == channel {
+                            pane.update(cx, |p, cx| {
+                                p.connection = status.clone();
+                                p.connected = ready;
+                                cx.notify();
+                            });
+                        }
+                    }
+                }
+                crate::live::Event::Chat(channel, event) => {
+                    for pane in &panes {
+                        if pane.read(cx).name.as_ref() == channel {
+                            pane.update(cx, |p, cx| p.received(event.clone(), cx));
+                        }
+                    }
+                }
+                crate::live::Event::Sent(request, result) => {
+                    for pane in panes
+                        .iter()
+                        .chain(self.closed_tabs.iter().flat_map(|t| t.panes.iter()))
+                    {
+                        pane.update(cx, |p, cx| p.sent(request, &result, window, cx));
+                    }
+                }
+            }
+        }
     }
     fn make_pane(
         &mut self,
@@ -285,6 +360,16 @@ impl Workbench {
         let pane = cx.new(|cx| ChannelPane::new(name, &draft, self.font_size, window, cx));
         let channel = name.to_owned();
         cx.subscribe(&pane, move |this, pane, event, cx| {
+            if let PaneEvent::Send { request, text } = event {
+                if let Err(error) = this.live.send(*request, channel.clone(), text.clone()) {
+                    pane.update(cx, |p, cx| {
+                        p.pending = None;
+                        p.send_status = error;
+                        cx.notify();
+                    });
+                }
+                return;
+            }
             if matches!(event, PaneEvent::DragStarted) {
                 this.drop_edge = None;
                 cx.notify();
@@ -404,6 +489,41 @@ impl Workbench {
         });
         self.select_tab(self.tabs.len() - 1, cx);
         self.open_add(false, window, cx);
+    }
+    fn confirm_close_tab(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        if self.close_tab_pending.is_some() {
+            return;
+        }
+        let Some(tab) = self.tabs.iter().find(|t| t.id == id) else {
+            return;
+        };
+        let title = format!("Close {}?", tab.name);
+        let channels = tab
+            .panes
+            .iter()
+            .map(|p| format!("#{}", p.read(cx).name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let body = if channels.is_empty() {
+            "This workspace has no channels.".to_string()
+        } else {
+            format!("Channels: {channels}")
+        };
+        self.close_tab_pending = Some(id);
+        let owner = cx.entity().downgrade();
+        window.open_dialog(cx,move|dialog,_,_|{
+            let cancel_owner=owner.clone(); let close_owner=owner.clone(); let dismiss_owner=owner.clone();
+            dialog.title(title.clone()).close_button(false)
+                .child(div().v_flex().gap_3().child(body.clone()).child("Drafts are kept. You can reopen this tab with Ctrl+Shift+T during this session."))
+                .on_ok(|_,_,_|true)
+                .on_close(move|_,_,cx|{let _=dismiss_owner.update(cx,|this,cx|{this.close_tab_pending=None;cx.notify();});})
+                .footer(div().h_flex().justify_end().gap_2()
+                    .child(Button::new("cancel-tab-close").label("Cancel").on_click(move|_,window,cx|{let _=cancel_owner.update(cx,|this,cx|{this.close_tab_pending=None;cx.notify();});window.close_dialog(cx);}))
+                    .child(Button::new("confirm-tab-close").label("Close tab").on_click(move|_,window,cx|{
+                        let _=close_owner.update(cx,|this,cx|{if let Some(ix)=this.tabs.iter().position(|t|t.id==id){this.close_tab(ix,cx);}this.close_tab_pending=None;this.focus.focus(window,cx);});window.close_dialog(cx);
+                    })))
+        });
+        cx.notify();
     }
     fn close_tab(&mut self, ix: usize, cx: &mut Context<Self>) {
         if ix >= self.tabs.len() {
@@ -849,7 +969,7 @@ impl Render for Workbench {
         };
         div().id("workspace").track_focus(&self.focus).key_context("ChatWorkspace").v_flex().size_full().font_family("Segoe UI").text_size(px(13.)).bg(rgb(theme::SHELL)).text_color(rgb(theme::TEXT))
             .on_action(cx.listener(|this,_:&NewTab,w,cx|this.new_tab(w,cx)))
-            .on_action(cx.listener(|this,_:&CloseTab,window,cx|{this.close_tab(this.active,cx);this.focus.focus(window,cx);}))
+            .on_action(cx.listener(|this,_:&CloseTab,window,cx|{this.confirm_close_tab(this.tabs[this.active].id,window,cx);}))
             .on_action(cx.listener(|this,_:&ReopenTab,window,cx|{this.reopen_tab(cx);this.focus.focus(window,cx);}))
             .on_action(cx.listener(|this,_:&NextTab,w,cx|{this.select_tab((this.active+1)%this.tabs.len(),cx);this.focus.focus(w,cx);}))
             .on_action(cx.listener(|this,_:&PreviousTab,w,cx|{this.select_tab((this.active+this.tabs.len()-1)%this.tabs.len(),cx);this.focus.focus(w,cx);}))
@@ -890,7 +1010,8 @@ impl Render for Workbench {
                                 .drag_over::<DraggedTab>(|style,_,_,_|style.border_l_2().border_color(rgb(0xA99CF4)))
                                 .on_drop(cx.listener(|this,drag:&DraggedTab,_,cx|this.reorder_tab(drag.id,u64::MAX,cx))))
                             .on_click(cx.listener(|this,ix:&usize,window,cx|{this.select_tab(*ix,cx);this.focus.focus(window,cx);}))
-                            .children(self.tabs.iter().enumerate().map(|(ix,tab)|Tab::new().label(tab.name.clone())
+                            .children(self.tabs.iter().map(|tab|Tab::new().label(tab.name.clone())
+                                .on_mouse_down(MouseButton::Middle,cx.listener({let id=tab.id;move|this,_,window,cx|{window.prevent_default();cx.stop_propagation();this.confirm_close_tab(id,window,cx);}}))
                                 .on_drag(DraggedTab{id:tab.id,name:tab.name.clone()},{let owner=cx.entity().downgrade();move|drag,_,_,cx|{
                                     let _=owner.update(cx,|this,cx|{this.drop_edge=None;cx.notify();});
                                     cx.new(|_|DragPreview(drag.name.clone()))
@@ -899,8 +1020,8 @@ impl Render for Workbench {
                                 .on_drop(cx.listener({let target=tab.id;move|this,drag:&DraggedTab,_,cx|this.reorder_tab(drag.id,target,cx)}))
                                 .drag_over::<DraggedChannel>(|style,_,_,_|style.bg(rgb(theme::HOVER)))
                                 .on_drop(cx.listener({let target=tab.id;move|this,drag:&DraggedChannel,w,cx|this.move_pane(drag,target,None,w,cx)}))
-                                .suffix(Button::new(("close-tab",tab.id)).ghost().xsmall().label("×").tooltip("Close workspace · Ctrl+W")
-                                .on_click(cx.listener(move|this,_,window,cx|{cx.stop_propagation();this.close_tab(ix,cx);this.focus.focus(window,cx);})))))))
+                                .suffix(Button::new(("close-tab",tab.id)).ghost().xsmall().label("×").tooltip("Close workspace · Middle-click / Ctrl+W")
+                                .on_click(cx.listener({let id=tab.id;move|this,_,window,cx|{cx.stop_propagation();this.confirm_close_tab(id,window,cx);}})))))))
                         .child(Button::new("new-tab").ghost().small().label("+").tooltip("New workspace · Ctrl+T").on_click(cx.listener(|this,_,w,cx|this.new_tab(w,cx)))))
                     .child(div().h_flex().h(px(42.)).flex_shrink_0().px_3().gap_2().border_b_1().border_color(rgb(theme::BORDER))
 

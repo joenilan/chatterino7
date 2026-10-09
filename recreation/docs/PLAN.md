@@ -30,7 +30,8 @@ Linux and Windows release builds have passed. Native Windows inspection of
 3edc6575 confirmed the corrected chat layout and restored workspaces. Remaining
 interactions are being inspected. The owner registered the Twitch public client;
 device-code sign-in and OS-vault handling are implemented but real authorization
-has not been exercised. Live receiving/sending and emote rendering remain next.
+has not been exercised. Live receiving/sending now compiles in the next batch;
+its authenticated runtime behavior and emote rendering remain unfinished.
 
 ## Confirmed visual direction (owner feedback, 2026-10-09)
 
@@ -295,3 +296,16 @@ VS Code-style docking is not claimed. The View menu retains a keyboard-accessibl
 layout alternative. Windows 7373edba verified a top-edge drop with visible preview, preserved draft,
 and tab reordering with active-workspace identity intact. Other docking paths,
 including full/duplicate rejection and cross-workspace moves, remain unverified.
+
+## Next native batch: live text chat and closing polish
+
+Implemented in source: shared Twitch EventSub receiving, message deletion/user
+clear/channel clear handling, Helix sends with draft retention on failure, bounded
+queues/deduplication, channel readiness, and reconnect/gap status. Real Twitch
+login and receive/send are not yet verified. Emote rendering remains outstanding.
+
+Middle mouse closes a tab only after a themed confirmation naming its workspace
+and channels. Close icon and Ctrl+W use the same stable-ID confirmation. Cancel,
+Escape, and default Enter leave the workspace intact; the explicit Close tab
+button confirms. Duplicate requests cannot stack dialogs. Closed tabs can be
+reopened during the session with Ctrl+Shift+T. Native interaction pending.

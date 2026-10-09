@@ -2,6 +2,7 @@ use gpui_kit::prelude::FluentBuilder;
 mod auth;
 mod chat_text;
 mod control;
+mod live;
 mod storage;
 mod theme;
 mod workspace;
@@ -53,6 +54,7 @@ fn twitch_message_text(text: &str) -> String {
 #[derive(Clone)]
 enum PaneEvent {
     DragStarted,
+    Send { request: u64, text: String },
     Close,
     DraftChanged,
 }
@@ -60,6 +62,10 @@ impl EventEmitter<PaneEvent> for ChannelPane {}
 
 struct ChannelPane {
     name: SharedString,
+    connection: String,
+    connected: bool,
+    pending: Option<(u64, String)>,
+    send_status: String,
     timeline: Rc<RefCell<Timeline>>,
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
@@ -91,16 +97,7 @@ impl ChannelPane {
             match event {
                 InputEvent::Change => cx.emit(PaneEvent::DraftChanged),
                 InputEvent::PressEnter { shift: false, .. } => {
-                    window.push_notification(
-                        Notification::info(if this.draft.read(cx).value().chars().count() > 500 {
-                            "This draft exceeds Twitch’s 500-character limit. Shorten it before sending."
-                        } else {
-                            "Twitch is disconnected. Your draft is saved; nothing was sent."
-                        })
-                        .id::<PaneEvent>()
-                        .delivery(NotificationDelivery::InApp),
-                        cx,
-                    );
+                    this.submit(window, cx);
                 }
                 _ => {}
             }
@@ -111,6 +108,10 @@ impl ChannelPane {
         cx.observe(&scroller, |_, _, cx| cx.notify()).detach();
         Self {
             name: name.to_owned().into(),
+            connection: "Sign in to connect".into(),
+            connected: false,
+            pending: None,
+            send_status: String::new(),
             timeline: Rc::new(RefCell::new(timeline)),
             selection: Rc::new(RefCell::new(Selection::default())),
             focus: cx.focus_handle(),
@@ -121,6 +122,76 @@ impl ChannelPane {
             next_id: 0,
             viewport: Rc::new(RefCell::new(None)),
         }
+    }
+    fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pending.is_some() {
+            return;
+        }
+        let text = twitch_message_text(&self.draft.read(cx).value());
+        if !self.connected || text.trim().is_empty() || text.chars().count() > 500 {
+            window.push_notification(
+                Notification::info(if !self.connected {
+                    "Connect this channel before sending. Your draft is saved."
+                } else {
+                    "Write a message of 1–500 characters."
+                })
+                .id::<ComposerFeedback>()
+                .delivery(NotificationDelivery::InApp),
+                cx,
+            );
+            return;
+        }
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let request = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.pending = Some((request, text.clone()));
+        self.send_status = "Sending…".into();
+        cx.emit(PaneEvent::Send { request, text });
+        cx.notify();
+    }
+    fn received(&mut self, event: chat_core::Event, cx: &mut Context<Self>) {
+        let change = self.timeline.borrow_mut().apply(event);
+        match change {
+            chat_core::Change::Appended { evicted } => {
+                self.next_id += 1;
+                self.scroller.update(cx, |scroller, cx| {
+                    if evicted {
+                        scroller.splice(0..1, 0, cx);
+                    }
+                    scroller.append(1, cx);
+                });
+            }
+            chat_core::Change::Updated => {
+                self.selection.borrow_mut().clear();
+                self.scroller.update(cx, |s, cx| s.remeasure(cx));
+            }
+            chat_core::Change::Ignored => return,
+        }
+        cx.notify();
+    }
+    fn sent(
+        &mut self,
+        request: u64,
+        result: &Result<(), String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((pending, text)) = &self.pending else {
+            return;
+        };
+        if *pending != request {
+            return;
+        }
+        if result.is_ok() && twitch_message_text(&self.draft.read(cx).value()) == *text {
+            self.draft
+                .update(cx, |draft, cx| draft.set_value("", window, cx));
+            cx.emit(PaneEvent::DraftChanged);
+        }
+        self.send_status = match result {
+            Ok(()) => "Sent".into(),
+            Err(e) => e.clone(),
+        };
+        self.pending = None;
+        cx.notify();
     }
     fn copy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let timeline = self.timeline.borrow();
@@ -230,7 +301,7 @@ impl Render for ChannelPane {
                         div()
                             .text_size(px(12.))
                             .text_color(rgb(theme::MUTED))
-                            .child(if retained == 0 { "Offline".to_string() } else { format!("{retained} · {}", if following { "Latest" } else { "History" }) }),
+                            .child(if self.connected { format!("Live · {retained} · {}", if following { "Latest" } else { "History" }) } else { self.connection.clone() }),
                     )
                     .child(Button::new("close-pane").xsmall().label("×").tooltip("Close this split; keep draft")
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(PaneEvent::Close)))),
@@ -276,7 +347,7 @@ impl Render for ChannelPane {
                     })
                     .when(retained == 0, |el| el.child(div().v_flex().p_6().gap_2().text_color(rgb(theme::MUTED))
                         .child(div().text_color(rgb(theme::TEXT)).text_size(px(16.)).child(format!("#{} is ready", self.name)))
-                        .child("Your channel is saved. Chat will appear here once Twitch is connected.")))
+                        .child(if self.connected { "Connected. Waiting for messages…".to_string() } else { self.connection.clone() })))
                     .child(
                         MessageScroller::new("chat", self.scroller.clone(), move |index, _, _| {
                             let messages = timeline.borrow();
@@ -339,9 +410,10 @@ impl Render for ChannelPane {
                     }
                 }))
                 .child(Textarea::new(&self.draft))
+                .when(!self.send_status.is_empty(), |el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(self.send_status.clone())))
                 .child(div().h_flex().justify_between().text_size(px(11.)).text_color(rgb(theme::MUTED))
                     .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500 · Twitch message · wraps automatically", self.draft.read(cx).value().chars().count())))
-                    .child(Button::new("send").small().label("Send").disabled(true).tooltip("Connect Twitch to send messages"))))
+                    .child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else { "Send" }).disabled(!self.connected || self.pending.is_some()).tooltip("Send to this Twitch channel").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx))))))
             .child(
                 canvas(
                     |_, _, _| (),
