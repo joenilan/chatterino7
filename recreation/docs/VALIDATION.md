@@ -195,3 +195,23 @@ workflows. Replay/timeout controls and their development-only handlers are remov
 Future development prioritizes ordinary builds and manually driving the real app.
 See APP_CONTROL.md for the new explicit-session local driver; its native execution
 is unverified. Existing historical test results above are not new release gates.
+
+### 3f18e079 native recovery and provider catalogs — 2026-10-09
+
+Windows locked Rust 1.99 release build passed in 30.47 seconds. Existing account,
+tabs and exact saved drafts restored. History 5k saved, then 10k restored/saved;
+both pane headers displayed /10000. Catalog counts: BTTV/FFZ globals54/9,
+dreadedzombie19/18, HutchMF33/0. Natural Twitch/7TV images observed in busy chat.
+BTTV/FFZ-specific image/picker acceptance remains open. Native input stopped on
+apparent owner activity. A later exited preview was relaunched successfully;
+account, drafts and 10k state remained intact. No chat messages sent in this run.
+
+### Recursive docking batch — implementation, not native acceptance
+
+Linux offline locked build covers recursive split geometry, grouped channel tabs,
+separate persisted live filters, broadcast metadata worker and updated inspection.
+Required native checks: old layout restore; three-plus panes; nested horizontal
+and vertical edge drops; center regrouping; resize persistence; canceled drag;
+channel switch focus and exact drafts; middle-click cancel/close; live-only filters
+and selected-offline visibility; reconnect and restart. Do not infer these passes
+from compilation or the preceding 3f18e079 runtime.

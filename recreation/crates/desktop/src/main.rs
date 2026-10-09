@@ -12,6 +12,8 @@ mod inline_chat;
 mod storage;
 mod theme;
 mod workspace;
+mod dock;
+mod stream_status;
 use workspace::Workbench;
 
 use chat_core::{Timeline, selection::Selection};

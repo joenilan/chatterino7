@@ -191,7 +191,7 @@ pub fn dispatch(
 ) -> Result<Value, String> {
     match request["method"].as_str().ok_or("Missing method")? {
         "inspect" => {
-            let panes: Vec<_> = view.read(cx).visible_panes().iter().map(|pane| {
+            let panes: Vec<_> = view.read(cx).visible_panes(cx).iter().map(|pane| {
                 let pane = pane.read(cx);
                 let bounds = pane.viewport.borrow().map(|b| json!({"x":f32::from(b.left()),"y":f32::from(b.top()),"width":f32::from(b.size.width),"height":f32::from(b.size.height)}));
                 json!({"channel":pane.name.to_string(),"messages":pane.timeline.borrow().messages().len(),"history_limit":pane.timeline.borrow().capacity(),"following":pane.scroller.read(cx).is_following_tail(),"viewport":bounds,"selection":format!("{:?}",pane.selection.borrow()),"draft_characters":pane.draft.read(cx).value().chars().count(),"emote_picker_open":pane.picker.open,"emote_picker_matches":pane.picker.choices.len(),"emote_picker_page":pane.picker.page,"emote_suggestions":pane.picker.suggestions.iter().map(|c|c.label.clone()).collect::<Vec<_>>(),"last_copy_result":pane.last_copy_result,"connected":pane.connected,"connection_status":pane.connection,"send_pending":pane.pending.is_some(),"entrance_effects":pane.entrances.iter().filter(|entry| entry.active(std::time::Instant::now())).count(),"entrance_started":pane.entrances.iter().filter(|entry|entry.started.get().is_some() && entry.active(std::time::Instant::now())).count()})

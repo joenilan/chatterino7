@@ -1,3 +1,4 @@
+use crate::dock::Dock;
 use crate::{ChannelPane, DragPreview, DraggedChannel, PaneEvent, caption_control, storage, theme};
 use gpui_kit::component::{
     Disableable,
@@ -29,6 +30,8 @@ gpui_kit::actions!(
         ToggleSidebar,
         ToggleAppearance,
         ToggleOrientation,
+        ToggleLiveWorkspaces,
+        ToggleLiveChannels,
         QuitWithoutSaving
     ]
 );
@@ -49,6 +52,7 @@ struct DraggedTab {
 }
 #[derive(Clone, Copy, PartialEq)]
 enum DropEdge {
+    Center,
     Left,
     Right,
     Top,
@@ -63,6 +67,7 @@ impl DropEdge {
     }
     fn label(self) -> &'static str {
         match self {
+            Self::Center => "Add as channel tab",
             Self::Left => "Place left",
             Self::Right => "Place right",
             Self::Top => "Place above",
@@ -77,13 +82,19 @@ struct WorkspaceTab {
     vertical: bool,
     sizes: Vec<f32>,
     split: Entity<ResizableState>,
+    dock: Option<Dock>,
+    dock_states: BTreeMap<String, Entity<ResizableState>>,
 }
 pub struct Workbench {
     account: Entity<crate::auth::TwitchAccount>,
     live: crate::live::LiveChat,
+    streams: crate::stream_status::Streams,
+    live_workspaces: bool,
+    live_channels: bool,
     catalog: std::rc::Rc<std::cell::RefCell<crate::catalog::Catalog>>,
     media: std::rc::Rc<std::cell::RefCell<crate::media::MediaCache>>,
     drop_edge: Option<DropEdge>,
+    drop_target: Option<String>,
     control_enabled: bool,
     tabs: Vec<WorkspaceTab>,
     closed_tabs: Vec<WorkspaceTab>,
@@ -105,13 +116,15 @@ pub struct Workbench {
     save_status: String,
     close_failed: bool,
     close_tab_pending: Option<u64>,
+    close_channel_pending: bool,
 }
 impl Workbench {
     pub fn focus_workspace(&self, window: &mut Window, cx: &mut App) {
         self.focus.focus(window, cx);
     }
-    pub fn visible_panes(&self) -> Vec<Entity<ChannelPane>> {
-        self.tabs[self.active].panes.clone()
+    pub fn visible_panes(&self,cx:&App) -> Vec<Entity<ChannelPane>> {
+        let tab=&self.tabs[self.active];let mut names=Vec::new();if let Some(dock)=&tab.dock{dock.active_names(&mut names);}
+        names.iter().filter_map(|n|tab.panes.iter().find(|p|p.read(cx).name.as_ref()==n).cloned()).collect()
     }
     pub fn focus_target(
         &self,
@@ -125,18 +138,14 @@ impl Workbench {
                 .channel_input
                 .update(cx, |input, cx| input.focus(window, cx)),
             "composer" => {
-                let pane = self.tabs[self.active]
-                    .panes
-                    .get(pane)
-                    .ok_or("No such visible pane")?;
+                let panes=self.visible_panes(cx);
+                let pane=panes.get(pane).ok_or("No such visible pane")?;
                 let draft = pane.read(cx).draft.clone();
                 draft.update(cx, |input, cx| input.focus(window, cx));
             }
             "transcript" => {
-                let pane = self.tabs[self.active]
-                    .panes
-                    .get(pane)
-                    .ok_or("No such visible pane")?;
+                let panes=self.visible_panes(cx);
+                let pane=panes.get(pane).ok_or("No such visible pane")?;
                 let focus = pane.read(cx).focus.clone();
                 focus.focus(window, cx);
             }
@@ -147,7 +156,7 @@ impl Workbench {
     }
     pub fn media_inspection(&self) -> Value { json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()}) }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending})
+        json!({"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>()})
     }
     pub fn panes(&self) -> Vec<Entity<ChannelPane>> {
         self.tabs
@@ -187,10 +196,14 @@ impl Workbench {
             .unwrap_or_default();
         let mut this = Self {
             live: crate::live::LiveChat::new(),
+            streams: crate::stream_status::Streams::new(),
+            live_workspaces: state["live_workspaces"].as_bool().unwrap_or(false),
+            live_channels: state["live_channels"].as_bool().unwrap_or(false),
             catalog: std::rc::Rc::new(std::cell::RefCell::new(crate::catalog::Catalog::new())),
             media: std::rc::Rc::new(std::cell::RefCell::new(crate::media::MediaCache::new())),
             account: cx.new(|cx| crate::auth::TwitchAccount::new(cx)),
             drop_edge: None,
+            drop_target: None,
             control_enabled,
             tabs: vec![],
             closed_tabs: vec![],
@@ -219,9 +232,10 @@ impl Workbench {
             save_status,
             close_failed: false,
             close_tab_pending: None,
+            close_channel_pending: false,
         };
         if let Some(tabs) = state["tabs"].as_array() {
-            for item in tabs.iter().take(16) {
+            for item in tabs.iter() {
                 let id = item["id"]
                     .as_u64()
                     .filter(|id| {
@@ -237,7 +251,7 @@ impl Workbench {
                     .collect();
                 let mut panes = Vec::new();
                 if let Some(channels) = item["channels"].as_array() {
-                    for channel in channels.iter().take(2) {
+                    for channel in channels.iter() {
                         if let Some(name) = channel.as_str().and_then(valid_channel) {
                             if !panes.iter().any(|p: &Entity<ChannelPane>| {
                                 p.read(cx).name.as_ref() == name.as_str()
@@ -247,7 +261,7 @@ impl Workbench {
                         }
                     }
                 }
-                let sizes = item["sizes"]
+                let sizes: Vec<f32> = item["sizes"]
                     .as_array()
                     .map(|a| {
                         a.iter()
@@ -261,6 +275,9 @@ impl Workbench {
                             .collect()
                     })
                     .unwrap_or_default();
+                let names=panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>();
+                let dock=Dock::from_json(&item["dock"]).filter(|d|{let mut actual=Vec::new();d.names(&mut actual);let mut expected=names.clone();actual.sort();expected.sort();actual==expected})
+                    .or_else(||Dock::legacy(&names,item["vertical"].as_bool().unwrap_or(false),&sizes));
                 this.tabs.push(WorkspaceTab {
                     id,
                     name,
@@ -268,6 +285,8 @@ impl Workbench {
                     vertical: item["vertical"].as_bool().unwrap_or(false),
                     sizes,
                     split: cx.new(|_| ResizableState::default()),
+                    dock,
+                    dock_states: BTreeMap::new(),
                 });
             }
         }
@@ -279,6 +298,8 @@ impl Workbench {
                 vertical: false,
                 sizes: vec![],
                 split: cx.new(|_| ResizableState::default()),
+            dock: None,
+            dock_states: BTreeMap::new(),
             });
             this.next_id += 1;
         }
@@ -302,6 +323,7 @@ impl Workbench {
     fn pump_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let identity = self.account.read(cx).identity();
         let panes = self.panes();
+        if self.streams.pump(identity.clone(),panes.iter().map(|p|p.read(cx).name.to_string()).collect()){cx.notify();}
         if self.catalog.borrow_mut().pump(panes.iter().map(|p|p.read(cx).name.to_string()).collect(), identity.clone()) {
             for pane in &panes { pane.update(cx, |p,cx| {
                 p.timeline.borrow_mut().enrich(|message| message.fragments = self.catalog.borrow().expand(&p.name, &message.fragments));
@@ -376,7 +398,7 @@ impl Workbench {
         let draft = self.drafts.get(&key).cloned().unwrap_or_default();
         let pane = cx.new(|cx| ChannelPane::new(name, self.media.clone(), self.catalog.clone(), &draft, self.font_size, self.history_limit, window, cx));
         let channel = name.to_owned();
-        cx.subscribe(&pane, move |this, pane, event, cx| {
+        cx.subscribe_in(&pane, window, move |this, pane, event, window, cx| {
             if let PaneEvent::Send { request, text } = event {
                 if let Err(error) = this.live.send(*request, channel.clone(), text.clone()) {
                     pane.update(cx, |p, cx| {
@@ -396,24 +418,19 @@ impl Workbench {
             let owner = this
                 .tabs
                 .iter()
-                .find(|t| t.panes.iter().any(|p| *p == pane))
+                .find(|t| t.panes.iter().any(|p| p == pane))
                 .map(|t| t.id);
             let Some(owner) = owner else {
                 return;
             };
             this.drafts.insert(format!("{owner}:{channel}"), text);
             if matches!(event, PaneEvent::Close) {
+                this.focus.focus(window,cx);
                 if let Some(tab) = this.tabs.iter_mut().find(|t| t.id == owner) {
-                    if let Some(ix) = tab.panes.iter().position(|p| *p == pane) {
+                    if let Some(ix) = tab.panes.iter().position(|p| p == pane) {
                         tab.panes.remove(ix);
-                        tab.split.update(cx, |state, cx| state.remove_panel(ix, cx));
-                        tab.sizes = tab
-                            .split
-                            .read(cx)
-                            .sizes()
-                            .iter()
-                            .map(|p| f32::from(*p))
-                            .collect();
+                        tab.dock=tab.dock.take().and_then(|d|d.remove(&channel));
+                        tab.dock_states.clear();
                     }
                 }
             }
@@ -434,8 +451,8 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"history_limit":self.history_limit,"drafts":drafts,
-            "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
+        json!({"version":1,"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,
+            "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
         self.save_revision += 1;
@@ -479,6 +496,8 @@ impl Workbench {
             }
         }
     }
+    fn shown_tabs(&self,cx:&App)->Vec<usize>{self.tabs.iter().enumerate().filter(|(ix,t)|!self.live_workspaces||*ix==self.active||t.panes.is_empty()||t.panes.iter().any(|p|self.streams.get(p.read(cx).name.as_ref())!=Some(false))).map(|(ix,_)|ix).collect()}
+    fn cycle_tab(&mut self,forward:bool,cx:&mut Context<Self>){let shown=self.shown_tabs(cx);let ix=shown.iter().position(|i|*i==self.active).unwrap_or(0);let next=if forward{(ix+1)%shown.len()}else{(ix+shown.len()-1)%shown.len()};self.select_tab(shown[next],cx);}
     fn select_tab(&mut self, ix: usize, cx: &mut Context<Self>) {
         if ix < self.tabs.len() {
             self.active = ix;
@@ -490,10 +509,6 @@ impl Workbench {
         }
     }
     fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tabs.len() >= 16 {
-            window.push_notification(Notification::info("Keep up to 16 workspaces open"), cx);
-            return;
-        }
         let id = self.next_id;
         self.next_id += 1;
         self.tabs.push(WorkspaceTab {
@@ -503,6 +518,8 @@ impl Workbench {
             vertical: false,
             sizes: vec![],
             split: cx.new(|_| ResizableState::default()),
+        dock: None,
+        dock_states: BTreeMap::new(),
         });
         self.select_tab(self.tabs.len() - 1, cx);
         self.open_add(false, window, cx);
@@ -567,6 +584,8 @@ impl Workbench {
                 vertical: false,
                 sizes: vec![],
                 split: cx.new(|_| ResizableState::default()),
+            dock: None,
+            dock_states: BTreeMap::new(),
             });
         }
         self.active = if ix < self.active {
@@ -579,9 +598,6 @@ impl Workbench {
         cx.notify();
     }
     fn reopen_tab(&mut self, cx: &mut Context<Self>) {
-        if self.tabs.len() >= 16 {
-            return;
-        }
         if let Some(tab) = self.closed_tabs.pop() {
             self.tabs.push(tab);
             self.select_tab(self.tabs.len() - 1, cx);
@@ -634,18 +650,12 @@ impl Workbench {
                 cx.notify();
                 return;
             }
-            if self.tabs[self.active].panes.len() >= 2 {
-                self.add_error = Some(
-                    "Two splits per workspace in this build. Open another tab for more channels."
-                        .into(),
-                );
-                cx.notify();
-                return;
-            }
             let id = self.tabs[self.active].id;
             let pane = self.make_pane(id, &channel, window, cx);
             let tab = &mut self.tabs[self.active];
             tab.panes.push(pane);
+            tab.dock=Some(match tab.dock.take(){Some(mut d)=>{let mut active=Vec::new();d.active_names(&mut active);if let Some(target)=active.first(){d.tabify(target,channel.clone());}d},None=>Dock::Leaf(channel.clone())});
+            tab.dock_states.clear();
             tab.sizes.clear();
             tab.split = cx.new(|_| ResizableState::default());
             if tab.name.starts_with("Workspace") && tab.panes.len() == 1 {
@@ -702,51 +712,29 @@ impl Workbench {
         let Some(destination) = self.tabs.iter().position(|t| t.id == target) else {
             return;
         };
-        if source != destination
-            && (self.tabs[destination].panes.len() >= 2
-                || self.tabs[destination]
-                    .panes
-                    .iter()
-                    .any(|p| p.read(cx).name.as_ref() == drag.name))
-        {
-            window.push_notification(Notification::info("This workspace already has two panes or this channel. Drop into an empty workspace or rearrange its current panes."), cx);
-            cx.notify();
-            return;
+        if source != destination && self.tabs[destination].panes.iter().any(|p|p.read(cx).name.as_ref()==drag.name) {
+            window.push_notification(Notification::info("This channel is already in the destination workspace"),cx);return;
         }
-        let from = self.tabs[source]
-            .panes
-            .iter()
-            .position(|p| *p == drag.pane)
-            .unwrap();
-        let pane = self.tabs[source].panes.remove(from);
-        let old_size = if from < self.tabs[source].sizes.len() {
-            Some(self.tabs[source].sizes.remove(from))
-        } else {
-            None
-        };
-        if source != destination {
-            self.tabs[source].split = cx.new(|_| ResizableState::default());
+        let mut target_channel=self.drop_target.take();
+        if source==destination && target_channel.as_deref()==Some(drag.name.as_str()) {
+            target_channel=self.tabs[source].dock.as_ref().and_then(|d|d.companion(&drag.name));
+            if target_channel.is_none(){cx.notify();return;}
         }
-        let tab = &mut self.tabs[destination];
-        let axis_changed = edge.is_some_and(|e| e.vertical() != tab.vertical);
-        if let Some(edge) = edge {
-            tab.vertical = edge.vertical();
-        }
-        let to = if edge.is_some_and(DropEdge::first) {
-            0
-        } else {
-            tab.panes.len()
-        };
-        tab.panes.insert(to, pane);
-        if source == destination && !axis_changed {
-            if let Some(size) = old_size {
-                tab.sizes.insert(to.min(tab.sizes.len()), size);
-            }
-        } else {
-            tab.sizes.clear();
-        }
-        tab.split = cx.new(|_| ResizableState::default());
+        let from=self.tabs[source].panes.iter().position(|p|*p==drag.pane).unwrap();
+        let pane=self.tabs[source].panes.remove(from);
+        self.tabs[source].dock=self.tabs[source].dock.take().and_then(|d|d.remove(&drag.name));
+        self.tabs[source].dock_states.clear();
+        let tab=&mut self.tabs[destination];
+        tab.panes.push(pane);
+        let docking_edge=edge;
+        let edge=edge.unwrap_or(DropEdge::Right);
+        tab.dock=Some(match tab.dock.take(){
+            None=>Dock::Leaf(drag.name.clone()),
+            Some(mut dock)=>{if !target_channel.as_ref().is_some_and(|target|if docking_edge.is_none()||docking_edge==Some(DropEdge::Center){dock.tabify(target,drag.name.clone())}else{dock.insert(target,drag.name.clone(),edge.vertical(),edge.first())}){dock=dock.append(drag.name.clone(),edge.vertical(),edge.first());}dock}
+        });
+        tab.dock_states.clear();
         self.active = destination;
+        self.focus.focus(window,cx);
         self.adding = false;
         self.schedule_save(cx);
         cx.notify();
@@ -769,7 +757,7 @@ impl Workbench {
             } else if y > 0.65 {
                 Some(DropEdge::Bottom)
             } else {
-                None
+                Some(DropEdge::Center)
             }
         } else {
             None
@@ -790,9 +778,10 @@ impl Workbench {
             .bg(rgba(0xA99CF42A))
             .text_color(rgb(theme::TEXT))
             .when(edge.vertical(), |el| el.left_0().right_0().h(relative(0.5)))
-            .when(!edge.vertical(), |el| {
+            .when(!edge.vertical() && edge!=DropEdge::Center, |el| {
                 el.top_0().bottom_0().w(relative(0.5))
             })
+            .when(edge == DropEdge::Center, |el|el.inset_0())
             .when(edge == DropEdge::Left, |el| el.left_0())
             .when(edge == DropEdge::Right, |el| el.right_0())
             .when(edge == DropEdge::Top, |el| el.top_0())
@@ -815,6 +804,8 @@ impl Workbench {
     fn flip_split(&mut self, cx: &mut Context<Self>) {
         let tab = &mut self.tabs[self.active];
         tab.vertical = !tab.vertical;
+        if let Some(dock)=&mut tab.dock {dock.rotate();}
+        tab.dock_states.clear();
         tab.sizes.clear();
         tab.split = cx.new(|_| ResizableState::default());
         self.schedule_save(cx);
@@ -837,6 +828,62 @@ impl Workbench {
         }
         self.schedule_save(cx);
         cx.notify();
+    }
+    fn confirm_close_channel(&mut self,name:String,window:&mut Window,cx:&mut Context<Self>){
+        if self.close_channel_pending{return;}
+        let Some(pane)=self.tabs[self.active].panes.iter().find(|p|p.read(cx).name.as_ref()==name).cloned()else{return;};
+        self.close_channel_pending=true;let owner=cx.entity().downgrade();
+        window.open_dialog(cx,move|dialog,_,_|{let cancel=owner.clone();let close=owner.clone();let dismiss=owner.clone();let pane=pane.clone();
+            dialog.title(format!("Close #{name}?" )).close_button(false).child("Your draft stays saved. Other channel tabs and splits remain open.")
+                .on_ok(|_,_,_|true).on_close(move|_,_,cx|{let _=dismiss.update(cx,|this,cx|{this.close_channel_pending=false;cx.notify();});})
+                .footer(div().h_flex().justify_end().gap_2()
+                    .child(Button::new("cancel-channel-close").label("Cancel").on_click(move|_,window,cx|{let _=cancel.update(cx,|this,cx|{this.close_channel_pending=false;cx.notify();});window.close_dialog(cx);}))
+                    .child(Button::new("confirm-channel-close").label("Close channel").on_click(move|_,window,cx|{pane.update(cx,|_,cx|cx.emit(PaneEvent::Close));let _=close.update(cx,|this,cx|{this.close_channel_pending=false;cx.notify();});window.close_dialog(cx);})))
+        });cx.notify();
+    }
+    fn render_dock(&mut self, dock:&Dock, path:Vec<usize>, width:f32,height:f32,cx:&mut Context<Self>)->AnyElement {
+        let tab_id=self.tabs[self.active].id;
+        match dock {
+            Dock::Leaf(name)|Dock::Deck{active:name,..}=> {
+                let pane=self.tabs[self.active].panes.iter().find(|p|p.read(cx).name.as_ref()==name).cloned();
+                let names=match dock{Dock::Deck{channels,..}=>channels.clone(),_=>vec![name.clone()]};
+                let name=name.clone();let drag_name=name.clone();let drop_name=name.clone();
+                let tabs=names.iter().filter(|channel|!self.live_channels||*channel==&name||self.streams.get(channel)!=Some(false)).map(|channel|{let selected=channel==&name;let channel=channel.clone();
+                    let drag_pane=self.tabs[self.active].panes.iter().find(|p|p.read(cx).name.as_ref()==channel).cloned();
+                    let item=div().id(SharedString::from(format!("channel-tab-{tab_id}-{channel}"))).h_full().px_3().flex().items_center().cursor_pointer()
+                        .bg(rgb(if selected{theme::CONTROL}else{theme::PANEL})).border_b_2().border_color(rgb(if selected{0xA99CF4}else{theme::PANEL}))
+                        .hover(|s|s.bg(rgb(theme::HOVER))).child(format!("{} #{channel}",match self.streams.get(&channel){Some(true)=>"●",Some(false)=>"○",None=>"◌"}))
+                        .on_mouse_down(MouseButton::Middle,cx.listener({let channel=channel.clone();move|this,_,window,cx|{window.prevent_default();cx.stop_propagation();this.confirm_close_channel(channel.clone(),window,cx);}}))
+                        .on_click(cx.listener({let channel=channel.clone();move|this,_,window,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.select(&channel);}this.focus.focus(window,cx);this.schedule_save(cx);cx.notify();}}));
+                    if let Some(pane)=drag_pane{item.on_drag(DraggedChannel{pane,name:channel.clone()},move|drag,_,_,cx|cx.new(|_|DragPreview(drag.name.clone()))).into_any_element()}else{item.into_any_element()}
+                }).collect::<Vec<_>>();
+                let preview=if self.drop_target.as_ref()==Some(&name){self.drop_edge}else{None};
+                div().id(SharedString::from(format!("dock-{tab_id}-{name}"))).relative().size_full().min_w_0().min_h_0()
+                    .on_drag_move(cx.listener(move|this,event:&DragMoveEvent<DraggedChannel>,_,cx|{this.drop_target=Some(drag_name.clone());this.track_drop(event,cx);cx.notify();}))
+                    .on_drop(cx.listener(move|this,drag:&DraggedChannel,w,cx|{cx.stop_propagation();this.drop_target=Some(drop_name.clone());this.move_pane(drag,tab_id,this.drop_edge,w,cx);}))
+                    .v_flex().child(div().id(SharedString::from(format!("channel-strip-{tab_id}-{name}"))).h_flex().h(px(30.)).flex_shrink_0().overflow_x_scroll().bg(rgb(theme::PANEL)).children(tabs))
+                    .child(div().flex_1().min_h_0().children(pane)).when(cx.has_active_drag(),|el|el.children(preview.map(Self::drop_preview))).into_any_element()
+            }
+            Dock::Split {vertical,weights,children}=> {
+                let key=format!("{tab_id}:{path:?}");
+                let state=self.tabs[self.active].dock_states.entry(key.clone()).or_insert_with(||cx.new(|_|ResizableState::default())).clone();
+                let total=weights.iter().copied().sum::<f32>();
+                let mut panels=Vec::new();
+                for (ix,child) in children.iter().enumerate() {
+                    let share=if total>0. && weights.len()==children.len(){weights[ix]/total}else{1./children.len() as f32};
+                    let min=child.minimum();
+                    let mut subpath=path.clone();subpath.push(ix);
+                    let (cw,ch)=if *vertical{(width,height*share)}else{(width*share,height)};
+                    let content=self.render_dock(child,subpath,cw,ch,cx);
+                    panels.push(resizable_panel().size(px(if *vertical{ch}else{cw})).size_range(px(if *vertical{min.1}else{min.0})..Pixels::MAX).child(content));
+                }
+                let group=if *vertical{v_resizable(SharedString::from(key))}else{h_resizable(SharedString::from(key))};
+                group.with_state(&state).children(panels).on_resize(cx.listener(move|this,state:&Entity<ResizableState>,_,cx|{
+                    if let Some(tab)=this.tabs.iter_mut().find(|t|t.id==tab_id){if let Some(dock)=&mut tab.dock {dock.resize(&path,state.read(cx).sizes().iter().map(|p|f32::from(*p)).collect());}}
+                    this.schedule_save(cx);
+                })).into_any_element()
+            }
+        }
     }
     fn render_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         div()
@@ -944,68 +991,35 @@ impl Render for Workbench {
         } else { "○ Live chat disconnected".to_owned() };
         let menu_focus = self.focus.clone();
         let view_focus = self.focus.clone();
+        let live_workspaces=self.live_workspaces;let live_channels=self.live_channels;
         let can_reopen = !self.closed_tabs.is_empty();
         let can_discard = self.close_failed;
         let can_left = self.active > 0;
         let can_right = self.active + 1 < self.tabs.len();
+        let shown_tabs=self.shown_tabs(cx);
+        let selected_tab=shown_tabs.iter().position(|i|*i==self.active).unwrap_or(0);
         let tab = &self.tabs[self.active];
-        let tab_id = tab.id;
-        let panels = tab
-            .panes
-            .iter()
-            .enumerate()
-            .map(|(ix, pane)| {
-                resizable_panel()
-                    .size(px(tab.sizes.get(ix).copied().unwrap_or(if tab.vertical {
-                        300.
-                    } else {
-                        500.
-                    })))
-                    .size_range(px(if tab.vertical { 180. } else { 240. })..Pixels::MAX)
-                    .child(pane.clone())
-            })
-            .collect::<Vec<_>>();
-        let content = if tab.panes.is_empty() {
-            div().v_flex().size_full().items_center().justify_center().gap_4()
-            .child(div().text_size(px(30.)).font_weight(FontWeight::SEMIBOLD).child("Make room for your channels."))
-            .child(div().text_size(px(14.)).text_color(rgb(theme::MUTED)).child("Keep streams together in tabs. Split a workspace when one channel isn’t enough."))
-            .child(Button::new("empty-add").label("+ Add a channel").on_click(cx.listener(|this,_,window,cx|this.open_add(false,window,cx))))
-            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Ctrl+K  add channel       Ctrl+T  new workspace"))
-            .into_any_element()
+        let dock=tab.dock.clone();
+        let content=if let Some(dock)=dock {
+            let min=dock.minimum();
+            let available=window.viewport_size();
+            let width=(f32::from(available.width)-sidebar_width-if self.settings{252.}else{32.}).max(min.0);
+            let height=(f32::from(available.height)-240.).max(min.1);
+            let body=self.render_dock(&dock,Vec::new(),width,height,cx);
+            div().id("dock-overflow").size_full().overflow_scroll().child(div().size_full().min_w(px(min.0)).min_h(px(min.1)).child(body)).into_any_element()
         } else {
-            let group = if tab.vertical {
-                v_resizable(("split", tab_id))
-            } else {
-                h_resizable(("split", tab_id))
-            };
-            div()
-                .size_full()
-                .child(
-                    group
-                        .with_state(&tab.split)
-                        .children(panels)
-                        .on_resize(cx.listener(
-                            move |this, state: &Entity<ResizableState>, _, cx| {
-                                if let Some(tab) = this.tabs.iter_mut().find(|t| t.id == tab_id) {
-                                    tab.sizes = state
-                                        .read(cx)
-                                        .sizes()
-                                        .iter()
-                                        .map(|p| f32::from(*p))
-                                        .collect();
-                                }
-                                this.schedule_save(cx);
-                            },
-                        )),
-                )
+            div().v_flex().size_full().items_center().justify_center().gap_4()
+                .child(div().text_size(px(30.)).font_weight(FontWeight::SEMIBOLD).child("Make room for your channels."))
+                .child(div().text_color(rgb(theme::MUTED)).child("Drag a channel to any panel edge to split your workspace."))
+                .child(Button::new("empty-add").label("+ Add a channel").on_click(cx.listener(|this,_,window,cx|this.open_add(false,window,cx))))
                 .into_any_element()
         };
         div().id("workspace").track_focus(&self.focus).key_context("ChatWorkspace").v_flex().size_full().font_family("Segoe UI").text_size(px(13.)).bg(rgb(theme::SHELL)).text_color(rgb(theme::TEXT))
             .on_action(cx.listener(|this,_:&NewTab,w,cx|this.new_tab(w,cx)))
             .on_action(cx.listener(|this,_:&CloseTab,window,cx|{this.confirm_close_tab(this.tabs[this.active].id,window,cx);}))
             .on_action(cx.listener(|this,_:&ReopenTab,window,cx|{this.reopen_tab(cx);this.focus.focus(window,cx);}))
-            .on_action(cx.listener(|this,_:&NextTab,w,cx|{this.select_tab((this.active+1)%this.tabs.len(),cx);this.focus.focus(w,cx);}))
-            .on_action(cx.listener(|this,_:&PreviousTab,w,cx|{this.select_tab((this.active+this.tabs.len()-1)%this.tabs.len(),cx);this.focus.focus(w,cx);}))
+            .on_action(cx.listener(|this,_:&NextTab,w,cx|{this.cycle_tab(true,cx);this.focus.focus(w,cx);}))
+            .on_action(cx.listener(|this,_:&PreviousTab,w,cx|{this.cycle_tab(false,cx);this.focus.focus(w,cx);}))
             .on_action(cx.listener(|this,_:&AddChannel,w,cx|this.open_add(false,w,cx)))
             .on_action(cx.listener(|this,_:&RenameWorkspace,w,cx|this.open_add(true,w,cx)))
             .on_action(cx.listener(|this,_:&MoveTabLeft,_,cx|this.move_tab(-1,cx)))
@@ -1013,6 +1027,8 @@ impl Render for Workbench {
             .on_action(cx.listener(|this,_:&ToggleSidebar,_,cx|{this.sidebar=!this.sidebar;this.schedule_save(cx);cx.notify();}))
             .on_action(cx.listener(|this,_:&ToggleAppearance,_,cx|{this.settings=!this.settings;cx.notify();}))
             .on_action(cx.listener(|this,_:&ToggleOrientation,_,cx|this.flip_split(cx)))
+            .on_action(cx.listener(|this,_:&ToggleLiveWorkspaces,_,cx|{this.live_workspaces=!this.live_workspaces;this.schedule_save(cx);cx.notify();}))
+            .on_action(cx.listener(|this,_:&ToggleLiveChannels,_,cx|{this.live_channels=!this.live_channels;this.schedule_save(cx);cx.notify();}))
             .on_action(cx.listener(|this,_:&QuitWithoutSaving,_,cx|{if this.close_failed {cx.quit();}}))
             .child(div().h_flex().h(px(40.)).flex_shrink_0().border_b_1().border_color(rgb(theme::BORDER))
                 .child(Button::new("sidebar").ghost().small().label("☰").tooltip("Toggle workspace sidebar").on_click(cx.listener(|this,_,_,cx|{this.sidebar=!this.sidebar;this.schedule_save(cx);cx.notify();})))
@@ -1025,7 +1041,9 @@ impl Render for Workbench {
                     .separator().menu("Close workspace",Box::new(CloseTab)).menu_with_enable("Reopen closed workspace",Box::new(ReopenTab),can_reopen)
                     .when(can_discard,|menu|menu.separator().menu("Discard unsaved changes and quit",Box::new(QuitWithoutSaving)))))
                 .child(Button::new("view-menu").ghost().small().label("View").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
-                    .menu("Toggle sidebar",Box::new(ToggleSidebar)).menu("Appearance",Box::new(ToggleAppearance)).menu("Rotate split layout",Box::new(ToggleOrientation))))
+                    .menu("Toggle sidebar",Box::new(ToggleSidebar)).menu("Appearance",Box::new(ToggleAppearance)).menu("Rotate split layout",Box::new(ToggleOrientation))
+                    .separator().menu(if live_workspaces{"Show all workspace tabs"}else{"Only show live workspace tabs"},Box::new(ToggleLiveWorkspaces))
+                    .menu(if live_channels{"Show all channel tabs"}else{"Only show live channel tabs"},Box::new(ToggleLiveChannels))))
                 .child(div().flex_1().mt(px(6.)).h(px(34.)).window_control_area(WindowControlArea::Drag))
                 .when(self.control_enabled,|el|el.child(div().px_3().text_size(px(10.)).text_color(rgb(theme::MUTED)).child("LOCAL CONTROL")))
                 .child(caption_control("minimize",IconName::WindowMinimize,WindowControlArea::Min,false))
@@ -1038,12 +1056,12 @@ impl Render for Workbench {
                             .child(self.render_sidebar(cx)))))
                 .child(div().v_flex().flex_1().h_full().min_w_0().min_h_0()
                     .child(div().h_flex().h(px(42.)).flex_shrink_0().bg(rgb(theme::PANEL)).border_b_1().border_color(rgb(theme::BORDER))
-                        .child(div().flex_1().min_w_0().child(TabBar::new("workspace-tabs").selected_index(self.active).max_width(px(180.)).menu(true).track_scroll(&self.tab_scroll)
+                        .child(div().flex_1().min_w_0().child(TabBar::new("workspace-tabs").selected_index(selected_tab).max_width(px(180.)).menu(true).track_scroll(&self.tab_scroll)
                             .last_empty_space(div().id("tab-drop-end").w(px(24.)).h_full()
                                 .drag_over::<DraggedTab>(|style,_,_,_|style.border_l_2().border_color(rgb(0xA99CF4)))
                                 .on_drop(cx.listener(|this,drag:&DraggedTab,_,cx|this.reorder_tab(drag.id,u64::MAX,cx))))
-                            .on_click(cx.listener(|this,ix:&usize,window,cx|{this.select_tab(*ix,cx);this.focus.focus(window,cx);}))
-                            .children(self.tabs.iter().map(|tab|Tab::new().label(tab.name.clone())
+                            .on_click(cx.listener(|this,ix:&usize,window,cx|{if let Some(ix)=this.shown_tabs(cx).get(*ix).copied(){this.select_tab(ix,cx);}this.focus.focus(window,cx);}))
+                            .children(shown_tabs.iter().map(|ix|&self.tabs[*ix]).map(|tab|Tab::new().label(tab.name.clone())
                                 .on_mouse_down(MouseButton::Middle,cx.listener({let id=tab.id;move|this,_,window,cx|{window.prevent_default();cx.stop_propagation();this.confirm_close_tab(id,window,cx);}}))
                                 .on_drag(DraggedTab{id:tab.id,name:tab.name.clone()},{let owner=cx.entity().downgrade();move|drag,_,_,cx|{
                                     let _=owner.update(cx,|this,cx|{this.drop_edge=None;cx.notify();});
@@ -1052,13 +1070,13 @@ impl Render for Workbench {
                                 .drag_over::<DraggedTab>(|style,_,_,_|style.border_l_2().border_color(rgb(0xA99CF4)))
                                 .on_drop(cx.listener({let target=tab.id;move|this,drag:&DraggedTab,_,cx|this.reorder_tab(drag.id,target,cx)}))
                                 .drag_over::<DraggedChannel>(|style,_,_,_|style.bg(rgb(theme::HOVER)))
-                                .on_drop(cx.listener({let target=tab.id;move|this,drag:&DraggedChannel,w,cx|this.move_pane(drag,target,None,w,cx)}))
+                                .on_drop(cx.listener({let target=tab.id;move|this,drag:&DraggedChannel,w,cx|{this.drop_target=None;this.move_pane(drag,target,None,w,cx);}}))
                                 .suffix(Button::new(("close-tab",tab.id)).ghost().xsmall().label("×").tooltip("Close workspace · Middle-click / Ctrl+W")
                                 .on_click(cx.listener({let id=tab.id;move|this,_,window,cx|{cx.stop_propagation();this.confirm_close_tab(id,window,cx);}})))))))
                         .child(Button::new("new-tab").ghost().small().label("+").tooltip("New workspace · Ctrl+T").on_click(cx.listener(|this,_,w,cx|this.new_tab(w,cx)))))
                     .child(div().h_flex().h(px(42.)).flex_shrink_0().px_3().gap_2().border_b_1().border_color(rgb(theme::BORDER))
 
-                        .child(Button::new("add-channel").small().label("+ Channel").tooltip("Add a split · Ctrl+K").on_click(cx.listener(|this,_,w,cx|this.open_add(false,w,cx))))
+                        .child(Button::new("add-channel").small().label("+ Channel").tooltip("Add a channel tab · Ctrl+K; drag to an edge to split").on_click(cx.listener(|this,_,w,cx|this.open_add(false,w,cx))))
 
                         .child(Button::new("rename").ghost().small().label("Rename").on_click(cx.listener(|this,_,w,cx|this.open_add(true,w,cx))))
                         .when(!self.closed_tabs.is_empty(), |el|el.child(Button::new("reopen").ghost().small().label("Reopen closed").tooltip("Ctrl+Shift+T").on_click(cx.listener(|this,_,_,cx|this.reopen_tab(cx)))))
@@ -1072,10 +1090,8 @@ impl Render for Workbench {
                             .child(Button::new("cancel-add").ghost().label("Cancel").on_click(cx.listener(|this,_,window,cx|{this.adding=false;this.focus.focus(window,cx);cx.notify();}))))
                         .when_some(self.add_error.clone(),|el,error|el.child(div().text_size(px(12.)).text_color(rgb(0xF29D9D)).child(error)))))
                     .child(div().h_flex().items_stretch().flex_1().min_h_0().overflow_hidden().p_2().gap_2().child(div().id("channel-dock").relative().flex_1().h_full().min_w_0().min_h_0()
-                        .on_drag_move(cx.listener(|this,event:&DragMoveEvent<DraggedChannel>,_,cx|this.track_drop(event,cx)))
-                        .on_drop(cx.listener(move|this,drag:&DraggedChannel,w,cx|{if let Some(edge)=this.drop_edge {this.move_pane(drag,tab_id,Some(edge),w,cx);}}))
                         .child(content)
-                        .when(cx.has_active_drag(),|el|el.children(self.drop_edge.map(Self::drop_preview))))
+                        )
                         .when(self.settings,|el|el.child(div().v_flex().w(px(220.)).p_4().gap_3().bg(rgb(theme::PANEL)).rounded(px(6.))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Appearance & memory"))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Dark Studio · Segoe UI"))

@@ -376,3 +376,39 @@ Primary references:
 - https://github.com/night/betterttv/blob/master/src/modules/emotes/style.css
 - https://api.frankerfacez.com/v1/swagger.json
 - https://www.frankerfacez.com/developers
+
+## Screen-space docking and channel tabs — owner priority, 2026-10-09
+
+The two-pane and sixteen-workspace product caps are removed. Workspace geometry
+is a recursive horizontal/vertical tree, with resizable sibling proportions.
+Drag a channel tab or header to a panel edge to split that panel; a center drop
+combines channels into a tab group. Add Channel joins the first existing group.
+Dragging an active tab out of a group splits against its remaining channels.
+Removal collapses empty/singleton split containers. Old flat workspace layouts
+migrate in memory without losing channels or drafts. Recursive geometry, selected
+channel tabs and splitter sizes are included in atomic workspace persistence.
+
+Each visible group has one active transcript/composer. Hidden channel entities
+retain their per-channel draft, history and receive connection. Switching tabs
+moves keyboard focus away from the old composer, so a hidden draft cannot be sent
+by a subsequent Enter. Channel tabs support middle-click close confirmation.
+
+View offers independent live-only workspace and channel-tab filters. This mirrors
+Chatterino's workspace live-or-selected rule and extends it to channel groups.
+The selected tab always remains visible. Unknown/stale status remains visible
+rather than hiding a channel because an HTTP request failed. Hidden workspaces
+remain reachable from the sidebar. Ctrl+Tab skips filtered workspace tabs.
+Broadcast status comes from Helix Get Streams, not chat connection state: live,
+offline and unknown have distinct indicators. Existing user authorization is used
+without new scopes. Status refresh is batched up to 100 logins per request every
+60 seconds; stale values expire after three minutes. No instant push guarantee.
+
+A practical per-panel minimum protects readability; if a window is shrunk below
+its retained layout, the dock can scroll instead of discarding panels. There is
+no fixed pane count. This first recursive implementation still needs Windows
+interaction verification, divider-reset polish and full Chatterino parity review.
+
+Original source references: Notebook.cpp (live visibility and tab navigation),
+SplitContainer.cpp/.hpp (recursive splits, drag and proportional sizing),
+WindowDescriptors.cpp (recursive layout persistence).
+Twitch endpoint: https://dev.twitch.tv/docs/api/reference/#get-streams
