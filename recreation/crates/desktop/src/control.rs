@@ -328,8 +328,8 @@ pub fn dispatch(
         "resize" => {
             let width = number(request, "width", 8192.)?;
             let height = number(request, "height", 8192.)?;
-            if width < 1050. || height < 640. {
-                return Err("Minimum size is 1050 by 640".into());
+            if width < crate::MIN_WINDOW_WIDTH || height < crate::MIN_WINDOW_HEIGHT {
+                return Err(format!("Minimum size is {} by {}",crate::MIN_WINDOW_WIDTH,crate::MIN_WINDOW_HEIGHT));
             }
             window.resize(size(px(width), px(height)));
             Ok(json!({"requested":true}))

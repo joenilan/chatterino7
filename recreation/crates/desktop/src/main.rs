@@ -581,6 +581,8 @@ fn caption_control(
         .window_control_area(area)
         .child(Icon::new(icon).small())
 }
+const MIN_WINDOW_WIDTH: f32 = 360.;
+const MIN_WINDOW_HEIGHT: f32 = 280.;
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|arg| arg == "--control-call") {
@@ -640,7 +642,7 @@ fn main() {
                     size(px(1280.), px(820.)),
                     cx,
                 ))),
-                window_min_size: Some(size(px(360.), px(280.))),
+                window_min_size: Some(size(px(MIN_WINDOW_WIDTH), px(MIN_WINDOW_HEIGHT))),
                 ..Default::default()
             };
             gpui_kit::open_window(options, cx, |window, cx| {
