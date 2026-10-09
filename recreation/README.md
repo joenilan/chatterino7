@@ -12,6 +12,8 @@ release phases, authenticated Twitch flow and daily-client acceptance criteria.
 - Framework-independent bounded chat timelines and normalized events.
 - Duplicate suppression for retained message IDs, channel isolation and redaction.
 - Unicode-safe text/emote copy representation and bounded zero-width overlay grouping.
+- Dark-only Haiwire-inspired surfaces and a custom Windows caption/frame.
+- Pane-owned, model-backed text selection with Ctrl+C, reverse dragging and word/line selection.
 - A two-pane GPUI replay harness with 250 synthetic messages per pane, +100-message
   bursts and a mock timeout control. Each pane retains up to 10,000 messages.
 - Pinned GPUI Kit 0.7.1 and a lockfile; local build commands.
@@ -44,9 +46,10 @@ The preview is intentionally labeled OFFLINE REPLAY.
 Timeline duplicate detection covers retained records, not an unlimited history.
 Out-of-order moderation tombstones, transport envelope deduplication, per-message
 size limits and source validation are required before accepting network input.
-Selection across offscreen virtualized rows, inter-pane selection scoping,
-retention anchors, DPI/IME and native accessibility still require implementation
-or hands-on validation. Selectable text support alone does not establish parity.
+Selection now uses independent pane state and copies offscreen intermediate rows from
+the model. Native drag behavior, auto-scroll at viewport edges, complex Unicode
+grapheme selection, DPI/IME and accessibility still require hands-on validation.
+Automatic edge scrolling is not implemented yet; use the wheel while dragging.
 
 ## Verification
 

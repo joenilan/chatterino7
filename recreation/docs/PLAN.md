@@ -17,6 +17,14 @@ Reference: `joenilan/chatterino7`, branch `chatterino7`, commit
 commits ahead (`919a6c1`), principally packaging/CI and Kick changes. Track that
 upstream movement separately from acceptance of this rewrite.
 
+## Confirmed visual direction (owner feedback, 2026-10-09)
+
+Dark mode only. Follow Haiwire Studio palette and custom Windows title menu/frame,
+not the default Windows caption. Plain-text selection must be dependable before
+adding more chat features. Current reference design files:
+https://github.com/joenilan/xhw_haiwire/blob/main/experiments/gpui-window/src/theme.rs
+https://github.com/joenilan/xhw_haiwire/blob/main/docs/design/2026-10-04-studio-design-system.md
+
 ## Product direction
 
 - Dense, readable native desktop UI: restrained zinc surfaces, crisp separators,
