@@ -26,6 +26,11 @@ gpui_kit::actions!(
 );
 
 struct CopyFeedback;
+struct ComposerFeedback;
+fn twitch_message_text(text: &str) -> String {
+    text.replace("\r\n", " ")
+        .replace(['\r', '\n', '\u{2028}', '\u{2029}'], " ")
+}
 #[derive(Clone)]
 enum PaneEvent {
     Close,
@@ -59,17 +64,19 @@ impl ChannelPane {
                 .auto_grow(1, 4)
                 .submit_on_enter(true)
                 .placeholder("Write a message…");
-            input.set_value(saved_draft.to_owned(), window, cx);
+            input.set_value(twitch_message_text(saved_draft), window, cx);
             input
         });
-        cx.subscribe_in(&draft, window, |_: &mut Self, _, event, window, cx| {
+        cx.subscribe_in(&draft, window, |this: &mut Self, _, event, window, cx| {
             match event {
                 InputEvent::Change => cx.emit(PaneEvent::DraftChanged),
                 InputEvent::PressEnter { shift: false, .. } => {
                     window.push_notification(
-                        Notification::info(
-                            "Twitch is disconnected. Your draft is saved; nothing was sent.",
-                        )
+                        Notification::info(if this.draft.read(cx).value().chars().count() > 500 {
+                            "This draft exceeds Twitch’s 500-character limit. Shorten it before sending."
+                        } else {
+                            "Twitch is disconnected. Your draft is saved; nothing was sent."
+                        })
                         .id::<PaneEvent>()
                         .delivery(NotificationDelivery::InApp),
                         cx,
@@ -271,9 +278,39 @@ impl Render for ChannelPane {
                     ),
             )
             .child(div().v_flex().p_2().gap_2().bg(rgb(theme::PANEL)).border_t_1().border_color(rgb(theme::BORDER))
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    if event.keystroke.key == "enter" && event.keystroke.modifiers.shift {
+                        window.prevent_default();
+                        cx.stop_propagation();
+                    } else if !event.keystroke.modifiers.control && !event.keystroke.modifiers.platform {
+                        if let Some(text) = &event.keystroke.key_char {
+                            let input = this.draft.read(cx);
+                            let current = input.value().to_string();
+                            let selected = input.selected_range();
+                            let count = current[..selected.start].chars().count() + text.chars().count() + current[selected.end..].chars().count();
+                            if count > 500 { window.prevent_default(); cx.stop_propagation(); }
+                        }
+                    }
+                }))
+                .capture_action(cx.listener(|this, _: &gpui_kit::base::input::Paste, window, cx| {
+                    if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+                        let text = twitch_message_text(&text);
+                        let input = this.draft.read(cx);
+                        let current = input.value().to_string();
+                        let selected = input.selected_range();
+                        let count = current[..selected.start].chars().count() + text.chars().count() + current[selected.end..].chars().count();
+                        if count <= 500 {
+                            this.draft.update(cx, |input, cx| input.replace(text, window, cx));
+                            cx.emit(PaneEvent::DraftChanged);
+                        } else {
+                            window.push_notification(Notification::info("That paste would exceed Twitch’s 500-character limit. Your draft is unchanged.").id::<ComposerFeedback>().delivery(NotificationDelivery::InApp), cx);
+                        }
+                        cx.stop_propagation();
+                    }
+                }))
                 .child(Textarea::new(&self.draft))
                 .child(div().h_flex().justify_between().text_size(px(11.)).text_color(rgb(theme::MUTED))
-                    .child(format!("{} / 500 · local draft · Shift+Enter newline", self.draft.read(cx).value().chars().count()))
+                    .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500 · Twitch message · wraps automatically", self.draft.read(cx).value().chars().count())))
                     .child(Button::new("send").small().label("Send").disabled(true).tooltip("Connect Twitch to send messages"))))
             .child(
                 canvas(

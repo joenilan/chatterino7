@@ -420,6 +420,13 @@ impl Workbench {
             input.set_value(value, window, cx);
             input.focus(window, cx);
         });
+        let tab_id = self.tabs[self.active].id;
+        cx.on_next_frame(window, move |this, window, cx| {
+            if this.adding && this.renaming == rename && this.tabs[this.active].id == tab_id {
+                this.channel_input
+                    .update(cx, |input, cx| input.focus(window, cx));
+            }
+        });
         cx.notify();
     }
     fn accept_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {

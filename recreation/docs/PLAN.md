@@ -22,7 +22,7 @@ upstream movement separately from acceptance of this rewrite.
 
 The fixed two-pane replay preview has been replaced by actual workspace tabs,
 channel entry, two resizable splits per tab, tab rename/reorder/close/reopen,
-custom Workspace/View menus, a collapsible scrolling sidebar, multiline drafts,
+custom Workspace/View menus, a collapsible scrolling sidebar, soft-wrapping single-message drafts,
 font controls and versioned local persistence. Empty channels are honest offline
 states; synthetic sample messages and test-only controls are gone.
 
@@ -276,3 +276,9 @@ current picker, completion list or permissions. Loading should not remount or
 steal focus from the composer, reset caret/selection, or jump the layout. These
 are delivery requirements for the live chat/emote integration, not implemented
 emote claims at this checkpoint.
+
+Twitch composer correction: visual wrapping is not multiline message support.
+Twitch messages are limited to 500 characters, Shift+Enter must not insert a newline,
+and pasted line breaks become spaces without splitting or automatically sending
+multiple messages. Over-limit pastes preserve the old draft and explain the limit.
+Other providers may have different rules; limits belong to the active provider.

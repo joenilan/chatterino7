@@ -14,7 +14,8 @@ layout. The original C++ application remains untouched.
   remembers its state. Opening/closing slides smoothly, including mid-motion
   reversal, and respects OS reduced-motion preferences. Tabs and channel controls
   work without it.
-- Multiline composers with ordinary cut/copy/paste, undo/redo and retained drafts.
+- Soft-wrapping Twitch composers with a 500-character message limit, ordinary
+  cut/copy/paste, undo/redo and retained drafts. Pasted line breaks become spaces.
 - Local saved tabs, active workspace, split sizes/orientation, sidebar, font size
   and separate drafts for the same channel in different workspaces.
 - Dark-only appearance controls with 12–24px transcript sizing.
@@ -60,7 +61,8 @@ The account flow and full daily-client behavior remain unverified.
 - Ctrl+K: add channel
 - Transcript: Ctrl+A selects retained messages, Ctrl+C or Ctrl+Insert copies,
   Escape clears selection; right-click copies too.
-- Composer: ordinary editing shortcuts; Shift+Enter inserts a newline.
+- Composer: ordinary editing shortcuts; text wraps visually without inserting
+  message line breaks. Shift+Enter does not create a multiline Twitch message.
 
 ## Local storage
 
