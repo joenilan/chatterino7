@@ -5,26 +5,34 @@ use chat_core::{Event, Timeline, fixture, selection::Selection};
 use chat_text::ChatText;
 use gpui_kit::base::ElementExt as _;
 use gpui_kit::component::{
-    Icon, IconName, Sizable, StyledExt,
+    Icon, IconName, Sizable, StyledExt, WindowExt,
     button::Button,
+    input::{Input, InputState},
     message_scroller::{MessageScroller, MessageScrollerState},
+    notification::{Notification, NotificationDelivery},
 };
 use gpui_kit::*;
 use std::{cell::RefCell, rc::Rc};
 
-gpui_kit::actions!(chat_workbench, [CopyChatSelection]);
+gpui_kit::actions!(
+    chat_workbench,
+    [CopyChatSelection, ClearChatSelection, SelectAllChat]
+);
+
+struct CopyFeedback;
 
 struct ChannelPane {
     name: SharedString,
     timeline: Rc<RefCell<Timeline>>,
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
+    draft: Entity<InputState>,
     scroller: Entity<MessageScrollerState>,
     next_id: usize,
     viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
 }
 impl ChannelPane {
-    fn new(name: &'static str, cx: &mut Context<Self>) -> Self {
+    fn new(name: &'static str, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let mut timeline = Timeline::new(name, 10_000);
         for i in 0..250 {
             timeline.apply(Event::Message(fixture(name, i)));
@@ -36,6 +44,9 @@ impl ChannelPane {
             timeline: Rc::new(RefCell::new(timeline)),
             selection: Rc::new(RefCell::new(Selection::default())),
             focus: cx.focus_handle(),
+            draft: cx.new(|cx| {
+                InputState::new(window, cx).placeholder("Local draft · Twitch is offline")
+            }),
             scroller,
             next_id: 250,
             viewport: Rc::new(RefCell::new(None)),
@@ -78,7 +89,7 @@ impl ChannelPane {
         });
         cx.notify();
     }
-    fn copy(&self, cx: &mut App) {
+    fn copy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let timeline = self.timeline.borrow();
         let first = self.next_id - timeline.messages().len();
         let lines: Vec<_> = timeline
@@ -92,9 +103,44 @@ impl ChannelPane {
                 .enumerate()
                 .map(|(index, text)| ((first + index) as u64, text.as_str())),
         );
-        if !text.is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
+        drop(timeline);
+        if text.is_empty() {
+            window.push_notification(
+                Notification::info("Select some chat text first")
+                    .id::<CopyFeedback>()
+                    .delivery(NotificationDelivery::InApp),
+                cx,
+            );
+            return;
         }
+        cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+        // A write has no Result. Confirm read-back before claiming success or
+        // discarding the user's selection; a busy clipboard can be retried.
+        if cx
+            .read_from_clipboard()
+            .and_then(|item| item.text())
+            .as_deref()
+            == Some(text.as_str())
+        {
+            self.selection.borrow_mut().clear();
+            window.push_notification(
+                Notification::success(format!("Copied · {} characters", text.chars().count()))
+                    .id::<CopyFeedback>()
+                    .delivery(NotificationDelivery::InApp),
+                cx,
+            );
+        } else {
+            window.push_notification(
+                Notification::warning(
+                    "Clipboard copy could not be verified. Selection kept; try again.",
+                )
+                .id::<CopyFeedback>()
+                .delivery(NotificationDelivery::InApp),
+                cx,
+            );
+        }
+        cx.notify();
+        window.refresh();
     }
 }
 impl Render for ChannelPane {
@@ -107,18 +153,15 @@ impl Render for ChannelPane {
         let viewport = self.viewport.clone();
         let viewport_layout = self.viewport.clone();
         let finish = self.selection.clone();
+        let copy_owner = cx.weak_entity();
+        let copy_viewport = self.viewport.clone();
+        let following = self.scroller.read(cx).is_following_tail();
         div()
             .id("channel-pane")
             .v_flex()
             .flex_1()
             .min_w_0()
             .h_full()
-            .track_focus(&self.focus)
-            .key_context("ChatTranscript")
-            .on_action(cx.listener(|this, _: &CopyChatSelection, _, cx| {
-                this.copy(cx);
-                cx.stop_propagation();
-            }))
             .bg(rgb(theme::CANVAS))
             .border_1()
             .border_color(rgb(theme::BORDER))
@@ -144,24 +187,44 @@ impl Render for ChannelPane {
                         div()
                             .text_size(px(12.))
                             .text_color(rgb(theme::MUTED))
-                            .child(format!("{retained} messages")),
+                            .child(format!("{retained} messages · {}", if following { "Following latest" } else { "Reading history" })),
                     ),
             )
             .child(
                 div()
+                    .id("transcript")
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(|this, _, _, cx| {
-                            // Terminal-style copy preserves the current selection. Scope
-                            // this to the transcript so future input fields retain their
-                            // normal edit/context-menu behavior.
-                            this.copy(cx);
-                            cx.stop_propagation();
-                        }),
-                    )
+            .track_focus(&self.focus)
+            .key_context("ChatTranscript")
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                        this.focus.focus(window, cx);
+                        this.selection.borrow_mut().clear();
+                        cx.notify();
+                    }))
+                    .line_height(px(22.))
+            .on_action(cx.listener(|this, _: &CopyChatSelection, window, cx| {
+                this.copy(window, cx);
+                cx.stop_propagation();
+            }))
+            .on_action(cx.listener(|this, _: &ClearChatSelection, _, cx| {
+                this.selection.borrow_mut().clear();
+                cx.notify();
+                cx.stop_propagation();
+            }))
+            .on_action(cx.listener(|this, _: &SelectAllChat, _, cx| {
+                let timeline = this.timeline.borrow();
+                let first = this.next_id - timeline.messages().len();
+                if let Some(last) = timeline.messages().back() {
+                    this.selection.borrow_mut().select_span(
+                        chat_core::selection::Point { row: first as u64, byte: 0 },
+                        chat_core::selection::Point { row: (this.next_id - 1) as u64, byte: last.copy_line().len() },
+                    );
+                }
+                cx.notify();
+                cx.stop_propagation();
+            }))
                     .on_prepaint(move |bounds, _, _| {
                         *viewport_layout.borrow_mut() = Some(bounds);
                     })
@@ -187,7 +250,7 @@ impl Render for ChannelPane {
                         })
                         .flex_1()
                         .min_h_0()
-                        .with_row_style(StyleRefinement::default().px_3().pb_1())
+                        .with_row_style(StyleRefinement::default().px_3().pb_0())
                         .with_list_style(StyleRefinement::default().py_2())
                         .h_full(),
                     ),
@@ -195,8 +258,9 @@ impl Render for ChannelPane {
             .child(
                 div()
                     .h_flex()
+                    .flex_wrap()
                     .p_2()
-                    .gap_2()
+                    .gap_1()
                     .bg(rgb(theme::PANEL))
                     .border_t_1()
                     .border_color(rgb(theme::BORDER))
@@ -204,25 +268,51 @@ impl Render for ChannelPane {
                         Button::new("burst")
                             .small()
                             .label("Replay +100")
+                            .tooltip("Append 100 synthetic messages to this pane")
                             .on_click(cx.listener(|this, _, _, cx| this.burst(cx))),
                     )
                     .child(
                         Button::new("redact")
                             .small()
                             .label("Test timeout")
+                            .tooltip("Redact one synthetic user in this pane; no Twitch action")
                             .on_click(cx.listener(|this, _, _, cx| this.redact(cx))),
                     )
+                    .child(Button::new("pane-latest").small().label("Latest")
+                        .tooltip("Return this pane to the newest messages")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.scroller.update(cx, |state, cx| state.scroll_to_end(cx));
+                        })))
                     .child(
                         Button::new("copy")
                             .small()
                             .label("Copy selection")
-                            .on_click(cx.listener(|this, _, _, cx| this.copy(cx))),
+                            .tooltip("Copy selected chat text (right-click or Ctrl+C)")
+                            .on_click(cx.listener(|this, _, window, cx| this.copy(window, cx))),
                     ),
             )
+            .child(div().px_2().pb_2().bg(rgb(theme::PANEL))
+                .child(Input::new(&self.draft).aria_label(format!("Local draft for {}", self.name)))
+                .child(div().pt_1().text_size(px(11.)).text_color(rgb(theme::MUTED))
+                    .child("Local draft only · Ctrl+X/C/V and undo/redo · Not saved after closing")))
             .child(
                 canvas(
                     |_, _, _| (),
                     move |_, _, window, _| {
+                        let copy_owner = copy_owner.clone();
+                        let copy_viewport = copy_viewport.clone();
+                        window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+                            if phase.capture() && event.button == MouseButton::Right
+                                && copy_viewport.borrow().is_some_and(|bounds| bounds.contains(&event.position))
+                            {
+                                window.prevent_default();
+                                let _ = copy_owner.update(cx, |pane, cx| {
+                                    pane.focus.focus(window, cx);
+                                    pane.copy(window, cx);
+                                });
+                                cx.stop_propagation();
+                            }
+                        });
                         let finish = finish.clone();
                         window.on_mouse_event(move |event: &MouseUpEvent, phase, window, _| {
                             if phase.capture() && event.button == MouseButton::Left {
@@ -270,7 +360,7 @@ impl Render for Workbench {
             .child(div().h_flex().h(px(40.)).flex_shrink_0().border_b_1().border_color(rgb(theme::BORDER))
                 .child(div().h_flex().px_3().h_full().gap_3()
                     .child(div().text_size(px(13.)).font_weight(FontWeight::SEMIBOLD).child("CHAT WORKBENCH"))
-                    .child(Button::new("jump-latest").small().label("Latest").on_click(cx.listener(|this, _, _, cx| {
+                    .child(Button::new("jump-latest").small().label("All latest").tooltip("Return both panes to the newest messages").on_click(cx.listener(|this, _, _, cx| {
                         for pane in &this.panes { pane.update(cx, |pane, cx| pane.scroller.update(cx, |state, cx| state.scroll_to_end(cx))); }
                     }))))
                 .child(div().flex_1().mt(px(6.)).h(px(34.)).window_control_area(WindowControlArea::Drag))
@@ -278,10 +368,10 @@ impl Render for Workbench {
                 .child(caption_control("maximize", if window.is_maximized() { IconName::WindowRestore } else { IconName::WindowMaximize }, WindowControlArea::Max, false))
                 .child(caption_control("close", IconName::WindowClose, WindowControlArea::Close, true)))
             .child(div().h_flex().h(px(36.)).px_3().gap_2().text_size(px(12.)).text_color(rgb(theme::MUTED))
-                .child("OFFLINE REPLAY").child("/ synthetic data / Twitch not connected"))
+                .child("INTERACTION PREVIEW 02 · OFFLINE REPLAY").child("/ synthetic data / Twitch not connected"))
             .child(div().h_flex().flex_1().min_h_0().gap_2().px_2().children(self.panes.iter().cloned()))
             .child(div().h(px(28.)).px_3().h_flex().text_size(px(12.)).text_color(rgb(theme::MUTED))
-                .child("Drag to select · Ctrl+C to copy · Double-click a word · Triple-click a message"))
+                .child("Select → right-click to copy · Ctrl+C / Ctrl+Insert · Ctrl+A selects chat · Esc clears"))
     }
 }
 fn main() {
@@ -293,6 +383,10 @@ fn main() {
             cx.bind_keys([
                 KeyBinding::new("ctrl-c", CopyChatSelection, Some("ChatTranscript")),
                 KeyBinding::new("cmd-c", CopyChatSelection, Some("ChatTranscript")),
+                KeyBinding::new("ctrl-insert", CopyChatSelection, Some("ChatTranscript")),
+                KeyBinding::new("escape", ClearChatSelection, Some("ChatTranscript")),
+                KeyBinding::new("ctrl-a", SelectAllChat, Some("ChatTranscript")),
+                KeyBinding::new("cmd-a", SelectAllChat, Some("ChatTranscript")),
             ]);
             let options = WindowOptions {
                 titlebar: Some(TitlebarOptions {
@@ -308,11 +402,11 @@ fn main() {
                 window_min_size: Some(size(px(760.), px(480.))),
                 ..Default::default()
             };
-            gpui_kit::open_window(options, cx, |_, cx| {
+            gpui_kit::open_window(options, cx, |window, cx| {
                 cx.new(|cx| Workbench {
                     panes: vec![
-                        cx.new(|cx| ChannelPane::new("workbench", cx)),
-                        cx.new(|cx| ChannelPane::new("second-channel", cx)),
+                        cx.new(|cx| ChannelPane::new("workbench", window, cx)),
+                        cx.new(|cx| ChannelPane::new("second-channel", window, cx)),
                     ],
                 })
             })

@@ -89,7 +89,21 @@ impl Element for ChatText {
                 self.selection.borrow_mut().extend(point);
             }
         }
-        window.insert_hitbox(bounds, HitboxBehavior::Normal)
+        // Keep row breathing room inside the line box, and let trailing padding
+        // place the caret. Leave the scrollbar gutter to the scroll control.
+        let hit_bounds = self.viewport.borrow().map_or(bounds, |viewport| {
+            Bounds::from_corners(
+                point(viewport.left(), bounds.top().max(viewport.top())),
+                point(
+                    (viewport.right() - px(12.)).max(viewport.left()),
+                    bounds
+                        .bottom()
+                        .min(viewport.bottom())
+                        .max(bounds.top().max(viewport.top())),
+                ),
+            )
+        });
+        window.insert_hitbox(hit_bounds, HitboxBehavior::Normal)
     }
     fn paint(
         &mut self,

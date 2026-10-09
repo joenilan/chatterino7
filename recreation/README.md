@@ -58,3 +58,12 @@ No browser, Windows or owner acceptance is implied by this source checkpoint.
 
 CI/Actions are intentionally not used for this recreation. Commits use `[skip ci]`.
 The owner runs Windows builds and reports errors for follow-up fixes.
+
+## Interaction preview 02
+
+Select transcript text and right-click, press Ctrl+C/Ctrl+Insert, or use Copy
+selection. A verified clipboard copy clears the highlight and shows Copied.
+Ctrl+A selects retained messages in the focused transcript; Escape clears it.
+A local-only draft provides editable cut/copy/paste and undo/redo. Nothing is sent
+and draft text is not saved on close. Each pane shows its scrolling state and
+has a Latest control. Native validation status is recorded in VALIDATION.md.

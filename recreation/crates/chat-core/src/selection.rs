@@ -32,6 +32,11 @@ impl Selection {
     pub fn clear(&mut self) {
         *self = Self::default();
     }
+    pub fn select_span(&mut self, anchor: Point, head: Point) {
+        self.anchor = Some(anchor);
+        self.head = Some(head);
+        self.dragging = false;
+    }
     pub fn select_line(&mut self, row: u64, text: &str) {
         self.anchor = Some(Point { row, byte: 0 });
         self.head = Some(Point {
@@ -134,6 +139,49 @@ fn boundary(text: &str, byte: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn select_all_span_includes_offscreen_rows_and_unicode() {
+        let mut s = Selection::default();
+        s.select_span(
+            Point { row: 4, byte: 0 },
+            Point {
+                row: 6,
+                byte: "世界".len(),
+            },
+        );
+        assert_eq!(
+            s.copy([(4, "hello"), (5, "offscreen"), (6, "世界")]),
+            "hello\noffscreen\n世界"
+        );
+        assert!(!s.dragging);
+    }
+    #[test]
+    fn successful_copy_clear_prevents_stale_repeat_copy() {
+        let mut s = Selection::default();
+        s.select_line(4, "copy me");
+        assert_eq!(s.copy([(4, "copy me")]), "copy me");
+        s.clear();
+        assert_eq!(s.copy([(4, "copy me")]), "");
+        assert_eq!(s.anchor, None);
+        assert_eq!(s.head, None);
+        assert!(!s.dragging);
+    }
+    #[test]
+    fn empty_click_does_not_produce_clipboard_payload() {
+        let mut s = Selection::default();
+        s.begin(Point { row: 4, byte: 2 }, false);
+        s.finish();
+        assert_eq!(s.copy([(4, "existing clipboard must stay")]), "");
+    }
+    #[test]
+    fn escape_cancels_drag_without_changing_content() {
+        let mut s = Selection::default();
+        s.begin(Point { row: 4, byte: 0 }, false);
+        s.extend(Point { row: 4, byte: 4 });
+        s.clear();
+        s.extend(Point { row: 4, byte: 8 });
+        assert_eq!(s.copy([(4, "unchanged")]), "");
+    }
     #[test]
     fn forward_and_reverse_copy_all_model_rows() {
         let rows = [(1, "alpha"), (2, "offscreen"), (3, "omega")];
