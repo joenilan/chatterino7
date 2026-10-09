@@ -154,3 +154,12 @@ Pane inspection includes `emote_picker_open`, `emote_picker_matches`,
 includes Twitch global emote/badge counts and per-channel badge counts. These
 are public catalog names/counts, not draft contents or credentials. Existing
 pointer/key/text operations drive the real controls; insertion does not send.
+
+### Response budget correction
+
+Commands remain limited to 16 KiB frames (8 KiB JSON input). Inspection responses
+have a separate 256 KiB cap for the bounded 128-entry media cache. The server
+turns an oversized result into a small identity-matched error response, which the
+client consumes normally. This prevents the old 16 KiB shared limit from leaving
+a successful inspection response unresolved and blocking later calls. Timeouts
+and identity mismatches still require reconciliation; mutations are never replayed.

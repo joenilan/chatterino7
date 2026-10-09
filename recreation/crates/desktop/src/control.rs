@@ -10,21 +10,22 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-const MAX_BYTES: u64 = 16 * 1024;
+const MAX_REQUEST_BYTES: u64 = 16 * 1024;
+const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
 fn now() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
 }
-fn read_json(path: &Path) -> Result<Value, String> {
+fn read_json(path: &Path, limit: u64) -> Result<Value, String> {
     let file = fs::File::open(path).map_err(|e| e.to_string())?;
     let mut bytes = Vec::new();
-    file.take(MAX_BYTES + 1)
+    file.take(limit + 1)
         .read_to_end(&mut bytes)
         .map_err(|e| e.to_string())?;
-    if bytes.len() as u64 > MAX_BYTES {
-        return Err("Control frame exceeds 16 KiB".into());
+    if bytes.len() as u64 > limit {
+        return Err(format!("Control frame exceeds {} KiB", limit / 1024));
     }
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
@@ -82,7 +83,7 @@ pub fn start(name: &str) -> Result<Server, String> {
         loop {
             let request_path = directory.join("request.json");
             if request_path.exists() {
-                let frame = read_json(&request_path);
+                let frame = read_json(&request_path, MAX_REQUEST_BYTES);
                 let _ = fs::remove_file(&request_path);
                 let response = match frame {
                     Ok(frame) => {
@@ -109,6 +110,12 @@ pub fn start(name: &str) -> Result<Server, String> {
                     }
                     Err(error) => json!({"error":error}),
                 };
+                // Keep requests small while allowing bounded inspection metadata.
+                // An oversized result must still be a consumable response with the
+                // matching identity, rather than wedging every subsequent call.
+                let response=if response.to_string().len() as u64 > MAX_RESPONSE_BYTES {
+                    json!({"session":response["session"],"id":response["id"],"result":{"error":"Inspection exceeds response budget; narrow the request"}})
+                } else {response};
                 if publish(&directory.join("response.json"), &response).is_err() {
                     break;
                 }
@@ -121,12 +128,12 @@ pub fn start(name: &str) -> Result<Server, String> {
 
 /// One bounded call to an explicitly launched control session; no GUI is opened.
 pub fn client(name: &str, request: &str) -> Result<Value, String> {
-    if request.len() as u64 > MAX_BYTES / 2 {
+    if request.len() as u64 > MAX_REQUEST_BYTES / 2 {
         return Err("Request too large".into());
     }
     let request: Value = serde_json::from_str(request).map_err(|e| e.to_string())?;
     let directory = session_path(name)?;
-    let session = read_json(&directory.join("session.json"))?["session"].clone();
+    let session = read_json(&directory.join("session.json"), MAX_REQUEST_BYTES)?["session"].clone();
     let _lock = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -147,7 +154,7 @@ pub fn client(name: &str, request: &str) -> Result<Value, String> {
         loop {
             let path = directory.join("response.json");
             if path.exists() {
-                let response = read_json(&path)?;
+                let response = read_json(&path, MAX_RESPONSE_BYTES)?;
                 if response["id"] != id || response["session"] != session {
                     return Err("Response identity mismatch".into());
                 }

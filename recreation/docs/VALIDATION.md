@@ -1,3 +1,19 @@
+## Native badge/picker result and control fix — 2026-10-09
+
+Windows 9fae62f build exit 0 (1.04s confirming incremental build; initial build
+terminal result was lost during a Haiwire restart). Real incoming messages show
+Twitch badges. HutchMF picker loaded 1,065 choices. DinoDance search returned one
+result without changing drafts; paired native snapshots visibly show its animated
+preview, closing the earlier exact-emote visual gap. Clicking inserted unsent text
+and closed the picker. Both original drafts were restored by local comparison.
+
+Inspection then failed because the media-rich response exceeded the old 16 KiB
+shared request/response limit, leaving that response unresolved. This correction
+separates the bounded response budget (256 KiB) from the unchanged small request
+budget and ensures server oversize errors retain response identity for cleanup.
+Native paging/completion/channel switching/tooltips still await the corrected
+preview. No chat messages were sent.
+
 # Current checkpoint: badges and emote composition — 2026-10-09
 
 Linux offline locked build passed against the implementation tree (5.46s).
