@@ -107,10 +107,11 @@ impl ChannelPane {
         catalog: Rc<RefCell<catalog::Catalog>>,
         saved_draft: &str,
         font_size: f32,
+        history_limit: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let timeline = Timeline::new(name, 10_000);
+        let timeline = Timeline::new(name, history_limit);
         let draft = cx.new(|cx| {
             let mut input = TextareaState::new(window, cx)
                 .auto_grow(1, 4)
@@ -155,6 +156,18 @@ impl ChannelPane {
             entrances: Vec::new(),
             viewport: Rc::new(RefCell::new(None)),
         }
+    }
+    fn change_history_limit(&mut self, limit: usize, cx: &mut Context<Self>) {
+        let removed=self.timeline.borrow_mut().set_capacity(limit);
+        if removed>0 {
+            let first=(self.next_id-self.timeline.borrow().messages().len()) as u64;
+            let mut selection=self.selection.borrow_mut();
+            if selection.anchor.is_some_and(|p|p.row<first)||selection.head.is_some_and(|p|p.row<first){selection.clear();}
+            drop(selection);
+            self.entrances.retain(|e|e.row>=first);
+            self.scroller.update(cx,|s,cx|s.splice(0..removed,0,cx));
+        }
+        cx.notify();
     }
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.pending.is_some() {
@@ -359,7 +372,7 @@ impl Render for ChannelPane {
                         div()
                             .text_size(px(12.))
                             .text_color(rgb(theme::MUTED))
-                            .child(if self.connected { format!("Live · {retained} · {}", if following { "Latest" } else { "History" }) } else { self.connection.clone() }),
+                            .child(if self.connected { format!("Live · {retained}/{} · {}", self.timeline.borrow().capacity(), if following { "Latest" } else { "History" }) } else { self.connection.clone() }),
                     )
                     .child(Button::new("close-pane").xsmall().label("×").tooltip("Close this split; keep draft")
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(PaneEvent::Close)))),

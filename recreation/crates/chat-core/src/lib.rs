@@ -101,6 +101,16 @@ impl Timeline {
             ids: HashSet::new(),
         }
     }
+    pub fn capacity(&self) -> usize { self.capacity }
+    /// Return the removed front-row count so the viewport owner can retain its anchor.
+    pub fn set_capacity(&mut self, capacity: usize) -> usize {
+        self.capacity=capacity.max(1);
+        let removed=self.messages.len().saturating_sub(self.capacity);
+        for _ in 0..removed {if let Some(message)=self.messages.pop_front(){self.ids.remove(&message.id);}}
+        self.messages.shrink_to_fit();
+        self.ids.shrink_to_fit();
+        removed
+    }
     pub fn messages(&self) -> &VecDeque<Message> {
         &self.messages
     }

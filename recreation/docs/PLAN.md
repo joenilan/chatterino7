@@ -334,3 +334,17 @@ flows were observed successfully on Windows at 7466e04b.
 
 Sources: Twitch API global emotes/global+channel chat badges; EventSub chat
 message badge fields. No account grant or scopes changed in this batch.
+
+## Bounded chat memory — owner request, 2026-10-09
+
+Appearance & memory offers 500 / 1k / 2k / 5k / 10k retained messages per channel.
+The existing 10k default is preserved for old workspaces; the choice persists and
+applies to new, open and recently closed panes. Lowering the cap trims oldest
+in-memory rows and removes their dedup IDs; the scroller receives a front splice
+instead of being reset or sent to the bottom. Selection is cleared only when its
+endpoint was evicted. If the row being read is itself evicted, it cannot remain
+available: the viewport uses the surviving history. Drafts are unaffected.
+
+Channel headers show retained count / cap. Media has its separate bounded cache;
+this is not a claim that total process memory is exactly 48 MiB. Chat history is
+not written to disk by this feature, and no logging/export retention changed.

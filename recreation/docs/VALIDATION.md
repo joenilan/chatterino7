@@ -1,3 +1,9 @@
+## Configurable history cap — 2026-10-09
+
+Linux offline locked build passed (5.87s). Added persisted per-channel history
+cap controls while preserving the existing10k default. Native settings/persistence
+interaction pending; no large-traffic performance measurement claimed.
+
 ## Native badge/picker result and control fix — 2026-10-09
 
 Windows 9fae62f build exit 0 (1.04s confirming incremental build; initial build

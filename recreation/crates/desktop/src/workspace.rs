@@ -1,5 +1,6 @@
 use crate::{ChannelPane, DragPreview, DraggedChannel, PaneEvent, caption_control, storage, theme};
 use gpui_kit::component::{
+    Disableable,
     IconName, Sizable, StyledExt, WindowExt,
     button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState},
@@ -97,6 +98,7 @@ pub struct Workbench {
     sidebar: bool,
     settings: bool,
     font_size: f32,
+    history_limit: usize,
     drafts: BTreeMap<String, String>,
     save_revision: u64,
     save_enabled: bool,
@@ -145,7 +147,7 @@ impl Workbench {
     }
     pub fn media_inspection(&self) -> Value { json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()}) }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending})
+        json!({"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending})
     }
     pub fn panes(&self) -> Vec<Entity<ChannelPane>> {
         self.tabs
@@ -210,6 +212,7 @@ impl Workbench {
                 .filter(|n| n.is_finite())
                 .unwrap_or(14.)
                 .clamp(12., 24.) as f32,
+            history_limit: state["history_limit"].as_u64().unwrap_or(10_000).clamp(500,10_000) as usize,
             drafts,
             save_revision: 0,
             save_enabled,
@@ -371,7 +374,7 @@ impl Workbench {
     ) -> Entity<ChannelPane> {
         let key = format!("{tab_id}:{name}");
         let draft = self.drafts.get(&key).cloned().unwrap_or_default();
-        let pane = cx.new(|cx| ChannelPane::new(name, self.media.clone(), self.catalog.clone(), &draft, self.font_size, window, cx));
+        let pane = cx.new(|cx| ChannelPane::new(name, self.media.clone(), self.catalog.clone(), &draft, self.font_size, self.history_limit, window, cx));
         let channel = name.to_owned();
         cx.subscribe(&pane, move |this, pane, event, cx| {
             if let PaneEvent::Send { request, text } = event {
@@ -431,7 +434,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"drafts":drafts,
+        json!({"version":1,"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"history_limit":self.history_limit,"drafts":drafts,
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
@@ -817,6 +820,13 @@ impl Workbench {
         self.schedule_save(cx);
         cx.notify();
     }
+    fn change_history_limit(&mut self, limit: usize, cx: &mut Context<Self>) {
+        self.history_limit=limit.clamp(500,10_000);
+        for pane in self.panes().iter().chain(self.closed_tabs.iter().flat_map(|t|t.panes.iter())) {
+            pane.update(cx,|p,cx|p.change_history_limit(self.history_limit,cx));
+        }
+        self.schedule_save(cx);cx.notify();
+    }
     fn change_font(&mut self, delta: f32, cx: &mut Context<Self>) {
         self.font_size = (self.font_size + delta).clamp(12., 24.);
         for pane in self.panes() {
@@ -1067,10 +1077,17 @@ impl Render for Workbench {
                         .child(content)
                         .when(cx.has_active_drag(),|el|el.children(self.drop_edge.map(Self::drop_preview))))
                         .when(self.settings,|el|el.child(div().v_flex().w(px(220.)).p_4().gap_3().bg(rgb(theme::PANEL)).rounded(px(6.))
-                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Appearance"))
+                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Appearance & memory"))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Dark Studio · Segoe UI"))
                             .child(div().h_flex().gap_2().child(Button::new("font-minus").small().label("A−").on_click(cx.listener(|this,_,_,cx|this.change_font(-1.,cx))))
                                 .child(format!("{} px",self.font_size as u32)).child(Button::new("font-plus").small().label("A+").on_click(cx.listener(|this,_,_,cx|this.change_font(1.,cx)))))
+                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Chat memory"))
+                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Newest messages per channel. Older history is released; drafts stay saved."))
+                            .child(div().h_flex().flex_wrap().gap_1().children([500usize,1000,2000,5000,10_000].into_iter().map(|limit|
+                                Button::new(("history-limit",limit)).small().label(if limit<1000 {limit.to_string()}else{format!("{}k",limit/1000)})
+                                    .disabled(limit==self.history_limit).on_click(cx.listener(move|this,_,_,cx|this.change_history_limit(limit,cx)))
+                            )))
+                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Image cache is separately bounded to 48 MiB. Visible chat rows are drawn on demand."))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Tabs, splits, channel drafts and appearance are saved locally."))
                             .child(Button::new("close-settings").ghost().label("Done").on_click(cx.listener(|this,_,_,cx|{this.settings=false;cx.notify();}))))))))
             .child(div().h_flex().h(px(26.)).flex_shrink_0().px_3().gap_3().border_t_1().border_color(rgb(theme::BORDER)).text_size(px(10.)).text_color(rgb(theme::MUTED))
