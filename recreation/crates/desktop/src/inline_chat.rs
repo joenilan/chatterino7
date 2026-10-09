@@ -7,6 +7,13 @@ use chat_core::{
 use gpui_kit::*;
 use std::{cell::RefCell, ops::Range, rc::Rc, sync::Arc};
 
+fn media_width(layers:&[(EmoteKey,Option<Arc<DecodedMedia>>)]) -> f32 {
+    let (key,image)=&layers[0];
+    image.as_ref().map_or_else(||key.width(),|media|{
+        let size=media.image.size(0);
+        (28. * u32::from(size.width) as f32 / (u32::from(size.height) as f32).max(1.)).clamp(8.,112.)
+    })
+}
 #[derive(Clone)]
 struct Span {
     range: Range<usize>,
@@ -114,11 +121,11 @@ impl InlineChat {
                     let animated = layer.animated && !cx.reduce_motion();
                     let key = if layer.provider == "twitch" {
                         EmoteKey::twitch(&layer.id, animated)
-                    } else if layer.provider == "7tv" {
+                    } else if matches!(layer.provider.as_str(), "7tv" | "bttv" | "ffz") {
                         layer
                             .asset
                             .as_ref()
-                            .and_then(|a| EmoteKey::seven(&layer.id, animated, a))
+                            .and_then(|a| EmoteKey::community(&layer.provider, &layer.id, animated, a))
                     } else {
                         None
                     };
@@ -224,7 +231,7 @@ impl Element for InlineChat {
                         .iter()
                         .map(|s| {
                             if let Some(media) = &s.media {
-                                LineFragment::element(px(media[0].0.width()), s.range.len())
+                                LineFragment::element(px(media_width(media)), s.range.len())
                             } else {
                                 LineFragment::text(&text[s.range.clone()])
                             }
@@ -253,7 +260,7 @@ impl Element for InlineChat {
                                 (
                                     None,
                                     layers.iter().map(|(_, image)| image.clone()).collect(),
-                                    px(layers[0].0.width()),
+                                    px(media_width(layers)),
                                 )
                             } else {
                                 let mut run_style = style.clone();

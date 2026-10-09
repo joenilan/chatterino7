@@ -1,3 +1,16 @@
+## BTTV / FFZ implementation checkpoint — 2026-10-09
+
+Linux offline locked build passed against the new catalog/renderer integration.
+Windows build and native BTTV/FFZ images are not yet verified. Existing native
+preview remains ba9bb3b until the connected Windows tooling can safely update it.
+No synthetic messages or new test harness were added. No OAuth scopes changed.
+
+The remaining history-settings check encountered intermittent Deadlink envelope
+errors even on a standalone read-only inspect, without a terminalID or app exit.
+Independent process/log/screenshot checks found the app responsive and receiving
+chat, with no crash evidence and no outstanding control request/response files.
+History was still10k and original drafts49/0. Root has not changed the limit.
+
 ## Native keyboard correction accepted — 2026-10-09 21:00 UTC
 
 Windows ba9bb3b675a9bb8a9e63163a1db33777c47416a8 built with Rust1.99 locked

@@ -71,7 +71,7 @@ pub fn icon(
 impl ChannelPane {
     pub fn refresh_picker(&mut self, cx: &mut Context<Self>) {
         let query = self.emote_search.read(cx).value().to_string();
-        self.picker.choices = self.catalog.borrow().choices(&self.name, &query, 4000);
+        self.picker.choices = self.catalog.borrow().choices(&self.name, &query, 10000);
         self.picker.page = self
             .picker
             .page
@@ -372,7 +372,7 @@ impl ChannelPane {
                     .justify_between()
                     .text_size(px(10.))
                     .text_color(rgb(theme::MUTED))
-                    .child(format!("{} emotes · Twitch globals + 7TV", total))
+                    .child(format!("{} emotes · Twitch · 7TV · BTTV · FFZ", total))
                     .child(
                         div()
                             .h_flex()

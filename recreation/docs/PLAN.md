@@ -348,3 +348,31 @@ available: the viewport uses the surviving history. Drafts are unaffected.
 Channel headers show retained count / cap. Media has its separate bounded cache;
 this is not a claim that total process memory is exactly 48 MiB. Chat history is
 not written to disk by this feature, and no logging/export retention changed.
+
+## Community emote parity — 2026-10-09
+
+BTTV and FFZ anonymous global/channel catalogs now feed the existing bounded
+image loader, inline renderer, picker and completion. Native Twitch fragments
+remain authoritative. Community collisions match the original Chatterino7 order:
+channel FFZ, BTTV, 7TV, then global FFZ, BTTV, 7TV. FFZ globals include only
+`default_sets`; channel data selects `room.set`. BTTV combines channel and shared
+emotes. Providers retain prior catalogs on HTTP failure and refresh every5minutes.
+
+Static and animated assets have explicit strict CDN host/path allowlists. BTTV
+uses animated GIF at2x and a real static WebP fallback to preserve the2MiB wire
+budget; FFZ uses its returned animated/static scale URLs. Missing BTTV dimensions
+start with a provisional square slot, then decoded image aspect ratio determines
+inline width. Existing frame/pixel/decoded-memory limits are unchanged.
+
+Limitations: BTTV prefix effects and legacy specially positioned overlay IDs are
+not rendered by this provider yet. FFZ hidden/modifier entries are excluded from
+this first standard-emote batch; its masks, transforms and centered independent
+overlays need a dedicated implementation. Do not claim full modifier parity,
+7TV personal cosmetics, paints or badge parity from these catalogs.
+
+Primary references:
+- https://betterttv.com/developers
+- https://github.com/night/betterttv/blob/master/src/utils/cdn.js
+- https://github.com/night/betterttv/blob/master/src/modules/emotes/style.css
+- https://api.frankerfacez.com/v1/swagger.json
+- https://www.frankerfacez.com/developers

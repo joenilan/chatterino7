@@ -18,6 +18,7 @@ type Emotes = HashMap<String, Emote>;
 pub struct Catalog {
     global: Emotes,
     pub twitch: crate::twitch_assets::TwitchAssets,
+    pub community: crate::community::Community,
     channels: HashMap<String, Emotes>,
     requested: HashMap<String, (String, Instant)>,
     global_requested: Instant,
@@ -52,6 +53,7 @@ impl Catalog {
         Self {
             global: HashMap::new(),
             twitch: crate::twitch_assets::TwitchAssets::new(),
+            community: crate::community::Community::new(),
             channels: HashMap::new(),
             requested: HashMap::new(),
             global_requested: Instant::now(),
@@ -60,7 +62,7 @@ impl Catalog {
         }
     }
     pub fn inspection(&self) -> Value {
-        serde_json::json!({"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
+        serde_json::json!({"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
     }
     pub fn channel(&mut self, name: &str, id: &str) {
         if id.is_empty() || id.len() > 32 || !id.bytes().all(|b| b.is_ascii_digit()) {
@@ -94,6 +96,7 @@ impl Catalog {
             }
         }
         let mut changed = self.twitch.pump(identity, &self.requested);
+        changed |= self.community.pump(&self.requested);
         while let Ok((name, result)) = self.rx.try_recv() {
             if let Some(emotes) = result {
                 if name.is_empty() {
@@ -107,16 +110,31 @@ impl Catalog {
         }
         changed
     }
-    pub fn choices(&self, channel: &str, query: &str, limit: usize) -> Vec<crate::twitch_assets::Choice> {
-        let query=query.to_lowercase();
-        let mut seen=HashSet::new();
-        let mut choices=Vec::new();
-        for (label,emote) in self.channels.get(channel).into_iter().flat_map(|m|m.iter()).chain(self.global.iter()) {
-            if !label.to_lowercase().contains(&query)||!seen.insert(label.clone()){continue;}
-            if let Some(key)=crate::media::EmoteKey::seven(&emote.id,emote.animated,&emote.asset){choices.push(crate::twitch_assets::Choice{label:label.clone(),provider:"7TV",key});}
+    fn lookup(&self, channel:&str, token:&str)->Option<Fragment> {
+        let make_seven=|e:&Emote|Fragment::Emote{provider:"7tv".into(),id:e.id.clone(),label:token.into(),overlay:e.overlay,animated:e.animated,asset:Some(e.asset.clone())};
+        let local=self.community.channels.get(channel);
+        local.and_then(|s|s.ffz.get(token)).or_else(||local.and_then(|s|s.bttv.get(token))).cloned()
+            .or_else(||self.channels.get(channel).and_then(|s|s.get(token)).map(make_seven))
+            .or_else(||self.community.global.ffz.get(token).or_else(||self.community.global.bttv.get(token)).cloned())
+            .or_else(||self.global.get(token).map(make_seven))
+    }
+    pub fn choices(&self,channel:&str,query:&str,limit:usize)->Vec<crate::twitch_assets::Choice>{
+        let query=query.to_lowercase();let mut names=HashSet::new();
+        names.extend(self.global.keys().cloned());
+        if let Some(set)=self.channels.get(channel){names.extend(set.keys().cloned());}
+        for set in std::iter::once(&self.community.global).chain(self.community.channels.get(channel)) {names.extend(set.ffz.keys().cloned());names.extend(set.bttv.keys().cloned());}
+        let mut choices=HashMap::new();
+        for name in names {if !name.to_lowercase().contains(&query){continue;}
+            if let Some(Fragment::Emote{provider,id,animated,asset:Some(asset),..})=self.lookup(channel,&name){
+                if let Some(key)=crate::media::EmoteKey::community(&provider,&id,animated,&asset){
+                    let provider=match provider.as_str(){"bttv"=>"BTTV","ffz"=>"FFZ",_=>"7TV"};
+                    choices.insert(name.clone(),crate::twitch_assets::Choice{label:name,provider,key});
+                }
+            }
         }
-        for emote in &self.twitch.global.emotes {if emote.label.to_lowercase().contains(&query)&&seen.insert(emote.label.clone()){choices.push(emote.clone());}}
-        choices.sort_by(|a,b| {let al=a.label.to_lowercase();let bl=b.label.to_lowercase();(!al.starts_with(&query),al,&a.label).cmp(&(!bl.starts_with(&query),bl,&b.label))});
+        for emote in &self.twitch.global.emotes {if emote.label.to_lowercase().contains(&query){choices.insert(emote.label.clone(),emote.clone());}}
+        let mut choices:Vec<_>=choices.into_values().collect();
+        choices.sort_by(|a,b|{let al=a.label.to_lowercase();let bl=b.label.to_lowercase();(!al.starts_with(&query),al,&a.label).cmp(&(!bl.starts_with(&query),bl,&b.label))});
         choices.truncate(limit);choices
     }
     pub fn expand(&self, channel: &str, fragments: &[Fragment]) -> Vec<Fragment> {
@@ -126,7 +144,7 @@ impl Catalog {
                 Fragment::Text(text) => text.as_str(),
                 Fragment::Emote {
                     provider, label, ..
-                } if provider == "7tv" => label.as_str(),
+                } if matches!(provider.as_str(),"7tv"|"bttv"|"ffz") => label.as_str(),
                 _ => {
                     result.push(fragment.clone());
                     continue;
@@ -135,20 +153,8 @@ impl Catalog {
             for part in text.split_inclusive(char::is_whitespace) {
                 let token = part.trim_end_matches(char::is_whitespace);
                 if !token.is_empty() {
-                    let emote = self
-                        .channels
-                        .get(channel)
-                        .and_then(|c| c.get(token))
-                        .or_else(|| self.global.get(token));
-                    if let Some(emote) = emote {
-                        result.push(Fragment::Emote {
-                            provider: "7tv".into(),
-                            id: emote.id.clone(),
-                            label: token.into(),
-                            overlay: emote.overlay,
-                            animated: emote.animated,
-                            asset: Some(emote.asset.clone()),
-                        });
+                    if let Some(emote)=self.lookup(channel,token) {
+                        result.push(emote);
                     } else {
                         result.push(Fragment::Text(token.into()));
                     }

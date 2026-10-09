@@ -49,6 +49,20 @@ impl EmoteKey {
             external: Some(asset.clone()),
         })
     }
+    pub fn community(provider:&str,id:&str,animated:bool,asset:&chat_core::EmoteAsset)->Option<Self> {
+        if provider=="7tv" {return Self::seven(id,animated,asset);}
+        let(host,prefixes)=match provider {"bttv"=>("cdn.betterttv.net",vec!["/emote/"]),"ffz"=>("cdn.frankerfacez.com",vec!["/emote/","/emoticon/"]),_=>return None};
+        for value in [&asset.url,&asset.static_url] {
+            let url=reqwest::Url::parse(value).ok()?;
+            if url.scheme()!="https"||url.host_str()!=Some(host)||!url.username().is_empty()||url.password().is_some()||url.port().is_some_and(|p|p!=443)||url.query().is_some()||url.fragment().is_some()||!prefixes.iter().any(|p|url.path().starts_with(p))||url.path().contains("..")||!url.path().bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'/'|b'_'|b'-'|b'.')){return None;}
+        }
+        if asset.width==0||asset.height==0||asset.width>256||asset.height>256{return None;}
+        Some(Self{id:id.into(),animated,external:Some(asset.clone())})
+    }
+    pub fn provider(&self)->&'static str {
+        if self.id.starts_with("badge:"){return "twitch_badge";}
+        match self.external.as_ref().and_then(|a|reqwest::Url::parse(&a.url).ok()).and_then(|u|u.host_str().map(str::to_owned)).as_deref(){Some("cdn.betterttv.net")=>"bttv",Some("cdn.frankerfacez.com")=>"ffz",Some("cdn.7tv.app")=>"7tv",_=>"twitch"}
+    }
     pub fn badge(value: &str) -> Option<Self> {
         let url=reqwest::Url::parse(value).ok()?;
         let path=url.path();
@@ -152,7 +166,7 @@ impl MediaCache {
     }
     pub fn inspection(&self) -> serde_json::Value {
         serde_json::json!({"decoded_bytes":self.bytes,"entries":self.entries.len(),"assets":self.entries.iter().filter_map(|(key,entry)| {
-            if let Entry::Ready{image,..}=entry { Some(serde_json::json!({"id":key.id,"provider":if key.id.starts_with("badge:"){"twitch_badge"}else if key.external.is_some(){"7tv"}else{"twitch"},"animated_requested":key.animated,"frames":image.image.frame_count(),"frame_now":image.frame(false)})) } else {None}
+            if let Entry::Ready{image,..}=entry { Some(serde_json::json!({"id":key.id,"provider":key.provider(),"animated_requested":key.animated,"frames":image.image.frame_count(),"frame_now":image.frame(false)})) } else {None}
         }).collect::<Vec<_>>()})
     }
     pub fn failed(&self, key: &EmoteKey) -> bool {

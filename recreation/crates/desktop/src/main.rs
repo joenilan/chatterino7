@@ -5,6 +5,7 @@ mod control;
 mod live;
 mod media;
 mod catalog;
+mod community;
 mod twitch_assets;
 mod emote_picker;
 mod inline_chat;
