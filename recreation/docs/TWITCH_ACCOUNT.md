@@ -36,13 +36,15 @@ Implementation:
 - Reconnect URLs stay on the Twitch EventSub host. Graceful migration waits for
   the replacement welcome; ordinary reconnect recreates subscriptions and shows
   a missing-history warning. Revocation waits for account/channel reconfiguration.
-- These transport paths are implemented and compile, not yet live verified.
+- Native owner sign-in and authenticated channel subscriptions were verified on
+  Windows (7466e04b, 2026-10-09). Receiving actual traffic and confirmed message
+  delivery remain unverified.
 
-Current limits: real Twitch authorization, Windows vault behavior and interrupted
-login flows have not been manually exercised. The Linux executable builds; the
-cloud display cannot start. Concurrent application instances are not coordinated
-for refresh-token use yet; run one Jawjack instance for account work. Do not call
-this production-ready authentication until the native flow has been exercised.
+Current limits: sign-in reached the post-vault-save signed-in state, but restart
+restoration, refresh rotation, interrupted login and vault-failure recovery are
+not independently verified. Linux and Windows builds passed; the cloud display
+cannot start. Concurrent instances are not coordinated for refresh-token use yet;
+run one Jawjack instance for account work. This is not production-ready auth.
 
 References:
 - https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#device-code-grant-flow
@@ -66,3 +68,13 @@ Sources:
 - https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelchatmessage
 - https://dev.twitch.tv/docs/api/reference/#send-chat-message
 - https://dev.twitch.tv/docs/chat/#rate-limits
+
+## Native integration observation, 2026-10-09
+
+The owner completed Twitch authorization. The native app showed the owner signed
+in and the owner channel Connected, with no subscription error. The channel was
+quiet, so zero messages is not evidence of receive failure. One authorized test
+send encountered a controller transport error without dispatch confirmation;
+the draft remained and there was no observed echo. It was not retried. Adding a
+busy channel was interrupted by the external PC-tool host closing. No claim of
+successful message delivery or live incoming traffic is made from this pass.

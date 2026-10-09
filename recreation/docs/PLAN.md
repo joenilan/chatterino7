@@ -29,9 +29,9 @@ states; synthetic sample messages and test-only controls are gone.
 Linux and Windows release builds have passed. Native Windows inspection of
 3edc6575 confirmed the corrected chat layout and restored workspaces. Remaining
 interactions are being inspected. The owner registered the Twitch public client;
-device-code sign-in and OS-vault handling are implemented but real authorization
-has not been exercised. Live receiving/sending now compiles in the next batch;
-its authenticated runtime behavior and emote rendering remain unfinished.
+device-code sign-in and the post-vault-save account state were verified on Windows.
+Authenticated channel subscriptions also reached Connected. Actual message
+receiving/delivery, restoration/refresh behavior and emote rendering remain unfinished.
 
 ## Confirmed visual direction (owner feedback, 2026-10-09)
 
@@ -301,11 +301,13 @@ including full/duplicate rejection and cross-workspace moves, remain unverified.
 
 Implemented in source: shared Twitch EventSub receiving, message deletion/user
 clear/channel clear handling, Helix sends with draft retention on failure, bounded
-queues/deduplication, channel readiness, and reconnect/gap status. Real Twitch
-login and receive/send are not yet verified. Emote rendering remains outstanding.
+queues/deduplication, channel readiness, and reconnect/gap status. Real owner login
+and channel readiness are verified; incoming traffic and delivered sends are not.
+Emote rendering remains outstanding.
 
 Middle mouse closes a tab only after a themed confirmation naming its workspace
 and channels. Close icon and Ctrl+W use the same stable-ID confirmation. Cancel,
 Escape, and default Enter leave the workspace intact; the explicit Close tab
 button confirms. Duplicate requests cannot stack dialogs. Closed tabs can be
-reopened during the session with Ctrl+Shift+T. Native interaction pending.
+reopened during the session with Ctrl+Shift+T. These native close/cancel/reopen
+flows were observed successfully on Windows at 7466e04b.

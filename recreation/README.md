@@ -33,12 +33,14 @@ layout. The original C++ application remains untouched.
 
 Twitch device-code sign-in is implemented using Jawjack’s public Client ID and the
 OS credential vault. It includes saved-account validation, cancellation, expiry,
-refresh-token rotation and local sign-out. The real authorization flow has not yet
-been exercised. No client secret is required or embedded.
+refresh-token rotation and local sign-out. Native Windows owner sign-in and
+authenticated channel subscriptions were verified on 2026-10-09. No client secret
+is required or embedded.
 
-Live chat transport is **not connected yet**. Send stays disabled and Enter retains
-the draft. No synthetic chat is seeded. Live receiving/sending, emotes, moderation
-and Chatterino7 parity remain on [the roadmap](docs/PLAN.md). Planned multiplatform
+Live text transport is implemented. Sending is enabled only for connected channels;
+failed or uncertain sends preserve the draft. Actual incoming traffic and delivered
+messages remain unverified, and emotes still display as text. No synthetic chat is
+seeded. Emotes, moderation and Chatterino7 parity remain on [the roadmap](docs/PLAN.md). Planned multiplatform
 viewer and broadcaster workflows are in [MULTIPLATFORM.md](docs/MULTIPLATFORM.md).
 
 ## Build and run
@@ -85,7 +87,7 @@ unfinished. State inspection is not proof of visual correctness or a native run.
 
 ### In development: authenticated live text chat
 
-The next batch wires the Twitch account to shared EventSub receiving and Helix
-sending. Real account authorization and live messages have not yet been verified;
-emotes still display as text. See [account details](docs/TWITCH_ACCOUNT.md).
+The Twitch account is wired to shared EventSub receiving and Helix sending.
+Owner authorization and channel readiness are verified; actual received/sent
+messages remain unverified. See [account details](docs/TWITCH_ACCOUNT.md).
 Tab closing now includes middle-click and a confirmation with the channel list.
