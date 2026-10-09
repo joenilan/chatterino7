@@ -25,6 +25,25 @@ gpui_kit::actions!(
     [CopyChatSelection, ClearChatSelection, SelectAllChat]
 );
 
+#[derive(Clone)]
+struct DraggedChannel {
+    pane: Entity<ChannelPane>,
+    name: String,
+}
+struct DragPreview(String);
+impl Render for DragPreview {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px_3()
+            .py_2()
+            .bg(rgb(theme::PANEL))
+            .text_color(rgb(theme::TEXT))
+            .border_1()
+            .border_color(rgb(0xA99CF4))
+            .rounded(px(5.))
+            .child(self.0.clone())
+    }
+}
 struct CopyFeedback;
 struct ComposerFeedback;
 fn twitch_message_text(text: &str) -> String {
@@ -33,6 +52,7 @@ fn twitch_message_text(text: &str) -> String {
 }
 #[derive(Clone)]
 enum PaneEvent {
+    DragStarted,
     Close,
     DraftChanged,
 }
@@ -197,6 +217,13 @@ impl Render for ChannelPane {
                             .flex_1()
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_size(px(13.))
+                            .id("channel-drag-title")
+                            .cursor(CursorStyle::OpenHand)
+                            .on_drag(DraggedChannel { pane: cx.entity(), name: self.name.to_string() }, |drag, _, _, cx| {
+                                drag.pane.update(cx, |_,cx|cx.emit(PaneEvent::DragStarted));
+                                cx.stop_propagation();
+                                cx.new(|_| DragPreview(format!("# {}", drag.name)))
+                            })
                             .child(format!("# {}", self.name)),
                     )
                     .child(
@@ -291,6 +318,9 @@ impl Render for ChannelPane {
                             if count > 500 { window.prevent_default(); cx.stop_propagation(); }
                         }
                     }
+                }))
+                .capture_action(cx.listener(|_, action: &gpui_kit::base::input::Enter, _, cx| {
+                    if action.shift { cx.stop_propagation(); }
                 }))
                 .capture_action(cx.listener(|this, _: &gpui_kit::base::input::Paste, window, cx| {
                     if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {

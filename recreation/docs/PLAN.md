@@ -282,3 +282,14 @@ Twitch messages are limited to 500 characters, Shift+Enter must not insert a new
 and pasted line breaks become spaces without splitting or automatically sending
 multiple messages. Over-limit pastes preserve the old draft and explain the limit.
 Other providers may have different rules; limits belong to the active provider.
+
+## Drag layout checkpoint
+
+The layout toolbar toggle is replaced in source by native GPUI drag/drop. Drag a
+channel header to workspace edges with a half-area placement preview; drag tabs
+to reorder or append; drop a channel on another workspace tab to move its existing
+entity. Draft/scroller state follows that entity, and close/save resolve its current
+owner rather than a captured original tab. The current two-pane limit remains;
+full/duplicate targets reject without deleting source state. Arbitrarily nested
+VS Code-style docking is not claimed. The View menu retains a keyboard-accessible
+layout alternative. This drag checkpoint requires native interaction verification.

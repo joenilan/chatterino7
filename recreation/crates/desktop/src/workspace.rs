@@ -1,4 +1,4 @@
-use crate::{ChannelPane, PaneEvent, caption_control, storage, theme};
+use crate::{ChannelPane, DragPreview, DraggedChannel, PaneEvent, caption_control, storage, theme};
 use gpui_kit::component::{
     IconName, Sizable, StyledExt, WindowExt,
     button::{Button, ButtonVariants},
@@ -41,6 +41,34 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-k", AddChannel, Some("ChatWorkspace")),
     ]);
 }
+#[derive(Clone)]
+struct DraggedTab {
+    id: u64,
+    name: String,
+}
+#[derive(Clone, Copy, PartialEq)]
+enum DropEdge {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+impl DropEdge {
+    fn vertical(self) -> bool {
+        matches!(self, Self::Top | Self::Bottom)
+    }
+    fn first(self) -> bool {
+        matches!(self, Self::Left | Self::Top)
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Self::Left => "Place left",
+            Self::Right => "Place right",
+            Self::Top => "Place above",
+            Self::Bottom => "Place below",
+        }
+    }
+}
 struct WorkspaceTab {
     id: u64,
     name: String,
@@ -51,6 +79,7 @@ struct WorkspaceTab {
 }
 pub struct Workbench {
     account: Entity<crate::auth::TwitchAccount>,
+    drop_edge: Option<DropEdge>,
     control_enabled: bool,
     tabs: Vec<WorkspaceTab>,
     closed_tabs: Vec<WorkspaceTab>,
@@ -151,6 +180,7 @@ impl Workbench {
             .unwrap_or_default();
         let mut this = Self {
             account: cx.new(|cx| crate::auth::TwitchAccount::new(!control_enabled, cx)),
+            drop_edge: None,
             control_enabled,
             tabs: vec![],
             closed_tabs: vec![],
@@ -255,10 +285,23 @@ impl Workbench {
         let pane = cx.new(|cx| ChannelPane::new(name, &draft, self.font_size, window, cx));
         let channel = name.to_owned();
         cx.subscribe(&pane, move |this, pane, event, cx| {
+            if matches!(event, PaneEvent::DragStarted) {
+                this.drop_edge = None;
+                cx.notify();
+                return;
+            }
             let text = pane.read(cx).draft.read(cx).value().to_string();
-            this.drafts.insert(format!("{tab_id}:{channel}"), text);
+            let owner = this
+                .tabs
+                .iter()
+                .find(|t| t.panes.iter().any(|p| *p == pane))
+                .map(|t| t.id);
+            let Some(owner) = owner else {
+                return;
+            };
+            this.drafts.insert(format!("{owner}:{channel}"), text);
             if matches!(event, PaneEvent::Close) {
-                if let Some(tab) = this.tabs.iter_mut().find(|t| t.id == tab_id) {
+                if let Some(tab) = this.tabs.iter_mut().find(|t| t.id == owner) {
                     if let Some(ix) = tab.panes.iter().position(|p| *p == pane) {
                         tab.panes.remove(ix);
                         tab.split.update(cx, |state, cx| state.remove_panel(ix, cx));
@@ -484,6 +527,154 @@ impl Workbench {
             self.select_tab(target as usize, cx);
         }
     }
+    fn reorder_tab(&mut self, source: u64, target: u64, cx: &mut Context<Self>) {
+        if source == target {
+            return;
+        }
+        let selected = self.tabs[self.active].id;
+        let Some(from) = self.tabs.iter().position(|t| t.id == source) else {
+            return;
+        };
+        let tab = self.tabs.remove(from);
+        let to = self
+            .tabs
+            .iter()
+            .position(|t| t.id == target)
+            .unwrap_or(self.tabs.len());
+        self.tabs.insert(to, tab);
+        self.active = self.tabs.iter().position(|t| t.id == selected).unwrap_or(0);
+        self.schedule_save(cx);
+        cx.notify();
+    }
+    fn move_pane(
+        &mut self,
+        drag: &DraggedChannel,
+        target: u64,
+        edge: Option<DropEdge>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.drop_edge = None;
+        let Some(source) = self
+            .tabs
+            .iter()
+            .position(|t| t.panes.iter().any(|p| *p == drag.pane))
+        else {
+            return;
+        };
+        let Some(destination) = self.tabs.iter().position(|t| t.id == target) else {
+            return;
+        };
+        if source != destination
+            && (self.tabs[destination].panes.len() >= 2
+                || self.tabs[destination]
+                    .panes
+                    .iter()
+                    .any(|p| p.read(cx).name.as_ref() == drag.name))
+        {
+            window.push_notification(Notification::info("This workspace already has two panes or this channel. Drop into an empty workspace or rearrange its current panes."), cx);
+            cx.notify();
+            return;
+        }
+        let from = self.tabs[source]
+            .panes
+            .iter()
+            .position(|p| *p == drag.pane)
+            .unwrap();
+        let pane = self.tabs[source].panes.remove(from);
+        let old_size = if from < self.tabs[source].sizes.len() {
+            Some(self.tabs[source].sizes.remove(from))
+        } else {
+            None
+        };
+        if source != destination {
+            self.tabs[source].split = cx.new(|_| ResizableState::default());
+        }
+        let tab = &mut self.tabs[destination];
+        let axis_changed = edge.is_some_and(|e| e.vertical() != tab.vertical);
+        if let Some(edge) = edge {
+            tab.vertical = edge.vertical();
+        }
+        let to = if edge.is_some_and(DropEdge::first) {
+            0
+        } else {
+            tab.panes.len()
+        };
+        tab.panes.insert(to, pane);
+        if source == destination && !axis_changed {
+            if let Some(size) = old_size {
+                tab.sizes.insert(to.min(tab.sizes.len()), size);
+            }
+        } else {
+            tab.sizes.clear();
+        }
+        tab.split = cx.new(|_| ResizableState::default());
+        self.active = destination;
+        self.adding = false;
+        self.schedule_save(cx);
+        cx.notify();
+    }
+    fn track_drop(&mut self, event: &DragMoveEvent<DraggedChannel>, cx: &mut Context<Self>) {
+        let bounds = event.bounds;
+        let position = event.event.position;
+        let edge = if bounds.contains(&position)
+            && bounds.size.width > px(0.)
+            && bounds.size.height > px(0.)
+        {
+            let x = f32::from(position.x - bounds.origin.x) / f32::from(bounds.size.width);
+            let y = f32::from(position.y - bounds.origin.y) / f32::from(bounds.size.height);
+            if x < 0.35 {
+                Some(DropEdge::Left)
+            } else if x > 0.65 {
+                Some(DropEdge::Right)
+            } else if y < 0.35 {
+                Some(DropEdge::Top)
+            } else if y > 0.65 {
+                Some(DropEdge::Bottom)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if self.drop_edge != edge {
+            self.drop_edge = edge;
+            cx.notify();
+        }
+    }
+    fn drop_preview(edge: DropEdge) -> AnyElement {
+        div()
+            .absolute()
+            .flex()
+            .items_center()
+            .justify_center()
+            .border_2()
+            .border_color(rgb(0xA99CF4))
+            .bg(rgba(0xA99CF42A))
+            .text_color(rgb(theme::TEXT))
+            .when(edge.vertical(), |el| el.left_0().right_0().h(relative(0.5)))
+            .when(!edge.vertical(), |el| {
+                el.top_0().bottom_0().w(relative(0.5))
+            })
+            .when(edge == DropEdge::Left, |el| el.left_0())
+            .when(edge == DropEdge::Right, |el| el.right_0())
+            .when(edge == DropEdge::Top, |el| el.top_0())
+            .when(edge == DropEdge::Bottom, |el| el.bottom_0())
+            .child(
+                div()
+                    .px_3()
+                    .py_2()
+                    .rounded(px(5.))
+                    .bg(rgb(theme::PANEL))
+                    .child(edge.label()),
+            )
+            .with_animation(
+                ("drop-edge-reveal", edge as usize),
+                Animation::new(Duration::from_millis(80)),
+                |el, progress| el.opacity(progress),
+            )
+            .into_any_element()
+    }
     fn flip_split(&mut self, cx: &mut Context<Self>) {
         let tab = &mut self.tabs[self.active];
         tab.vertical = !tab.vertical;
@@ -695,14 +886,26 @@ impl Render for Workbench {
                 .child(div().v_flex().flex_1().h_full().min_w_0().min_h_0()
                     .child(div().h_flex().h(px(42.)).flex_shrink_0().bg(rgb(theme::PANEL)).border_b_1().border_color(rgb(theme::BORDER))
                         .child(div().flex_1().min_w_0().child(TabBar::new("workspace-tabs").selected_index(self.active).max_width(px(180.)).menu(true).track_scroll(&self.tab_scroll)
+                            .last_empty_space(div().id("tab-drop-end").w(px(24.)).h_full()
+                                .drag_over::<DraggedTab>(|style,_,_,_|style.border_l_2().border_color(rgb(0xA99CF4)))
+                                .on_drop(cx.listener(|this,drag:&DraggedTab,_,cx|this.reorder_tab(drag.id,u64::MAX,cx))))
                             .on_click(cx.listener(|this,ix:&usize,window,cx|{this.select_tab(*ix,cx);this.focus.focus(window,cx);}))
-                            .children(self.tabs.iter().enumerate().map(|(ix,tab)|Tab::new().label(tab.name.clone()).suffix(Button::new(("close-tab",tab.id)).ghost().xsmall().label("×").tooltip("Close workspace · Ctrl+W")
+                            .children(self.tabs.iter().enumerate().map(|(ix,tab)|Tab::new().label(tab.name.clone())
+                                .on_drag(DraggedTab{id:tab.id,name:tab.name.clone()},{let owner=cx.entity().downgrade();move|drag,_,_,cx|{
+                                    let _=owner.update(cx,|this,cx|{this.drop_edge=None;cx.notify();});
+                                    cx.new(|_|DragPreview(drag.name.clone()))
+                                }})
+                                .drag_over::<DraggedTab>(|style,_,_,_|style.border_l_2().border_color(rgb(0xA99CF4)))
+                                .on_drop(cx.listener({let target=tab.id;move|this,drag:&DraggedTab,_,cx|this.reorder_tab(drag.id,target,cx)}))
+                                .drag_over::<DraggedChannel>(|style,_,_,_|style.bg(rgb(theme::HOVER)))
+                                .on_drop(cx.listener({let target=tab.id;move|this,drag:&DraggedChannel,w,cx|this.move_pane(drag,target,None,w,cx)}))
+                                .suffix(Button::new(("close-tab",tab.id)).ghost().xsmall().label("×").tooltip("Close workspace · Ctrl+W")
                                 .on_click(cx.listener(move|this,_,window,cx|{cx.stop_propagation();this.close_tab(ix,cx);this.focus.focus(window,cx);})))))))
                         .child(Button::new("new-tab").ghost().small().label("+").tooltip("New workspace · Ctrl+T").on_click(cx.listener(|this,_,w,cx|this.new_tab(w,cx)))))
                     .child(div().h_flex().h(px(42.)).flex_shrink_0().px_3().gap_2().border_b_1().border_color(rgb(theme::BORDER))
 
                         .child(Button::new("add-channel").small().label("+ Channel").tooltip("Add a split · Ctrl+K").on_click(cx.listener(|this,_,w,cx|this.open_add(false,w,cx))))
-                        .child(Button::new("orientation").ghost().small().label(if tab.vertical{"Stacked"}else{"Side by side"}).tooltip("Change split orientation").on_click(cx.listener(|this,_,_,cx|this.flip_split(cx))))
+
                         .child(Button::new("rename").ghost().small().label("Rename").on_click(cx.listener(|this,_,w,cx|this.open_add(true,w,cx))))
                         .when(!self.closed_tabs.is_empty(), |el|el.child(Button::new("reopen").ghost().small().label("Reopen closed").tooltip("Ctrl+Shift+T").on_click(cx.listener(|this,_,_,cx|this.reopen_tab(cx)))))
                         .child(div().flex_1())
@@ -714,7 +917,11 @@ impl Render for Workbench {
                             .child(Button::new("accept-channel").label(if self.renaming{"Save"}else{"Add channel"}).on_click(cx.listener(|this,_,w,cx|this.accept_input(w,cx))))
                             .child(Button::new("cancel-add").ghost().label("Cancel").on_click(cx.listener(|this,_,window,cx|{this.adding=false;this.focus.focus(window,cx);cx.notify();}))))
                         .when_some(self.add_error.clone(),|el,error|el.child(div().text_size(px(12.)).text_color(rgb(0xF29D9D)).child(error)))))
-                    .child(div().h_flex().items_stretch().flex_1().min_h_0().overflow_hidden().p_2().gap_2().child(div().flex_1().h_full().min_w_0().min_h_0().child(content))
+                    .child(div().h_flex().items_stretch().flex_1().min_h_0().overflow_hidden().p_2().gap_2().child(div().id("channel-dock").relative().flex_1().h_full().min_w_0().min_h_0()
+                        .on_drag_move(cx.listener(|this,event:&DragMoveEvent<DraggedChannel>,_,cx|this.track_drop(event,cx)))
+                        .on_drop(cx.listener(move|this,drag:&DraggedChannel,w,cx|{if let Some(edge)=this.drop_edge {this.move_pane(drag,tab_id,Some(edge),w,cx);}}))
+                        .child(content)
+                        .when(cx.has_active_drag(),|el|el.children(self.drop_edge.map(Self::drop_preview))))
                         .when(self.settings,|el|el.child(div().v_flex().w(px(220.)).p_4().gap_3().bg(rgb(theme::PANEL)).rounded(px(6.))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Appearance"))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Dark Studio · Segoe UI"))
