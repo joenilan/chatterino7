@@ -226,3 +226,26 @@ release pointer rather than retaining the drag-hover state/callback's pane name.
 This correction is compiled, not yet verified natively. Control inspection now
 records the last drop's source, target, edge and pointer coordinates for diagnosis.
 Owner layout and exact drafts were restored; temporary QA workspace9 remains.
+
+### e7d4f409 compact native acceptance — 2026-10-09
+
+Windows Rust1.99 locked release build passed (exit0,14.04s). Native inspection at
+540x470 verified account-dialog open/close without auth changes, gear/settings
+overlay without changing pane widths, sidebar toggle, group + add-form/cancel,
+and channel-tab right-click Add/live-filter/Close menu. Default launch size was
+not changed; original1280x820 client size was restored after the temporary check.
+
+No unexpected drops occurred during those controls. A controlled bottom-edge
+move then passed: QA B at release(958,700), local-control input, target QA C,
+Place below; dock and screenshot confirmed A left / C above B right. Captured
+MouseUpEvent position avoids relying on mutable cursor state. This proves that
+case; it does not establish the cause of earlier unexplained native changes.
+
+QA workspace9 was removed through normal confirmed close. Owner workspace4,
+layout, sidebar state and every preexisting draft matched their saved baseline;
+history remained10000 and live messages arrived in both owner channels. Preview
+left running with overlays closed. No messages sent or account grants changed.
+
+Still not claimed: full Chatterino parity, every divider/reset/cancel permutation,
+all provider-specific image variants, and comprehensive live-status transition
+coverage. The old two-pane cap is removed; three-pane nested layouts were observed.
