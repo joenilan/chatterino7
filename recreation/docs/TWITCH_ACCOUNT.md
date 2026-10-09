@@ -97,6 +97,7 @@ renderer lifts colors below 4.5:1 contrast against its chat canvas, and uses a
 stable user-ID-derived palette when Twitch supplies no color. Resolution happens
 once per received message, outside the animation/render loop. Username weight and
 color use the same shaped text and byte offsets as selection, preserving copied
-text and Unicode names. Windows visual verification is pending for this change.
+text and Unicode names. Windows 8b0b54f visibly confirmed colored, heavier
+usernames while receiving real HutchMF messages; build passed in 8.49s.
 
 Contract: https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-message-event

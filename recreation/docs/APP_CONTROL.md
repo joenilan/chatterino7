@@ -126,4 +126,8 @@ drag selection and right-click copy returned clipboard_verified. Entrance motion
 was not visually verified: initial capture issues and an existing selection
 suppressed it. A collapsed selection anchor after Latest was found to suppress
 entrances unnecessarily; the condition now checks an actual selection or drag.
-Username-color and collapsed-anchor fixes await the next Windows build.
+Windows 8b0b54f then passed its locked release build in 8.49s, restored the saved
+account and received HutchMF messages (9 → 11). Colored, heavier usernames and
+the corrected live indicator were visibly confirmed. Entrance motion remains
+unverified; no extended recording was performed. Tabs and the 49-character owner
+draft were preserved, with no chat send.
