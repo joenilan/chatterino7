@@ -1,6 +1,6 @@
-# Chat workbench
+# Jawjack
 
-A native Rust + GPUI Kit Twitch workspace being built as Joe's Chatterino7
+Jawjack by Zombie Digital is a native Rust + GPUI Kit Twitch workspace, built as Joe's Chatterino7
 replacement. Dark Studio styling, a custom Windows frame, and a channel-first
 layout. The original C++ application remains untouched.
 
@@ -10,7 +10,8 @@ layout. The original C++ application remains untouched.
   recently closed workspace during the session.
 - Add Twitch channel names or channel URLs. Each workspace supports two
   independently resizable channel splits, side-by-side or stacked.
-- Collapsible, scrollable workspace sidebar and tab overflow menu.
+- Optional workspace sidebar, closed by default, with a hamburger toggle that
+  remembers its state. Tabs and channel controls work without it.
 - Multiline composers with ordinary cut/copy/paste, undo/redo and retained drafts.
 - Local saved tabs, active workspace, split sizes/orientation, sidebar, font size
   and separate drafts for the same channel in different workspaces.
@@ -22,11 +23,15 @@ layout. The original C++ application remains untouched.
 
 ## Current connection status
 
-This checkpoint is **not connected to Twitch yet**. Channels can be organized and
-written into locally, but Send stays disabled and Enter preserves the draft. No
-synthetic chat is seeded, and there are no replay/moderation test buttons.
-Authentication, live receiving/sending, emote images, moderation, and additional
-Chatterino7 parity remain on [the roadmap](docs/PLAN.md).
+Twitch device-code sign-in is implemented using Jawjack’s public Client ID and the
+OS credential vault. It includes saved-account validation, cancellation, expiry,
+refresh-token rotation and local sign-out. The real authorization flow has not yet
+been exercised. No client secret is required or embedded.
+
+Live chat transport is **not connected yet**. Send stays disabled and Enter retains
+the draft. No synthetic chat is seeded. Live receiving/sending, emotes, moderation
+and Chatterino7 parity remain on [the roadmap](docs/PLAN.md). Planned multiplatform
+viewer and broadcaster workflows are in [MULTIPLATFORM.md](docs/MULTIPLATFORM.md).
 
 ## Build and run
 
@@ -62,7 +67,7 @@ application data, not credentials. Invalid/unsupported settings files are left
 untouched and saving is disabled for that run, with an explanatory status.
 Closing a split preserves its draft for reopening in the same workspace.
 Recently closed workspace reopening is session-local; active tabs restore after
-relaunch. Tokens will use a separate OS-vault path when authentication is added.
+relaunch. Twitch tokens use a separate OS-vault entry and never enter workspace.json.
 
 Minimum window size is 1050×640. Automatic selection edge scrolling, full Unicode
 grapheme semantics, accessibility/IME review and full daily-client parity remain

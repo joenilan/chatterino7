@@ -50,6 +50,7 @@ struct WorkspaceTab {
     split: Entity<ResizableState>,
 }
 pub struct Workbench {
+    account: Entity<crate::auth::TwitchAccount>,
     control_enabled: bool,
     tabs: Vec<WorkspaceTab>,
     closed_tabs: Vec<WorkspaceTab>,
@@ -149,6 +150,7 @@ impl Workbench {
             })
             .unwrap_or_default();
         let mut this = Self {
+            account: cx.new(|cx| crate::auth::TwitchAccount::new(!control_enabled, cx)),
             control_enabled,
             tabs: vec![],
             closed_tabs: vec![],
@@ -163,7 +165,7 @@ impl Workbench {
             adding: false,
             renaming: false,
             add_error: None,
-            sidebar: state["sidebar"].as_bool().unwrap_or(true),
+            sidebar: state["sidebar"].as_bool().unwrap_or(false),
             settings: false,
             font_size: state["font_size"]
                 .as_f64()
@@ -655,7 +657,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|this,_:&QuitWithoutSaving,_,cx|{if this.close_failed {cx.quit();}}))
             .child(div().h_flex().h(px(40.)).flex_shrink_0().border_b_1().border_color(rgb(theme::BORDER))
                 .child(div().h_flex().px_4().gap_2().child(div().text_color(rgb(0xA99CF4)).font_weight(FontWeight::BOLD).child("//"))
-                    .child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(12.)).child("CHAT WORKBENCH")))
+                    .child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(12.)).child("JAWJACK")))
 
                 .child(Button::new("workspace-menu").ghost().small().label("Workspace").dropdown_menu(move|menu,_,_|menu.action_context(menu_focus.clone())
                     .menu("New workspace",Box::new(NewTab)).menu("Add channel",Box::new(AddChannel)).menu("Rename workspace",Box::new(RenameWorkspace))
@@ -686,6 +688,7 @@ impl Render for Workbench {
                         .when(!self.closed_tabs.is_empty(), |el|el.child(Button::new("reopen").ghost().small().label("Reopen closed").tooltip("Ctrl+Shift+T").on_click(cx.listener(|this,_,_,cx|this.reopen_tab(cx)))))
                         .child(div().flex_1())
                         .child(Button::new("preferences").ghost().small().label("Appearance").on_click(cx.listener(|this,_,_,cx|{this.settings=!this.settings;cx.notify();}))))
+                    .child(self.account.clone())
                     .when(self.adding,|el|el.child(div().v_flex().p_3().gap_2().bg(rgb(theme::ELEVATED)).border_b_1().border_color(rgb(theme::BORDER))
                         .child(div().text_size(px(12.)).child(if self.renaming{"Rename workspace"}else{"Add a Twitch channel to this workspace"}))
                         .child(div().h_flex().gap_2().child(div().flex_1().child(Input::new(&self.channel_input)))
@@ -701,6 +704,6 @@ impl Render for Workbench {
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Tabs, splits, channel drafts and appearance are saved locally."))
                             .child(Button::new("close-settings").ghost().label("Done").on_click(cx.listener(|this,_,_,cx|{this.settings=false;cx.notify();}))))))))
             .child(div().h_flex().h(px(26.)).px_3().gap_3().border_t_1().border_color(rgb(theme::BORDER)).text_size(px(10.)).text_color(rgb(theme::MUTED))
-                .child("○ Twitch disconnected").child(div().flex_1().child(self.save_status.clone())).child("Ctrl+K channels · Ctrl+T tabs"))
+                .child("○ Live chat disconnected").child(div().flex_1().child(self.save_status.clone())).child("Ctrl+K channels · Ctrl+T tabs"))
     }
 }

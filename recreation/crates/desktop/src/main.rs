@@ -1,4 +1,5 @@
 use gpui_kit::prelude::FluentBuilder;
+mod auth;
 mod chat_text;
 mod control;
 mod storage;
@@ -366,6 +367,7 @@ fn main() {
         .with_assets(gpui_kit::assets::Assets)
         .run(move |cx| {
             gpui_kit::init(cx);
+            cx.set_app_identity("digital.zombie.jawjack", "Jawjack");
             workspace::bind_keys(cx);
             theme::install(cx);
             cx.bind_keys([
@@ -378,7 +380,7 @@ fn main() {
             ]);
             let options = WindowOptions {
                 titlebar: Some(TitlebarOptions {
-                    title: Some("Chat workbench".into()),
+                    title: Some("Jawjack".into()),
                     appears_transparent: true,
                     ..Default::default()
                 }),
@@ -404,6 +406,6 @@ fn main() {
                 }
                 entity
             })
-            .expect("Could not open the chat workbench window");
+            .expect("Could not open the Jawjack window");
         });
 }

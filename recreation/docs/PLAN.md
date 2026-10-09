@@ -235,3 +235,10 @@ asset purchase, account registration or production moderation is performed here.
 - https://dev.twitch.tv/docs/authentication/validate-tokens/
 - https://dev.twitch.tv/docs/eventsub/handling-websocket-events/
 - https://dev.twitch.tv/docs/chat/send-receive-messages/
+
+## Jawjack multiplatform direction
+
+Owner-approved future scope is recorded in [MULTIPLATFORM.md](MULTIPLATFORM.md):
+Connections / Integrations, watching other creators as well as own streams, and
+optional combined feeds. Twitch implementation remains first. Provider capability
+research gates YouTube, Kick, TikTok and further integrations.
