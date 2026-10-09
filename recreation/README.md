@@ -11,10 +11,10 @@ release phases, authenticated Twitch flow and daily-client acceptance criteria.
 
 - Framework-independent bounded chat timelines and normalized events.
 - Duplicate suppression for retained message IDs, channel isolation and redaction.
-- Unicode-safe text/emote copy representation.
+- Unicode-safe text/emote copy representation and bounded zero-width overlay grouping.
 - A two-pane GPUI replay harness with 250 synthetic messages per pane, +100-message
   bursts and a mock timeout control. Each pane retains up to 10,000 messages.
-- Pinned GPUI Kit 0.7.1 and a lockfile; isolated Windows build workflow.
+- Pinned GPUI Kit 0.7.1 and a lockfile; local build commands.
 
 ## Build
 
@@ -52,3 +52,6 @@ or hands-on validation. Selectable text support alone does not establish parity.
 
 See [VALIDATION.md](docs/VALIDATION.md) for exact checks and current limitations.
 No browser, Windows or owner acceptance is implied by this source checkpoint.
+
+CI/Actions are intentionally not used for this recreation. Commits use `[skip ci]`.
+The owner runs Windows builds and reports errors for follow-up fixes.

@@ -1,4 +1,5 @@
 //! Transport-independent, bounded chat state. No credentials or network access.
+pub mod emotes;
 use std::collections::{HashSet, VecDeque};
 
 #[derive(Clone, Debug, PartialEq, Eq)]

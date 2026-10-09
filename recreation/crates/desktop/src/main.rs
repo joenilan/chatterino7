@@ -5,7 +5,7 @@ use chat_core::{Event, Timeline, fixture};
 use gpui_kit::base::SelectableText;
 use gpui_kit::component::{
     ActiveTheme, StyledExt,
-    button::{Button, ButtonVariants},
+    button::Button,
     message_scroller::{MessageScroller, MessageScrollerState},
 };
 use gpui_kit::*;
@@ -15,9 +15,10 @@ struct ChannelPane {
     timeline: Rc<RefCell<Timeline>>,
     scroller: Entity<MessageScrollerState>,
     next_id: usize,
+    selection_base: u64,
 }
 impl ChannelPane {
-    fn new(name: &'static str, cx: &mut Context<Self>) -> Self {
+    fn new(name: &'static str, selection_base: u64, cx: &mut Context<Self>) -> Self {
         let mut timeline = Timeline::new(name, 10_000);
         for i in 0..250 {
             timeline.apply(Event::Message(fixture(name, i)));
@@ -29,6 +30,7 @@ impl ChannelPane {
             timeline: Rc::new(RefCell::new(timeline)),
             scroller,
             next_id: 250,
+            selection_base,
         }
     }
     fn burst(&mut self, cx: &mut Context<Self>) {
@@ -50,12 +52,16 @@ impl ChannelPane {
         cx.notify();
     }
     fn redact(&mut self, cx: &mut Context<Self>) {
-        self.timeline.borrow_mut().apply(Event::ClearUser {
+        let change = self.timeline.borrow_mut().apply(Event::ClearUser {
             channel_id: self.name.to_string(),
             user_id: "fixture-1".into(),
         });
+        if change == chat_core::Change::Ignored {
+            return;
+        }
+        let count = self.timeline.borrow().messages().len();
         self.scroller.update(cx, |state, cx| {
-            state.remeasure(cx);
+            state.remeasure_items(0..count, cx);
         });
         cx.notify();
     }
@@ -64,6 +70,7 @@ impl Render for ChannelPane {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let timeline = self.timeline.clone();
         let retained = timeline.borrow().messages().len();
+        let first_order = self.selection_base + (self.next_id - retained) as u64;
         div()
             .v_flex()
             .flex_1()
@@ -100,7 +107,7 @@ impl Render for ChannelPane {
                                 SharedString::from(format!("text-{}", message.id)),
                                 message.copy_line(),
                             )
-                            .document_order(index as u64),
+                            .document_order(first_order + index as u64),
                         )
                         .into_any_element()
                 })
@@ -150,8 +157,8 @@ fn main() {
             gpui_kit::open_window(WindowOptions::default(), cx, |_, cx| {
                 cx.new(|cx| Workbench {
                     panes: vec![
-                        cx.new(|cx| ChannelPane::new("workbench", cx)),
-                        cx.new(|cx| ChannelPane::new("second-channel", cx)),
+                        cx.new(|cx| ChannelPane::new("workbench", 0, cx)),
+                        cx.new(|cx| ChannelPane::new("second-channel", 1_u64 << 48, cx)),
                     ],
                 })
             })
