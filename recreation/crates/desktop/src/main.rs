@@ -1,4 +1,5 @@
 mod chat_text;
+mod control;
 mod theme;
 
 use chat_core::{Event, Timeline, fixture, selection::Selection};
@@ -27,6 +28,7 @@ struct ChannelPane {
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
     draft: Entity<InputState>,
+    last_copy_result: Option<&'static str>,
     scroller: Entity<MessageScrollerState>,
     next_id: usize,
     viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
@@ -47,47 +49,11 @@ impl ChannelPane {
             draft: cx.new(|cx| {
                 InputState::new(window, cx).placeholder("Local draft · Twitch is offline")
             }),
+            last_copy_result: None,
             scroller,
             next_id: 250,
             viewport: Rc::new(RefCell::new(None)),
         }
-    }
-    fn burst(&mut self, cx: &mut Context<Self>) {
-        for _ in 0..100 {
-            let change = self
-                .timeline
-                .borrow_mut()
-                .apply(Event::Message(fixture(&self.name, self.next_id)));
-            self.next_id += 1;
-            if let chat_core::Change::Appended { evicted } = change {
-                self.scroller.update(cx, |state, cx| {
-                    if evicted {
-                        state.splice(0..1, 0, cx);
-                    }
-                    state.append(1, cx);
-                });
-            }
-        }
-        self.selection
-            .borrow_mut()
-            .prune_before((self.next_id - self.timeline.borrow().messages().len()) as u64);
-        cx.notify();
-    }
-    fn redact(&mut self, cx: &mut Context<Self>) {
-        let change = self.timeline.borrow_mut().apply(Event::ClearUser {
-            channel_id: self.name.to_string(),
-            user_id: "fixture-1".into(),
-        });
-        if change == chat_core::Change::Ignored {
-            return;
-        }
-        // Old endpoints must not silently copy a different substring after redaction.
-        self.selection.borrow_mut().clear();
-        let count = self.timeline.borrow().messages().len();
-        self.scroller.update(cx, |state, cx| {
-            state.remeasure_items(0..count, cx);
-        });
-        cx.notify();
     }
     fn copy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let timeline = self.timeline.borrow();
@@ -105,6 +71,7 @@ impl ChannelPane {
         );
         drop(timeline);
         if text.is_empty() {
+            self.last_copy_result = Some("empty_selection");
             window.push_notification(
                 Notification::info("Select some chat text first")
                     .id::<CopyFeedback>()
@@ -122,6 +89,7 @@ impl ChannelPane {
             .as_deref()
             == Some(text.as_str())
         {
+            self.last_copy_result = Some("clipboard_verified");
             self.selection.borrow_mut().clear();
             window.push_notification(
                 Notification::success(format!("Copied · {} characters", text.chars().count()))
@@ -130,6 +98,7 @@ impl ChannelPane {
                 cx,
             );
         } else {
+            self.last_copy_result = Some("clipboard_unverified");
             window.push_notification(
                 Notification::warning(
                     "Clipboard copy could not be verified. Selection kept; try again.",
@@ -264,20 +233,6 @@ impl Render for ChannelPane {
                     .bg(rgb(theme::PANEL))
                     .border_t_1()
                     .border_color(rgb(theme::BORDER))
-                    .child(
-                        Button::new("burst")
-                            .small()
-                            .label("Replay +100")
-                            .tooltip("Append 100 synthetic messages to this pane")
-                            .on_click(cx.listener(|this, _, _, cx| this.burst(cx))),
-                    )
-                    .child(
-                        Button::new("redact")
-                            .small()
-                            .label("Test timeout")
-                            .tooltip("Redact one synthetic user in this pane; no Twitch action")
-                            .on_click(cx.listener(|this, _, _, cx| this.redact(cx))),
-                    )
                     .child(Button::new("pane-latest").small().label("Latest")
                         .tooltip("Return this pane to the newest messages")
                         .on_click(cx.listener(|this, _, _, cx| {
@@ -352,6 +307,7 @@ fn caption_control(
         .child(Icon::new(icon).small())
 }
 struct Workbench {
+    control_enabled: bool,
     panes: Vec<Entity<ChannelPane>>,
 }
 impl Render for Workbench {
@@ -368,16 +324,47 @@ impl Render for Workbench {
                 .child(caption_control("maximize", if window.is_maximized() { IconName::WindowRestore } else { IconName::WindowMaximize }, WindowControlArea::Max, false))
                 .child(caption_control("close", IconName::WindowClose, WindowControlArea::Close, true)))
             .child(div().h_flex().h(px(36.)).px_3().gap_2().text_size(px(12.)).text_color(rgb(theme::MUTED))
-                .child("INTERACTION PREVIEW 02 · OFFLINE REPLAY").child("/ synthetic data / Twitch not connected"))
+                .child(if self.control_enabled { "LOCAL APP CONTROL · OFFLINE" } else { "OFFLINE · Sample messages" }).child("/ synthetic data / Twitch not connected"))
             .child(div().h_flex().flex_1().min_h_0().gap_2().px_2().children(self.panes.iter().cloned()))
             .child(div().h(px(28.)).px_3().h_flex().text_size(px(12.)).text_color(rgb(theme::MUTED))
                 .child("Select → right-click to copy · Ctrl+C / Ctrl+Insert · Ctrl+A selects chat · Esc clears"))
     }
 }
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "--control-call") {
+        let result = if args.len() == 3 {
+            control::client(&args[1], &args[2])
+        } else {
+            Err("Usage: --control-call SESSION JSON".into())
+        };
+        match result {
+            Ok(value) => println!("{value}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    let server = if args.is_empty() {
+        None
+    } else if args.len() == 2 && args[0] == "--control-session" {
+        match control::start(&args[1]) {
+            Ok(server) => Some(server),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        eprintln!("Usage: chat-workbench [--control-session NEW-NAME]");
+        std::process::exit(1);
+    };
+
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
-        .run(|cx| {
+        .run(move |cx| {
             gpui_kit::init(cx);
             theme::install(cx);
             cx.bind_keys([
@@ -403,12 +390,17 @@ fn main() {
                 ..Default::default()
             };
             gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| Workbench {
+                let entity = cx.new(|cx| Workbench {
+                    control_enabled: server.is_some(),
                     panes: vec![
                         cx.new(|cx| ChannelPane::new("workbench", window, cx)),
                         cx.new(|cx| ChannelPane::new("second-channel", window, cx)),
                     ],
-                })
+                });
+                if let Some(server) = server {
+                    control::attach(server, &entity, window, cx);
+                }
+                entity
             })
             .expect("Could not open the chat workbench window");
         });

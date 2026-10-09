@@ -103,3 +103,11 @@ Windows acceptance for this batch, once native execution is available:
 
 Still pending: automatic selection edge scrolling, grapheme-aware selection,
 native accessibility/IME/DPI review, and live Twitch/network features.
+
+## Owner workflow correction
+
+The owner requested removal of test-only UI and repeated test-script/checklist
+workflows. Replay/timeout controls and their development-only handlers are removed.
+Future development prioritizes ordinary builds and manually driving the real app.
+See APP_CONTROL.md for the new explicit-session local driver; its native execution
+is unverified. Existing historical test results above are not new release gates.

@@ -25,6 +25,18 @@ adding more chat features. Current reference design files:
 https://github.com/joenilan/xhw_haiwire/blob/main/experiments/gpui-window/src/theme.rs
 https://github.com/joenilan/xhw_haiwire/blob/main/docs/design/2026-10-04-studio-design-system.md
 
+## Development workflow correction (owner, 2026-10-09)
+
+Build and manually drive the actual app, using Haiwire-style inspection/control.
+Remove test-only replay/timeout UI. Do not grow a test-harness project or demand
+repeated owner checklists between tiny patches. Batch coherent product work.
+Existing tests and old validation records are historical/supporting material,
+not gates for every development change. No CI/Actions. A compiler pass establishes
+compilation; runtime behavior is reported from actual interaction when performed.
+
+The older phase descriptions below are feature inventory, not instructions to
+implement every proposed harness, mock or benchmark before building the client.
+
 ## Product direction
 
 - Dense, readable native desktop UI: restrained zinc surfaces, crisp separators,

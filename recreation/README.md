@@ -14,8 +14,8 @@ release phases, authenticated Twitch flow and daily-client acceptance criteria.
 - Unicode-safe text/emote copy representation and bounded zero-width overlay grouping.
 - Dark-only Haiwire-inspired surfaces and a custom Windows caption/frame.
 - Pane-owned, model-backed text selection with Ctrl+C, reverse dragging and word/line selection.
-- A two-pane GPUI replay harness with 250 synthetic messages per pane, +100-message
-  bursts and a mock timeout control. Each pane retains up to 10,000 messages.
+- Two independently scrollable panes, temporarily seeded with clearly labeled
+  sample messages until the live transport is connected. No test controls in the UI.
 - Pinned GPUI Kit 0.7.1 and a lockfile; local build commands.
 
 ## Build
@@ -26,9 +26,6 @@ See [GPUI Kit's platform prerequisites](https://gpui-kit.com/docs/installation/)
 From this directory:
 
 ```sh
-cargo test -p chat-core --locked
-cargo fmt --all --check
-cargo clippy --workspace --locked -- -D warnings
 cargo run -p chat-workbench --release --locked
 ```
 
@@ -67,3 +64,11 @@ Ctrl+A selects retained messages in the focused transcript; Escape clears it.
 A local-only draft provides editable cut/copy/paste and undo/redo. Nothing is sent
 and draft text is not saved on close. Each pane shows its scrolling state and
 has a Latest control. Native validation status is recorded in VALIDATION.md.
+
+## Development workflow
+
+Build the app and exercise the real UI directly. Development-only replay and
+timeout buttons have been removed. Existing historical unit tests are not a
+required development checklist; no CI/Actions or new test-script workflow is
+being introduced. The next priority is an app-scoped manual inspection/control
+path modeled on Haiwire, followed by usable client features.

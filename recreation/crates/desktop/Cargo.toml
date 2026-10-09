@@ -7,5 +7,6 @@ publish.workspace = true
 [dependencies]
 chat-core = { path = "../chat-core" }
 gpui-kit = "=0.7.1"
+serde_json = "=1.0.151"
 [lints]
 workspace = true
