@@ -74,8 +74,9 @@ No real OAuth, token persistence or live chat result is claimed. Further manual
 interaction checks are in progress. Native screenshots remain local to the
 isolated profile. Cloud visual inspection remains blocked by display sockets.
 
-Control-session launches skip automatic account restoration. Account buttons
-still represent real actions; layout inspection does not authorize using them.
+Control-session launches restore the saved Twitch account through the same OS
+vault and token-validation path as ordinary launches. Account buttons and chat
+sends still represent real actions; layout inspection does not authorize them.
 Ordinary builds and direct app use are the workflow; no CI or new test runner.
 
 Windows 7373edba locked release build passed (7.38s). Native interaction verified:

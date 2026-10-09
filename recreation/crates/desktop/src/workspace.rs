@@ -182,7 +182,7 @@ impl Workbench {
             .unwrap_or_default();
         let mut this = Self {
             live: crate::live::LiveChat::new(),
-            account: cx.new(|cx| crate::auth::TwitchAccount::new(!control_enabled, cx)),
+            account: cx.new(|cx| crate::auth::TwitchAccount::new(cx)),
             drop_edge: None,
             control_enabled,
             tabs: vec![],

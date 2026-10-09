@@ -7,8 +7,10 @@ and opens the provided Twitch HTTPS verification page. No redirect listener is
 required for device-code login.
 
 Implementation:
-- Explicit native control sessions do not automatically load a saved Twitch account.
-  Manual layout inspection can run without accessing the credential vault.
+- Normal and native-control launches use the same saved-account restoration path.
+  Startup reads the OS vault and validates the existing grant before connecting;
+  enabling app control does not require another device-code sign-in. No new
+  OAuth scope or grant is created by restoration.
 - Bounded HTTPS requests off the GUI thread, redirects disabled and verification
   destination restricted to Twitch hosts.
 - Device-code polling honors interval, slow-down, expiry, cancellation and denial.
@@ -78,3 +80,10 @@ send encountered a controller transport error without dispatch confirmation;
 the draft remained and there was no observed echo. It was not retried. Adding a
 busy channel was interrupted by the external PC-tool host closing. No claim of
 successful message delivery or live incoming traffic is made from this pass.
+
+## Saved-account startup correction
+
+The earlier native-control launch explicitly skipped the credential-vault read,
+which made an already-authorized account appear signed out after each controlled
+restart. That conditional path has been removed. Startup now behaves consistently
+across launch modes. The code change is not yet a verified Windows restart result.

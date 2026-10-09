@@ -47,14 +47,7 @@ impl TwitchAccount {
             access: a.tokens["access_token"].as_str().unwrap_or("").into(),
         })
     }
-    pub fn new(restore_saved: bool, cx: &mut Context<Self>) -> Self {
-        if !restore_saved {
-            return Self {
-                status: "Twitch signed out · automatic account restoration is off in this control session".into(),
-                busy: false, saving: false, code: None,
-                cancel: Arc::new(AtomicBool::new(false)), generation: 0, account: None,
-            };
-        }
+    pub fn new(cx: &mut Context<Self>) -> Self {
         let read = cx.read_credentials(VAULT);
         cx.spawn(async move |view, cx| {
             let result = read.await;
