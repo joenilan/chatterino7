@@ -60,3 +60,35 @@ Before committing to a provider, record current official documentation for:
 viewer access to third-party streams, authentication, receive transport, posting,
 moderation, quotas/cost, public distribution and review requirements. Do not
 promise parity based solely on another app appearing to support that provider.
+
+## Official API feasibility snapshot — 2026-10-09
+
+Read-only documentation research; no live integrations or account actions tested.
+Recommended order is Twitch, YouTube, then Kick with a hosted webhook relay.
+The owner explicitly made TikTok low priority; it must not delay those integrations.
+
+- **YouTube:** public live-video chat reading supports API-key or OAuth access;
+  streamList offers gRPC streaming and REST list provides a polling fallback.
+  A pasted live-video URL can resolve activeLiveChatId without broad search.
+  Viewer posting requires OAuth and chat permission; owner/mod actions are distinct.
+  Quotas require careful budgeting across the whole app's user population.
+  https://developers.google.com/youtube/v3/live/streaming-live-chat
+  https://developers.google.com/youtube/v3/live/docs/liveChatMessages/insert
+  https://developers.google.com/youtube/v3/determine_quota_cost
+- **Kick:** current official event documentation explicitly permits app-token
+  subscriptions for other channels by broadcaster ID. Chat events arrive through
+  public HTTPS webhooks, suggesting a hosted relay; do not embed an app secret in
+  the native client. Viewer posting and moderation have separate user scopes and
+  channel authority. Verify distribution limits, rates and recovery before shipping.
+  https://github.com/KickEngineering/KickDevDocs/blob/main/events/introduction.md
+  https://docs.kick.com/apis/chat
+  https://github.com/KickEngineering/KickDevDocs/blob/main/apis/faqs.md
+- **TikTok:** no general public LIVE-chat receive/send/moderation interface was
+  found in the official developer catalog. Research-video comments and historical
+  data exports do not provide live chat. Keep this integration conditional on a
+  documented supported API or approved partnership, not an unofficial scraper.
+  https://developers.tiktok.com/docs/en/welcome
+  https://developers.tiktok.com/docs/en/research-api-faq
+
+Recheck these sources before implementation; provider capabilities and limits can
+change. Documentation feasibility is not a measured latency or reliability result.

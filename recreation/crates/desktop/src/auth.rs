@@ -234,6 +234,7 @@ impl Render for TwitchAccount {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .v_flex()
+            .flex_shrink_0()
             .px_3()
             .py_2()
             .gap_2()
