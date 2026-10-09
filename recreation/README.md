@@ -1,74 +1,69 @@
 # Chat workbench
 
-A Rust + GPUI Kit foundation for Joe's full Chatterino7 replacement.
-This directory is an **offline development preview**, not the finished client.
-The existing C++ application is unchanged. No Twitch credentials are used.
+A native Rust + GPUI Kit Twitch workspace being built as Joe's Chatterino7
+replacement. Dark Studio styling, a custom Windows frame, and a channel-first
+layout. The original C++ application remains untouched.
 
-Read [the full plan](docs/PLAN.md) for the feature inventory, architecture,
-release phases, authenticated Twitch flow and daily-client acceptance criteria.
+## Workspace features
 
-## What is here
+- Named workspace tabs: create, switch, rename, reorder, close, and reopen the
+  recently closed workspace during the session.
+- Add Twitch channel names or channel URLs. Each workspace supports two
+  independently resizable channel splits, side-by-side or stacked.
+- Collapsible, scrollable workspace sidebar and tab overflow menu.
+- Multiline composers with ordinary cut/copy/paste, undo/redo and retained drafts.
+- Local saved tabs, active workspace, split sizes/orientation, sidebar, font size
+  and separate drafts for the same channel in different workspaces.
+- Dark-only appearance controls with 12–24px transcript sizing.
+- Custom Workspace and View menus; keyboard shortcuts for frequent operations.
+- Model-backed transcript selection with right-click/Ctrl+C copying and verified
+  clipboard feedback, ready for live chat data.
+- Optional session-only native app control, documented in [APP_CONTROL.md](docs/APP_CONTROL.md).
 
-- Framework-independent bounded chat timelines and normalized events.
-- Duplicate suppression for retained message IDs, channel isolation and redaction.
-- Unicode-safe text/emote copy representation and bounded zero-width overlay grouping.
-- Dark-only Haiwire-inspired surfaces and a custom Windows caption/frame.
-- Pane-owned, model-backed text selection with Ctrl+C, reverse dragging and word/line selection.
-- Two independently scrollable panes, temporarily seeded with clearly labeled
-  sample messages until the live transport is connected. No test controls in the UI.
-- Pinned GPUI Kit 0.7.1 and a lockfile; local build commands.
+## Current connection status
 
-## Build
+This checkpoint is **not connected to Twitch yet**. Channels can be organized and
+written into locally, but Send stays disabled and Enter preserves the draft. No
+synthetic chat is seeded, and there are no replay/moderation test buttons.
+Authentication, live receiving/sending, emote images, moderation, and additional
+Chatterino7 parity remain on [the roadmap](docs/PLAN.md).
 
-Use Rust 1.99.0 (the toolchain used to resolve this lockfile).
-On Windows, use MSVC with Visual Studio 2022 C++ tools, Windows SDK and CMake.
-See [GPUI Kit's platform prerequisites](https://gpui-kit.com/docs/installation/).
-From this directory:
+## Build and run
+
+Use Rust 1.99.0 with Windows MSVC, Visual Studio 2022 C++ tools, Windows SDK and
+CMake. GPUI Kit is pinned to 0.7.1. From this directory:
 
 ```sh
 cargo run -p chat-workbench --release --locked
 ```
 
-The Windows executable, after a successful release build, is
-`recreation/target/release/chat-workbench.exe` from the repository root.
-Linux also needs X11/Wayland development libraries and a graphical Vulkan session
-for execution. A headless unit-test pass is not a native UI acceptance pass.
+The built executable is `target/release/chat-workbench.exe` under this directory.
+Use ordinary builds and direct interaction with the real app for development.
+No CI/Actions or separate test-script workflow is required. Commits use `[skip ci]`.
+The native workspace compiles and links on Linux. It has not yet been run on
+Windows; cloud window inspection was blocked by the display environment.
 
-## Current limitations
+## Shortcuts
 
-No live Twitch login, receiving, sending, emote images, cosmetics, persisted
-workspace, custom docking, moderation API actions, installer or updater yet.
-The preview is intentionally labeled OFFLINE REPLAY.
+- Ctrl+T: new workspace
+- Ctrl+W: close workspace
+- Ctrl+Shift+T: reopen recently closed workspace
+- Ctrl+Tab / Ctrl+Shift+Tab: next / previous workspace
+- Ctrl+K: add channel
+- Transcript: Ctrl+A selects retained messages, Ctrl+C or Ctrl+Insert copies,
+  Escape clears selection; right-click copies too.
+- Composer: ordinary editing shortcuts; Shift+Enter inserts a newline.
 
-Timeline duplicate detection covers retained records, not an unlimited history.
-Out-of-order moderation tombstones, transport envelope deduplication, per-message
-size limits and source validation are required before accepting network input.
-Selection now uses independent pane state and copies offscreen intermediate rows from
-the model. Native drag behavior, auto-scroll at viewport edges, complex Unicode
-grapheme selection, DPI/IME and accessibility still require hands-on validation.
-Automatic edge scrolling is not implemented yet; use the wheel while dragging.
+## Local storage
 
-## Verification
+Windows settings are stored in `%LOCALAPPDATA%\ChatWorkbench\workspace.json`.
+A previous-file backup is kept before replacement. Drafts are plaintext local
+application data, not credentials. Invalid/unsupported settings files are left
+untouched and saving is disabled for that run, with an explanatory status.
+Closing a split preserves its draft for reopening in the same workspace.
+Recently closed workspace reopening is session-local; active tabs restore after
+relaunch. Tokens will use a separate OS-vault path when authentication is added.
 
-See [VALIDATION.md](docs/VALIDATION.md) for exact checks and current limitations.
-No browser, Windows or owner acceptance is implied by this source checkpoint.
-
-CI/Actions are intentionally not used for this recreation. Commits use `[skip ci]`.
-The owner runs Windows builds and reports errors for follow-up fixes.
-
-## Interaction preview 02
-
-Select transcript text and right-click, press Ctrl+C/Ctrl+Insert, or use Copy
-selection. A verified clipboard copy clears the highlight and shows Copied.
-Ctrl+A selects retained messages in the focused transcript; Escape clears it.
-A local-only draft provides editable cut/copy/paste and undo/redo. Nothing is sent
-and draft text is not saved on close. Each pane shows its scrolling state and
-has a Latest control. Native validation status is recorded in VALIDATION.md.
-
-## Development workflow
-
-Build the app and exercise the real UI directly. Development-only replay and
-timeout buttons have been removed. Existing historical unit tests are not a
-required development checklist; no CI/Actions or new test-script workflow is
-being introduced. The next priority is an app-scoped manual inspection/control
-path modeled on Haiwire, followed by usable client features.
+Minimum window size is 1050×640. Automatic selection edge scrolling, full Unicode
+grapheme semantics, accessibility/IME review and full daily-client parity remain
+unfinished. State inspection is not proof of visual correctness or a native run.

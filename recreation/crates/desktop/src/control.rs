@@ -184,12 +184,20 @@ pub fn dispatch(
 ) -> Result<Value, String> {
     match request["method"].as_str().ok_or("Missing method")? {
         "inspect" => {
-            let panes: Vec<_> = view.read(cx).panes.iter().map(|pane| {
+            let panes: Vec<_> = view.read(cx).visible_panes().iter().map(|pane| {
                 let pane = pane.read(cx);
                 let bounds = pane.viewport.borrow().map(|b| json!({"x":f32::from(b.left()),"y":f32::from(b.top()),"width":f32::from(b.size.width),"height":f32::from(b.size.height)}));
                 json!({"channel":pane.name.to_string(),"messages":pane.timeline.borrow().messages().len(),"following":pane.scroller.read(cx).is_following_tail(),"viewport":bounds,"selection":format!("{:?}",pane.selection.borrow()),"draft_characters":pane.draft.read(cx).value().chars().count(),"last_copy_result":pane.last_copy_result})
             }).collect();
-            Ok(json!({"panes":panes,"offline":true,"control":"session-only"}))
+            Ok(
+                json!({"workspace":view.read(cx).inspection(cx),"visible_panes":panes,"offline":true,"control":"session-only"}),
+            )
+        }
+        "focus" => {
+            let target = request["target"].as_str().ok_or("Missing focus target")?;
+            let pane = request["pane"].as_u64().unwrap_or(0) as usize;
+            view.update(cx, |view, cx| view.focus_target(target, pane, window, cx))?;
+            Ok(json!({"focused":true}))
         }
         "key" => {
             let name = request["key"]
@@ -312,13 +320,15 @@ pub fn dispatch(
         "resize" => {
             let width = number(request, "width", 8192.)?;
             let height = number(request, "height", 8192.)?;
-            if width < 760. || height < 480. {
-                return Err("Minimum size is 760 by 480".into());
+            if width < 1050. || height < 640. {
+                return Err("Minimum size is 1050 by 640".into());
             }
             window.resize(size(px(width), px(height)));
             Ok(json!({"requested":true}))
         }
-        _ => Err("Unknown method; supported: inspect, key, text, pointer, scroll, resize".into()),
+        _ => Err(
+            "Unknown method; supported: inspect, focus, key, text, pointer, scroll, resize".into(),
+        ),
     }
 }
 pub fn attach(server: Server, entity: &Entity<Workbench>, window: &mut Window, cx: &mut App) {

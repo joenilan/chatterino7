@@ -17,6 +17,19 @@ Reference: `joenilan/chatterino7`, branch `chatterino7`, commit
 commits ahead (`919a6c1`), principally packaging/CI and Kick changes. Track that
 upstream movement separately from acceptance of this rewrite.
 
+## Current implementation batch: native workspace
+
+The fixed two-pane replay preview has been replaced by actual workspace tabs,
+channel entry, two resizable splits per tab, tab rename/reorder/close/reopen,
+custom Workspace/View menus, a collapsible scrolling sidebar, multiline drafts,
+font controls and versioned local persistence. Empty channels are honest offline
+states; synthetic sample messages and test-only controls are gone.
+
+This is implemented source, not a verified Windows run or a connected Twitch
+client. Next product work is the authenticated receive/send path and real emote
+rendering. A dedicated Twitch public client registration is still needed; no
+registration, OAuth grant or token persistence has been performed.
+
 ## Confirmed visual direction (owner feedback, 2026-10-09)
 
 Dark mode only. Follow Haiwire Studio palette and custom Windows title menu/frame,

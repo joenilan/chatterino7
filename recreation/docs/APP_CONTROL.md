@@ -29,14 +29,15 @@ button held. `button:right` follows the same copy handler as a physical right cl
 `shift:true` supports extending selection.
 
 Methods:
-- inspect: channel counts, scrolling state, transcript bounds, selection endpoints,
+- inspect: active workspace, tabs, visible channel counts, scrolling state, transcript bounds, selection endpoints,
   draft character counts and last copy verification outcome. No draft or clipboard
   text is exposed in the state response.
+- focus: target workspace, channel_input, composer or transcript; pane is a visible pane index.
 - pointer: kind down/move/up, x/y, optional left/right button, held, shift.
 - key: a GPUI keystroke name; key-down and key-up are both dispatched.
 - text: single-line committed text, at most 2048 bytes, to the focused editor.
 - scroll: x/y and signed lines from -120 to 120.
-- resize: width/height within 760x480 through 8192x8192.
+- resize: width/height within 1050x640 through 8192x8192.
 
 No fixture injection or test controls are part of the protocol. A successful
 `dispatched` response means input was delivered, not that a UI outcome is correct;
@@ -65,7 +66,9 @@ the one-shot command mode supports successive calls without a separate script.
 
 ## Current evidence
 
-Source integration only. The cloud build is blocked by uncached accesskit 0.24.1;
-the desktop execution connection was offline at the last check. No native driver
-execution or end-to-end success is claimed yet. Ordinary builds and direct app use
-are the development workflow; no CI or new test runner is required.
+The complete native workspace passed `cargo check --offline --locked -p chat-workbench`
+and `cargo build --offline --locked -p chat-workbench` on Linux on 2026-10-09.
+Native window inspection could not run: the cloud display server could not open
+its local sockets, including after a supported reviewed retry. No driver execution,
+Windows runtime or end-to-end success is claimed. Ordinary builds and direct app
+use are the development workflow; no CI or new test runner is required.
