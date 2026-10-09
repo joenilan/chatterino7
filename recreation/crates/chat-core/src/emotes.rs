@@ -43,6 +43,7 @@ pub fn group_for_layout(fragments: &[Fragment]) -> Vec<RenderRun> {
                 id,
                 label,
                 overlay,
+                ..
             } => {
                 let layer = EmoteLayer {
                     provider: provider.clone(),
@@ -97,6 +98,7 @@ mod tests {
             id: name.into(),
             label: name.into(),
             overlay,
+            animated: false,
         }
     }
     fn copy(runs: &[RenderRun]) -> String {

@@ -142,4 +142,7 @@ slide and 25%-to-full opacity, and retains at most the newest 12 effects.
 Pending effects expire after one second if never presented. It respects history,
 nonempty selection/drag and reduced motion, without requiring window focus.
 These are identified implementation causes; the exact cause on the owner's
-previous screen was not established. Updated native appearance awaits observation.
+previous screen was not established. Windows 610577f passed its locked release build in 7.77s. A bounded 2.874-second
+capture verified one real HutchMF row dim/offset, then sliding and brightening
+over successive frames. A separate inspection saw an effect start and clear.
+The owner subsequently confirmed the motion looked good.

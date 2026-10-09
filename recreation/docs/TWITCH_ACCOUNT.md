@@ -56,7 +56,8 @@ References:
 
 ## Current transport limits
 
-The first integration renders plain text (including emote names), not emote images.
+The renderer preserves Twitch EventSub emote fragments and has a first native
+inline image path. Third-party emote catalogs and overlays are not integrated yet.
 Adding/removing an open channel rebuilds the shared subscription connection; missed
 messages cannot be recovered from Twitch. Authentication revalidation currently
 also briefly disconnects channels. Incremental subscription updates, full room
@@ -101,3 +102,23 @@ text and Unicode names. Windows 8b0b54f visibly confirmed colored, heavier
 usernames while receiving real HutchMF messages; build passed in 8.49s.
 
 Contract: https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-message-event
+
+## Twitch inline emotes
+
+Ordered EventSub fragments retain original text bytes. Only valid Twitch emote
+IDs resolve to the fixed Twitch CDN; no Twitch credential is sent to the media
+host. Static PNG and animated GIF are decoded off the GUI thread. Reduced motion
+selects static assets. Failed/over-budget animations fall back to static, then
+original text if the static asset also fails.
+
+The anonymous media cache has two workers, a 32-job queue, a two-result queue,
+128 cache entries and a 48 MiB decoded-data budget. Individual responses are
+limited to 2 MiB, dimensions to 256 square pixels, and decoded animations to
+120 frames / 8 MiB. Eviction releases associated GPUI image textures. This is a
+bounded design, not a measured whole-process memory or frame-rate claim.
+
+Mixed rows reserve 28px image boxes, wrap text around them and preserve original
+source-byte selection/copy semantics. Unloaded slots show a short label until
+ready; failed assets regain their full original text. Double-clicking an emote
+selects its source token. Deleted messages take the plain redacted-text path.
+The native Windows image/selection observation is pending for this implementation.

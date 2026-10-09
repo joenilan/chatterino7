@@ -80,6 +80,7 @@ struct WorkspaceTab {
 pub struct Workbench {
     account: Entity<crate::auth::TwitchAccount>,
     live: crate::live::LiveChat,
+    media: std::rc::Rc<std::cell::RefCell<crate::media::MediaCache>>,
     drop_edge: Option<DropEdge>,
     control_enabled: bool,
     tabs: Vec<WorkspaceTab>,
@@ -182,6 +183,7 @@ impl Workbench {
             .unwrap_or_default();
         let mut this = Self {
             live: crate::live::LiveChat::new(),
+            media: std::rc::Rc::new(std::cell::RefCell::new(crate::media::MediaCache::new())),
             account: cx.new(|cx| crate::auth::TwitchAccount::new(cx)),
             drop_edge: None,
             control_enabled,
@@ -294,6 +296,7 @@ impl Workbench {
     fn pump_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let identity = self.account.read(cx).identity();
         let panes = self.panes();
+        if self.media.borrow_mut().pump(cx) { for pane in &panes { pane.update(cx, |p, cx| { p.scroller.update(cx, |s, cx| s.remeasure(cx)); cx.notify(); }); } }
         if self.live.configure(
             identity.clone(),
             panes.iter().map(|p| p.read(cx).name.to_string()).collect(),
@@ -358,7 +361,7 @@ impl Workbench {
     ) -> Entity<ChannelPane> {
         let key = format!("{tab_id}:{name}");
         let draft = self.drafts.get(&key).cloned().unwrap_or_default();
-        let pane = cx.new(|cx| ChannelPane::new(name, &draft, self.font_size, window, cx));
+        let pane = cx.new(|cx| ChannelPane::new(name, self.media.clone(), &draft, self.font_size, window, cx));
         let channel = name.to_owned();
         cx.subscribe(&pane, move |this, pane, event, cx| {
             if let PaneEvent::Send { request, text } = event {

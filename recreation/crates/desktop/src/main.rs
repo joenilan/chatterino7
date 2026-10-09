@@ -3,6 +3,8 @@ mod auth;
 mod chat_text;
 mod control;
 mod live;
+mod media;
+mod inline_chat;
 mod storage;
 mod theme;
 mod workspace;
@@ -81,6 +83,7 @@ struct ChannelPane {
     pending: Option<(u64, String)>,
     send_status: String,
     timeline: Rc<RefCell<Timeline>>,
+    media: Rc<RefCell<media::MediaCache>>,
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
     draft: Entity<TextareaState>,
@@ -94,6 +97,7 @@ struct ChannelPane {
 impl ChannelPane {
     fn new(
         name: &str,
+        media: Rc<RefCell<media::MediaCache>>,
         saved_draft: &str,
         font_size: f32,
         window: &mut Window,
@@ -123,6 +127,7 @@ impl ChannelPane {
         cx.observe(&scroller, |_, _, cx| cx.notify()).detach();
         Self {
             name: name.to_owned().into(),
+            media,
             connection: "Sign in to connect".into(),
             connected: false,
             pending: None,
@@ -284,6 +289,7 @@ impl ChannelPane {
 impl Render for ChannelPane {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let timeline = self.timeline.clone();
+        let media = self.media.clone();
         let retained = timeline.borrow().messages().len();
         let first_order = (self.next_id - retained) as u64;
         let selection = self.selection.clone();
@@ -385,7 +391,7 @@ impl Render for ChannelPane {
                         .child(div().text_color(rgb(theme::TEXT)).text_size(px(16.)).child(format!("#{} is ready", self.name)))
                         .child(if self.connected { "Connected. Waiting for messages…".to_string() } else { self.connection.clone() })))
                     .child(
-                        MessageScroller::new("chat", self.scroller.clone(), move |index, window, _| {
+                        MessageScroller::new("chat", self.scroller.clone(), move |index, window, cx| {
                             let messages = timeline.borrow();
                             let Some(message) = messages.messages().get(index) else {
                                 return div().into_any_element();
@@ -410,14 +416,12 @@ impl Render for ChannelPane {
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()
-                                .child(ChatText::new(
-                                    SharedString::from(format!("text-{}", message.id)),
-                                    first_order + index as u64,
-                                    message.copy_line(),
-                                    selection.clone(),
-                                    focus.clone(),
-                                    viewport.clone(),
-                                ).with_author(&message.display_name, message.name_color))
+                                .child(if let Some(inline) = inline_chat::InlineChat::new(message, row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx) {
+                                    inline.into_any_element()
+                                } else {
+                                    ChatText::new(SharedString::from(format!("text-{}", message.id)), row, message.copy_line(), selection.clone(), focus.clone(), viewport.clone())
+                                        .with_author(&message.display_name, message.name_color).into_any_element()
+                                })
                                 .into_any_element()
                         })
                         .flex_1()

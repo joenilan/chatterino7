@@ -523,9 +523,7 @@ fn deliver(
             name_color: e["color"].as_str().and_then(|s| s.strip_prefix('#'))
                 .filter(|s| s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit()))
                 .and_then(|s| u32::from_str_radix(s, 16).ok()),
-            fragments: vec![Fragment::Text(
-                e["message"]["text"].as_str().unwrap_or("").to_owned(),
-            )],
+            fragments: twitch_fragments(&e["message"]),
             deleted: false,
         }),
         "channel.chat.message_delete" => ChatEvent::DeleteMessage {
@@ -542,4 +540,22 @@ fn deliver(
         _ => return,
     };
     let _ = tx.send((version, Event::Chat(channel, event)));
+}
+
+fn twitch_fragments(message: &Value) -> Vec<Fragment> {
+    let original = message["text"].as_str().unwrap_or("");
+    let fragments: Vec<_> = message["fragments"].as_array().into_iter().flatten().map(|fragment| {
+        let text = fragment["text"].as_str().unwrap_or("").to_owned();
+        if fragment["type"] == "emote" {
+            if let Some(id) = fragment["emote"]["id"].as_str() {
+                if crate::media::EmoteKey::twitch(id, false).is_some() {
+                    return Fragment::Emote { provider: "twitch".into(), id: id.into(), label: text, overlay: false,
+                        animated: fragment["emote"]["format"].as_array().is_some_and(|formats| formats.iter().any(|f| f == "animated")) };
+                }
+            }
+        }
+        Fragment::Text(text)
+    }).collect();
+    if fragments.iter().map(Fragment::copy_text).collect::<String>() == original && !fragments.is_empty() { fragments }
+    else { vec![Fragment::Text(original.into())] }
 }

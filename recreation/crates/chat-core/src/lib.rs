@@ -11,6 +11,7 @@ pub enum Fragment {
         id: String,
         label: String,
         overlay: bool,
+        animated: bool,
     },
 }
 impl Fragment {
