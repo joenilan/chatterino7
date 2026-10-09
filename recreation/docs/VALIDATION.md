@@ -1,3 +1,21 @@
+# Current checkpoint: badges and emote composition — 2026-10-09
+
+Linux offline locked build passed against the implementation tree (5.46s).
+Windows build and real-app interaction for this batch are pending; no runtime
+acceptance is implied by the compiler. No test harness or synthetic traffic added.
+
+Previous b7b744d native result: animated Twitch and 7TV media visibly changed poses;
+owner subsequently confirmed animations. DinoDance was identified independently
+as emotesv2_dcd06b30a5c24f6eb871e8f5edbd44f7 with 25 decoded frames and frame clock
+2→19 over 487ms; that exact emote was not in the captured visible rows.
+
+This batch requires ordinary native inspection of badge rows, picker search,
+paging and insertion, completion keyboard handling, Escape/focus restoration,
+long-draft protection and retained owner draft. Never send a chat message merely
+to inspect these controls. The earlier ambiguous send remains unrepeated.
+
+---
+
 # Foundation validation
 
 2026-10-09 cloud Linux, Rust 1.99.0.

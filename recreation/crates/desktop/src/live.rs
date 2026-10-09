@@ -525,6 +525,7 @@ fn deliver(
             name_color: e["color"].as_str().and_then(|s| s.strip_prefix('#'))
                 .filter(|s| s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit()))
                 .and_then(|s| u32::from_str_radix(s, 16).ok()),
+            badges: e["badges"].as_array().into_iter().flatten().take(8).filter_map(|b|{Some(chat_core::Badge{set_id:b["set_id"].as_str()?.chars().take(128).collect(),id:b["id"].as_str()?.chars().take(128).collect()})}).collect(),
             fragments: twitch_fragments(&e["message"]),
             deleted: false,
         }),

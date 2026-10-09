@@ -146,3 +146,11 @@ previous screen was not established. Windows 610577f passed its locked release b
 capture verified one real HutchMF row dim/offset, then sliding and brightening
 over successive frames. A separate inspection saw an effect start and clear.
 The owner subsequently confirmed the motion looked good.
+
+### Emote composition inspection
+
+Pane inspection includes `emote_picker_open`, `emote_picker_matches`,
+`emote_picker_page`, and bounded suggestion labels. Shared catalog inspection
+includes Twitch global emote/badge counts and per-channel badge counts. These
+are public catalog names/counts, not draft contents or credentials. Existing
+pointer/key/text operations drive the real controls; insertion does not send.

@@ -49,7 +49,14 @@ impl EmoteKey {
             external: Some(asset.clone()),
         })
     }
+    pub fn badge(value: &str) -> Option<Self> {
+        let url=reqwest::Url::parse(value).ok()?;
+        let path=url.path();
+        if url.scheme()!="https" || url.host_str()!=Some("static-cdn.jtvnw.net") || !url.username().is_empty() || url.password().is_some() || url.port().is_some_and(|p|p!=443) || url.query().is_some() || url.fragment().is_some() || !path.starts_with("/badges/v1/") || path.contains("..") || !path.bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'/'|b'-')) {return None;}
+        Some(Self{id:format!("badge:{path}"),animated:false,external:Some(chat_core::EmoteAsset{url:value.into(),static_url:value.into(),width:18,height:18})})
+    }
     pub fn width(&self) -> f32 {
+        if self.id.starts_with("badge:") {return 20.;}
         self.external.as_ref().map_or(28., |a| {
             (28. * a.width as f32 / a.height as f32).clamp(8., 112.)
         })
@@ -145,7 +152,7 @@ impl MediaCache {
     }
     pub fn inspection(&self) -> serde_json::Value {
         serde_json::json!({"decoded_bytes":self.bytes,"entries":self.entries.len(),"assets":self.entries.iter().filter_map(|(key,entry)| {
-            if let Entry::Ready{image,..}=entry { Some(serde_json::json!({"id":key.id,"provider":if key.external.is_some(){"7tv"}else{"twitch"},"animated_requested":key.animated,"frames":image.image.frame_count(),"frame_now":image.frame(false)})) } else {None}
+            if let Entry::Ready{image,..}=entry { Some(serde_json::json!({"id":key.id,"provider":if key.id.starts_with("badge:"){"twitch_badge"}else if key.external.is_some(){"7tv"}else{"twitch"},"animated_requested":key.animated,"frames":image.image.frame_count(),"frame_now":image.frame(false)})) } else {None}
         }).collect::<Vec<_>>()})
     }
     pub fn failed(&self, key: &EmoteKey) -> bool {

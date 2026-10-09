@@ -299,10 +299,10 @@ impl Workbench {
     fn pump_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let identity = self.account.read(cx).identity();
         let panes = self.panes();
-        if self.catalog.borrow_mut().pump(panes.iter().map(|p|p.read(cx).name.to_string()).collect()) {
+        if self.catalog.borrow_mut().pump(panes.iter().map(|p|p.read(cx).name.to_string()).collect(), identity.clone()) {
             for pane in &panes { pane.update(cx, |p,cx| {
                 p.timeline.borrow_mut().enrich(|message| message.fragments = self.catalog.borrow().expand(&p.name, &message.fragments));
-                p.scroller.update(cx, |s,cx|s.remeasure(cx)); cx.notify();
+                p.scroller.update(cx, |s,cx|s.remeasure(cx)); if p.picker.open {p.refresh_picker(cx);} cx.notify();
             }); }
         }
         if self.media.borrow_mut().pump(cx) { for pane in &panes { pane.update(cx, |p, cx| { p.scroller.update(cx, |s, cx| s.remeasure(cx)); cx.notify(); }); } }

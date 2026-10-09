@@ -32,12 +32,16 @@ impl Fragment {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Badge { pub set_id: String, pub id: String }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     pub id: String,
     pub channel_id: String,
     pub user_id: String,
     pub display_name: String,
     pub name_color: Option<u32>,
+    pub badges: Vec<Badge>,
     pub fragments: Vec<Fragment>,
     pub deleted: bool,
 }
@@ -163,6 +167,7 @@ pub fn fixture(channel: &str, index: usize) -> Message {
         user_id: format!("fixture-{}", index % 4),
         display_name: format!("viewer_{}", index % 4),
         name_color: None,
+        badges: Vec::new(),
         fragments: vec![Fragment::Text(body.into())],
         deleted: false,
     }

@@ -26,12 +26,12 @@ custom Workspace/View menus, a collapsible scrolling sidebar, soft-wrapping sing
 font controls and versioned local persistence. Empty channels are honest offline
 states; synthetic sample messages and test-only controls are gone.
 
-Linux and Windows release builds have passed. Native Windows inspection of
-3edc6575 confirmed the corrected chat layout and restored workspaces. Remaining
-interactions are being inspected. The owner registered the Twitch public client;
-device-code sign-in and the post-vault-save account state were verified on Windows.
-Authenticated channel subscriptions also reached Connected. Actual message
-receiving/delivery, restoration/refresh behavior and emote rendering remain unfinished.
+Linux and Windows builds have passed through the animated Twitch/7TV media batch.
+Live traffic, saved-account restoration, message entrance motion and animated media
+have been observed natively; the owner has also confirmed seeing animations.
+Actual outbound delivery is still not accepted. Current implementation adds
+Twitch badges, a searchable animated emote picker and source-text autocomplete;
+see the newest VALIDATION.md entry for build/runtime evidence and limits.
 
 ## Confirmed visual direction (owner feedback, 2026-10-09)
 
@@ -311,3 +311,26 @@ Escape, and default Enter leave the workspace intact; the explicit Close tab
 button confirms. Duplicate requests cannot stack dialogs. Closed tabs can be
 reopened during the session with Ctrl+Shift+T. These native close/cancel/reopen
 flows were observed successfully on Windows at 7466e04b.
+
+## Chat identity and composition batch — 2026-10-09
+
+- Per-message Twitch badges, channel-first/global-fallback catalogs, 18px native
+  badge icons and titles. Badge URLs are strictly allowlisted; no bearer token
+  reaches the image CDN. Badge lookup never changes clipboard source text.
+- A bounded metadata worker uses the existing Twitch grant, separately from the
+  socket/subscription worker. Ten-minute metadata refresh; failed loads preserve
+  valid data and retry after a minute. Account changes reject stale results.
+- Channel-aware, searchable picker: 7TV channel/global aliases and Twitch global
+  emotes, animated previews, 40-item pages, names, provider tooltips, keyboard
+  dismissal and a reduced-motion-aware reveal. Search and insertion are separate
+  from sending, retain the composer selection and honor the 500-character limit.
+- Type :name for suggestions; arrows select, Enter/Tab inserts, Escape dismisses.
+  Tab also completes a bare token. Matching is case-insensitive, exact source
+  names are inserted, and changed cursor/text state cannot replace another word.
+- Subscriber/personal Twitch emote ownership is not inferred from another user's
+  messages. A user-owned catalog and its extra scope remain future work.
+- Still pending: 7TV paints/personal cosmetics, FFZ/BTTV, reply threads, mentions,
+  moderation menus, arbitrary nested splits, and the remaining parity inventory.
+
+Sources: Twitch API global emotes/global+channel chat badges; EventSub chat
+message badge fields. No account grant or scopes changed in this batch.

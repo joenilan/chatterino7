@@ -17,6 +17,7 @@ struct Emote {
 type Emotes = HashMap<String, Emote>;
 pub struct Catalog {
     global: Emotes,
+    pub twitch: crate::twitch_assets::TwitchAssets,
     channels: HashMap<String, Emotes>,
     requested: HashMap<String, (String, Instant)>,
     global_requested: Instant,
@@ -50,6 +51,7 @@ impl Catalog {
         let _ = tx.try_send((String::new(), String::new()));
         Self {
             global: HashMap::new(),
+            twitch: crate::twitch_assets::TwitchAssets::new(),
             channels: HashMap::new(),
             requested: HashMap::new(),
             global_requested: Instant::now(),
@@ -58,7 +60,7 @@ impl Catalog {
         }
     }
     pub fn inspection(&self) -> Value {
-        serde_json::json!({"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
+        serde_json::json!({"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
     }
     pub fn channel(&mut self, name: &str, id: &str) {
         if id.is_empty() || id.len() > 32 || !id.bytes().all(|b| b.is_ascii_digit()) {
@@ -76,7 +78,7 @@ impl Catalog {
                 .insert(name.into(), (id.into(), Instant::now()));
         }
     }
-    pub fn pump(&mut self, active: HashSet<String>) -> bool {
+    pub fn pump(&mut self, active: HashSet<String>, identity: Option<crate::live::Identity>) -> bool {
         self.channels.retain(|k, _| active.contains(k));
         self.requested.retain(|k, _| active.contains(k));
         if self.global_requested.elapsed() >= Duration::from_secs(300)
@@ -91,7 +93,7 @@ impl Catalog {
                 *at = Instant::now();
             }
         }
-        let mut changed = false;
+        let mut changed = self.twitch.pump(identity, &self.requested);
         while let Ok((name, result)) = self.rx.try_recv() {
             if let Some(emotes) = result {
                 if name.is_empty() {
@@ -104,6 +106,18 @@ impl Catalog {
             }
         }
         changed
+    }
+    pub fn choices(&self, channel: &str, query: &str, limit: usize) -> Vec<crate::twitch_assets::Choice> {
+        let query=query.to_lowercase();
+        let mut seen=HashSet::new();
+        let mut choices=Vec::new();
+        for (label,emote) in self.channels.get(channel).into_iter().flat_map(|m|m.iter()).chain(self.global.iter()) {
+            if !label.to_lowercase().contains(&query)||!seen.insert(label.clone()){continue;}
+            if let Some(key)=crate::media::EmoteKey::seven(&emote.id,emote.animated,&emote.asset){choices.push(crate::twitch_assets::Choice{label:label.clone(),provider:"7TV",key});}
+        }
+        for emote in &self.twitch.global.emotes {if emote.label.to_lowercase().contains(&query)&&seen.insert(emote.label.clone()){choices.push(emote.clone());}}
+        choices.sort_by(|a,b| {let al=a.label.to_lowercase();let bl=b.label.to_lowercase();(!al.starts_with(&query),al,&a.label).cmp(&(!bl.starts_with(&query),bl,&b.label))});
+        choices.truncate(limit);choices
     }
     pub fn expand(&self, channel: &str, fragments: &[Fragment]) -> Vec<Fragment> {
         let mut result = Vec::new();

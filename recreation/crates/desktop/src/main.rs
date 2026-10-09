@@ -5,6 +5,8 @@ mod control;
 mod live;
 mod media;
 mod catalog;
+mod twitch_assets;
+mod emote_picker;
 mod inline_chat;
 mod storage;
 mod theme;
@@ -90,6 +92,8 @@ struct ChannelPane {
     focus: FocusHandle,
     draft: Entity<TextareaState>,
     font_size: f32,
+    picker: emote_picker::Picker,
+    emote_search: Entity<TextareaState>,
     last_copy_result: Option<&'static str>,
     scroller: Entity<MessageScrollerState>,
     next_id: usize,
@@ -117,7 +121,7 @@ impl ChannelPane {
         });
         cx.subscribe_in(&draft, window, |this: &mut Self, _, event, window, cx| {
             match event {
-                InputEvent::Change => cx.emit(PaneEvent::DraftChanged),
+                InputEvent::Change => { this.complete_query(false,cx); cx.emit(PaneEvent::DraftChanged); },
                 InputEvent::PressEnter { shift: false, .. } => {
                     this.submit(window, cx);
                 }
@@ -126,6 +130,8 @@ impl ChannelPane {
             cx.notify();
         })
         .detach();
+        let emote_search=cx.new(|cx|TextareaState::new(window,cx).auto_grow(1,1).placeholder("Search emotes…"));
+        cx.subscribe_in(&emote_search,window,|this:&mut Self,_,event,_,cx|{if matches!(event,InputEvent::Change){this.picker.page=0;this.refresh_picker(cx);cx.notify();}}).detach();
         let scroller = cx.new(|cx| MessageScrollerState::new(timeline.messages().len(), cx));
         cx.observe(&scroller, |_, _, cx| cx.notify()).detach();
         Self {
@@ -141,6 +147,8 @@ impl ChannelPane {
             focus: cx.focus_handle(),
             draft,
             font_size,
+            picker: emote_picker::Picker::default(),
+            emote_search,
             last_copy_result: None,
             scroller,
             next_id: 0,
@@ -293,6 +301,9 @@ impl ChannelPane {
 }
 impl Render for ChannelPane {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let picker = self.picker.open.then(||self.render_picker(cx));
+        let suggestions = (!self.picker.suggestions.is_empty()&&!self.picker.open).then(||self.render_suggestions(cx));
+        let catalog=self.catalog.clone();
         let timeline = self.timeline.clone();
         let media = self.media.clone();
         let retained = timeline.borrow().messages().len();
@@ -421,12 +432,17 @@ impl Render for ChannelPane {
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()
-                                .child(if let Some(inline) = inline_chat::InlineChat::new(message, row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx) {
+                                .child(div().h_flex().items_start().min_w_0().gap_1()
+                                .children(message.badges.iter().filter_map(|badge|catalog.borrow().twitch.badge(&message.channel_id,&badge.set_id,&badge.id).cloned()).map(|badge|{
+                                    let image=media.borrow_mut().get(&badge.key,cx);
+                                    div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(px(22.)).flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(emote_picker::icon(image,String::new(),18.,18.))
+                                }).collect::<Vec<_>>())
+                                .child(div().flex_1().min_w_0().child(if let Some(inline) = inline_chat::InlineChat::new(message, row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx) {
                                     inline.into_any_element()
                                 } else {
                                     ChatText::new(SharedString::from(format!("text-{}", message.id)), row, message.copy_line(), selection.clone(), focus.clone(), viewport.clone())
                                         .with_author(&message.display_name, message.name_color).into_any_element()
-                                })
+                                })))
                                 .into_any_element()
                         })
                         .flex_1()
@@ -438,6 +454,8 @@ impl Render for ChannelPane {
             )
             .child(div().v_flex().p_2().gap_2().bg(rgb(theme::PANEL)).border_t_1().border_color(rgb(theme::BORDER))
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    if this.picker.open { return; }
+                    if this.completion_key(event,window,cx) {return;}
                     if event.keystroke.key == "enter" && event.keystroke.modifiers.shift {
                         window.prevent_default();
                         cx.stop_propagation();
@@ -455,6 +473,7 @@ impl Render for ChannelPane {
                     if action.shift { cx.stop_propagation(); }
                 }))
                 .capture_action(cx.listener(|this, _: &gpui_kit::base::input::Paste, window, cx| {
+                    if this.picker.open {return;}
                     if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
                         let text = twitch_message_text(&text);
                         let input = this.draft.read(cx);
@@ -470,11 +489,14 @@ impl Render for ChannelPane {
                         cx.stop_propagation();
                     }
                 }))
+                .children(picker)
+                .children(suggestions)
                 .child(Textarea::new(&self.draft))
                 .when(!self.send_status.is_empty(), |el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(self.send_status.clone())))
                 .child(div().h_flex().justify_between().text_size(px(11.)).text_color(rgb(theme::MUTED))
                     .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500 · Twitch message · wraps automatically", self.draft.read(cx).value().chars().count())))
-                    .child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else { "Send" }).disabled(!self.connected || self.pending.is_some()).tooltip("Send to this Twitch channel").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx))))))
+                    .child(div().h_flex().gap_2().child(Button::new("emotes-toggle").small().label(":)").tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx))))
+                    .child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else { "Send" }).disabled(!self.connected || self.pending.is_some()).tooltip("Send to this Twitch channel").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx)))))))
             .child(
                 canvas(
                     |_, _, _| (),
