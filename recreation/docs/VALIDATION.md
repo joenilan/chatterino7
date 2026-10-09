@@ -215,3 +215,14 @@ and vertical edge drops; center regrouping; resize persistence; canceled drag;
 channel switch focus and exact drafts; middle-click cancel/close; live-only filters
 and selected-offline visibility; reconnect and restart. Do not infer these passes
 from compilation or the preceding 3f18e079 runtime.
+
+### dc404246 native docking findings
+
+Windows locked release build passed16.55s. Three visible panes with nested axes
+were proven using a top-edge drop. A bottom-edge drop showed Place below over the
+right panel but regrouped into the left group on release: confirmed defect.
+The compact batch resolves drop target/edge from current painted panel bounds and
+release pointer rather than retaining the drag-hover state/callback's pane name.
+This correction is compiled, not yet verified natively. Control inspection now
+records the last drop's source, target, edge and pointer coordinates for diagnosis.
+Owner layout and exact drafts were restored; temporary QA workspace9 remains.

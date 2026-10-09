@@ -1,3 +1,4 @@
+use gpui_kit::base::ElementExt;
 use crate::dock::Dock;
 use crate::{ChannelPane, DragPreview, DraggedChannel, PaneEvent, caption_control, storage, theme};
 use gpui_kit::component::{
@@ -5,7 +6,7 @@ use gpui_kit::component::{
     IconName, Sizable, StyledExt, WindowExt,
     button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState},
-    menu::DropdownMenu,
+    menu::{DropdownMenu,ContextMenuExt,PopupMenuItem},
     notification::Notification,
     resizable::{ResizableState, h_resizable, resizable_panel, v_resizable},
 };
@@ -94,6 +95,8 @@ pub struct Workbench {
     media: std::rc::Rc<std::cell::RefCell<crate::media::MediaCache>>,
     drop_edge: Option<DropEdge>,
     drop_target: Option<String>,
+    dock_bounds: std::rc::Rc<std::cell::RefCell<BTreeMap<String,Bounds<Pixels>>>>,
+    last_drop: Option<Value>,
     control_enabled: bool,
     tabs: Vec<WorkspaceTab>,
     closed_tabs: Vec<WorkspaceTab>,
@@ -103,6 +106,7 @@ pub struct Workbench {
     channel_input: Entity<InputState>,
     adding: bool,
     renaming: bool,
+    add_target: Option<String>,
     add_error: Option<String>,
     sidebar: bool,
     settings: bool,
@@ -154,7 +158,7 @@ impl Workbench {
     }
     pub fn media_inspection(&self) -> Value { json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()}) }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>()})
+        json!({"last_drop":self.last_drop,"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>()})
     }
     pub fn panes(&self) -> Vec<Entity<ChannelPane>> {
         self.tabs
@@ -202,6 +206,8 @@ impl Workbench {
             account: cx.new(|cx| crate::auth::TwitchAccount::new(cx)),
             drop_edge: None,
             drop_target: None,
+            dock_bounds: Default::default(),
+            last_drop: None,
             control_enabled,
             tabs: vec![],
             closed_tabs: vec![],
@@ -214,6 +220,7 @@ impl Workbench {
             channel_input: input,
             adding: false,
             renaming: false,
+            add_target: None,
             add_error: None,
             sidebar: state["sidebar"].as_bool().unwrap_or(false),
             settings: false,
@@ -602,6 +609,7 @@ impl Workbench {
     fn open_add(&mut self, rename: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.adding = true;
         self.renaming = rename;
+        self.add_target=None;
         self.add_error = None;
         let value = if rename {
             self.tabs[self.active].name.clone()
@@ -650,7 +658,7 @@ impl Workbench {
             let pane = self.make_pane(id, &channel, window, cx);
             let tab = &mut self.tabs[self.active];
             tab.panes.push(pane);
-            tab.dock=Some(match tab.dock.take(){Some(mut d)=>{let mut active=Vec::new();d.active_names(&mut active);if let Some(target)=active.first(){d.tabify(target,channel.clone());}d},None=>Dock::Leaf(channel.clone())});
+            tab.dock=Some(match tab.dock.take(){Some(mut d)=>{let mut active=Vec::new();d.active_names(&mut active);if let Some(target)=self.add_target.as_ref().or(active.first()){d.tabify(target,channel.clone());}d},None=>Dock::Leaf(channel.clone())});
             tab.dock_states.clear();
             tab.sizes.clear();
             tab.split = cx.new(|_| ResizableState::default());
@@ -734,6 +742,16 @@ impl Workbench {
         self.adding = false;
         self.schedule_save(cx);
         cx.notify();
+    }
+    fn drop_at_pointer(&mut self,drag:&DraggedChannel,tab_id:u64,window:&mut Window,cx:&mut Context<Self>){
+        let position=window.mouse_position();
+        let target=self.dock_bounds.borrow().iter().find(|(_,bounds)|bounds.contains(&position)).map(|(name,bounds)|(name.clone(),*bounds));
+        let Some((name,bounds))=target else{return;};
+        let x=f32::from(position.x-bounds.origin.x)/f32::from(bounds.size.width);
+        let y=f32::from(position.y-bounds.origin.y)/f32::from(bounds.size.height);
+        let edge=if x<0.35{DropEdge::Left}else if x>0.65{DropEdge::Right}else if y<0.35{DropEdge::Top}else if y>0.65{DropEdge::Bottom}else{DropEdge::Center};
+        self.last_drop=Some(json!({"source":drag.name,"target":name,"edge":edge.label(),"x":f32::from(position.x),"y":f32::from(position.y)}));
+        self.drop_target=Some(name);self.move_pane(drag,tab_id,Some(edge),window,cx);
     }
     fn track_drop(&mut self, event: &DragMoveEvent<DraggedChannel>, cx: &mut Context<Self>) {
         let bounds = event.bounds;
@@ -843,21 +861,31 @@ impl Workbench {
             Dock::Leaf(name)|Dock::Deck{active:name,..}=> {
                 let pane=self.tabs[self.active].panes.iter().find(|p|p.read(cx).name.as_ref()==name).cloned();
                 let names=match dock{Dock::Deck{channels,..}=>channels.clone(),_=>vec![name.clone()]};
-                let name=name.clone();let drag_name=name.clone();let drop_name=name.clone();
+                let name=name.clone();let drag_name=name.clone();let bounds_name=name.clone();let dock_bounds=self.dock_bounds.clone();
                 let tabs=names.iter().filter(|channel|!self.live_channels||*channel==&name||self.streams.get(channel)!=Some(false)).map(|channel|{let selected=channel==&name;let channel=channel.clone();
                     let drag_pane=self.tabs[self.active].panes.iter().find(|p|p.read(cx).name.as_ref()==channel).cloned();
-                    let item=div().id(SharedString::from(format!("channel-tab-{tab_id}-{channel}"))).h_full().px_3().flex().items_center().cursor_pointer()
+                    let item=div().id(SharedString::from(format!("channel-tab-{tab_id}-{channel}"))).h(px(28.)).px_2().flex().items_center().cursor_pointer()
                         .bg(rgb(if selected{theme::CONTROL}else{theme::PANEL})).border_b_2().border_color(rgb(if selected{0xA99CF4}else{theme::PANEL}))
                         .hover(|s|s.bg(rgb(theme::HOVER))).child(format!("{} #{channel}",match self.streams.get(&channel){Some(true)=>"●",Some(false)=>"○",None=>"◌"}))
                         .on_mouse_down(MouseButton::Middle,cx.listener({let channel=channel.clone();move|this,_,window,cx|{window.prevent_default();cx.stop_propagation();this.confirm_close_channel(channel.clone(),window,cx);}}))
                         .on_click(cx.listener({let channel=channel.clone();move|this,_,window,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.select(&channel);}this.focus.focus(window,cx);this.schedule_save(cx);cx.notify();}}));
-                    if let Some(pane)=drag_pane{item.on_drag(DraggedChannel{pane,name:channel.clone()},move|drag,_,_,cx|cx.new(|_|DragPreview(drag.name.clone()))).into_any_element()}else{item.into_any_element()}
+                    let owner=cx.entity().downgrade();let menu_channel=channel.clone();
+                    let menu=move |menu:gpui_kit::component::menu::PopupMenu,_:&mut Window,_:&mut Context<gpui_kit::component::menu::PopupMenu>|{
+                        let add=owner.clone();let add_channel=menu_channel.clone();let close=owner.clone();let close_channel=menu_channel.clone();let filter=owner.clone();
+                        menu.item(PopupMenuItem::new("Add channel tab").on_click(move|_,window,cx|{let _=add.update(cx,|this,cx|{this.open_add(false,window,cx);this.add_target=Some(add_channel.clone());});}))
+                            .item(PopupMenuItem::new("Toggle live-only channel tabs").on_click(move|_,_,cx|{let _=filter.update(cx,|this,cx|{this.live_channels=!this.live_channels;this.schedule_save(cx);cx.notify();});}))
+                            .separator().item(PopupMenuItem::new("Close channel…").on_click(move|_,window,cx|{let _=close.update(cx,|this,cx|this.confirm_close_channel(close_channel.clone(),window,cx));}))
+                    };
+                    if let Some(pane)=drag_pane{item.on_drag(DraggedChannel{pane,name:channel.clone()},move|drag,_,_,cx|cx.new(|_|DragPreview(drag.name.clone()))).context_menu(menu).into_any_element()}else{item.context_menu(menu).into_any_element()}
                 }).collect::<Vec<_>>();
                 let preview=if self.drop_target.as_ref()==Some(&name){self.drop_edge}else{None};
                 div().id(SharedString::from(format!("dock-{tab_id}-{name}"))).relative().size_full().min_w_0().min_h_0()
                     .on_drag_move(cx.listener(move|this,event:&DragMoveEvent<DraggedChannel>,_,cx|{this.drop_target=Some(drag_name.clone());this.track_drop(event,cx);cx.notify();}))
-                    .on_drop(cx.listener(move|this,drag:&DraggedChannel,w,cx|{cx.stop_propagation();this.drop_target=Some(drop_name.clone());this.move_pane(drag,tab_id,this.drop_edge,w,cx);}))
-                    .v_flex().child(div().id(SharedString::from(format!("channel-strip-{tab_id}-{name}"))).h_flex().h(px(30.)).flex_shrink_0().overflow_x_scroll().bg(rgb(theme::PANEL)).children(tabs))
+                    .on_prepaint(move|bounds,_,_|{dock_bounds.borrow_mut().insert(bounds_name.clone(),bounds);})
+                    .on_drop(cx.listener(move|this,drag:&DraggedChannel,w,cx|{cx.stop_propagation();this.drop_at_pointer(drag,tab_id,w,cx);}))
+                    .v_flex().child(div().id(SharedString::from(format!("channel-strip-{tab_id}-{name}"))).h_flex().flex_wrap().min_h(px(28.)).flex_shrink_0().bg(rgb(theme::PANEL)).children(tabs)
+                        .child(Button::new(SharedString::from(format!("add-tab-{tab_id}-{name}"))).ghost().xsmall().label("+").tooltip("Add channel tab · Ctrl+K")
+                            .on_click(cx.listener({let target=name.clone();move|this,_,window,cx|{this.open_add(false,window,cx);this.add_target=Some(target.clone());}}))))
                     .child(div().flex_1().min_h_0().children(pane)).when(cx.has_active_drag(),|el|el.children(preview.map(Self::drop_preview))).into_any_element()
             }
             Dock::Split {vertical,weights,children}=> {
@@ -996,7 +1024,6 @@ impl Render for Workbench {
         } else if connected > 0 {
             format!("◐ Live · {connected}/{} connected panes", panes.len())
         } else { "○ Live chat disconnected".to_owned() };
-        let menu_focus = self.focus.clone();
         let view_focus = self.focus.clone();
         let live_workspaces=self.live_workspaces;let live_channels=self.live_channels;
         let can_reopen = !self.closed_tabs.is_empty();
@@ -1005,11 +1032,12 @@ impl Render for Workbench {
         let can_right = self.active + 1 < self.tabs.len();
         let tab = &self.tabs[self.active];
         let dock=tab.dock.clone();
+        self.dock_bounds.borrow_mut().clear();
         let content=if let Some(dock)=dock {
             let min=dock.minimum();
             let available=window.viewport_size();
-            let width=(f32::from(available.width)-sidebar_width-if self.settings{252.}else{32.}).max(min.0);
-            let height=(f32::from(available.height)-240.).max(min.1);
+            let width=(f32::from(available.width)-sidebar_width-4.).max(min.0);
+            let height=(f32::from(available.height)-60.).max(min.1);
             let body=self.render_dock(&dock,Vec::new(),width,height,cx);
             div().id("dock-overflow").size_full().overflow_scroll().child(div().size_full().min_w(px(min.0)).min_h(px(min.1)).child(body)).into_any_element()
         } else {
@@ -1019,7 +1047,7 @@ impl Render for Workbench {
                 .child(Button::new("empty-add").label("+ Add a channel").on_click(cx.listener(|this,_,window,cx|this.open_add(false,window,cx))))
                 .into_any_element()
         };
-        div().id("workspace").track_focus(&self.focus).key_context("ChatWorkspace").v_flex().size_full().font_family("Segoe UI").text_size(px(13.)).bg(rgb(theme::SHELL)).text_color(rgb(theme::TEXT))
+        div().id("workspace").relative().track_focus(&self.focus).key_context("ChatWorkspace").v_flex().size_full().font_family("Segoe UI").text_size(px(13.)).bg(rgb(theme::SHELL)).text_color(rgb(theme::TEXT))
             .on_action(cx.listener(|this,_:&NewTab,w,cx|this.new_tab(w,cx)))
             .on_action(cx.listener(|this,_:&CloseTab,window,cx|{this.confirm_close_tab(this.tabs[this.active].id,window,cx);}))
             .on_action(cx.listener(|this,_:&ReopenTab,window,cx|{this.reopen_tab(cx);this.focus.focus(window,cx);}))
@@ -1035,22 +1063,21 @@ impl Render for Workbench {
             .on_action(cx.listener(|this,_:&ToggleLiveWorkspaces,_,cx|{this.live_workspaces=!this.live_workspaces;this.schedule_save(cx);cx.notify();}))
             .on_action(cx.listener(|this,_:&ToggleLiveChannels,_,cx|{this.live_channels=!this.live_channels;this.schedule_save(cx);cx.notify();}))
             .on_action(cx.listener(|this,_:&QuitWithoutSaving,_,cx|{if this.close_failed {cx.quit();}}))
-            .child(div().h_flex().h(px(40.)).flex_shrink_0().border_b_1().border_color(rgb(theme::BORDER))
-                .child(Button::new("sidebar").ghost().small().label("☰").tooltip("Toggle workspace sidebar").on_click(cx.listener(|this,_,_,cx|{this.sidebar=!this.sidebar;this.schedule_save(cx);cx.notify();})))
-                .child(div().h_flex().px_4().gap_2().child(div().text_color(rgb(0xA99CF4)).font_weight(FontWeight::BOLD).child("//"))
-                    .child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(12.)).child("JAWJACK")))
-
-                .child(Button::new("workspace-menu").ghost().small().label("Workspace").dropdown_menu(move|menu,_,_|menu.action_context(menu_focus.clone())
-                    .menu("New workspace",Box::new(NewTab)).menu("Add channel",Box::new(AddChannel)).menu("Rename workspace",Box::new(RenameWorkspace))
-                    .separator().menu_with_enable("Move tab left",Box::new(MoveTabLeft),can_left).menu_with_enable("Move tab right",Box::new(MoveTabRight),can_right)
-                    .separator().menu("Close workspace",Box::new(CloseTab)).menu_with_enable("Reopen closed workspace",Box::new(ReopenTab),can_reopen)
+            .child(div().h_flex().h(px(32.)).flex_shrink_0().border_b_1().border_color(rgb(theme::BORDER))
+                .child(Button::new("sidebar").ghost().small().label("☰").tooltip("Workspaces").on_click(cx.listener(|this,_,_,cx|{this.sidebar=!this.sidebar;this.schedule_save(cx);cx.notify();})))
+                .child(div().h_flex().px_2().gap_1().window_control_area(WindowControlArea::Drag).child(div().text_color(rgb(0xA99CF4)).font_weight(FontWeight::BOLD).child("//"))
+                    .child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(11.)).child("JAWJACK")))
+                .child(div().flex_1().min_w(px(8.)).h_full().window_control_area(WindowControlArea::Drag))
+                .child(Button::new("account-menu").ghost().xsmall().label(self.account.read(cx).label()).tooltip("Twitch account")
+                    .on_click(cx.listener(|this,_,window,cx|{let account=this.account.clone();let width=(f32::from(window.viewport_size().width)-24.).min(380.);window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Twitch account").child(account.clone()));})))
+                .child(Button::new("settings-menu").ghost().small().label("⚙").tooltip("Settings and workspace actions").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
+                    .menu("Appearance & memory",Box::new(ToggleAppearance))
+                    .menu(if live_channels{"Show all channel tabs"}else{"Only show live channel tabs"},Box::new(ToggleLiveChannels))
+                    .separator().menu("New workspace",Box::new(NewTab)).menu("Rename workspace",Box::new(RenameWorkspace))
+                    .menu("Close workspace…",Box::new(CloseTab)).menu_with_enable("Reopen workspace",Box::new(ReopenTab),can_reopen)
+                    .menu_with_enable("Move workspace up",Box::new(MoveTabLeft),can_left).menu_with_enable("Move workspace down",Box::new(MoveTabRight),can_right)
+                    .menu(if live_workspaces{"Show all workspaces"}else{"Only show live workspaces"},Box::new(ToggleLiveWorkspaces))
                     .when(can_discard,|menu|menu.separator().menu("Discard unsaved changes and quit",Box::new(QuitWithoutSaving)))))
-                .child(Button::new("view-menu").ghost().small().label("View").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
-                    .menu("Toggle sidebar",Box::new(ToggleSidebar)).menu("Appearance",Box::new(ToggleAppearance)).menu("Rotate split layout",Box::new(ToggleOrientation))
-                    .separator().menu(if live_workspaces{"Show all workspaces"}else{"Only show live workspaces"},Box::new(ToggleLiveWorkspaces))
-                    .menu(if live_channels{"Show all channel tabs"}else{"Only show live channel tabs"},Box::new(ToggleLiveChannels))))
-                .child(div().flex_1().mt(px(6.)).h(px(34.)).window_control_area(WindowControlArea::Drag))
-                .when(self.control_enabled,|el|el.child(div().px_3().text_size(px(10.)).text_color(rgb(theme::MUTED)).child("LOCAL CONTROL")))
                 .child(caption_control("minimize",IconName::WindowMinimize,WindowControlArea::Min,false))
                 .child(caption_control("maximize",if window.is_maximized(){IconName::WindowRestore}else{IconName::WindowMaximize},WindowControlArea::Max,false))
                 .child(caption_control("close",IconName::WindowClose,WindowControlArea::Close,true)))
@@ -1060,25 +1087,16 @@ impl Render for Workbench {
                         .child(div().relative().left(px(sidebar_width - 190.)).w(px(190.)).h_full()
                             .child(self.render_sidebar(cx)))))
                 .child(div().v_flex().flex_1().h_full().min_w_0().min_h_0()
-                    .child(div().h_flex().h(px(42.)).flex_shrink_0().px_3().gap_2().border_b_1().border_color(rgb(theme::BORDER))
-
-                        .child(Button::new("add-channel").small().label("+ Channel").tooltip("Add a channel tab · Ctrl+K; drag to an edge to split").on_click(cx.listener(|this,_,w,cx|this.open_add(false,w,cx))))
-
-                        .child(Button::new("rename").ghost().small().label("Rename").on_click(cx.listener(|this,_,w,cx|this.open_add(true,w,cx))))
-                        .when(!self.closed_tabs.is_empty(), |el|el.child(Button::new("reopen").ghost().small().label("Reopen closed").tooltip("Ctrl+Shift+T").on_click(cx.listener(|this,_,_,cx|this.reopen_tab(cx)))))
-                        .child(div().flex_1())
-                        .child(Button::new("preferences").ghost().small().label("Appearance").on_click(cx.listener(|this,_,_,cx|{this.settings=!this.settings;cx.notify();}))))
-                    .child(self.account.clone())
                     .when(self.adding,|el|el.child(div().v_flex().p_3().gap_2().bg(rgb(theme::ELEVATED)).border_b_1().border_color(rgb(theme::BORDER))
                         .child(div().text_size(px(12.)).child(if self.renaming{"Rename workspace"}else{"Add a Twitch channel to this workspace"}))
                         .child(div().h_flex().gap_2().child(div().flex_1().child(Input::new(&self.channel_input)))
                             .child(Button::new("accept-channel").label(if self.renaming{"Save"}else{"Add channel"}).on_click(cx.listener(|this,_,w,cx|this.accept_input(w,cx))))
                             .child(Button::new("cancel-add").ghost().label("Cancel").on_click(cx.listener(|this,_,window,cx|{this.adding=false;this.focus.focus(window,cx);cx.notify();}))))
                         .when_some(self.add_error.clone(),|el,error|el.child(div().text_size(px(12.)).text_color(rgb(0xF29D9D)).child(error)))))
-                    .child(div().h_flex().items_stretch().flex_1().min_h_0().overflow_hidden().p_2().gap_2().child(div().id("channel-dock").relative().flex_1().h_full().min_w_0().min_h_0()
+                    .child(div().h_flex().items_stretch().flex_1().min_h_0().overflow_hidden().p(px(2.)).child(div().id("channel-dock").relative().flex_1().h_full().min_w_0().min_h_0()
                         .child(content)
                         )
-                        .when(self.settings,|el|el.child(div().v_flex().w(px(220.)).p_4().gap_3().bg(rgb(theme::PANEL)).rounded(px(6.))
+                        .when(self.settings,|el|el.child(div().absolute().top(px(34.)).right(px(4.)).w(px((f32::from(window.viewport_size().width)-8.).min(300.))).max_h(px(f32::from(window.viewport_size().height)-60.)).id("settings-card").overflow_y_scroll().v_flex().p_3().gap_2().bg(rgb(theme::PANEL)).border_1().border_color(rgb(theme::BORDER)).rounded(px(6.))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Appearance & memory"))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Dark Studio · Segoe UI"))
                             .child(div().h_flex().gap_2().child(Button::new("font-minus").small().label("A−").on_click(cx.listener(|this,_,_,cx|this.change_font(-1.,cx))))
@@ -1092,7 +1110,7 @@ impl Render for Workbench {
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Image cache is separately bounded to 48 MiB. Visible chat rows are drawn on demand."))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Tabs, splits, channel drafts and appearance are saved locally."))
                             .child(Button::new("close-settings").ghost().label("Done").on_click(cx.listener(|this,_,_,cx|{this.settings=false;cx.notify();}))))))))
-            .child(div().h_flex().h(px(26.)).flex_shrink_0().px_3().gap_3().border_t_1().border_color(rgb(theme::BORDER)).text_size(px(10.)).text_color(rgb(theme::MUTED))
-                .child(live_status).child(div().flex_1().child(self.save_status.clone())).child("Ctrl+K channels · Ctrl+T workspace"))
+            .child(div().h_flex().h(px(20.)).flex_shrink_0().px_2().gap_2().border_t_1().border_color(rgb(theme::BORDER)).text_size(px(10.)).text_color(rgb(theme::MUTED))
+                .child(div().flex_1().min_w_0().overflow_hidden().child(live_status)).child(self.save_status.clone()))
     }
 }

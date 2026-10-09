@@ -348,8 +348,8 @@ impl Render for ChannelPane {
             .child(
                 div()
                     .h_flex()
-                    .h(px(36.))
-                    .px_3()
+                    .h(px(26.))
+                    .px_2()
                     .gap_2()
                     .bg(rgb(theme::PANEL))
                     .border_b_1()
@@ -372,7 +372,7 @@ impl Render for ChannelPane {
                         div()
                             .text_size(px(12.))
                             .text_color(rgb(theme::MUTED))
-                            .child(if self.connected { format!("Live · {retained}/{} · {}", self.timeline.borrow().capacity(), if following { "Latest" } else { "History" }) } else { self.connection.clone() }),
+                            .child(if self.connected { format!("{retained}/{} · {}", self.timeline.borrow().capacity(), if following { "Latest" } else { "History" }) } else { self.connection.clone() }),
                     )
                     .child(Button::new("close-pane").xsmall().label("×").tooltip("Close this split; keep draft")
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(PaneEvent::Close)))),
@@ -465,7 +465,7 @@ impl Render for ChannelPane {
                         .h_full(),
                     ),
             )
-            .child(div().key_context("JawjackComposer").v_flex().p_2().gap_2().bg(rgb(theme::PANEL)).border_t_1().border_color(rgb(theme::BORDER))
+            .child(div().key_context("JawjackComposer").v_flex().p_1().gap_1().bg(rgb(theme::PANEL)).border_t_1().border_color(rgb(theme::BORDER))
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                     if this.picker.open { return; }
                     if event.keystroke.key == "enter" && event.keystroke.modifiers.shift {
@@ -523,7 +523,7 @@ impl Render for ChannelPane {
                 .child(Textarea::new(&self.draft))
                 .when(!self.send_status.is_empty(), |el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(self.send_status.clone())))
                 .child(div().h_flex().justify_between().text_size(px(11.)).text_color(rgb(theme::MUTED))
-                    .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500 · Twitch message · wraps automatically", self.draft.read(cx).value().chars().count())))
+                    .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500", self.draft.read(cx).value().chars().count())))
                     .child(div().h_flex().gap_2().child(Button::new("emotes-toggle").small().label(":)").tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx))))
                     .child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else { "Send" }).disabled(!self.connected || self.pending.is_some()).tooltip("Send to this Twitch channel").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx)))))))
             .child(
@@ -567,9 +567,8 @@ fn caption_control(
 ) -> impl IntoElement {
     div()
         .id(id)
-        .w(px(46.))
-        .h(px(34.))
-        .mt(px(6.))
+        .w(px(32.))
+        .h(px(32.))
         .flex()
         .items_center()
         .justify_center()
@@ -641,7 +640,7 @@ fn main() {
                     size(px(1280.), px(820.)),
                     cx,
                 ))),
-                window_min_size: Some(size(px(1050.), px(640.))),
+                window_min_size: Some(size(px(360.), px(280.))),
                 ..Default::default()
             };
             gpui_kit::open_window(options, cx, |window, cx| {

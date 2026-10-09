@@ -41,6 +41,7 @@ impl Drop for TwitchAccount {
     }
 }
 impl TwitchAccount {
+    pub fn label(&self)->String {self.account.as_ref().map(|a|a.login.clone()).unwrap_or_else(||"Sign in".into())}
     pub fn identity(&self) -> Option<crate::live::Identity> {
         self.account.as_ref().map(|a| crate::live::Identity {
             user_id: a.tokens["user_id"].as_str().unwrap_or("").into(),
@@ -242,7 +243,7 @@ impl Render for TwitchAccount {
             .border_color(rgb(theme::BORDER))
             .child(
                 div()
-                    .h_flex()
+                    .h_flex().flex_wrap()
                     .gap_3()
                     .child(
                         div()
@@ -283,7 +284,7 @@ impl Render for TwitchAccount {
             .when_some(self.code.clone(), |el, (code, url)| {
                 el.child(
                     div()
-                        .h_flex()
+                        .h_flex().flex_wrap()
                         .gap_3()
                         .child(
                             div()

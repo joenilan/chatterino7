@@ -421,3 +421,18 @@ above each chat group. Sidebar entries retain creation, selection, drag reorder,
 channel drop destinations, and confirmed close (button/middle-click). Keyboard
 workspace navigation remains. Live-only workspace filtering has an explicit
 Show all escape in the sidebar; channel filtering remains independent.
+
+### Compact-window priority — owner screenshots, 2026-10-09
+
+The reference Chatterino capture is539x469 pixels. A1050x640 hard minimum made
+that use case impossible; the native minimum is now360x280. Title chrome is32px,
+with hamburger, compact brand, account button and settings cog. Account controls
+open on demand in a constrained dialog. Appearance is an overlay, not a dock-width
+consumer. The42px channel/rename toolbar and persistent account band are removed.
+
+Channel strips wrap and include a + which targets that specific group. Their
+right-click menu offers add, live-only visibility and confirmed close. Channel
+headers and composer/status chrome are denser, without removing copy feedback,
+draft limits, emote access or send status. This is a compact interaction pass,
+not a claim of complete Chatterino menu parity. Native540x470 verification remains
+required before calling the compact layout accepted.
