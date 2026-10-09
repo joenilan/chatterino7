@@ -261,7 +261,9 @@ pub fn dispatch(
                 shift: request["shift"].as_bool().unwrap_or(false),
                 ..Default::default()
             };
-            match request["kind"].as_str().ok_or("Missing pointer kind")? {
+            let kind=request["kind"].as_str().filter(|k|matches!(*k,"move"|"down"|"up")).ok_or("Use down/move/up, one event per call")?;
+            view.update(cx,|view,_|view.control_pointer(true));
+            match kind {
                 "move" => {
                     window.dispatch_event(
                         MouseMoveEvent {
@@ -301,8 +303,9 @@ pub fn dispatch(
                         cx,
                     );
                 }
-                _ => return Err("Use down/move/up, one event per call".into()),
+                _ => unreachable!(),
             }
+            view.update(cx,|view,_|view.control_pointer(false));
             Ok(json!({"dispatched":true}))
         }
         "scroll" => {

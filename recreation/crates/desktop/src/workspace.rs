@@ -97,6 +97,9 @@ pub struct Workbench {
     drop_target: Option<String>,
     dock_bounds: std::rc::Rc<std::cell::RefCell<BTreeMap<String,Bounds<Pixels>>>>,
     last_drop: Option<Value>,
+    release_position: Option<Point<Pixels>>,
+    control_pointer_active: bool,
+    release_from_control: bool,
     control_enabled: bool,
     tabs: Vec<WorkspaceTab>,
     closed_tabs: Vec<WorkspaceTab>,
@@ -121,6 +124,7 @@ pub struct Workbench {
     close_channel_pending: bool,
 }
 impl Workbench {
+    pub fn control_pointer(&mut self, active:bool){self.control_pointer_active=active;}
     pub fn focus_workspace(&self, window: &mut Window, cx: &mut App) {
         self.focus.focus(window, cx);
     }
@@ -208,6 +212,9 @@ impl Workbench {
             drop_target: None,
             dock_bounds: Default::default(),
             last_drop: None,
+            release_position: None,
+            control_pointer_active: false,
+            release_from_control: false,
             control_enabled,
             tabs: vec![],
             closed_tabs: vec![],
@@ -744,13 +751,13 @@ impl Workbench {
         cx.notify();
     }
     fn drop_at_pointer(&mut self,drag:&DraggedChannel,tab_id:u64,window:&mut Window,cx:&mut Context<Self>){
-        let position=window.mouse_position();
+        let Some(position)=self.release_position.take() else{return;};
         let target=self.dock_bounds.borrow().iter().find(|(_,bounds)|bounds.contains(&position)).map(|(name,bounds)|(name.clone(),*bounds));
         let Some((name,bounds))=target else{return;};
         let x=f32::from(position.x-bounds.origin.x)/f32::from(bounds.size.width);
         let y=f32::from(position.y-bounds.origin.y)/f32::from(bounds.size.height);
         let edge=if x<0.35{DropEdge::Left}else if x>0.65{DropEdge::Right}else if y<0.35{DropEdge::Top}else if y>0.65{DropEdge::Bottom}else{DropEdge::Center};
-        self.last_drop=Some(json!({"source":drag.name,"target":name,"edge":edge.label(),"x":f32::from(position.x),"y":f32::from(position.y)}));
+        self.last_drop=Some(json!({"input":if self.release_from_control{"local-control"}else{"native-window"},"source":drag.name,"target":name,"edge":edge.label(),"x":f32::from(position.x),"y":f32::from(position.y)}));
         self.drop_target=Some(name);self.move_pane(drag,tab_id,Some(edge),window,cx);
     }
     fn track_drop(&mut self, event: &DragMoveEvent<DraggedChannel>, cx: &mut Context<Self>) {
@@ -1048,6 +1055,7 @@ impl Render for Workbench {
                 .into_any_element()
         };
         div().id("workspace").relative().track_focus(&self.focus).key_context("ChatWorkspace").v_flex().size_full().font_family("Segoe UI").text_size(px(13.)).bg(rgb(theme::SHELL)).text_color(rgb(theme::TEXT))
+            .capture_any_mouse_up(cx.listener(|this,event:&MouseUpEvent,_,_|{if event.button==MouseButton::Left{this.release_position=Some(event.position);this.release_from_control=this.control_pointer_active;}}))
             .on_action(cx.listener(|this,_:&NewTab,w,cx|this.new_tab(w,cx)))
             .on_action(cx.listener(|this,_:&CloseTab,window,cx|{this.confirm_close_tab(this.tabs[this.active].id,window,cx);}))
             .on_action(cx.listener(|this,_:&ReopenTab,window,cx|{this.reopen_tab(cx);this.focus.focus(window,cx);}))
