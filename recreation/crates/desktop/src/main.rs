@@ -30,6 +30,7 @@ mod profiles;
 mod seven_events;
 mod seven_entitlements;
 mod seven_badges;
+mod seven_paints;
 mod input_history;
 use workspace::Workbench;
 

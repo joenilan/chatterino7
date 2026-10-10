@@ -123,6 +123,26 @@ impl ChannelPane{
                     if let Some(pane)=owner.upgrade(){pane.read(cx).catalog.borrow_mut().profiles.request(&user_id);}
                     let profile=owner.upgrade().and_then(|pane|pane.read(cx).catalog.borrow().profiles.get(&user_id).cloned());
                     let avatar=profile.as_ref().and_then(|p|p.avatar.as_ref()).and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();let image=media.borrow_mut().get(key,cx);image}));
+                    let cosmetics=owner.upgrade().map(|pane|{
+                        let pane=pane.read(cx);let catalog=pane.catalog.borrow();
+                        (catalog.paints.for_user(&user_id).cloned(),catalog.paints.preview_for_user(&user_id),catalog.paints.pending_for_user(&user_id),catalog.badges.for_user(&user_id).cloned())
+                    });
+                    let cosmetic_panel=cosmetics.and_then(|(paint,preview,pending,badge)|{
+                        if paint.is_none()&&!pending&&badge.is_none(){return None;}
+                        let badge_image=badge.as_ref().and_then(|b|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();let image=media.borrow_mut().get(&b.key,cx);image}));
+                        Some(div().v_flex().gap_1().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL))
+                            .child(div().text_size(px(11.)).text_color(rgb(0xB6A9E6)).child("7TV cosmetics · observed active grants"))
+                            .when_some(badge,|el,b|el.child(div().h_flex().gap_2()
+                                .child(crate::emote_picker::icon(badge_image,String::new(),28.,28.))
+                                .child(div().text_size(px(12.)).child(b.title))))
+                            .when_some(paint,|el,p|el
+                                .child(div().text_size(px(12.)).child(p.name))
+                                .when_some(preview,|el,image|el.child(img(image).w_full().h(px(32.)).object_fit(ObjectFit::Fill)))
+                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                                    p.limitation.map(|reason|format!("{reason} · preview unavailable")).unwrap_or_else(||"Color preview · name rendering is still being implemented".into()))))
+                            .when(pending,|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Paint grant received; waiting for its definition")))
+                            .into_any_element())
+                    });
                     let width=(f32::from(window.viewport_size().width)-24.).min(420.).max(180.);
                     let body_height=(f32::from(window.viewport_size().height)-160.).clamp(60.,480.);
                     let mention_owner=owner.clone();let mention_login=login.clone();let profile_login=login.clone();let id=user_id.clone();let search_id=user_id.clone();let search_owner=owner.clone();
@@ -136,6 +156,7 @@ impl ChannelPane{
                         .child(login.clone().map(|login|format!("@{login}" )).unwrap_or_else(||"Login unavailable".into()))
                         .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("{count} retained messages in #{channel}")))
                         .when(!badges.is_empty(),|el|el.child(div().text_size(px(11.)).child(badges.join(" · "))))
+                        .children(cosmetic_panel)
                         .child(div().id("chatter-recent").v_flex().gap_2()
                             .children(recent.into_iter().map(|body|div().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL)).min_w_0().child(body))))
                         .child(div().h_flex().flex_wrap().gap_1()

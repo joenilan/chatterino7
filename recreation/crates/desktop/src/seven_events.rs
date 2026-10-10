@@ -206,11 +206,14 @@ fn dispatch(changes: &Mutex<Vec<Change>>, kind: &str, body: &Value) {
                 push(changes, Change::BadgeDefinition { id, badge });
             }
         }
+        if body["object"]["kind"].as_str()==Some("PAINT"){
+            if let Some(paint)=crate::seven_paints::definition(&body["object"]["data"]){push(changes,Change::PaintDefinition(paint));}
+        }
         return;
     }
     if matches!(kind, "entitlement.create" | "entitlement.delete") {
         let object = &body["object"];
-        if !matches!(object["kind"].as_str(), Some("EMOTE_SET" | "BADGE")) {
+        if !matches!(object["kind"].as_str(), Some("EMOTE_SET" | "BADGE" | "PAINT")) {
             return;
         }
         let Some(set) = object["ref_id"].as_str().filter(|s| valid_id(s)) else {
@@ -235,6 +238,8 @@ fn dispatch(changes: &Mutex<Vec<Change>>, kind: &str, body: &Value) {
                         badge: set.into(),
                         remove: kind == "entitlement.delete",
                     }
+                } else if object["kind"].as_str()==Some("PAINT"){
+                    Change::PaintGrant{users,paint:set.into(),remove:kind=="entitlement.delete"}
                 } else {
                     Change::Grant {
                         users,

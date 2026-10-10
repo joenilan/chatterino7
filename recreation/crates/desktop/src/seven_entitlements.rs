@@ -6,6 +6,8 @@ use std::{
 
 #[derive(Clone)]
 pub enum Change {
+    PaintDefinition(crate::seven_paints::Paint),
+    PaintGrant {users:Vec<String>,paint:String,remove:bool},
     BadgeDefinition {
         id: String,
         badge: crate::twitch_assets::Badge,
