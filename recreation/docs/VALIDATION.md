@@ -397,3 +397,17 @@ batch. Native validation remains blocked by Deadlink's no-project-selected error
 and the desktop executor setup-refresh failure. No Windows pull or relaunch has
 occurred; da39e26b is still the last-confirmed preview. The error does not establish
 that selecting a Haiwire project is an intended connector requirement.
+
+## 2026-10-10 — Windows recovery and Settings hit testing
+
+- Deadlink recovered; checkout 535e6a7 was clean and built on Windows with Rust
+  1.99.0, locked release, exit 0 in 20.24 seconds. Owned preview PID 60088,
+  session `jj-manual-535e6a7c-attention`.
+- Genuine HutchMF messages and upward reply-context glyph observed. Settings
+  suppressed read acknowledgement; unread cleared after returning to visible tail.
+- Native defect: clicking the highlight input could open a reply conversation
+  underneath Settings. Added GPUI hitbox occlusion to the Settings card, including
+  scroll isolation. Child controls remain interactive; background rows should no
+  longer receive pointer input through the card. Native retest pending.
+- No sends, authentication changes or moderation performed. Remaining font/activity
+  checks and owner-state restoration are tracked by the existing native task.
