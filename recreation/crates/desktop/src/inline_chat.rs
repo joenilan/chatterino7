@@ -203,7 +203,7 @@ impl IntoElement for InlineChat {
 }
 impl Element for InlineChat {
     type RequestLayoutState = ();
-    type PrepaintState = Hitbox;
+    type PrepaintState = crate::media_hover::HoverState;
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())
     }
@@ -331,8 +331,8 @@ impl Element for InlineChat {
         bounds: Bounds<Pixels>,
         _: &mut (),
         window: &mut Window,
-        _cx: &mut App,
-    ) -> Hitbox {
+        cx: &mut App,
+    ) -> crate::media_hover::HoverState {
         self.layout.borrow_mut().origin = bounds.origin;
         let pointer = window.mouse_position();
         if self.selection.borrow().dragging
@@ -358,7 +358,29 @@ impl Element for InlineChat {
                 ),
             )
         });
-        window.insert_hitbox(hit, HitboxBehavior::Normal)
+        let hitbox=window.insert_hitbox(hit, HitboxBehavior::Normal);
+        let mut regions=Vec::new();
+        if !self.selection.borrow().dragging {
+            for (index,piece) in self.layout.borrow().pieces.iter().enumerate(){
+                if piece.text.is_none(){
+                    let slot=Bounds::new(bounds.origin+piece.bounds.origin+point(px(0.),(piece.bounds.size.height-px(self.emote_size))/2.),size(piece.bounds.size.width,px(self.emote_size)));
+                    let slot=slot.intersect(&hit);
+                    if slot.size.width<=px(0.)||slot.size.height<=px(0.){continue;}
+                    let source=self.spans.iter().find(|s|s.range.start<=piece.range.start&&s.range.end>=piece.range.end).and_then(|s|s.media.as_ref()).and_then(|m|m.first()).map(|(key,_)|crate::media_hover::source(key.provider())).unwrap_or("Emote");
+                    regions.push(crate::media_hover::region(format!("emote-hover-{}-{index}",self.row),slot,crate::media_hover::Content::Emote{label:self.text[piece.range.clone()].into(),source:source.into(),images:piece.media.iter().flatten().cloned().collect()},window,cx));
+                }else if let (Some(text),Some(interaction))=(&piece.text,&self.interaction){
+                    let mut targets=vec![(0..interaction.author_len,"Ctrl+click to inspect this chatter".to_owned())];
+                    targets.extend(interaction.links.iter().map(|link|(link.range.clone(),"Ctrl+click to open link · Right-click for actions".into())));
+                    for (target,(range,hint)) in targets.into_iter().enumerate(){
+                        let a=range.start.max(piece.range.start);let b=range.end.min(piece.range.end);if a>=b{continue;}
+                        let left=text.x_for_index(a-piece.range.start);let right=text.x_for_index(b-piece.range.start);
+                        let slot=Bounds::new(bounds.origin+piece.bounds.origin+point(left,px(0.)),size(right-left,piece.bounds.size.height)).intersect(&hit);
+                        if slot.size.width>px(0.)&&slot.size.height>px(0.){regions.push(crate::media_hover::region(format!("text-hover-{}-{index}-{target}",self.row),slot,crate::media_hover::Content::Hint(hint),window,cx));}
+                    }
+                }
+            }
+        }
+        crate::media_hover::HoverState{hitbox,regions}
     }
     fn paint(
         &mut self,
@@ -366,10 +388,12 @@ impl Element for InlineChat {
         _: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         _: &mut (),
-        hitbox: &mut Hitbox,
+        state: &mut crate::media_hover::HoverState,
         window: &mut Window,
         cx: &mut App,
     ) {
+        for region in &mut state.regions {region.paint(window,cx);}
+        let hitbox=&mut state.hitbox;
         let selected = self.selection.borrow().range_for(self.row, &self.text);
         if let Some(interaction)=&self.interaction{
             for piece in &self.layout.borrow().pieces{if let Some(text)=&piece.text{for link in &interaction.links{

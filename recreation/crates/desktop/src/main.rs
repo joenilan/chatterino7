@@ -12,6 +12,7 @@ mod attention;
 mod control;
 mod live;
 mod media;
+mod media_hover;
 mod catalog;
 mod community;
 mod twitch_assets;
@@ -561,7 +562,6 @@ impl Render for ChannelPane {
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()
-                                .tooltip(|w,cx|gpui_kit::component::tooltip::Tooltip::new("Ctrl+click a link to open, or a username to inspect · Right-click for actions").build(w,cx))
                                 .context_menu(move|menu,_,cx|message_actions::menu(row_owner.clone(),row_id.clone(),menu,cx))
                                 .children(rich_heading)
                                 .children(reply_line)

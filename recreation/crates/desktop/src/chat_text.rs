@@ -66,7 +66,7 @@ impl IntoElement for ChatText {
 }
 impl Element for ChatText {
     type RequestLayoutState = ();
-    type PrepaintState = Hitbox;
+    type PrepaintState = crate::media_hover::HoverState;
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())
     }
@@ -90,7 +90,7 @@ impl Element for ChatText {
         state: &mut (),
         window: &mut Window,
         cx: &mut App,
-    ) -> Hitbox {
+    ) -> crate::media_hover::HoverState {
         self.styled
             .prepaint(id, inspector, bounds, state, window, cx);
         let layout = self.styled.layout().clone();
@@ -125,7 +125,30 @@ impl Element for ChatText {
                 ),
             )
         });
-        window.insert_hitbox(hit_bounds, HitboxBehavior::Normal)
+        let hitbox=window.insert_hitbox(hit_bounds,HitboxBehavior::Normal);
+        let mut regions=Vec::new();
+        if !self.selection.borrow().dragging {if let Some(interaction)=&self.interaction{
+            let mut targets=vec![(0..interaction.author_len,"Ctrl+click to inspect this chatter")];
+            targets.extend(interaction.links.iter().map(|link|(link.range.clone(),"Ctrl+click to open link · Right-click for actions")));
+            for (target,(range,hint)) in targets.into_iter().enumerate(){
+                let mut boxes:Vec<Bounds<Pixels>>=Vec::new();
+                let Some(target_text)=self.text.get(range.clone()) else{continue;};
+                for (relative,ch) in target_text.char_indices(){
+                    let offset=range.start+relative;
+                    let Some(start)=layout.position_for_index(offset) else{continue;};
+                    let Some(end)=layout.position_for_index(offset+ch.len_utf8()) else{continue;};
+                    // At an exact wrap boundary GPUI reports the previous line's
+                    // end for start. The character itself belongs to end's line.
+                    let origin=if end.y==start.y {start}else{point(bounds.left(),end.y)};
+                    let width=end.x-origin.x;
+                    let slot=Bounds::new(origin,size(width,layout.line_height())).intersect(&hit_bounds);
+                    if slot.size.width<=px(0.)||slot.size.height<=px(0.){continue;}
+                    if let Some(last)=boxes.last_mut().filter(|last|last.top()==slot.top()&&(last.right()-slot.left()).abs()<px(1.)){last.size.width=slot.right()-last.left();}else{boxes.push(slot);}
+                }
+                for (part,slot) in boxes.into_iter().enumerate(){regions.push(crate::media_hover::region(format!("plain-hover-{}-{target}-{part}",self.row),slot,crate::media_hover::Content::Hint(hint.into()),window,cx));}
+            }
+        }}
+        crate::media_hover::HoverState{hitbox,regions}
     }
     fn paint(
         &mut self,
@@ -133,10 +156,12 @@ impl Element for ChatText {
         inspector: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         _: &mut (),
-        hitbox: &mut Hitbox,
+        state: &mut crate::media_hover::HoverState,
         window: &mut Window,
         cx: &mut App,
     ) {
+        for region in &mut state.regions {region.paint(window,cx);}
+        let hitbox=&mut state.hitbox;
         let layout = self.styled.layout().clone();
         let mut highlights=self.search.iter().cloned().map(|r|(r,0x66502D)).collect::<Vec<_>>();
         if let Some(range)=self.selection.borrow().range_for(self.row,&self.text){highlights.push((range,0x315166));}
