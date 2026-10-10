@@ -457,3 +457,16 @@ box. Badge slots now share the actual first-line height and center their18px
 images, for both plain and media rows and changed font sizes. Inline layout is
 created once and shares its line-height helper with badge placement. No wrapping
 or decoded-media sizing changes are claimed in this narrow fix. Native retest pending.
+
+### b09e578 native alignment acceptance
+
+Windows fast-forward checkout clean; Rust1.99 locked release exit0 in15.76s.
+Genuine Summit incoming emote and plain rows showed badges centered with usernames
+at14px and18px; no separate-line name or badge displacement observed. Evidence
+170-b09e5780-summit-font14.png and171-b09e5780-summit-font18.png in isolated profile.
+Restored jennybunnybean, font14,1280×820 and original sidebar; saved owner tabs,
+drafts/preferences matched pre-update snapshot exactly. PID65220,
+session`jj-manual-b09e5780-emote` left running.
+Jenny's exact heart did not recur after restart and was not rechecked. Original
+167 screenshot preserved. Decode-time relayout and narrow wrapping remain unverified.
+No fabricated messages, sends, auth actions or unrelated QA.
