@@ -18,6 +18,7 @@ type Emotes = HashMap<String, Emote>;
 struct Loaded {emotes:Emotes,set:String,owner:String}
 pub struct Catalog {
     global: Emotes,
+    favorites: Vec<[String; 3]>,
     global_state:crate::community::LoadState,
     last_manual_refresh:Option<Instant>,
     personal:Emotes,
@@ -72,6 +73,7 @@ impl Catalog {
         let _ = tx.try_send((String::new(), String::new(), 0));
         Self {
             global: HashMap::new(),
+            favorites: Vec::new(),
             global_state:crate::community::LoadState::Loading,last_manual_refresh:None,
             personal:HashMap::new(),personal_user:None,personal_ready:false,personal_epoch:0,
             entitlements:Default::default(),badges:Default::default(),entitled_sets:HashMap::new(),event_versions:HashMap::new(),event_revision:0,
@@ -225,6 +227,38 @@ impl Catalog {
         if !self.in_flight.contains(""){self.dirty.insert(String::new());self.retry_after.remove("");self.global_requested=Instant::now()-Duration::from_secs(6);self.global_state=crate::community::LoadState::Loading;}
         self.community.retry_global();true
     }
+    fn favorite_key(choice: &crate::twitch_assets::Choice) -> Option<[String; 3]> {
+        Some([choice.provider.into(), choice.key.as_ref()?.id.clone(), choice.label.clone()])
+    }
+    pub fn restore_favorites(&mut self, value: &Value) {
+        self.favorites.clear();
+        for value in value.as_array().into_iter().flatten().take(256) {
+            if let Ok(key) = serde_json::from_value::<[String; 3]>(value.clone()) {
+                if matches!(key[0].as_str(), "Twitch" | "7TV" | "BTTV" | "FFZ")
+                    && !key[1].is_empty() && key[1].len() <= 512
+                    && !key[2].is_empty() && key[2].len() <= 256
+                    && !self.favorites.contains(&key) { self.favorites.push(key); }
+            }
+        }
+    }
+    pub fn favorites_json(&self) -> Value { serde_json::json!(self.favorites) }
+    pub fn is_favorite(&self, choice: &crate::twitch_assets::Choice) -> bool {
+        Self::favorite_key(choice).is_some_and(|key| self.favorites.contains(&key))
+    }
+    pub fn remove_saved_favorite(&mut self, key: &[String; 3]) { self.favorites.retain(|saved| saved != key); }
+    pub fn toggle_favorite(&mut self, choice: &crate::twitch_assets::Choice) -> Result<bool, &'static str> {
+        let key = Self::favorite_key(choice).ok_or("This emote has no stable asset identity.")?;
+        if key[1].len() > 512 || key[2].len() > 256 {
+            return Err("This emote identity is too long to save safely.");
+        }
+        if let Some(index) = self.favorites.iter().position(|saved| saved == &key) {
+            self.favorites.remove(index);
+            return Ok(false);
+        }
+        if self.favorites.len() >= 256 { return Err("Your 256-emote favorites collection is full. Remove a favorite first."); }
+        self.favorites.push(key);
+        Ok(true)
+    }
     pub fn browser_collections(&mut self,current:&str)->Vec<crate::emote_picker::Collection>{
         use crate::emote_picker::{BrowserChoice,Collection};
         use crate::twitch_assets::Choice;
@@ -234,7 +268,7 @@ impl Catalog {
             if let Fragment::Emote{provider,id,animated,asset:Some(asset),..}=f{Some(Choice{label:name.clone(),provider:if provider=="ffz"{"FFZ"}else{"BTTV"},key:Some(crate::media::EmoteKey::community(provider,id,*animated,asset)?)})}else{None}
         }).collect::<Vec<_>>();
         let pack=|id:String,title:String,user:Option<String>,choices:Vec<Choice>|{
-            let mut items=choices.into_iter().map(|choice|BrowserChoice{available:effective.get(&choice.label)==Some(&choice.key),origin:title.clone(),choice}).collect::<Vec<_>>();
+            let mut items=choices.into_iter().map(|choice|BrowserChoice{saved_key:None,available:effective.get(&choice.label)==Some(&choice.key),origin:title.clone(),choice}).collect::<Vec<_>>();
             items.sort_by(|a,b|(a.choice.provider,a.choice.label.to_lowercase()).cmp(&(b.choice.provider,b.choice.label.to_lowercase())));
             items.dedup_by(|a,b|a.choice.provider==b.choice.provider&&a.choice.label==b.choice.label&&a.choice.key==b.choice.key);
             Collection{id,title,user,items}
@@ -254,6 +288,18 @@ impl Catalog {
             result.push(pack(format!("channel:{name}"),format!("#{name}"),Some(id),choices));
         }
         let all=result.iter().filter(|c|c.id=="global"||c.id=="personal"||c.id==format!("channel:{current}")).flat_map(|c|c.items.iter().filter(|i|i.available).cloned()).collect();
+        let mut seen=HashSet::new();
+        let mut favorites:Vec<BrowserChoice>=result.iter().flat_map(|c|c.items.iter()).filter(|item|self.is_favorite(&item.choice))
+            .filter(|item|Self::favorite_key(&item.choice).is_some_and(|key|seen.insert(key)))
+            .cloned().collect();
+        for key in &self.favorites {
+            if !seen.contains(key) {
+                let provider=match key[0].as_str(){"Twitch"=>"Twitch","7TV"=>"7TV","BTTV"=>"BTTV","FFZ"=>"FFZ",_=>continue};
+                favorites.push(BrowserChoice{choice:Choice{provider,label:key[2].clone(),key:None},
+                    origin:"Unavailable source".into(),available:false,saved_key:Some(key.clone())});
+            }
+        }
+        result.insert(0,Collection{id:"favorites".into(),title:"Favorites".into(),user:None,items:favorites});
         result.insert(0,Collection{id:"all".into(),title:"Available here".into(),user:None,items:all});
         result
     }

@@ -289,6 +289,7 @@ impl Workbench {
             close_tab_pending: None,
             close_channel_pending: false,
         };
+        this.catalog.borrow_mut().restore_favorites(&state["emote_favorites"]);
         if let Some(tabs) = state["tabs"].as_array() {
             for item in tabs.iter() {
                 let id = item["id"]
@@ -481,6 +482,14 @@ impl Workbench {
                 }
                 return;
             }
+            if matches!(event, PaneEvent::EmotePreferencesChanged) {
+                for pane in this.panes().iter().chain(this.closed_tabs.iter().flat_map(|tab|tab.panes.iter())) { pane.update(cx, |p, cx| {
+                    if p.picker.open { p.refresh_picker(cx); }
+                    cx.notify();
+                }); }
+                this.schedule_save(cx);
+                return;
+            }
             if matches!(event, PaneEvent::DragStarted) {
                 this.drop_edge = None;
                 cx.notify();
@@ -528,7 +537,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {

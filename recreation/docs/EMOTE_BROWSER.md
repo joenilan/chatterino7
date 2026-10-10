@@ -45,3 +45,22 @@ not fall back to plaintext credentials. The currently viewed preview was not rep
 
 Final locked/offline Linux build passed (exit 0, 3.79s). Updated native dialog
 appearance and retry interaction still require manual verification.
+
+## Saved favorites
+
+Favorites are a dedicated star collection alongside the source/avatar tabs. Right-
+click a tile to add/remove it, or use the selected-emote star beside search. A
+pastel star marks saved tiles and an in-app notice confirms the change. Insertion
+still uses the ordinary left click/Enter flow and rechecks current-channel availability.
+
+Save up to 256 provider/asset-ID/alias keys through the existing workspace persistence
+owner. Favorites are shared across local workspaces; search and service filtering
+still apply. No bearer tokens or arbitrary media URLs are stored with favorites.
+If an emote disappears or its catalog is unloaded, an unavailable placeholder remains
+removable rather than silently consuming capacity forever. Its asset is not fetched
+and it cannot be inserted. Restore validates bounded keys. Open and closed workspace
+picker entities refresh together after changes.
+
+Source builds successfully on Linux. Populated-catalog add/remove and restart
+persistence still require native acceptance; empty-state UI inspection alone does not
+prove those behaviors.

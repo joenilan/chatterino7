@@ -91,6 +91,7 @@ enum PaneEvent {
     Send { request: u64, text: String, reply_parent: Option<String> },
     Close,
     DraftChanged,
+    EmotePreferencesChanged,
 }
 impl EventEmitter<PaneEvent> for ChannelPane {}
 

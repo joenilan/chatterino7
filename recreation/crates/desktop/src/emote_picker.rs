@@ -29,6 +29,7 @@ pub struct BrowserChoice {
     pub choice: Choice,
     pub origin: String,
     pub available: bool,
+    pub saved_key: Option<[String; 3]>,
 }
 #[derive(Clone)]
 pub struct Collection {
@@ -133,6 +134,7 @@ impl ChannelPane {
                 i.choice.provider,
                 i.origin.clone(),
                 i.choice.key.clone(),
+                i.saved_key.clone(),
             )
         });
         self.picker.items = self
@@ -193,6 +195,7 @@ impl ChannelPane {
                             i.choice.provider,
                             i.origin.clone(),
                             i.choice.key.clone(),
+                i.saved_key.clone(),
                         ) == key
                     })
                     .unwrap_or(usize::MAX)
@@ -294,13 +297,30 @@ impl ChannelPane {
         cx.notify();
         true
     }
+    fn toggle_browser_favorite(&mut self, item: &BrowserChoice, window: &mut Window, cx: &mut Context<Self>) {
+        let result = if let Some(key) = &item.saved_key {
+            self.catalog.borrow_mut().remove_saved_favorite(key);
+            Ok(false)
+        } else { self.catalog.borrow_mut().toggle_favorite(&item.choice) };
+        let message = match result {
+            Ok(true) => format!("{} added to favorites", item.choice.label),
+            Ok(false) => format!("{} removed from favorites", item.choice.label),
+            Err(error) => error.to_owned(),
+        };
+        if result.is_ok() {
+            self.refresh_picker(cx);
+            cx.emit(PaneEvent::EmotePreferencesChanged);
+        }
+        window.push_notification(Notification::info(message).id::<ComposerFeedback>().delivery(NotificationDelivery::InApp),cx);
+        cx.notify();
+    }
     fn insert_browser_item(
         &mut self,
         item: &BrowserChoice,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let current = self
+        let current = item.saved_key.is_none() && self
             .catalog
             .borrow()
             .choices(&self.name, &item.choice.label, usize::MAX)
@@ -547,10 +567,12 @@ impl ChannelPane {
             .into_any_element()
     }
     pub fn render_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let selected_item=self.picker.items.get(self.picker.current).cloned();
+        let selected_favorite=selected_item.as_ref().is_some_and(|i|i.saved_key.is_some() || self.catalog.borrow().is_favorite(&i.choice));
         let reduced = cx.reduce_motion();
         let provider_status=self.catalog.borrow().browser_status(&self.picker.service);
         let can_retry=self.catalog.borrow().can_retry_public();
-        let empty_message=if !self.emote_search.read(cx).value().trim().is_empty(){"No matching emotes. Try a different search or service.".to_owned()}else{provider_status};
+        let empty_message=if self.picker.collection=="favorites" && self.emote_search.read(cx).value().trim().is_empty(){"Right-click an emote to favorite it, or select one and use the star button. Unavailable saved entries can still be removed. Channel availability always applies.".to_owned()}else if !self.emote_search.read(cx).value().trim().is_empty(){"No matching emotes. Try a different search or service.".to_owned()}else{provider_status};
         let height = (f32::from(window.viewport_size().height) - 70.).clamp(180., 390.);
         let width = self
             .viewport
@@ -590,7 +612,8 @@ impl ChannelPane {
             let fallback = match collection.id.as_str() {
                 "all" => "All".into(),
                 "global" => "◎".into(),
-                "personal" => "★".into(),
+                "personal" => "P".into(),
+                "favorites" => "★".into(),
                 _ => collection
                     .title
                     .trim_start_matches('#')
@@ -730,7 +753,8 @@ impl ChannelPane {
             .on_mouse_down(MouseButton::Left,|_,_,cx|cx.stop_propagation())
             .on_scroll_wheel(|_,_,cx|cx.stop_propagation())
             .when(!compact,|el|el.child(div().h(px(18.)).flex_shrink_0().text_size(px(11.)).overflow_hidden().child(format!("{title} · {} emotes",self.picker.items.len()))))
-            .child(div().h_flex().min_w_0().gap_1().flex_shrink_0().child(div().flex_1().min_w_0().child(Textarea::new(&self.emote_search))).child(Button::new("emotes-close").xsmall().label("×").tooltip("Close emotes · Esc").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
+            .child(div().h_flex().min_w_0().gap_1().flex_shrink_0().child(div().flex_1().min_w_0().child(Textarea::new(&self.emote_search))).when_some(selected_item,|el,item|el.child(Button::new("emote-favorite-selected").xsmall().label(if selected_favorite{"★"}else{"☆"}).tooltip(if selected_favorite{"Remove selected emote from favorites"}else{"Favorite selected emote · right-click also works"}).on_click(cx.listener(move|this,_,w,cx|this.toggle_browser_favorite(&item,w,cx)))))
+                .child(Button::new("emotes-close").xsmall().label("×").tooltip("Close emotes · Esc").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
             .child(div().id("emote-origin-tabs").h_flex().h(px(34.)).flex_shrink_0().gap_1().overflow_x_scroll().track_scroll(&self.picker.tabs_scroll).children(compact_services).children(tabs))
             .child(div().flex_1().min_h_0().w_full().overflow_hidden().on_prepaint(move|bounds,_,cx|{
                 let next=((f32::from(bounds.size.width)+4.)/44.).floor().max(1.)as usize;
@@ -742,9 +766,9 @@ impl ChannelPane {
                         GridRow::Heading(title)=>div().h(px(44.)).w_full().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(title).into_any_element(),
                         GridRow::Cells(range)=>{
                             let mut cells=Vec::new();for index in range{
-                                let item=this.picker.items[index].clone();let image=item.choice.key.as_ref().and_then(|key|this.media.borrow_mut().get(key,cx));let clicked=item.clone();
-                                let tooltip=format!("{} · {} · {}{}",item.choice.label,item.choice.provider,item.origin,if item.available{""}else{" · Not available with this alias in the current channel"});let hover=tooltip.clone();
-                                cells.push(div().id(("emote-browser-cell",index)).size(px(40.)).flex_shrink_0().flex().items_center().justify_center().rounded(px(4.)).border_1().border_color(if index==this.picker.current{rgb(0xB9A1FF)}else{rgba(0x00000000)}).opacity(if item.available{1.}else{0.4}).cursor_pointer().hover(|s|s.bg(rgb(theme::HOVER))).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(w,cx)).child(icon(image,item.choice.label,34.,34.)).on_hover(cx.listener(move|this,over,_,cx|{if *over{this.picker.hover_text=hover.clone();this.picker.current=index;cx.notify();}})).on_mouse_down(MouseButton::Left,|_,w,cx|{w.prevent_default();cx.stop_propagation();}).on_click(cx.listener(move|this,_,w,cx|{this.insert_browser_item(&clicked,w,cx);})));
+                                let item=this.picker.items[index].clone();let image=item.choice.key.as_ref().and_then(|key|this.media.borrow_mut().get(key,cx));let clicked=item.clone();let favorited=item.saved_key.is_some() || this.catalog.borrow().is_favorite(&item.choice);let favorite_item=item.clone();
+                                let tooltip=format!("{} · {} · {}{}",item.choice.label,item.choice.provider,item.origin,if item.available{""}else{" · Not available with this alias in the current channel"});let tooltip=format!("{tooltip} · {}",if favorited{"Favorite · right-click to remove"}else{"Right-click to favorite"});let hover=tooltip.clone();
+                                cells.push(div().id(("emote-browser-cell",index)).size(px(40.)).flex_shrink_0().flex().items_center().justify_center().rounded(px(4.)).border_1().border_color(if index==this.picker.current{rgb(0xB9A1FF)}else{rgba(0x00000000)}).opacity(if item.available{1.}else{0.4}).cursor_pointer().hover(|s|s.bg(rgb(theme::HOVER))).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(w,cx)).relative().child(icon(image,item.choice.label,34.,34.)).when(favorited,|el|el.child(div().absolute().top_0().right_0().text_size(px(9.)).text_color(rgb(0xE9C99C)).child("★"))).on_hover(cx.listener(move|this,over,_,cx|{if *over{this.picker.hover_text=hover.clone();this.picker.current=index;cx.notify();}})).on_mouse_down(MouseButton::Left,|_,w,cx|{w.prevent_default();cx.stop_propagation();}).on_mouse_down(MouseButton::Right,cx.listener(move|this,_,w,cx|{w.prevent_default();cx.stop_propagation();this.toggle_browser_favorite(&favorite_item,w,cx);})).on_click(cx.listener(move|this,_,w,cx|{this.insert_browser_item(&clicked,w,cx);})));
                             }
                             div().h(px(44.)).h_flex().gap_1().children(cells).into_any_element()
                         }
