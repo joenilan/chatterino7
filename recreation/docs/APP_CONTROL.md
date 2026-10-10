@@ -191,3 +191,10 @@ Reply inspection adds `reply_target` (ID and known-deleted flag only) and
 `retained_replies` per channel. These report real UI state; no synthetic reply
 injection or send shortcut exists. Drive context menus and composer controls using
 ordinary pointer/key actions. Do not press Enter or Send on a live QA draft.
+
+
+Attention inspection adds `unread`, `unread_highlights`, `retained_highlights` and
+`read_eligible` per pane. The ordinary `scroll` command accepts optional boolean
+`control` to dispatch a real Ctrl+wheel event. Shortcuts: Ctrl+Shift+M activity,
+Ctrl+Shift+R mark all open panes read, Ctrl+plus/minus chat font, Ctrl+0 reset.
+No synthetic attention-message injection was added.

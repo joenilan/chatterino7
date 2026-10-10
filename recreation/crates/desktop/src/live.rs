@@ -526,6 +526,7 @@ fn deliver(
             login: chat_core::twitch_login(&text("chatter_user_login")),
             replyable: e["source_broadcaster_user_id"].as_str().is_none_or(|source|source==id),
             reply: parse_reply(&e["reply"]),
+            mentions: e["message"]["fragments"].as_array().into_iter().flatten().filter(|f|f["type"]=="mention").filter_map(|f|f["mention"]["user_id"].as_str()).filter(|s|!s.is_empty()&&s.len()<=128).take(64).map(str::to_owned).collect(),
             name_color: e["color"].as_str().and_then(|s| s.strip_prefix('#'))
                 .filter(|s| s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit()))
                 .and_then(|s| u32::from_str_radix(s, 16).ok()),

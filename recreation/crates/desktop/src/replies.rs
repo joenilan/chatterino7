@@ -26,7 +26,7 @@ pub fn row_context(message:&chat_core::Message,timeline:&chat_core::Timeline,own
     let parent=timeline.messages().iter().find(|m|m.id==reply.parent_id);
     let preview=if reply.parent_deleted||parent.is_some_and(|m|m.deleted){"[message deleted]".into()}
         else{parent.map(|m|short(&m.body(),100)).unwrap_or_else(||"Original outside retained history".into())};
-    let label=format!("↳ {} · {preview}",short(&reply.parent_name,30));let id=message.id.clone();
+    let label=format!("↱ {} · {preview}",short(&reply.parent_name,30));let id=message.id.clone();
     Some(div().id(SharedString::from(format!("reply-{}",message.id))).px_1().text_size(px(11.)).line_height(px(16.)).text_color(rgb(0xB6A9E6)).min_w_0().overflow_hidden().text_ellipsis().cursor_pointer()
         .hover(|s|s.bg(rgb(theme::CONTROL)))
         .on_click(move|_,w,cx|{let _=owner.update(cx,|p,cx|p.message_action(&id,crate::message_actions::Action::Thread,w,cx));cx.stop_propagation();})
@@ -66,7 +66,7 @@ impl ChannelPane {
             .child(div().flex_1().min_w_0().v_flex()
                 .child(div().text_size(px(11.)).text_color(rgb(0xC9BAF7)).overflow_hidden().text_ellipsis().child(label))
                 .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).overflow_hidden().text_ellipsis().child(preview)))
-            .when(message.is_some(),|el|el.child(Button::new("reply-context").xsmall().label("↳").tooltip("View retained conversation").on_click(cx.listener(move|p,_,w,cx|p.message_action(&id,crate::message_actions::Action::Thread,w,cx)))))
+            .when(message.is_some(),|el|el.child(Button::new("reply-context").xsmall().label("↱").tooltip("View retained conversation").on_click(cx.listener(move|p,_,w,cx|p.message_action(&id,crate::message_actions::Action::Thread,w,cx)))))
             .child(Button::new("reply-cancel").xsmall().label("×").tooltip("Cancel reply; keep draft · Escape").on_click(cx.listener(|p,_,w,cx|p.cancel_reply(w,cx))))
             .into_any_element())
     }

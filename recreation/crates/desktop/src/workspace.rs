@@ -1,3 +1,5 @@
+#[path="activity.rs"]
+mod activity;
 use gpui_kit::base::ElementExt;
 use crate::dock::Dock;
 use crate::{ChannelPane, DragPreview, DraggedChannel, PaneEvent, caption_control, storage, theme};
@@ -34,11 +36,17 @@ gpui_kit::actions!(
         ToggleOrientation,
         ToggleLiveWorkspaces,
         ToggleLiveChannels,
-        QuitWithoutSaving
+        QuitWithoutSaving,
+        OpenActivity, MarkAllRead, FontLarger, FontSmaller, ResetFont
     ]
 );
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
+        KeyBinding::new("ctrl-shift-m", OpenActivity, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-shift-r", MarkAllRead, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-=", FontLarger, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl--", FontSmaller, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-0", ResetFont, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-t", NewTab, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-w", CloseTab, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-shift-t", ReopenTab, Some("ChatWorkspace")),
@@ -125,6 +133,10 @@ pub struct Workbench {
     settings: bool,
     font_size: f32,
     history_limit: usize,
+    highlight_input: Entity<InputState>,
+    highlight_terms: Vec<String>,
+    activity_all: bool,
+    zoom_accumulator: f32,
     drafts: BTreeMap<String, String>,
     reply_drafts: BTreeMap<String, Value>,
     save_revision: u64,
@@ -215,7 +227,11 @@ impl Workbench {
                     .collect()
             })
             .unwrap_or_default();
+        let highlight_input=cx.new(|cx|{let mut input=InputState::new(window,cx).placeholder("Words or phrases, comma separated").validate(|text,_|text.chars().count()<=400);input.set_value(state["highlight_words"].as_str().unwrap_or(""),window,cx);input});
+        cx.subscribe_in(&highlight_input,window,|this:&mut Self,_,event,_,cx|{if matches!(event,InputEvent::Change){this.highlight_terms=crate::attention::terms(&this.highlight_input.read(cx).value());this.schedule_save(cx);cx.notify();}}).detach();
         let mut this = Self {
+            highlight_terms: crate::attention::terms(state["highlight_words"].as_str().unwrap_or("")),
+            highlight_input, activity_all:false, zoom_accumulator:0.,
             live: crate::live::LiveChat::new(),
             streams: crate::stream_status::Streams::new(),
             live_workspaces: state["live_workspaces"].as_bool().unwrap_or(false),
@@ -354,12 +370,15 @@ impl Workbench {
     fn pump_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let identity = self.account.read(cx).identity();
         let panes = self.panes();
+        self.sync_attention(window,cx);
         if self.streams.pump(identity.clone(),panes.iter().map(|p|p.read(cx).name.to_string()).collect()){cx.notify();}
         if self.catalog.borrow_mut().pump(panes.iter().map(|p|p.read(cx).name.to_string()).collect(), identity.clone()) {
             for pane in &panes { pane.update(cx, |p,cx| {
                 p.timeline.borrow_mut().enrich(|message| message.fragments = self.catalog.borrow().expand(&p.name, &message.fragments));
+                p.attention.reconcile(&p.timeline.borrow(),(p.next_id-p.timeline.borrow().messages().len()) as u64);
                 p.scroller.update(cx, |s,cx|s.remeasure(cx)); if p.picker.open {p.refresh_picker(cx);} cx.notify();
             }); }
+            cx.notify();
         }
         if self.media.borrow_mut().pump(cx) { for pane in &panes { pane.update(cx, |p, cx| { p.scroller.update(cx, |s, cx| s.remeasure(cx)); cx.notify(); }); } }
         if self.live.configure(
@@ -401,6 +420,7 @@ impl Workbench {
                     cx.notify();
                 }
                 crate::live::Event::Chat(channel, event) => {
+                    cx.notify();
                     let moderation=!matches!(&event,chat_core::Event::Message(_));
                     for pane in panes.iter().chain(self.closed_tabs.iter().flat_map(|tab|tab.panes.iter()).filter(|_|moderation)) {
                         if pane.read(cx).name.as_ref() == channel {
@@ -489,7 +509,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,
+        json!({"version":1,"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
@@ -875,9 +895,10 @@ impl Workbench {
     }
     fn change_font(&mut self, delta: f32, cx: &mut Context<Self>) {
         self.font_size = (self.font_size + delta).clamp(12., 24.);
-        for pane in self.panes() {
+        for pane in self.panes().iter().chain(self.closed_tabs.iter().flat_map(|t|t.panes.iter())) {
             pane.update(cx, |p, cx| {
                 p.font_size = self.font_size;
+                p.scroller.update(cx,|s,cx|s.remeasure(cx));
                 cx.notify();
             });
         }
@@ -928,17 +949,20 @@ impl Workbench {
                 let strip_name=name.clone();let strip_bounds=self.strip_bounds.clone();
                 let tabs=names.iter().filter(|channel|!self.live_channels||*channel==&name||self.streams.get(channel)!=Some(false)).map(|channel|{let selected=channel==&name;let channel=channel.clone();
                     let drag_pane=self.tabs[self.active].panes.iter().find(|p|p.read(cx).name.as_ref()==channel).cloned();
+                    let counts=drag_pane.as_ref().map(|p|p.read(cx).attention.counts()).unwrap_or_default();
                     let tab_name=channel.clone();let tab_bounds=self.tab_bounds.clone();
                     let item=div().id(SharedString::from(format!("channel-tab-{tab_id}-{channel}"))).h(px(28.)).px_2().flex().items_center().cursor_pointer()
                         .bg(rgb(if selected{theme::CONTROL}else{theme::PANEL})).border_b_2().border_color(rgb(if selected{0xA99CF4}else{theme::PANEL}))
                         .on_prepaint(move|bounds,_,_|{tab_bounds.borrow_mut().insert(tab_name.clone(),bounds);})
                         .hover(|s|s.bg(rgb(theme::HOVER))).child(format!("{} #{channel}",match self.streams.get(&channel){Some(true)=>"●",Some(false)=>"○",None=>"◌"}))
+                        .when(counts.0>0,|el|el.child(div().ml_1().px_1().rounded(px(3.)).text_size(px(10.)).bg(rgb(if counts.1>0{0x403250}else{0x2B3038})).text_color(rgb(if counts.1>0{0xE4BCFA}else{theme::TEXT})).child(if counts.1>0{format!("@{}",crate::attention::count(counts.1))}else{crate::attention::count(counts.0)})))
                         .on_mouse_down(MouseButton::Middle,cx.listener({let channel=channel.clone();move|this,_,window,cx|{window.prevent_default();cx.stop_propagation();this.confirm_close_channel(channel.clone(),window,cx);}}))
                         .on_click(cx.listener({let channel=channel.clone();move|this,_,window,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.select(&channel);}this.selected_channel=Some(channel.clone());this.focus.focus(window,cx);this.schedule_save(cx);cx.notify();}}));
                     let owner=cx.entity().downgrade();let menu_channel=channel.clone();
                     let menu=move |menu:gpui_kit::component::menu::PopupMenu,_:&mut Window,_:&mut Context<gpui_kit::component::menu::PopupMenu>|{
-                        let add=owner.clone();let add_channel=menu_channel.clone();let close=owner.clone();let close_channel=menu_channel.clone();let filter=owner.clone();let left=owner.clone();let left_channel=menu_channel.clone();let right=owner.clone();let right_channel=menu_channel.clone();let open_url=format!("https://www.twitch.tv/{menu_channel}");let copy_url=open_url.clone();
-                        menu.item(PopupMenuItem::new("Open stream in browser").on_click(move|_,_,cx|cx.open_url(&open_url)))
+                        let add=owner.clone();let add_channel=menu_channel.clone();let close=owner.clone();let close_channel=menu_channel.clone();let filter=owner.clone();let left=owner.clone();let left_channel=menu_channel.clone();let right=owner.clone();let right_channel=menu_channel.clone();let open_url=format!("https://www.twitch.tv/{menu_channel}");let copy_url=open_url.clone();let read=owner.clone();let read_channel=menu_channel.clone();
+                        menu.item(PopupMenuItem::new("Mark channel read").on_click(move|_,_,cx|{let _=read.update(cx,|this,cx|{if let Some(pane)=this.tabs[this.active].panes.iter().find(|p|p.read(cx).name.as_ref()==read_channel){pane.update(cx,|p,cx|{p.attention.mark_all();cx.notify();});}cx.notify();});}))
+                            .item(PopupMenuItem::new("Open stream in browser").on_click(move|_,_,cx|cx.open_url(&open_url)))
                             .item(PopupMenuItem::new("Copy channel URL").on_click(move|_,window,cx|{cx.write_to_clipboard(ClipboardItem::new_string(copy_url.clone()));window.push_notification(Notification::info("Channel URL copied"),cx);}))
                             .separator().item(PopupMenuItem::new("Add channel tab").on_click(move|_,window,cx|{let _=add.update(cx,|this,cx|{this.open_add(false,window,cx);this.add_target=Some(add_channel.clone());});}))
                             .item(PopupMenuItem::new("Toggle live-only channel tabs").on_click(move|_,_,cx|{let _=filter.update(cx,|this,cx|{this.live_channels=!this.live_channels;this.schedule_save(cx);cx.notify();});}))
@@ -1009,6 +1033,7 @@ impl Workbench {
                     .gap_1()
                     .children(self.shown_tabs(cx).into_iter().map(|ix| {
                         let tab=&self.tabs[ix];
+                        let counts=tab.panes.iter().map(|p|p.read(cx).attention.counts()).fold((0,0),|(u,h),(a,b)|(u+a,h+b));
                         div()
                             .id(("sidebar-tab", tab.id))
                             .v_flex()
@@ -1039,7 +1064,7 @@ impl Workbench {
                                 div()
                                     .text_size(px(11.))
                                     .text_color(rgb(theme::MUTED))
-                                    .child(format!("{} channels", tab.panes.len())),
+                                    .child(format!("{} channels{}", tab.panes.len(),if counts.0>0{format!(" · {} unread · @{}",crate::attention::count(counts.0),crate::attention::count(counts.1))}else{String::new()})),
                             )
                     })),
             )
@@ -1095,6 +1120,7 @@ impl Render for Workbench {
         } else if connected > 0 {
             format!("◐ Live · {connected}/{} connected panes", panes.len())
         } else { "○ Live chat disconnected".to_owned() };
+        let counts=self.attention_counts(cx);
         let view_focus = self.focus.clone();
         let pointer_guard = cx.entity().downgrade();
         let live_workspaces=self.live_workspaces;let live_channels=self.live_channels;
@@ -1131,6 +1157,13 @@ impl Render for Workbench {
                 if !valid{cx.stop_active_drag(window);this.drop_edge=None;this.drop_target=None;cx.notify();}
             }}))
             .child(canvas(|_,_,_|(),move|_,_,window,_|{
+                let zoom=pointer_guard.clone();
+                window.on_mouse_event(move|event:&ScrollWheelEvent,phase,window,cx|{
+                    if !phase.capture()||!event.modifiers.control||window.has_active_dialog(cx){return;}
+                    let delta=match event.delta{ScrollDelta::Lines(p)=>p.y.signum(),ScrollDelta::Pixels(p)=>f32::from(p.y)/40.};
+                    let _=zoom.update(cx,|this,cx|{this.zoom_accumulator+=delta;let steps=this.zoom_accumulator.trunc().clamp(-4.,4.);if steps!=0.{this.zoom_accumulator-=steps;this.font_feedback(steps,false,window,cx);}});
+                    window.prevent_default();cx.stop_propagation();
+                });
                 let owner=pointer_guard.clone();
                 window.on_mouse_event(move|event:&MouseMoveEvent,phase,window,cx|{
                     if !phase.capture(){return;}
@@ -1146,6 +1179,11 @@ impl Render for Workbench {
                 });
             }).absolute().size_0())
             .on_action(cx.listener(|this,_:&crate::FindChat,w,cx|{let panes=this.visible_panes(cx);let selected=this.selected_channel.as_ref();if let Some(pane)=panes.iter().find(|p|Some(&p.read(cx).name.to_string())==selected).or(panes.first()){pane.update(cx,|p,cx|p.open_search(w,cx));}cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&OpenActivity,w,cx|this.open_activity(w,cx)))
+            .on_action(cx.listener(|this,_:&MarkAllRead,_,cx|this.mark_all_read(cx)))
+            .on_action(cx.listener(|this,_:&FontLarger,w,cx|this.font_feedback(1.,false,w,cx)))
+            .on_action(cx.listener(|this,_:&FontSmaller,w,cx|this.font_feedback(-1.,false,w,cx)))
+            .on_action(cx.listener(|this,_:&ResetFont,w,cx|this.font_feedback(0.,true,w,cx)))
             .on_action(cx.listener(|this,_:&NewTab,w,cx|this.new_tab(w,cx)))
             .on_action(cx.listener(|this,_:&CloseTab,window,cx|{this.confirm_close_tab(this.tabs[this.active].id,window,cx);}))
             .on_action(cx.listener(|this,_:&ReopenTab,window,cx|{this.reopen_tab(cx);this.focus.focus(window,cx);}))
@@ -1168,9 +1206,12 @@ impl Render for Workbench {
                 .child(div().h_flex().px_2().gap_1().window_control_area(WindowControlArea::Drag).child(div().text_color(rgb(0xA99CF4)).font_weight(FontWeight::BOLD).child("//"))
                     .child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(11.)).child("JAWJACK")))
                 .child(div().flex_1().min_w(px(8.)).h_full().window_control_area(WindowControlArea::Drag))
+                .child(Button::new("activity-menu").ghost().xsmall().label(if counts.1>0{format!("@{}",crate::attention::count(counts.1))}else if counts.0>0{format!("• {}",crate::attention::count(counts.0))}else{"@".into()}).tooltip("Highlights & unread · Ctrl+Shift+M").on_click(cx.listener(|this,_,w,cx|this.open_activity(w,cx))))
                 .child(Button::new("account-menu").ghost().xsmall().label(self.account.read(cx).label()).tooltip("Twitch account")
                     .on_click(cx.listener(|this,_,window,cx|{let account=this.account.clone();let width=(f32::from(window.viewport_size().width)-24.).min(380.);window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Twitch account").child(account.clone()));})))
                 .child(Button::new("settings-menu").ghost().small().label("⚙").tooltip("Settings and workspace actions").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
+                    .menu("Highlights & unread",Box::new(OpenActivity))
+                    .menu("Mark all read",Box::new(MarkAllRead))
                     .menu("Appearance & memory",Box::new(ToggleAppearance))
                     .menu(if live_channels{"Show all channel tabs"}else{"Only show live channel tabs"},Box::new(ToggleLiveChannels))
                     .separator().menu("New workspace",Box::new(NewTab)).menu("Rename workspace",Box::new(RenameWorkspace))
@@ -1200,7 +1241,11 @@ impl Render for Workbench {
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Appearance & memory"))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Dark Studio · Segoe UI"))
                             .child(div().h_flex().gap_2().child(Button::new("font-minus").small().label("A−").on_click(cx.listener(|this,_,_,cx|this.change_font(-1.,cx))))
-                                .child(format!("{} px",self.font_size as u32)).child(Button::new("font-plus").small().label("A+").on_click(cx.listener(|this,_,_,cx|this.change_font(1.,cx)))))
+                                .child(format!("{} px",self.font_size as u32)).child(Button::new("font-reset").small().label("Reset").tooltip("Ctrl+0").on_click(cx.listener(|this,_,w,cx|this.font_feedback(0.,true,w,cx)))).child(Button::new("font-plus").small().label("A+").on_click(cx.listener(|this,_,_,cx|this.change_font(1.,cx)))))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Ctrl+wheel or Ctrl+plus/minus · Ctrl+0 resets"))
+                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Highlights"))
+                            .child(Input::new(&self.highlight_input).small())
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Your mentions and replies are included. Add up to 8 words/phrases (40 characters each). Whole-word, case-insensitive; no alerts or sounds."))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Chat memory"))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Newest messages per channel. Older history is released; drafts stay saved."))
                             .child(div().h_flex().flex_wrap().gap_1().children([500usize,1000,2000,5000,10_000].into_iter().map(|limit|

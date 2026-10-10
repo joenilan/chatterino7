@@ -4,6 +4,7 @@ mod chat_text;
 mod chat_search;
 mod message_actions;
 mod replies;
+mod attention;
 mod control;
 mod live;
 mod media;
@@ -93,6 +94,9 @@ struct ChannelPane {
     pending: Option<(u64, String, Option<String>, u64)>,
     compose_revision: u64,
     reply_target: Option<replies::Target>,
+    attention: attention::Attention,
+    read_eligible: Rc<Cell<bool>>,
+    presented_row: Rc<Cell<Option<u64>>>,
     send_status: String,
     timeline: Rc<RefCell<Timeline>>,
     media: Rc<RefCell<media::MediaCache>>,
@@ -152,6 +156,9 @@ impl ChannelPane {
             connected: false,
             pending: None,
             reply_target: None,
+            attention: Default::default(),
+            read_eligible: Rc::new(Cell::new(false)),
+            presented_row: Rc::new(Cell::new(None)),
             compose_revision: 0,
             send_status: String::new(),
             timeline: Rc::new(RefCell::new(timeline)),
@@ -181,6 +188,7 @@ impl ChannelPane {
             self.entrances.retain(|e|e.row>=first);
             self.scroller.update(cx,|s,cx|s.splice(0..removed,0,cx));
         }
+        self.attention.reconcile(&self.timeline.borrow(),(self.next_id-self.timeline.borrow().messages().len()) as u64);
         cx.notify();
     }
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -236,7 +244,7 @@ impl ChannelPane {
                 }
                 self.next_id += 1;
                 { let timeline=self.timeline.borrow();
-                  if let Some(message)=timeline.messages().back(){self.search.appended(message,(self.next_id-1) as u64,(self.next_id-timeline.messages().len()) as u64);} }
+                  if let Some(message)=timeline.messages().back(){let first=(self.next_id-timeline.messages().len()) as u64;self.search.appended(message,(self.next_id-1) as u64,first);self.attention.appended(message,(self.next_id-1) as u64,first);} }
 
                 self.scroller.update(cx, |scroller, cx| {
                     if evicted {
@@ -246,6 +254,7 @@ impl ChannelPane {
                 });
             }
             chat_core::Change::Updated => {
+                self.attention.reconcile(&self.timeline.borrow(),(self.next_id-self.timeline.borrow().messages().len()) as u64);
                 self.search.dirty=true;
                 self.selection.borrow_mut().clear();
                 self.scroller.update(cx, |s, cx| s.remeasure(cx));
@@ -354,6 +363,8 @@ impl Render for ChannelPane {
         let first_order = (self.next_id - retained) as u64;
         self.search.refresh(&timeline.borrow(),first_order);
         let search_hits=if self.search.open{self.search.hits.clone()}else{Rc::default()};
+        let highlight_rows=self.attention.highlights.clone();
+        let presented_row=self.presented_row.clone();let read_eligible=self.read_eligible.clone();
         let search_current=self.search.open.then_some(self.search.current).flatten();
         let search_bar=self.search.open.then(||self.render_search(cx));
         let selection = self.selection.clone();
@@ -474,6 +485,7 @@ impl Render for ChannelPane {
                             let row_owner=menu_owner.clone();let row_id=message.id.clone();
                             let reply_line=replies::row_context(message,&messages,menu_owner.clone());
                             let interaction=message_actions::Interaction{owner:menu_owner.clone(),message:message.id.clone(),author_len:message.display_name.len(),links:message_actions::message_links(message),pressed:link_press.clone()};
+                            let presented=presented_row.clone();let eligible=read_eligible.clone();
                             let matches=search_hits.get(&row).cloned().unwrap_or_default();
                             let progress = entrances.iter().find(|entry| entry.row == row)
                                 .map(|entry| {
@@ -488,6 +500,16 @@ impl Render for ChannelPane {
                             let eased = 1.0 - (1.0 - progress).powi(3);
                             div()
                                 .relative()
+                                .border_l_2().border_color(rgba(0x00000000))
+                                .when(highlight_rows.contains(&row),|el|el.bg(rgb(0x272237)).border_color(rgb(0xA99CF4)))
+                                .on_prepaint(move|bounds,window,cx|{
+                                    let clip=window.content_mask().bounds;
+                                    if following&&eligible.get()&&window.is_window_active()&&!window.has_active_dialog(cx)
+                                        && bounds.origin.x>=clip.origin.x&&bounds.bottom()>clip.origin.y
+                                        && bounds.right()<=clip.right()&&bounds.bottom()<=clip.bottom(){
+                                        presented.set(Some(presented.get().map_or(row,|old|old.max(row))));
+                                    }
+                                })
                                 .when(search_current==Some(row),|el|el.bg(rgb(0x272331)))
                                 .left(px(12.0 * (1.0 - eased)))
                                 .top(px(6.0 * (1.0 - eased)))

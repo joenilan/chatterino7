@@ -374,3 +374,17 @@ Running session jj-manual-da39e26b-replies-restart, PID 45920, owned terminal hw
 No messages sent, URLs opened or authentication actions performed.
 Outgoing delivery, real moderation/deletion and a thread with its original parent
 retained remain untested. Build/runtime evidence is not full Chatterino parity.
+
+
+## Attention and font QoL implementation checkpoint — 2026-10-10
+
+Code adds upward reply arrow, per-pane unread/highlight references, visible-row
+acknowledgement, compact badges, global retained activity, optional highlight words,
+and Ctrl+wheel / keyboard font controls. Initial Linux build passed (10.00s).
+Native acceptance is pending. Required bounded real-app checks: hidden channel and
+workspace unread, inactive/background window if safely possible, returning to tail,
+scrolled-back retention, explicit mark read, live-filter-hidden activity access,
+activity jump, keyword highlights using naturally arriving traffic, compact layout,
+Ctrl+wheel versus plain scrolling, reset and saved font/keyword settings. Preserve
+owner's newly edited five-channel grouped workspace. No outgoing QA messages.
+Unavailable real self-mentions/account switching/moderation must remain unverified.

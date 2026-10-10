@@ -516,3 +516,50 @@ not cleared by acknowledgement of an older send.
 Reference contracts: https://dev.twitch.tv/docs/api/reference/#send-chat-message
 and https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-message-event.
 No extra OAuth scopes, live moderation actions or synthetic chat were introduced.
+
+
+## Ordered continuation plan — owner confirmed 2026-10-10
+
+Deliver coherent native-verified batches, including useful QoL and visual polish.
+Keep these states explicit rather than treating the original feature inventory as done:
+
+1. **Implemented / native pass pending:** upward reply-context arrow; session-local
+   unread/highlight tracking; channel/sidebar badges; deduplicated activity viewer;
+   current-account mentions and replies; saved optional highlight words; Ctrl+wheel
+   chat font sizing, Ctrl+plus/minus and Ctrl+0 reset. See VALIDATION.md for evidence.
+2. **Next:** richer chatter cards, live channel information and chat restrictions,
+   then moderation controls with appropriate confirmed permissions. Avoid presenting
+   actions that the current account cannot actually perform.
+3. **Queued:** 7TV paints/cosmetics, personal emotes and provider-specific behavior.
+   Determine required contracts/permissions before promising exact capability.
+4. **Queued:** remaining daily-client shortcuts/settings, multi-window/popouts,
+   accessibility, and performance/animation refinement throughout.
+5. **Later:** YouTube/Kick integrations; TikTok is low priority. Shared normalized
+   message architecture should not force Twitch assumptions on future providers.
+
+Full Chatterino feature parity is still an open program, not a completed claim.
+Outgoing delivery and moderation remain distinct acceptance gaps.
+
+### Attention behavior
+
+Unread state is per pane because each view has its own scroll position. Only an
+active-window, visible dock leaf following the tail can automatically acknowledge
+rows, and only through an actually presented row inside the current content mask.
+Inactive windows, hidden tabs/workspaces, offscreen splits, modal dialogs, search,
+and settings do not automatically clear unread state. Channel menus and the activity
+viewer provide explicit Mark read actions. Badge totals count unread pane views;
+activity rows deduplicate by channel plus message ID.
+
+Highlighting uses provider mention IDs, replies to the authenticated user's ID,
+and whole-word case-insensitive text matching of that login or optional bounded
+words/phrases. Emote labels and author labels are excluded; adjacent text fragments
+are joined without joining across emotes. Own messages are excluded. Catalog
+updates reconcile classification; moderation and retention remove stale references.
+Account changes reset the attention epoch without replaying earlier messages for
+the next user. Token refresh alone does not reset it.
+
+The titlebar activity entry works with sidebar closed and live-only filters enabled.
+It shows up to 200 newest matching retained messages, with Highlights / All unread,
+Mark all read and Jump. No copied message log, sounds or OS notifications. Unread
+counts and activity are session-local because transcript history is not persisted;
+font size and highlight words are saved. Compact badges cap visually at 99+.
