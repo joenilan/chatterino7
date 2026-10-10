@@ -15,3 +15,8 @@ Existing selection, Ctrl+click and right-click actions remain handled by their
 original owners. An unloaded preview is explicitly labeled rather than appearing
 as an empty card. Native acceptance should include blank row space, an emote,
 username/link hints and a selection drag across content.
+
+Tooltip views render as independent roots, so they explicitly set their foreground
+and font instead of inheriting the transcript's styling. Preview image space has
+fixed non-shrinking dimensions. Linux compilation passed after this correction;
+live Windows emote hover and selection acceptance remain pending.

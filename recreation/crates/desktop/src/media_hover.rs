@@ -13,7 +13,7 @@ pub struct Card(pub Content);
 impl Render for Card {
     fn render(&mut self,window:&mut Window,_cx:&mut Context<Self>)->impl IntoElement{
         match &self.0 {
-            Content::Hint(text)=>div().p_2().max_w(px(300.)).text_size(px(11.)).bg(rgb(theme::ELEVATED)).border_1().border_color(rgb(theme::BORDER)).rounded(px(5.)).child(text.clone()).into_any_element(),
+            Content::Hint(text)=>div().p_2().max_w(px(300.)).font_family("Segoe UI").text_color(rgb(theme::TEXT)).text_size(px(11.)).bg(rgb(theme::ELEVATED)).border_1().border_color(rgb(theme::BORDER)).rounded(px(5.)).child(text.clone()).into_any_element(),
             Content::Emote{label,source,images}=>{
                 let width=(f32::from(window.viewport_size().width)-24.).clamp(80.,180.);
                 let height=(f32::from(window.viewport_size().height)-100.).clamp(48.,112.);
@@ -25,9 +25,9 @@ impl Render for Card {
                         let fitted=ObjectFit::Contain.get_bounds(bounds,image.image.size(frame));
                         let _=window.paint_image(bounds,fitted,Corners::all(px(0.)),image.image.clone(),frame,false);
                     }
-                }).w(px(width-16.)).h(px(height));
-                div().v_flex().items_center().gap_1().p_2().w(px(width)).bg(rgb(theme::ELEVATED)).border_1().border_color(rgb(theme::BORDER)).rounded(px(5.))
-                    .child(div().relative().child(preview).when(images.is_empty(),|el|el.child(div().absolute().inset_0().flex().items_center().justify_center().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Preview not loaded"))))
+                }).w(px(width-16.)).h(px(height)).flex_shrink_0();
+                div().v_flex().items_center().gap_1().p_2().w(px(width)).font_family("Segoe UI").text_color(rgb(theme::TEXT)).bg(rgb(theme::ELEVATED)).border_1().border_color(rgb(theme::BORDER)).rounded(px(5.))
+                    .child(div().relative().w(px(width-16.)).h(px(height)).flex_shrink_0().child(preview).when(images.is_empty(),|el|el.child(div().absolute().inset_0().flex().items_center().justify_center().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Preview not loaded"))))
                     .child(div().text_size(px(12.)).font_weight(FontWeight::SEMIBOLD).child(label.clone()))
                     .child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(source.clone())).into_any_element()
             }
