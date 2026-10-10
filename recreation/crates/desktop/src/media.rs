@@ -2,9 +2,9 @@
 use gpui_kit::*;
 use image::{AnimationDecoder, ImageDecoder, ImageFormat};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     io::{Cursor, Read},
-    sync::{Arc, Mutex, mpsc},
+    sync::{Arc, Mutex, Condvar, mpsc},
     time::{Duration, Instant},
 };
 
@@ -159,20 +159,24 @@ impl MediaFailure {
     }}
 }
 type Download = (EmoteKey, Result<(Arc<DecodedMedia>, usize), MediaFailure>);
+struct QueuedDownload { key: EmoteKey, priority: u8 }
+#[derive(Default)]
+struct DownloadQueue { jobs: VecDeque<QueuedDownload>, closed: bool }
+type SharedQueue = Arc<(Mutex<DownloadQueue>, Condvar)>;
 pub struct MediaCache {
     entries: HashMap<EmoteKey, Entry>,
-    tx: mpsc::SyncSender<EmoteKey>,
+    jobs: SharedQueue,
     rx: mpsc::Receiver<Download>,
     used: u64,
     bytes: usize,
     layout_keys: HashSet<EmoteKey>,
     layout_dirty: bool,
     conservative_layout: bool,
+    picker_view: Vec<EmoteKey>,
 }
 impl MediaCache {
     pub fn new() -> Self {
-        let (tx, jobs) = mpsc::sync_channel::<EmoteKey>(32);
-        let jobs = Arc::new(Mutex::new(jobs));
+        let jobs: SharedQueue = Arc::new((Mutex::new(DownloadQueue::default()), Condvar::new()));
         let (results, rx) = mpsc::sync_channel(8);
         for _ in 0..4 {
             let jobs = jobs.clone();
@@ -187,13 +191,15 @@ impl MediaCache {
                     return;
                 };
                 loop {
-                    let job = match jobs.lock() {
-                        Ok(rx) => rx.recv(),
-                        Err(_) => return,
-                    };
-                    let Ok(key) = job else {
-                        return;
-                    };
+                    let (lock, wake) = &*jobs;
+                    let Ok(mut queue) = lock.lock() else { return; };
+                    while queue.jobs.is_empty() && !queue.closed {
+                        queue = match wake.wait(queue) { Ok(queue) => queue, Err(_) => return };
+                    }
+                    if queue.closed { return; }
+                    let Some(job) = queue.jobs.pop_front() else { continue; };
+                    drop(queue);
+                    let key = job.key;
                     let result = download(&client, &key);
                     if results.send((key, result)).is_err() {
                         return;
@@ -203,13 +209,14 @@ impl MediaCache {
         }
         Self {
             entries: HashMap::new(),
-            tx,
+            jobs,
             rx,
             used: 0,
             bytes: 0,
             layout_keys: HashSet::new(),
             layout_dirty: false,
             conservative_layout: false,
+            picker_view: Vec::new(),
         }
     }
     pub fn inspection(&self) -> serde_json::Value {
@@ -232,14 +239,21 @@ impl MediaCache {
     pub fn failed(&self, key: &EmoteKey) -> bool {
         matches!(self.entries.get(key), Some(Entry::Failed(at, _)) if at.elapsed() < Duration::from_secs(60))
     }
-    pub fn get(&mut self, key: &EmoteKey, cx: &mut App) -> Option<Arc<DecodedMedia>> {
+    pub fn get(&mut self, key: &EmoteKey, cx: &mut App) -> Option<Arc<DecodedMedia>> { self.request(key, 0, cx) }
+    fn request(&mut self, key: &EmoteKey, priority: u8, cx: &mut App) -> Option<Arc<DecodedMedia>> {
         self.used = self.used.wrapping_add(1);
         match self.entries.get_mut(key) {
             Some(Entry::Ready { image, used, .. }) => {
                 *used = self.used;
                 return Some(image.clone());
             }
-            Some(Entry::Pending) => return None,
+            Some(Entry::Pending) => {
+                if let Ok(mut queue)=self.jobs.0.lock() {
+                    if let Some(job)=queue.jobs.iter_mut().find(|job|&job.key==key) {job.priority=job.priority.min(priority);}
+                    queue.jobs.make_contiguous().sort_by_key(|job|job.priority);
+                }
+                return None;
+            },
             Some(Entry::Failed(at, _)) if at.elapsed() < Duration::from_secs(60) => return None,
             _ => {}
         }
@@ -248,7 +262,14 @@ impl MediaCache {
         if (self.layout_keys.contains(key) || self.conservative_layout) && matches!(self.entries.get(key), Some(Entry::Failed(..))) {
             self.layout_dirty = true;
         }
-        if self.tx.try_send(key.clone()).is_ok() {
+        let queued = if let Ok(mut queue)=self.jobs.0.lock() {
+            if queue.closed || queue.jobs.len()>=32 {false} else {
+                queue.jobs.push_back(QueuedDownload{key:key.clone(),priority});
+                queue.jobs.make_contiguous().sort_by_key(|job|job.priority);
+                self.jobs.1.notify_one(); true
+            }
+        } else {false};
+        if queued {
             // A full queue must not evict usable images on every paint.
             if self.entries.len() >= 512 { self.evict(cx); }
             self.entries
@@ -256,14 +277,35 @@ impl MediaCache {
         }
         None
     }
+    /// On a viewport change, abandon queued offscreen picker/look-ahead work.
+    /// In-flight downloads and chat requests remain intact; visible rows retain order.
+    pub fn prioritize_picker(&mut self, visible: &[EmoteKey], cx: &mut App) {
+        if self.picker_view==visible {return;}
+        self.picker_view=visible.to_vec();
+        let mut removed=Vec::new();
+        if let Ok(mut queue)=self.jobs.0.lock() {
+            queue.jobs.retain(|job|{
+                let keep=job.priority==0 || self.layout_keys.contains(&job.key) || visible.contains(&job.key);
+                if !keep {removed.push(job.key.clone());} keep
+            });
+            queue.jobs.make_contiguous().sort_by_key(|job| {
+                if job.priority==0 {(0,0)} else {(1,visible.iter().position(|key|key==&job.key).unwrap_or(usize::MAX))}
+            });
+        }
+        for key in removed {self.remove(&key,cx);}
+    }
     /// Picker cells use the static asset when animation is missing or over budget.
     /// A failed animated request must not strand an otherwise usable emote.
     pub fn get_picker(&mut self, key: &EmoteKey, cx: &mut App) -> (Option<Arc<DecodedMedia>>, bool) {
         let mut requested = key.clone();
-        let mut image = self.get(&requested, cx);
-        if image.is_none() && requested.animated && self.failed(&requested) {
-            requested.animated = false;
-            image = self.get(&requested, cx);
+        let mut image = self.request(&requested, 1, cx);
+        if image.is_none() && requested.animated {
+            let failed=self.failed(&requested);
+            let mut fallback=requested.clone(); fallback.animated=false;
+            // Keep an already usable static image visible during animation retries.
+            image=self.peek(&fallback);
+            if image.is_some(){self.touch(&fallback);}
+            if image.is_none() && failed {requested=fallback;image=self.request(&requested,1,cx);}
         }
         let loading = image.is_none() && !self.failed(&requested);
         (image, loading)
@@ -285,7 +327,7 @@ impl MediaCache {
         if matches!(self.entries.get(key),Some(Entry::Ready{..}|Entry::Pending))
             || matches!(self.entries.get(key),Some(Entry::Failed(at, _)) if at.elapsed()<Duration::from_secs(60))
             || self.entries.values().filter(|e| matches!(e, Entry::Pending)).count() >= 12 { return; }
-        self.get(key, cx);
+        self.request(key, 2, cx);
     }
     fn evict(&mut self, cx: &mut App) {
         let key = self
@@ -348,6 +390,9 @@ impl MediaCache {
         }
         changed
     }
+}
+impl Drop for MediaCache {
+    fn drop(&mut self) { if let Ok(mut queue)=self.jobs.0.lock() {queue.closed=true;queue.jobs.clear();self.jobs.1.notify_all();} }
 }
 fn download(
     client: &reqwest::blocking::Client,

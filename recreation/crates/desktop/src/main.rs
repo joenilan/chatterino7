@@ -456,7 +456,7 @@ impl Render for ChannelPane {
                         div()
                             .text_size(px(12.))
                             .text_color(rgb(theme::MUTED))
-                            .child(if self.connected { format!("{retained}/{} · {}", self.timeline.borrow().capacity(), if following { "Latest" } else { "History" }) } else { self.connection.clone() }),
+                            .child(if self.connected { if following { "Latest".to_owned() } else { format!("{retained}/{} · History", self.timeline.borrow().capacity()) } } else { self.connection.clone() }),
                     )
                     .child(Button::new("find-chat").xsmall().label("⌕").tooltip("Find in chat · Ctrl+F").on_click(cx.listener(|this,_,w,cx|this.open_search(w,cx))))
                     .child(Button::new("close-pane").xsmall().label("×").tooltip("Close this split…; keep draft")

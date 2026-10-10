@@ -63,8 +63,11 @@ pub struct Picker {
     tabs_scroll: ScrollHandle,
     reveals: HashMap<usize,Rc<Cell<Option<Instant>>>>,
     last_warm: Option<(Range<usize>,Instant)>,
+    last_visible: Vec<crate::media::EmoteKey>,
+    row_reveals: HashMap<usize,(Option<Instant>,bool)>,
 }
 impl Picker {
+    pub fn visible_media(&self)->&[crate::media::EmoteKey] {&self.last_visible}
     fn top_row(&self)->usize {(-f32::from(self.scroll.0.borrow().base_handle.offset().y)/44.).floor().max(0.)as usize}
 
     pub fn inspection(&self) -> serde_json::Value {
@@ -209,6 +212,8 @@ impl ChannelPane {
                 b.choice.label.to_lowercase(),
             ))
         });
+        self.picker.row_reveals.clear();
+        self.picker.last_visible.clear();
         self.picker.rows.clear();
         let columns = self.picker.columns.max(1);
         let mut start = 0;
@@ -255,7 +260,7 @@ impl ChannelPane {
             .unwrap_or(0)
         };
         if reset {
-            self.picker.last_warm=None;
+            self.picker.last_warm=None;self.picker.last_visible.clear();self.picker.row_reveals.clear();
             self.picker.hover_text.clear();
             self.picker
                 .scroll
@@ -645,11 +650,21 @@ impl ChannelPane {
         let popup_owner = owner.clone();
         let columns = self.picker.columns;
         let top=self.picker.top_row();
-        for row in top..(top+((height-125.)/44.).ceil()as usize).min(self.picker.rows.len()) {
+        let visible_end=(top+((height-125.)/44.).ceil()as usize+1).min(self.picker.rows.len());
+        let mut visible_keys=Vec::new();
+        for row in top..visible_end {
             if let GridRow::Cells(indices)=self.picker.rows[row].clone(){for index in indices {
-                if let Some(key)=&self.picker.items[index].choice.key{self.media.borrow_mut().get(key,cx);}
+                if let Some(key)=&self.picker.items[index].choice.key {
+                    visible_keys.push(key.clone());
+                    if key.animated && self.media.borrow().failed(key) {let mut fallback=key.clone();fallback.animated=false;visible_keys.push(fallback);}
+                }
             }}
         }
+        if visible_keys!=self.picker.last_visible {
+            self.picker.last_visible=visible_keys.clone();
+        }
+        self.picker.row_reveals.retain(|row,_|*row>=top.saturating_sub(2)&&*row<visible_end+2);
+        for key in &visible_keys {self.media.borrow_mut().get_picker(key,cx);}
         let mut tabs = Vec::new();
         for collection in self
             .picker
@@ -848,19 +863,39 @@ impl ChannelPane {
                 let next=((f32::from(bounds.size.width)+4.)/44.).floor().max(1.)as usize;
                 if next!=columns{let owner=owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|this,cx|{if this.picker.columns!=next{this.picker.columns=next;this.rebuild_browser(false,cx);if let Some(row)=this.picker.rows.iter().position(|r|matches!(r,GridRow::Cells(range)if range.contains(&this.picker.current))){this.picker.scroll.scroll_to_item(row,ScrollStrategy::Nearest);}cx.notify();}});});}
             }).when(self.picker.items.is_empty(),|el|el.child(div().p_2().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(empty_message).when(can_retry,|el|el.child(Button::new("retry-public-emotes").xsmall().label("Retry public emotes").on_click(cx.listener(|this,_,_,cx|{if this.catalog.borrow_mut().retry_public(){this.refresh_picker(cx);cx.notify();}}))))))
-            .when(!self.picker.items.is_empty(),|el|el.child(uniform_list("emote-browser-grid",self.picker.rows.len(),cx.processor(|this,range:Range<usize>,_,cx|{
+            .when(!self.picker.items.is_empty(),|el|el.child(uniform_list("emote-browser-grid",self.picker.rows.len(),cx.processor(|this,range:Range<usize>,window,cx|{
 
                 let elements: Vec<_> = range.map(|row|{
                     match this.picker.rows[row].clone(){
                         GridRow::Heading(title)=>div().h(px(44.)).w_full().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(title).into_any_element(),
                         GridRow::Cells(range)=>{
-                            let mut cells=Vec::new();for index in range{
-                                let item=this.picker.items[index].clone();let (image,loading)=item.choice.key.as_ref().map(|key|this.media.borrow_mut().get_picker(key,cx)).unwrap_or((None,false));let shown=image.as_ref().map(|image|{
+                            let row_items=range.clone().map(|index| {
+                                let item=this.picker.items[index].clone();
+                                let (image,loading)=item.choice.key.as_ref().map(|key|this.media.borrow_mut().get_picker(key,cx)).unwrap_or((None,false));
+                                (index,item,image,loading)
+                            }).collect::<Vec<_>>();
+                            let top=this.picker.top_row();
+                            let visible=row>=top && row<top+10;
+                            let wait=if visible {
+                                let already_shown=row_items.iter().filter_map(|(_,_,image,_)|image.as_ref()).any(|image|this.picker.reveals.get(&image.image.id.0).is_some_and(|at|at.get().is_some()));
+                                let batch=this.picker.row_reveals.entry(row).or_default();
+                                let any_ready=row_items.iter().any(|(_,_,image,_)|image.is_some());
+                                if any_ready && batch.0.is_none(){batch.0=Some(Instant::now());}
+                                if already_shown || !row_items.iter().any(|(_,_,_,loading)|*loading) || batch.0.is_some_and(|at|at.elapsed()>=Duration::from_millis(160)) {batch.1=true;}
+                                if !batch.1 && batch.0.is_some(){window.request_animation_frame();}
+                                !batch.1
+                            }else{false};
+                            let mut cells=Vec::new();for (index,item,image,loading) in row_items {
+                                let image=if wait {None}else{image};let loading=loading||wait;
+                                let unavailable=image.is_none()&&!loading;
+                                let shown=image.as_ref().map(|image|{
                                     if !this.picker.reveals.contains_key(&image.image.id.0) && this.picker.reveals.len()>=1024 {if let Some(old)=this.picker.reveals.iter().min_by_key(|(_,at)|at.get()).map(|(id,_)|*id){this.picker.reveals.remove(&old);}}
                                     this.picker.reveals.entry(image.image.id.0).or_default().clone()
                                 });let clicked=item.clone();let favorited=item.saved_key.is_some() || this.catalog.borrow().is_favorite(&item.choice);let favorite_item=item.clone();
-                                let tooltip=format!("{} · {} · {}{}",item.choice.label,item.choice.provider,item.origin,if item.available{""}else{" · Not available with this alias in the current channel"});let tooltip=format!("{tooltip} · {}",if favorited{"Favorite · right-click to remove"}else{"Right-click to favorite"});let hover=tooltip.clone();
-                                cells.push(div().id(("emote-browser-cell",index)).size(px(40.)).flex_shrink_0().flex().items_center().justify_center().rounded(px(4.)).border_1().border_color(if index==this.picker.current{rgb(0xB9A1FF)}else{rgba(0x00000000)}).opacity(if item.available{1.}else{0.4}).cursor_pointer().hover(|s|s.bg(rgb(theme::HOVER))).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(w,cx)).relative().child(if loading { loading_icon(index,cx.reduce_motion()) } else { smooth_icon(image,item.choice.label,34.,34.,cx.reduce_motion(),shown) }).when(favorited,|el|el.child(div().absolute().top_0().right_0().text_size(px(9.)).text_color(rgb(0xE9C99C)).child("★"))).on_hover(cx.listener(move|this,over,_,cx|{if *over{this.picker.hover_text=hover.clone();this.picker.current=index;cx.notify();}})).on_mouse_down(MouseButton::Left,|_,w,cx|{w.prevent_default();cx.stop_propagation();}).on_mouse_down(MouseButton::Right,cx.listener(move|this,_,w,cx|{w.prevent_default();cx.stop_propagation();this.toggle_browser_favorite(&favorite_item,w,cx);})).on_click(cx.listener(move|this,_,w,cx|{this.insert_browser_item(&clicked,w,cx);})));
+                                let tooltip=format!("{} · {} · {}{}",item.choice.label,item.choice.provider,item.origin,if item.available{""}else{" · Not available with this alias in the current channel"});let tooltip=if unavailable {format!("{tooltip} · Image unavailable{}",if item.available{"; emote text can still be inserted"}else{""})} else {tooltip};let tooltip=format!("{tooltip} · {}",if favorited{"Favorite · right-click to remove"}else{"Right-click to favorite"});let hover=tooltip.clone();
+                                cells.push(div().id(("emote-browser-cell",index)).size(px(40.)).flex_shrink_0().flex().items_center().justify_center().rounded(px(4.)).border_1().border_color(if index==this.picker.current{rgb(0xB9A1FF)}else{rgba(0x00000000)}).opacity(if item.available{1.}else{0.4}).cursor_pointer().hover(|s|s.bg(rgb(theme::HOVER))).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(w,cx)).relative().child(if loading { loading_icon(index,cx.reduce_motion()) } else if unavailable {
+                                    div().size(px(34.)).flex().items_center().justify_center().child(div().size(px(20.)).flex().items_center().justify_center().rounded(px(5.)).border_1().border_color(rgb(theme::BORDER)).text_color(rgb(theme::MUTED)).text_size(px(12.)).child("×")).into_any_element()
+                                } else { smooth_icon(image,item.choice.label,34.,34.,cx.reduce_motion(),shown) }).when(favorited,|el|el.child(div().absolute().top_0().right_0().text_size(px(9.)).text_color(rgb(0xE9C99C)).child("★"))).on_hover(cx.listener(move|this,over,_,cx|{if *over{this.picker.hover_text=hover.clone();this.picker.current=index;cx.notify();}})).on_mouse_down(MouseButton::Left,|_,w,cx|{w.prevent_default();cx.stop_propagation();}).on_mouse_down(MouseButton::Right,cx.listener(move|this,_,w,cx|{w.prevent_default();cx.stop_propagation();this.toggle_browser_favorite(&favorite_item,w,cx);})).on_click(cx.listener(move|this,_,w,cx|{this.insert_browser_item(&clicked,w,cx);})));
                             }
                             div().h(px(44.)).h_flex().gap_1().children(cells).into_any_element()
                         }

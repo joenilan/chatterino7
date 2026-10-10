@@ -52,3 +52,20 @@ Picker cells now retry the static asset when an animated asset returns an error
 or exceeds decode limits, matching the existing transcript fallback policy. A
 failed animation does not by itself leave an emote permanently blank. Animated
 failure counts remain visible for diagnosis even when static fallback succeeds.
+
+## Coherent viewport loading
+
+The four workers share one bounded priority queue (at most 32 waiting jobs).
+Transcript requests take priority, followed by visible picker requests, then
+speculative nearby-row/avatar prefetch. The workbench combines demand from all visible open pickers. Changing that
+combined viewport reorders queued work top-to-bottom and abandons queued
+offscreen speculative requests; closing or hiding a picker removes its demand.
+In-flight downloads and known transcript dependencies are preserved. Network
+completion order can still differ; requests are not serialized behind a slow CDN.
+
+Newly ready cells can share a row reveal for up to 160 ms from the first ready
+image, ending earlier when the row has settled. Already shown images stay shown.
+Pending cells keep one consistent skeleton; terminal failures use a small muted
+unavailable-image glyph and explanatory tooltip rather than a box of name text.
+The emote name stays in the normal tooltip/details area. A usable static image
+stays visible while an animated request retries after cooldown.

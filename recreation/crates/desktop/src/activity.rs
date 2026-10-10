@@ -23,8 +23,16 @@ impl Workbench {
         }
         if changed{cx.notify();}
     }
-    pub(super) fn attention_counts(&self,cx:&App)->(usize,usize){
-        self.panes().iter().map(|p|p.read(cx).attention.counts()).fold((0,0),|(u,h),(a,b)|(u+a,h+b))
+    pub(super) fn displayed_attention(&self,pane:&Entity<ChannelPane>,reading_available:bool,cx:&App)->(usize,usize){
+        let p=pane.read(cx);
+        // Presentation only: actual unread is acknowledged after rows are painted.
+        // Hide the one-tick arrival/ack gap for a chat the owner is already reading.
+        let reading=reading_available && !self.settings && !self.adding && !p.search.open
+            && p.scroller.read(cx).is_following_tail() && self.visible_panes(cx).contains(pane);
+        if reading {(0,0)} else {p.attention.counts()}
+    }
+    pub(super) fn attention_counts(&self,reading_available:bool,cx:&App)->(usize,usize){
+        self.panes().iter().map(|p|self.displayed_attention(p,reading_available,cx)).fold((0,0),|(u,h),(a,b)|(u+a,h+b))
     }
     pub(super) fn mark_all_read(&mut self,cx:&mut Context<Self>){
         for pane in self.panes(){pane.update(cx,|p,cx|{if p.attention.mark_all(){cx.notify();}});}

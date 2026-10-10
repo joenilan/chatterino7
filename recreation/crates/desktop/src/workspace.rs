@@ -408,8 +408,13 @@ impl Workbench {
             }); }
             cx.notify();
         }
+        let visible_picker_keys=if window.has_active_dialog(cx) {Vec::new()} else {
+            self.visible_panes(cx).iter().filter(|pane|pane.read(cx).picker.open)
+                .flat_map(|pane|pane.read(cx).picker.visible_media().to_vec()).collect::<Vec<_>>()
+        };
         let (media_changed, layout_changed) = {
             let mut media = self.media.borrow_mut();
+            media.prioritize_picker(&visible_picker_keys,cx);
             (media.pump(cx), media.take_layout_dirty())
         };
         if media_changed || layout_changed { for pane in &panes { pane.update(cx, |p, cx| {
@@ -1009,7 +1014,7 @@ impl Workbench {
                     .child(Button::new("confirm-channel-close").label("Close channel").on_click(move|_,window,cx|{pane.update(cx,|_,cx|cx.emit(PaneEvent::Close));let _=close.update(cx,|this,cx|{this.close_channel_pending=false;cx.notify();});window.close_dialog(cx);})))
         });cx.notify();
     }
-    fn render_dock(&mut self, dock:&Dock, path:Vec<usize>, width:f32,height:f32,cx:&mut Context<Self>)->AnyElement {
+    fn render_dock(&mut self, dock:&Dock, path:Vec<usize>, width:f32,height:f32,reading_available:bool,cx:&mut Context<Self>)->AnyElement {
         let tab_id=self.tabs[self.active].id;
         match dock {
             Dock::Leaf(name)|Dock::Deck{active:name,..}=> {
@@ -1019,7 +1024,7 @@ impl Workbench {
                 let strip_name=name.clone();let strip_bounds=self.strip_bounds.clone();
                 let tabs=names.iter().filter(|channel|!self.live_channels||*channel==&name||self.streams.get(channel)!=Some(false)).map(|channel|{let selected=channel==&name;let channel=channel.clone();
                     let drag_pane=self.tabs[self.active].panes.iter().find(|p|p.read(cx).name.as_ref()==channel).cloned();
-                    let counts=drag_pane.as_ref().map(|p|p.read(cx).attention.counts()).unwrap_or_default();
+                    let counts=drag_pane.as_ref().map(|p|self.displayed_attention(p,reading_available,cx)).unwrap_or_default();
                     let tab_name=channel.clone();let tab_bounds=self.tab_bounds.clone();
                     let stream_tip=self.streams.summary(&channel);
                     let item=div().id(SharedString::from(format!("channel-tab-{tab_id}-{channel}"))).h(px(28.)).px_2().flex().items_center().cursor_pointer()
@@ -1073,7 +1078,7 @@ impl Workbench {
                     let min=child.minimum();
                     let mut subpath=path.clone();subpath.push(ix);
                     let (cw,ch)=if *vertical{(width,height*share)}else{(width*share,height)};
-                    let content=self.render_dock(child,subpath,cw,ch,cx);
+                    let content=self.render_dock(child,subpath,cw,ch,reading_available,cx);
                     panels.push(resizable_panel().size(px(if *vertical{ch}else{cw})).size_range(px(if *vertical{min.1}else{min.0})..Pixels::MAX).child(content));
                 }
                 let group=if *vertical{v_resizable(SharedString::from(key))}else{h_resizable(SharedString::from(key))};
@@ -1084,7 +1089,7 @@ impl Workbench {
             }
         }
     }
-    fn render_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_sidebar(&self, reading_available:bool, cx: &mut Context<Self>) -> AnyElement {
         div()
             .v_flex()
             .w(px(190.))
@@ -1113,7 +1118,7 @@ impl Workbench {
                     .gap_1()
                     .children(self.shown_tabs(cx).into_iter().map(|ix| {
                         let tab=&self.tabs[ix];
-                        let counts=tab.panes.iter().map(|p|p.read(cx).attention.counts()).fold((0,0),|(u,h),(a,b)|(u+a,h+b));
+                        let counts=tab.panes.iter().map(|p|self.displayed_attention(p,reading_available,cx)).fold((0,0),|(u,h),(a,b)|(u+a,h+b));
                         div()
                             .id(("sidebar-tab", tab.id))
                             .v_flex()
@@ -1182,6 +1187,7 @@ fn valid_channel(value: &str) -> Option<String> {
 }
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let reading_available=window.is_window_active() && !window.has_active_dialog(cx);
         // Retarget from the current sampled width so rapid reversals stay smooth.
         // GPUI's motion primitive honors the OS reduced-motion preference.
         let sidebar_width = gpui_kit::base::motion::transition(
@@ -1200,7 +1206,7 @@ impl Render for Workbench {
         } else if connected > 0 {
             format!("◐ Live · {connected}/{} connected panes", panes.len())
         } else { "○ Live chat disconnected".to_owned() };
-        let counts=self.attention_counts(cx);
+        let counts=self.attention_counts(reading_available,cx);
         let view_focus = self.focus.clone();
         let pointer_guard = cx.entity().downgrade();
         let live_workspaces=self.live_workspaces;let live_channels=self.live_channels;
@@ -1218,7 +1224,7 @@ impl Render for Workbench {
             let available=window.viewport_size();
             let width=(f32::from(available.width)-sidebar_width-4.).max(min.0);
             let height=(f32::from(available.height)-60.).max(min.1);
-            let body=self.render_dock(&dock,Vec::new(),width,height,cx);
+            let body=self.render_dock(&dock,Vec::new(),width,height,reading_available,cx);
             div().id("dock-overflow").size_full().overflow_scroll().child(div().size_full().min_w(px(min.0)).min_h(px(min.1)).child(body)).into_any_element()
         } else {
             div().v_flex().size_full().items_center().justify_center().gap_4()
@@ -1319,7 +1325,7 @@ impl Render for Workbench {
                 .when(sidebar_width > 0.1, |el| el.child(
                     div().w(px(sidebar_width)).h_full().flex_shrink_0().overflow_hidden()
                         .child(div().relative().left(px(sidebar_width - 190.)).w(px(190.)).h_full()
-                            .child(self.render_sidebar(cx)))))
+                            .child(self.render_sidebar(reading_available,cx)))))
                 .child(div().v_flex().flex_1().h_full().min_w_0().min_h_0()
                     .when(self.adding,|el|el.child(div().v_flex().p_3().gap_2().bg(rgb(theme::ELEVATED)).border_b_1().border_color(rgb(theme::BORDER))
                         .child(div().text_size(px(12.)).child(if self.renaming{"Rename workspace"}else{"Add a Twitch channel to this workspace"}))
