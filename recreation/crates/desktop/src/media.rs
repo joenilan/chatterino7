@@ -59,6 +59,11 @@ impl EmoteKey {
         if asset.width==0||asset.height==0||asset.width>256||asset.height>256{return None;}
         Some(Self{id:id.into(),animated,external:Some(asset.clone())})
     }
+    pub fn avatar(value:&str)->Option<Self>{
+        let url=reqwest::Url::parse(value).ok()?;
+        if value.len()>2048||url.scheme()!="https"||url.host_str()!=Some("static-cdn.jtvnw.net")||!url.path().starts_with("/jtv_user_pictures/")||!url.username().is_empty()||url.password().is_some()||url.port().is_some_and(|p|p!=443)||url.query().is_some()||url.fragment().is_some(){return None;}
+        Some(Self{id:format!("avatar:{}",url.path()),animated:false,external:Some(chat_core::EmoteAsset{url:value.into(),static_url:value.into(),width:48,height:48})})
+    }
     pub fn gif(id: &str, value: &str, animated: bool) -> Option<Self> {
         let url=reqwest::Url::parse(value).ok()?;
         // Known GIPHY delivery hosts from Twitch's documented integration. Unknown
@@ -74,6 +79,7 @@ impl EmoteKey {
         Some(Self{id:format!("cheer:{id}"),animated,external:Some(asset.clone())})
     }
     pub fn provider(&self)->&'static str {
+        if self.id.starts_with("avatar:"){return "twitch_avatar";}
         if self.id.starts_with("gif:"){return "twitch_gif";}
         if self.id.starts_with("cheer:"){return "twitch_cheer";}
         if self.id.starts_with("badge:"){return "twitch_badge";}
@@ -294,7 +300,7 @@ fn download(
     }
     let rich_gif=key.id.starts_with("gif:");
     let max_wire: usize = if rich_gif { 12 * 1024 * 1024 } else { 2 * 1024 * 1024 };
-    let max_dimension = if rich_gif { 512 } else { 256 };
+    let max_dimension = if rich_gif || key.id.starts_with("avatar:") { 512 } else { 256 };
     let max_decoded = if rich_gif { 24 * 1024 * 1024 } else { 8 * 1024 * 1024 };
     if response
         .content_length()
@@ -360,7 +366,7 @@ fn download(
                 push(frame.map_err(|_| ())?)?;
             }
         }
-        ImageFormat::Png | ImageFormat::WebP => {
+        ImageFormat::Png | ImageFormat::WebP | ImageFormat::Jpeg => {
             let mut reader = image::ImageReader::with_format(Cursor::new(&bytes), format);
             let mut limits = image::Limits::default();
             limits.max_image_width = Some(max_dimension);

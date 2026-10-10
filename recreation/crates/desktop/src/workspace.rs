@@ -373,6 +373,7 @@ impl Workbench {
     fn pump_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let identity = self.account.read(cx).identity();
         let panes = self.panes();
+        for pane in panes.iter().chain(self.closed_tabs.iter().flat_map(|tab|tab.panes.iter())) {pane.update(cx,|p,_|p.input_history.account(identity.as_ref().map(|i|i.user_id.as_str())));}
         self.sync_attention(window,cx);
         if self.streams.pump(identity.clone(),panes.iter().map(|p|p.read(cx).name.to_string()).collect()){cx.notify();}
         if self.catalog.borrow_mut().pump(panes.iter().map(|p|p.read(cx).name.to_string()).collect(), identity.clone()) {
@@ -442,7 +443,7 @@ impl Workbench {
                         .iter()
                         .chain(self.closed_tabs.iter().flat_map(|t| t.panes.iter()))
                     {
-                        pane.update(cx, |p, cx| p.sent(request, &result, window, cx));
+                        pane.update(cx, |p, cx| p.sent(request, &result, version == self.live.version(), window, cx));
                     }
                 }
             }

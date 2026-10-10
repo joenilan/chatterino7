@@ -20,6 +20,8 @@ mod workspace;
 mod dock;
 mod stream_status;
 mod room_settings;
+mod profiles;
+mod input_history;
 use workspace::Workbench;
 
 use chat_core::{Timeline, selection::Selection};
@@ -38,7 +40,7 @@ use std::{cell::{Cell, RefCell}, rc::Rc, time::{Duration, Instant}};
 
 gpui_kit::actions!(
     chat_workbench,
-    [CopyChatSelection, ClearChatSelection, SelectAllChat, CompleteEmote, FindChat, NextChatMatch, PreviousChatMatch]
+    [CopyChatSelection, ClearChatSelection, SelectAllChat, CompleteEmote, FindChat, NextChatMatch, PreviousChatMatch, PreviousInput, NextInput]
 );
 
 #[derive(Clone)]
@@ -96,6 +98,7 @@ struct ChannelPane {
     room_settings: Option<room_settings::RoomSettings>,
     pending: Option<(u64, String, Option<String>, u64)>,
     compose_revision: u64,
+    input_history: input_history::History,
     reply_target: Option<replies::Target>,
     attention: attention::Attention,
     read_eligible: Rc<Cell<bool>>,
@@ -164,6 +167,7 @@ impl ChannelPane {
             read_eligible: Rc::new(Cell::new(false)),
             presented_row: Rc::new(Cell::new(None)),
             compose_revision: 0,
+            input_history: Default::default(),
             send_status: String::new(),
             timeline: Rc::new(RefCell::new(timeline)),
             selection: Rc::new(RefCell::new(Selection::default())),
@@ -271,6 +275,7 @@ impl ChannelPane {
         &mut self,
         request: u64,
         result: &Result<(), String>,
+        current_session: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -280,6 +285,7 @@ impl ChannelPane {
         if *pending != request {
             return;
         }
+        if result.is_ok() && current_session { self.input_history.record(text); }
         let clear_reply=result.is_ok() && self.compose_revision==*revision && twitch_message_text(&self.draft.read(cx).value()) == *text && self.reply_target.as_ref().map(|r|&r.id)==parent.as_ref();
         if clear_reply {self.reply_target=None;}
         if clear_reply {
@@ -577,6 +583,8 @@ impl Render for ChannelPane {
                     }
                     cx.stop_propagation();
                 }))
+                .on_action(cx.listener(|this,_: &PreviousInput,window,cx|this.recall_input(true,window,cx)))
+                .on_action(cx.listener(|this,_: &NextInput,window,cx|this.recall_input(false,window,cx)))
                 .capture_action(cx.listener(|this,_: &gpui_kit::base::input::MoveDown,window,cx|{this.completion_action("down",window,cx);}))
                 .capture_action(cx.listener(|this,_: &gpui_kit::base::input::MoveUp,window,cx|{this.completion_action("up",window,cx);}))
                 .capture_action(cx.listener(|this,_: &gpui_kit::base::input::IndentInline,window,cx|{this.completion_action("tab",window,cx);}))
@@ -717,6 +725,8 @@ fn main() {
                 KeyBinding::new("f3", NextChatMatch, Some("JawjackChannel")),
                 KeyBinding::new("shift-f3", PreviousChatMatch, Some("JawjackChannel")),
                 KeyBinding::new("shift-enter", PreviousChatMatch, Some("JawjackSearch")),
+                KeyBinding::new("alt-up", PreviousInput, Some("JawjackComposer")),
+                KeyBinding::new("alt-down", NextInput, Some("JawjackComposer")),
                 KeyBinding::new("tab", CompleteEmote, Some("JawjackComposer")),
                 KeyBinding::new("ctrl-c", CopyChatSelection, Some("ChatTranscript")),
                 KeyBinding::new("cmd-c", CopyChatSelection, Some("ChatTranscript")),

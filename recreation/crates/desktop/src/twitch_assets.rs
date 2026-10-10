@@ -11,7 +11,7 @@ use std::{
 pub struct Choice {
     pub label: String,
     pub provider: &'static str,
-    pub key: EmoteKey,
+    pub key: Option<EmoteKey>,
 }
 #[derive(Clone)]
 pub struct Badge {
@@ -250,7 +250,7 @@ fn load(client: &reqwest::blocking::Client, identity: &Identity, id: &str) -> Op
                     result.emotes.push(Choice {
                         label: label.into(),
                         provider: "Twitch",
-                        key,
+                        key: Some(key),
                     });
                 }
             }

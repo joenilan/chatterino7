@@ -69,6 +69,9 @@ Optional session-only native app control is described in
 - Ctrl+Tab / Ctrl+Shift+Tab: next / previous workspace
 - Ctrl+PageDown / Ctrl+PageUp: next / previous channel tab
 - Ctrl+K: add channel
+- Ctrl+I: details for the focused channel
+- Composer @name: recent-speaker suggestions; :emote or Tab: emote completion
+- Alt+Up / Alt+Down in composer: recall successful sends and return to your draft
 - Ctrl+F: find retained messages; F3 / Shift+F3: next / previous match
 - Ctrl+Shift+M: activity; Ctrl+Shift+R: mark all read (latest source)
 - Ctrl+wheel or Ctrl+= / Ctrl+-: transcript font size; Ctrl+0: reset (latest source)

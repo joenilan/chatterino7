@@ -18,6 +18,7 @@ type Emotes = HashMap<String, Emote>;
 pub struct Catalog {
     global: Emotes,
     pub twitch: crate::twitch_assets::TwitchAssets,
+    pub profiles:crate::profiles::Profiles,
     pub community: crate::community::Community,
     channels: HashMap<String, Emotes>,
     requested: HashMap<String, (String, Instant)>,
@@ -53,6 +54,7 @@ impl Catalog {
         Self {
             global: HashMap::new(),
             twitch: crate::twitch_assets::TwitchAssets::new(),
+            profiles:crate::profiles::Profiles::new(),
             community: crate::community::Community::new(),
             channels: HashMap::new(),
             requested: HashMap::new(),
@@ -95,7 +97,8 @@ impl Catalog {
                 *at = Instant::now();
             }
         }
-        let mut changed = self.twitch.pump(identity, &self.requested);
+        let mut changed = self.profiles.pump(identity.clone());
+        changed |= self.twitch.pump(identity, &self.requested);
         changed |= self.community.pump(&self.requested);
         while let Ok((name, result)) = self.rx.try_recv() {
             if let Some(emotes) = result {
@@ -128,7 +131,7 @@ impl Catalog {
             if let Some(Fragment::Emote{provider,id,animated,asset:Some(asset),..})=self.lookup(channel,&name){
                 if let Some(key)=crate::media::EmoteKey::community(&provider,&id,animated,&asset){
                     let provider=match provider.as_str(){"bttv"=>"BTTV","ffz"=>"FFZ",_=>"7TV"};
-                    choices.insert(name.clone(),crate::twitch_assets::Choice{label:name,provider,key});
+                    choices.insert(name.clone(),crate::twitch_assets::Choice{label:name,provider,key:Some(key)});
                 }
             }
         }

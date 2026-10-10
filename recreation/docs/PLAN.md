@@ -628,3 +628,20 @@ chat deletion/clear subscriptions. Compact composer hints explain restrictions;
 the client does not infer subscription/role exemptions or falsely block sending.
 Sources: https://dev.twitch.tv/docs/api/reference/#get-chat-settings and
 https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-settings-update-event
+
+## B2/B4: profile cards and everyday composer tools (2026-10-10)
+
+Inspect chatter now loads public Twitch avatar, account creation date, broadcaster
+role and bio on demand using the existing grant. It retains the clicked identity
+when history rolls off. A bounded worker/cache separates metadata from chat; open
+cards retry after backoff. JPEG/PNG/WebP avatars use the anonymous allowlisted
+media loader and existing byte/decoded budgets. No email or follow/subscription
+claims, added scope, or arbitrary image hosts.
+
+Typing @ offers up to eight distinct recent speakers from that channel's retained
+history; Enter/Tab inserts without sending, Escape dismisses. These are recent
+chatters, not a viewer roster. Existing :emote and Tab completion stay available.
+Alt+Up / Alt+Down recall up to 100 successful sends for the pane in this session,
+restore the unsent draft on returning forward, and reset navigation after edits.
+History clears on account change; delayed old-session results do not populate it.
+No synthetic chat sends are needed or authorized for acceptance.

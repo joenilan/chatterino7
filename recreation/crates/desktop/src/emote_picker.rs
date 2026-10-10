@@ -97,7 +97,21 @@ impl ChannelPane {
             .find(|(_, c)| c.is_whitespace())
             .map_or(0, |(i, c)| i + c.len_utf8());
         let raw = &value[start..range.end];
-        if raw.is_empty() || (!forced && !raw.starts_with(':')) {
+        if raw.is_empty() || (!forced && !raw.starts_with(':') && !raw.starts_with('@')) {
+            return;
+        }
+        if let Some(query) = raw.strip_prefix('@') {
+            let query = query.to_ascii_lowercase();
+            let mut seen = std::collections::HashSet::new();
+            // Suggestions describe recent speakers, never a complete viewer roster.
+            for message in self.timeline.borrow().messages().iter().rev() {
+                let Some(login) = message.login.as_deref().and_then(chat_core::twitch_login) else { continue; };
+                if login.starts_with(&query) && seen.insert(login.clone()) {
+                    self.picker.suggestions.push(Choice { label: format!("@{login}"), provider: "Recent chatter", key: None });
+                    if self.picker.suggestions.len() == 8 { break; }
+                }
+            }
+            if !self.picker.suggestions.is_empty() { self.picker.token = Some((start..range.end, raw.into())); }
             return;
         }
         let query = raw.strip_prefix(':').unwrap_or(raw);
@@ -151,7 +165,7 @@ impl ChannelPane {
         if before.chars().count() + replacement.chars().count() + after.chars().count() > 500 {
             window.push_notification(
                 Notification::info(
-                    "That emote would exceed 500 characters. Your draft is unchanged.",
+                    "That insertion would exceed 500 characters. Your draft is unchanged.",
                 )
                 .id::<ComposerFeedback>()
                 .delivery(NotificationDelivery::InApp),
@@ -228,10 +242,10 @@ impl ChannelPane {
                 div()
                     .text_size(px(11.))
                     .text_color(rgb(theme::MUTED))
-                    .child("Emotes · ↑ ↓ choose · Enter / Tab inserts · Esc dismisses"),
+                    .child("Suggestions · ↑ ↓ choose · Enter / Tab inserts · Esc dismisses"),
             )
-            .children(items.into_iter().enumerate().map(|(i, choice)| {
-                let image = self.media.borrow_mut().get(&choice.key, cx);
+            .children(items.into_iter().enumerate().skip((self.picker.selected / 4) * 4).take(4).map(|(i, choice)| {
+                let image = choice.key.as_ref().and_then(|key| self.media.borrow_mut().get(key, cx));
                 div()
                     .id(("emote-suggest", i))
                     .h_flex()
@@ -280,7 +294,7 @@ impl ChannelPane {
         for (row, chunk) in choices.chunks(5).enumerate() {
             let mut cells = Vec::new();
             for (col, choice) in chunk.iter().cloned().enumerate() {
-                let image = self.media.borrow_mut().get(&choice.key, cx);
+                let image = choice.key.as_ref().and_then(|key| self.media.borrow_mut().get(key, cx));
                 let tooltip = format!(
                     "{} · {} · Insert into #{}",
                     choice.label, choice.provider, self.name

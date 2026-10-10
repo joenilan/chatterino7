@@ -520,3 +520,33 @@ sidebarhidden/livefilter/originalgeometry restored. Jenny restored and captured,
 but a later inspection showed Summit without another control tab action; cause
 unknown and possible owner change was preserved. PID17480,
 session`jj-manual-317c9b4a-rich`. No sends/purchases/auth/moderation/source changes.
+
+### Profile cards and composer tools source checkpoint
+
+Added public profile metadata, bounded JPEG avatars, @recent-speaker completion
+and session-local successful-send recall (Alt+Up/Down). Source review found and
+corrected missing JPEG decoding, open-card retry recovery and retained-history
+identity fallback. Exact locked offline Linux build passed (exit 0, 5.19 seconds).
+Windows checks pending: real public avatar/details, compact card scrolling, mention
+completion insertion/dismissal with unchanged drafts, and ordinary chat continuity.
+Successful-send recall awaits an owner-originated send; no fake history or automated
+chat transmission is authorized.
+
+### 3f2af135 B2 Windows result
+
+Rust 1.99 locked release passed (17.91 seconds), clean checkout. Real Summit title,
+category, viewers, start and language appeared; viewer count refreshed. Copy title
+matched exactly. Followers 60 minutes appeared in details and composer. Jenny
+showed broadcast offline, chat connected and no public restrictions. Ctrl+I followed
+the selected visible channel; Summit context-menu details targeted Summit while
+Jenny stayed selected. At 360×280, body scrolling and Done worked.
+
+A real Prime resubscription notice visibly rendered label, system text and chatter
+message, with one notice recorded by inspection. GIF/Cheer/Power-up and live room
+mode changes still await real samples. Latest owner geometry, selection, tabs,
+drafts, reply drafts and preferences restored exactly. Preview PID32936, session
+`jj-manual-3f2af135-details`; no sends, auth changes or source edits.
+
+Composer review also corrected pending-send completion erasing a recalled draft,
+explicitly advanced composer revision on history recall, and cleared histories for
+closed panes on account changes. Final Linux source build passed as above.
