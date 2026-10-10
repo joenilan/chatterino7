@@ -133,7 +133,7 @@ impl ChannelPane {
         self.set_search_query(format!("from-id:{user_id}"),window,cx);
         self.open_search(window,cx);
     }
-    fn set_search_query(&mut self,value:String,window:&mut Window,cx:&mut Context<Self>){
+    pub(crate) fn set_search_query(&mut self,value:String,window:&mut Window,cx:&mut Context<Self>){
         self.search.query=value.clone();self.search.current=None;self.search.dirty=true;
         self.search.input.update(cx,|input,cx|input.set_value(value,window,cx));
         self.refresh_search(cx);cx.notify();

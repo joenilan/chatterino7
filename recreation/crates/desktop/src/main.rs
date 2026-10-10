@@ -1,5 +1,6 @@
 use gpui_kit::prelude::FluentBuilder;
 mod auth;
+mod commands;
 mod owned_emotes;
 mod chat_text;
 mod chat_search;
@@ -212,6 +213,7 @@ impl ChannelPane {
             return;
         }
         let text = twitch_message_text(&self.draft.read(cx).value());
+        if self.route_command(&text, window, cx) { return; }
         if !self.connected || text.trim().is_empty() || text.chars().count() > 500 {
             window.push_notification(
                 Notification::info(if !self.connected {
@@ -646,7 +648,7 @@ impl Render for ChannelPane {
                     .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500", self.draft.read(cx).value().chars().count())))
                     .when_some(self.room_settings.as_ref().filter(|r|!r.labels().is_empty()).map(|r|r.summary()),|el,summary|el.child(div().id("room-modes-hint").max_w(px(120.)).overflow_hidden().text_ellipsis().text_color(rgb(0xC5B8E6)).tooltip({let summary=summary.clone();move|w,cx|gpui_kit::component::tooltip::Tooltip::new(format!("{summary}. Your role may grant exemptions; Twitch validates sending. Ctrl+I for channel details.")).build(w,cx)}).child(summary)))
                     .child(div().h_flex().gap_2().child(div().on_prepaint(move|bounds,_,cx|{if emote_button_bounds.replace(Some(bounds))!=Some(bounds)&&emote_picker_open{let owner=emote_button_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}}).child(Button::new("emotes-toggle").small().label(":)").tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
-                    .child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else { "Send" }).disabled(!self.connected || self.pending.is_some()).tooltip("Send to this Twitch channel").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx)))))))
+                    .child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else if commands::is_command(&self.draft.read(cx).value()) { "Run" } else { "Send" }).disabled(self.pending.is_some() || (!self.connected && !commands::is_command(&self.draft.read(cx).value()))).tooltip("Send a message or run a local /command").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx)))))))
             .child(
                 canvas(
                     |_, _, _| (),

@@ -85,6 +85,9 @@ impl LiveChat {
         false
     }
     pub fn send(&self, request: u64, channel: String, text: String, reply_parent: Option<String>) -> Result<(), String> {
+        if crate::commands::is_command(&text) {
+            return Err("Slash commands must be handled locally. Nothing was sent; draft kept.".into());
+        }
         let Some(identity) = self.config.lock().ok().and_then(|c| c.identity.clone()) else {
             return Err("Account disconnected. Draft kept.".into());
         };

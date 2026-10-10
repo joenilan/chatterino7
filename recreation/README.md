@@ -110,3 +110,5 @@ its draft for reopening in that workspace. Native QA may use an isolated profile
 
 Accessibility/IME, full Unicode selection, richer media and provider behavior,
 moderation, multiwindow workflows and daily-client parity remain active work.
+
+Local composer commands and keyboard completion are described in [Composer commands](docs/COMPOSER_COMMANDS.md). Unsupported slash commands keep your draft and never fall through to public chat.

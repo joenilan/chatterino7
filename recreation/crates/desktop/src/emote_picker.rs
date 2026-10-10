@@ -362,6 +362,14 @@ impl ChannelPane {
             .find(|(_, c)| c.is_whitespace())
             .map_or(0, |(i, c)| i + c.len_utf8());
         let raw = &value[start..range.end];
+        if value[..start].trim().is_empty() && raw.starts_with('/') {
+            if value[range.end..].chars().next().is_some_and(|c|!c.is_whitespace()){return;}
+            let query=raw.to_ascii_lowercase();
+            self.picker.suggestions=crate::commands::COMMANDS.iter().filter(|c|c.name.starts_with(&query))
+                .map(|c|Choice{label:c.name.into(),provider:c.description,key:None}).collect();
+            if !self.picker.suggestions.is_empty(){self.picker.token=Some((start..range.end,raw.into()));}
+            return;
+        }
         if raw.is_empty() || (!forced && !raw.starts_with(':') && !raw.starts_with('@')) {
             return;
         }
@@ -550,19 +558,15 @@ impl ChannelPane {
                             .cursor_pointer()
                             .when(i == self.picker.selected, |el| el.bg(rgb(theme::HOVER)))
                             .hover(|s| s.bg(rgb(theme::HOVER)))
-                            .child(preview(image, choice.label.clone()))
+                            .when(!choice.label.starts_with('/'), |el|el.child(preview(image, choice.label.clone())))
                             .child(
                                 div()
-                                    .flex_1()
+                                    .flex_1().min_w_0().v_flex()
                                     .text_size(px(12.))
-                                    .child(choice.label.clone()),
+                                    .child(choice.label.clone())
+                                    .when(choice.label.starts_with('/'),|el|el.child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(choice.provider))),
                             )
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(theme::MUTED))
-                                    .child(choice.provider),
-                            )
+                            .when(!choice.label.starts_with('/'),|el|el.child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(choice.provider)))
                             .on_mouse_down(MouseButton::Left, |_, window, cx| {
                                 window.prevent_default();
                                 cx.stop_propagation();
