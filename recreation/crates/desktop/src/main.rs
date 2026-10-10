@@ -2,6 +2,7 @@ use gpui_kit::prelude::FluentBuilder;
 mod auth;
 mod chat_text;
 mod chat_search;
+mod message_actions;
 mod control;
 mod live;
 mod media;
@@ -21,6 +22,7 @@ use chat_core::{Timeline, selection::Selection};
 use chat_text::ChatText;
 use gpui_kit::base::ElementExt as _;
 use gpui_kit::component::{
+    menu::ContextMenuExt,
     Disableable, Icon, IconName, Sizable, StyledExt, WindowExt,
     button::Button,
     input::{InputEvent, Textarea, TextareaState},
@@ -98,6 +100,7 @@ struct ChannelPane {
     font_size: f32,
     picker: emote_picker::Picker,
     search: chat_search::Search,
+    link_press: message_actions::PressState,
     emote_search: Entity<TextareaState>,
     last_copy_result: Option<&'static str>,
     scroller: Entity<MessageScrollerState>,
@@ -154,6 +157,7 @@ impl ChannelPane {
             picker: emote_picker::Picker::default(),
             emote_search,
             search,
+            link_press: Default::default(),
             last_copy_result: None,
             scroller,
             next_id: 0,
@@ -264,7 +268,7 @@ impl ChannelPane {
         self.pending = None;
         cx.notify();
     }
-    fn copy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn selected_text(&self) -> String {
         let timeline = self.timeline.borrow();
         let first = self.next_id - timeline.messages().len();
         let lines: Vec<_> = timeline
@@ -278,7 +282,11 @@ impl ChannelPane {
                 .enumerate()
                 .map(|(index, text)| ((first + index) as u64, text.as_str())),
         );
-        drop(timeline);
+        text
+
+    }
+    fn copy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let text=self.selected_text();
         if text.is_empty() {
             self.last_copy_result = Some("empty_selection");
             window.push_notification(
@@ -340,6 +348,9 @@ impl Render for ChannelPane {
         let viewport_layout = self.viewport.clone();
         let finish = self.selection.clone();
         let copy_owner = cx.weak_entity();
+        let menu_owner = cx.weak_entity();
+        let link_press=self.link_press.clone();
+        let finish_link=self.link_press.clone();
         let copy_viewport = self.viewport.clone();
         let following = self.scroller.read(cx).is_following_tail();
         let now = Instant::now();
@@ -446,6 +457,8 @@ impl Render for ChannelPane {
                                 return div().into_any_element();
                             };
                             let row = first_order + index as u64;
+                            let row_owner=menu_owner.clone();let row_id=message.id.clone();
+                            let interaction=message_actions::Interaction{owner:menu_owner.clone(),message:message.id.clone(),author_len:message.display_name.len(),links:message_actions::message_links(message),pressed:link_press.clone()};
                             let matches=search_hits.get(&row).cloned().unwrap_or_default();
                             let progress = entrances.iter().find(|entry| entry.row == row)
                                 .map(|entry| {
@@ -467,16 +480,18 @@ impl Render for ChannelPane {
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()
+                                .tooltip(|w,cx|gpui_kit::component::tooltip::Tooltip::new("Ctrl+click a link to open, or a username to inspect · Right-click for actions").build(w,cx))
+                                .context_menu(move|menu,_,cx|message_actions::menu(row_owner.clone(),row_id.clone(),menu,cx))
                                 .child(div().h_flex().items_start().min_w_0().gap_1()
                                 .children(message.badges.iter().filter_map(|badge|catalog.borrow().twitch.badge(&message.channel_id,&badge.set_id,&badge.id).cloned()).map(|badge|{
                                     let image=media.borrow_mut().get(&badge.key,cx);
                                     div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(px(22.)).flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(emote_picker::icon(image,String::new(),18.,18.))
                                 }).collect::<Vec<_>>())
                                 .child(div().flex_1().min_w_0().child(if let Some(inline) = inline_chat::InlineChat::new(message, row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx) {
-                                    inline.with_search(matches).into_any_element()
+                                    inline.with_search(matches).with_interaction(interaction).into_any_element()
                                 } else {
                                     ChatText::new(SharedString::from(format!("text-{}", message.id)), row, message.copy_line(), selection.clone(), focus.clone(), viewport.clone())
-                                        .with_author(&message.display_name, message.name_color).with_search(matches).into_any_element()
+                                        .with_author(&message.display_name, message.name_color).with_search(matches).with_interaction(interaction).into_any_element()
                                 })))
                                 .into_any_element()
                         })
@@ -555,21 +570,22 @@ impl Render for ChannelPane {
                         let copy_owner = copy_owner.clone();
                         let copy_viewport = copy_viewport.clone();
                         window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
-                            if phase.capture() && event.button == MouseButton::Right
+                            if phase.capture() && event.button == MouseButton::Right && !window.has_active_dialog(cx)
                                 && copy_viewport.borrow().is_some_and(|bounds| bounds.contains(&event.position))
                             {
-                                window.prevent_default();
-                                let _ = copy_owner.update(cx, |pane, cx| {
-                                    pane.focus.focus(window, cx);
-                                    pane.copy(window, cx);
-                                });
-                                cx.stop_propagation();
+                                let copied=copy_owner.update(cx, |pane, cx| {
+                                    if pane.selected_text().is_empty(){return false;}
+                                    pane.focus.focus(window,cx);pane.copy(window,cx);true
+                                }).unwrap_or(false);
+                                if copied{window.prevent_default();cx.stop_propagation();}
                             }
                         });
                         let finish = finish.clone();
-                        window.on_mouse_event(move |event: &MouseUpEvent, phase, window, _| {
+                        let finish_link=finish_link.clone();
+                        window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                             if phase.capture() && event.button == MouseButton::Left {
                                 finish.borrow_mut().finish();
+                                let link=finish_link.clone();window.defer(cx,move|_,_|{link.borrow_mut().take();});
                                 window.refresh();
                             }
                         });

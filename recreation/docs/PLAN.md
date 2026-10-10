@@ -460,3 +460,29 @@ archive is added. This is not yet Chatterino's advanced predicate/global search.
 
 Channel-tab menus now offer Open stream in browser and Copy channel URL with
 feedback, alongside grouping, live filtering, ordering and confirmed close.
+
+## Message actions and local chatter cards (2026-10-10)
+
+Right-clicking an unselected message opens actions for inspecting its author,
+mention insertion, Twitch profile, copying text/username/user ID and detected
+HTTP(S) links. A real text selection still uses terminal-style right-click copy,
+verified clipboard feedback and selection clearing. Dialogs do not allow that
+transcript-wide gesture to act on obscured chat underneath them.
+
+Chatter cards show the server-provided login, badge labels and up to 20 current
+retained messages in this channel. Counts are retained messages, not lifetime
+statistics. Cards read current timeline data while open. Message action callbacks
+resolve the message ID again, so deletion/retention cannot expose an old captured
+body or URL. Logins are validated separately from localized display names.
+Mention inserts at the current draft selection, respecting whitespace and the
+500-character limit; it never sends.
+
+Links are detected only in text fragments, excluding emote labels. HTTP(S) and
+www URLs are normalized, user-info URLs rejected, punctuation trimmed on UTF-8
+boundaries, and balanced parentheses retained. Ctrl+click-release opens a link or
+inspects a username; ordinary clicks/drags retain normal text-selection behavior.
+Pointer hit testing must be inside actual text, with matching press/release and
+no drag. Underlines, hover hints and menu copy/open actions make links discoverable.
+No link is fetched merely because a message is rendered. Profile/browser opening
+uses an explicit action. No follower/account-age metadata or moderation controls
+are claimed in this batch.

@@ -40,6 +40,7 @@ pub struct Message {
     pub channel_id: String,
     pub user_id: String,
     pub display_name: String,
+    pub login: Option<String>,
     pub name_color: Option<u32>,
     pub badges: Vec<Badge>,
     pub fragments: Vec<Fragment>,
@@ -174,6 +175,7 @@ pub fn fixture(channel: &str, index: usize) -> Message {
     Message {
         id: format!("{channel}-{index}"),
         channel_id: channel.into(),
+        login: None,
         user_id: format!("fixture-{}", index % 4),
         display_name: format!("viewer_{}", index % 4),
         name_color: None,
@@ -284,4 +286,9 @@ mod tests {
         t.apply(Event::Message(fixture("a", 1)));
         assert_eq!(t.messages().len(), 1);
     }
+}
+
+/// Only server-provided Twitch logins may become profile or mention targets.
+pub fn twitch_login(raw: &str) -> Option<String> {
+    (!raw.is_empty() && raw.len()<=25 && raw.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'_')).then(||raw.to_ascii_lowercase())
 }

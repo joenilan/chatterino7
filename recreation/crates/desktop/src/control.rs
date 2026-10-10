@@ -281,6 +281,8 @@ pub fn dispatch(
             };
             let modifiers = Modifiers {
                 shift: request["shift"].as_bool().unwrap_or(false),
+                control: request["control"].as_bool().unwrap_or(false),
+                alt: request["alt"].as_bool().unwrap_or(false),
                 ..Default::default()
             };
             let kind=request["kind"].as_str().filter(|k|matches!(*k,"move"|"down"|"up")).ok_or("Use down/move/up, one event per call")?;

@@ -179,3 +179,9 @@ layout drag. Hover alone must not commit a layout operation.
 bar and focuses its input. Inspection exposes search_open, search_matches and
 search_current_row without returning query text, and reports active_drag at the
 window level. Search input must never route Enter into the chat composer.
+
+Pointer requests accept boolean `control` and `alt` modifiers alongside `shift`.
+For Ctrl+click username inspection, dispatch a matching down/up pair immediately
+with `control:true`, then a neutral move to clear synthetic modifiers. Do not
+leave a held button between screenshots or tool calls. Browser link activation
+must not be exercised against an unreviewed URL from incoming chat.

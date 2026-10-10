@@ -12,6 +12,8 @@ pub struct ChatText {
     search: Vec<std::ops::Range<usize>>,
     text: SharedString,
     styled: StyledText,
+    author: Option<(String,Option<u32>)>,
+    interaction: Option<crate::message_actions::Interaction>,
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
     viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
@@ -19,7 +21,14 @@ pub struct ChatText {
 impl ChatText {
     pub fn with_search(mut self, ranges:Vec<std::ops::Range<usize>>)->Self{self.search=ranges;self}
 
+    pub fn with_interaction(mut self, interaction:crate::message_actions::Interaction)->Self{
+        let mut highlights=Vec::new();
+        if let Some((name,color))=&self.author{highlights.push((0..name.len(),HighlightStyle{color:Some(rgb(color.unwrap_or(crate::theme::MUTED)).into()),font_weight:Some(FontWeight::SEMIBOLD),..Default::default()}));}
+        highlights.extend(interaction.links.iter().map(|link|(link.range.clone(),HighlightStyle{color:Some(rgb(0x91C7E8).into()),underline:Some(UnderlineStyle{thickness:px(1.),color:None,wavy:false}),..Default::default()})));
+        self.styled=StyledText::new(self.text.clone()).with_highlights(highlights);self.interaction=Some(interaction);self
+    }
     pub fn with_author(mut self, name: &str, color: Option<u32>) -> Self {
+        self.author=Some((name.to_owned(),color));
         if !self.text.starts_with(name) { return self; }
         self.styled = StyledText::new(self.text.clone()).with_highlights([
             (0..name.len(), HighlightStyle { color: Some(rgb(color.unwrap_or(crate::theme::MUTED)).into()), font_weight: Some(FontWeight::SEMIBOLD), ..Default::default() })
@@ -40,6 +49,8 @@ impl ChatText {
             row,
             search: Vec::new(),
             styled: StyledText::new(text.clone()),
+            author: None,
+            interaction: None,
             text,
             selection,
             focus,
@@ -169,6 +180,10 @@ impl Element for ChatText {
         let focus = self.focus.clone();
         let down_layout = layout.clone();
         let down_hitbox = hitbox.clone();
+        let down_interaction=self.interaction.clone();
+        if hitbox.is_hovered(window)&&window.modifiers().control&&layout.index_for_position(window.mouse_position()).ok().is_some_and(|b|self.interaction.as_ref().is_some_and(|i|i.target(b).is_some())){window.set_cursor_style(CursorStyle::PointingHand,hitbox);}
+        if let Some(interaction)=self.interaction.clone(){let up_layout=layout.clone();let up_hitbox=hitbox.clone();window.on_mouse_event(move|event:&MouseUpEvent,phase,w,cx|{if phase.bubble(){let byte=up_hitbox.is_hovered(w).then(||up_layout.index_for_position(event.position).ok()).flatten();interaction.up(event,byte,w,cx);}});}
+
         window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
             if !phase.bubble()
                 || event.button != MouseButton::Left
@@ -176,6 +191,7 @@ impl Element for ChatText {
             {
                 return;
             }
+            if down_interaction.as_ref().is_some_and(|i|i.down(event,down_layout.index_for_position(event.position).ok(),&selection.borrow())){cx.stop_propagation();return;}
             let byte = down_layout
                 .index_for_position(event.position)
                 .unwrap_or_else(|index| index);

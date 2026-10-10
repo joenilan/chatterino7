@@ -35,6 +35,11 @@ struct Layout {
     origin: Point<Pixels>,
 }
 impl Layout {
+    fn exact_text_hit(&self,point:Point<Pixels>)->Option<usize>{
+        let point=point-self.origin;
+        self.pieces.iter().find(|p|p.text.is_some()&&p.bounds.contains(&point)).and_then(|p|p.text.as_ref()?.index_for_x(point.x-p.bounds.left()).map(|index|p.range.start+index))
+    }
+
     fn hit(&self, point: Point<Pixels>) -> (usize, Option<Range<usize>>) {
         let point = point - self.origin;
         let row = ((f32::from(point.y.max(px(0.))) / f32::from(self.line_height).max(1.)) as usize)
@@ -74,12 +79,15 @@ pub struct InlineChat {
     text: SharedString,
     spans: Vec<Span>,
     name_color: u32,
+    interaction: Option<crate::message_actions::Interaction>,
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
     viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
     layout: Rc<RefCell<Layout>>,
 }
 impl InlineChat {
+    pub fn with_interaction(mut self, interaction:crate::message_actions::Interaction)->Self{self.interaction=Some(interaction);self}
+
     pub fn with_search(mut self, ranges:Vec<std::ops::Range<usize>>)->Self{self.search=ranges;self}
 
     pub fn new(
@@ -173,6 +181,7 @@ impl InlineChat {
             text,
             spans,
             name_color: message.name_color.unwrap_or(crate::theme::MUTED),
+            interaction: None,
             selection,
             focus,
             viewport,
@@ -355,6 +364,15 @@ impl Element for InlineChat {
         cx: &mut App,
     ) {
         let selected = self.selection.borrow().range_for(self.row, &self.text);
+        if let Some(interaction)=&self.interaction{
+            for piece in &self.layout.borrow().pieces{if let Some(text)=&piece.text{for link in &interaction.links{
+                let a=link.range.start.max(piece.range.start);let b=link.range.end.min(piece.range.end);
+                if a<b{let left=text.x_for_index(a-piece.range.start);let right=text.x_for_index(b-piece.range.start);
+                    window.paint_quad(fill(Bounds::new(bounds.origin+piece.bounds.origin+point(left,piece.bounds.size.height-px(3.)),size((right-left).max(px(1.)),px(1.))),rgb(0x91C7E8)));}
+            }}}
+            if hitbox.is_hovered(window)&&window.modifiers().control&&self.layout.borrow().exact_text_hit(window.mouse_position()).is_some_and(|b|interaction.target(b).is_some()){window.set_cursor_style(CursorStyle::PointingHand,hitbox);}
+        }
+
         let mut highlights=self.search.iter().cloned().map(|r|(r,0x66502D)).collect::<Vec<_>>();
         if let Some(range)=selected.clone(){highlights.push((range,0x315166));}
         for piece in &self.layout.borrow().pieces {
@@ -459,10 +477,13 @@ impl Element for InlineChat {
         let focus = self.focus.clone();
         let hitbox = hitbox.clone();
         let row = self.row;
+        let down_interaction=self.interaction.clone();
+        if let Some(interaction)=self.interaction.clone(){let up_layout=layout.clone();let up_hitbox=hitbox.clone();window.on_mouse_event(move|event:&MouseUpEvent,phase,w,cx|{if phase.bubble(){let byte=up_hitbox.is_hovered(w).then(||up_layout.borrow().exact_text_hit(event.position)).flatten();interaction.up(event,byte,w,cx);}});}
         window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
             if !phase.bubble() || event.button != MouseButton::Left || !hitbox.is_hovered(window) {
                 return;
             }
+            if down_interaction.as_ref().is_some_and(|i|i.down(event,layout.borrow().exact_text_hit(event.position),&selection.borrow())){cx.stop_propagation();return;}
             let (byte, emote) = layout.borrow().hit(event.position);
             focus.focus(window, cx);
             let mut selection = selection.borrow_mut();

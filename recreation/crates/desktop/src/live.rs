@@ -522,6 +522,7 @@ fn deliver(
             channel_id: channel.clone(),
             user_id: text("chatter_user_id"),
             display_name: text("chatter_user_name"),
+            login: chat_core::twitch_login(&text("chatter_user_login")),
             name_color: e["color"].as_str().and_then(|s| s.strip_prefix('#'))
                 .filter(|s| s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit()))
                 .and_then(|s| u32::from_str_radix(s, 16).ok()),

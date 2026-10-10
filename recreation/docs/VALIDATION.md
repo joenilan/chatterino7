@@ -316,3 +316,11 @@ all preexisting drafts, sidebar and history 10000 matched exactly; original
 pointer_owner:null and active_drag:false. No sends, auth changes or source edits.
 Running PID 47220, session jj-manual-75e7725c-find2, owned terminal hw-1-3.
 Last successful inspection hw-1-29; isolated-profile screenshots 114–119.
+
+## 2026-10-10: message action implementation
+
+Linux locked offline build passed (7.77 seconds) after message menus, retained
+chatter cards, validated provider logins and source-byte link interactions were
+added. Existing selection and search rendering remain separate from activation.
+Windows compilation and native interaction evidence are pending. No new tests,
+CI, external profile requests, chat sends or OAuth scopes were added.
