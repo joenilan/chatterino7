@@ -96,9 +96,9 @@ only until their original ten-minute expiry; authorization failures clear them.
 Profiles are fetched through the existing bounded metadata owner. No account token
 or inventory is written into ordinary workspace settings.
 
-Windows build 5067379 verified normal-login account inventory loading (1,199 emotes),
-with the owner completing consent. That run exposed a partial-inventory cap; the
-continuation change requires a fresh native verification.
+Windows build 46eeac5 verified normal-login restoration and a completed 1,449-emote
+account inventory, 250 beyond the earlier capped result. Populated-picker scrolling,
+DinoDance search and channel switching passed native driving. No chat was sent.
 
 
 ## Smooth media loading
@@ -113,4 +113,7 @@ Unloaded tiles keep a fixed-size neutral placeholder, then fade in over 160 ms.
 Reduced-motion mode skips the fade. Already cached images appear immediately.
 Failed images retain their readable label and tooltip. The picker remains usable
 throughout loading; the full account inventory is never downloaded into image
-memory at once. Native visual verification is required for this loading revision.
+memory at once. The Windows build and populated scrolling were verified; the brief fade and transient
+placeholder appearance were not visually captured, so their visual acceptance remains
+open. Final read-back after a transient connection timeout verified that layout,
+drafts, preferences, favorites and active channel matched the pre-update snapshot.
