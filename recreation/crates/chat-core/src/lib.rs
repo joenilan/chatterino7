@@ -35,12 +35,22 @@ impl Fragment {
 pub struct Badge { pub set_id: String, pub id: String }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Reply {
+    pub parent_id: String,
+    pub parent_user_id: String,
+    pub parent_name: String,
+    pub thread_id: String,
+    pub parent_deleted: bool,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     pub id: String,
     pub channel_id: String,
     pub user_id: String,
     pub display_name: String,
     pub login: Option<String>,
+    pub reply: Option<Reply>,
+    pub replyable: bool,
     pub name_color: Option<u32>,
     pub badges: Vec<Badge>,
     pub fragments: Vec<Fragment>,
@@ -135,13 +145,31 @@ impl Timeline {
             Event::DeleteMessage {
                 channel_id,
                 message_id,
-            } => self.redact(&channel_id, |m| m.id == message_id),
+            } => {
+                let quotes=self.redact_quotes(&channel_id, |r| r.parent_id == message_id);
+                let body=self.redact(&channel_id, |m| m.id == message_id);
+                if quotes {Change::Updated}else{body}
+            },
             Event::ClearUser {
                 channel_id,
                 user_id,
-            } => self.redact(&channel_id, |m| m.user_id == user_id),
+            } => {
+                let quotes=self.redact_quotes(&channel_id, |r| r.parent_user_id == user_id);
+                let body=self.redact(&channel_id, |m| m.user_id == user_id);
+                if quotes {Change::Updated}else{body}
+            },
             Event::ClearChannel { channel_id } => self.redact(&channel_id, |_| true),
         }
+    }
+    fn redact_quotes(&mut self, channel: &str, matches: impl Fn(&Reply) -> bool) -> bool {
+        if channel != self.channel_id {return false;}
+        let mut changed=false;
+        for message in &mut self.messages {
+            if let Some(reply)=&mut message.reply {
+                if matches(reply)&&!reply.parent_deleted {reply.parent_deleted=true;changed=true;}
+            }
+        }
+        changed
     }
     fn redact(&mut self, channel: &str, matches: impl Fn(&Message) -> bool) -> Change {
         if channel != self.channel_id {
@@ -152,6 +180,7 @@ impl Timeline {
             if !message.deleted && matches(message) {
                 message.deleted = true;
                 message.fragments.clear();
+                if let Some(reply)=&mut message.reply {reply.parent_deleted=true;}
                 changed = true;
             }
         }
@@ -176,6 +205,8 @@ pub fn fixture(channel: &str, index: usize) -> Message {
         id: format!("{channel}-{index}"),
         channel_id: channel.into(),
         login: None,
+        reply: None,
+        replyable: false,
         user_id: format!("fixture-{}", index % 4),
         display_name: format!("viewer_{}", index % 4),
         name_color: None,

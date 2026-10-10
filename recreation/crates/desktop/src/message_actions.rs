@@ -62,7 +62,7 @@ impl Interaction{
     }
 }
 #[derive(Clone,PartialEq)]
-pub enum Action{CopyLine,CopyBody,CopyName,CopyId,Inspect,Mention,Profile,OpenLink(String),CopyLink(String)}
+pub enum Action{CopyLine,CopyBody,CopyName,CopyId,Inspect,Mention,Reply,Thread,Profile,OpenLink(String),CopyLink(String)}
 fn copy(text:String,window:&mut Window,cx:&mut App){
     cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
     let verified=cx.read_from_clipboard().and_then(|item|item.text()).as_deref()==Some(&text);
@@ -71,7 +71,8 @@ fn copy(text:String,window:&mut Window,cx:&mut App){
 pub fn menu(owner:WeakEntity<ChannelPane>,id:String,mut menu:PopupMenu,cx:&mut Context<PopupMenu>)->PopupMenu{
     let current=owner.upgrade().and_then(|pane|pane.read(cx).timeline.borrow().messages().iter().find(|m|m.id==id).cloned());
     let Some(message)=current else{return menu.item(PopupMenuItem::new("Message is no longer retained"));};
-    for (label,action) in [("Inspect chatter",Action::Inspect),("Mention in composer",Action::Mention),("Open Twitch profile",Action::Profile),("Copy message",Action::CopyLine),("Copy message text",Action::CopyBody),("Copy username",Action::CopyName),("Copy user ID",Action::CopyId)]{
+    for (label,action) in [("Reply to message",Action::Reply),("View conversation",Action::Thread),("Inspect chatter",Action::Inspect),("Mention in composer",Action::Mention),("Open Twitch profile",Action::Profile),("Copy message",Action::CopyLine),("Copy message text",Action::CopyBody),("Copy username",Action::CopyName),("Copy user ID",Action::CopyId)]{
+        if action==Action::Reply&&(message.deleted||!message.replyable){continue;}
         if matches!(action,Action::Mention|Action::Profile|Action::CopyName)&&message.login.is_none(){continue;}
         let owner=owner.clone();let id=id.clone();
         menu=menu.item(PopupMenuItem::new(label).on_click(move|_,w,cx|{let _=owner.update(cx,|p,cx|p.message_action(&id,action.clone(),w,cx));}));
@@ -91,6 +92,8 @@ impl ChannelPane{
         let Some(message)=message else{window.push_notification(Notification::info("That message is no longer in retained history"),cx);return;};
         let opening=matches!(&action,Action::OpenLink(_));
         match action{
+            Action::Reply=>self.begin_reply(&message,window,cx),
+            Action::Thread=>self.open_conversation(&message,window,cx),
             Action::CopyLine=>copy(message.copy_line(),window,cx),
             Action::CopyBody=>copy(message.body(),window,cx),
             Action::CopyName=>if let Some(login)=message.login{copy(login,window,cx)},

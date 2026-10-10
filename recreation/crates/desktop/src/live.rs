@@ -82,7 +82,7 @@ impl LiveChat {
         }
         false
     }
-    pub fn send(&self, request: u64, channel: String, text: String) -> Result<(), String> {
+    pub fn send(&self, request: u64, channel: String, text: String, reply_parent: Option<String>) -> Result<(), String> {
         let Some(identity) = self.config.lock().ok().and_then(|c| c.identity.clone()) else {
             return Err("Account disconnected. Draft kept.".into());
         };
@@ -121,8 +121,9 @@ impl LiveChat {
                 if epoch.load(Ordering::Relaxed) != version {
                     return Err("Account or channels changed. Nothing was sent.".into());
                 }
-                let request_body =
+                let mut request_body =
                     json!({"broadcaster_id":id,"sender_id":identity.user_id,"message":text});
+                if let Some(parent)=reply_parent {request_body["reply_parent_message_id"]=json!(parent);}
                 // Never retry a POST: a timeout may have happened after delivery.
                 let response = client
                     .post("https://api.twitch.tv/helix/chat/messages")
@@ -523,6 +524,8 @@ fn deliver(
             user_id: text("chatter_user_id"),
             display_name: text("chatter_user_name"),
             login: chat_core::twitch_login(&text("chatter_user_login")),
+            replyable: e["source_broadcaster_user_id"].as_str().is_none_or(|source|source==id),
+            reply: parse_reply(&e["reply"]),
             name_color: e["color"].as_str().and_then(|s| s.strip_prefix('#'))
                 .filter(|s| s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit()))
                 .and_then(|s| u32::from_str_radix(s, 16).ok()),
@@ -562,4 +565,14 @@ fn twitch_fragments(message: &Value) -> Vec<Fragment> {
     }).collect();
     if fragments.iter().map(Fragment::copy_text).collect::<String>() == original && !fragments.is_empty() { fragments }
     else { vec![Fragment::Text(original.into())] }
+}
+
+fn parse_reply(value:&Value)->Option<chat_core::Reply>{
+    let id=value["parent_message_id"].as_str()?.to_owned();
+    if id.is_empty()||id.len()>128{return None;}
+    Some(chat_core::Reply{parent_id:id.clone(),
+        parent_user_id:value["parent_user_id"].as_str().unwrap_or("").chars().take(128).collect(),
+        parent_name:value["parent_user_name"].as_str().unwrap_or("Chatter").chars().take(100).collect(),
+        thread_id:value["thread_message_id"].as_str().filter(|s|!s.is_empty()&&s.len()<=128).unwrap_or(&id).to_owned(),
+        parent_deleted:false})
 }

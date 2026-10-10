@@ -343,3 +343,15 @@ owned terminal hw-1-35. Native evidence includes isolated-profile screenshots
 135 (restored owner). No browser opens, sends or account authorization changes.
 Browser activation, remaining individual copy variants, and live deletion while
 an action/card remains open were not exercised; code guards are not runtime proof.
+
+
+## Replies implementation checkpoint — 2026-10-10
+
+Linux offline locked build passed for the initial reply integration. Native Windows
+build and runtime verification are pending. The next native pass must exercise
+actual message Reply / View conversation, cancellation without draft loss, target
+replacement, channel/workspace isolation, saved target after relaunch, compact
+360×280 layout, retained jump and naturally arriving reply previews where available.
+Use existing real traffic only; never send a message to validate the controls.
+Outgoing delivery, live moderation redaction and unavailable-parent edge cases
+remain unverified until directly observed. Restore owner geometry/layout/drafts.

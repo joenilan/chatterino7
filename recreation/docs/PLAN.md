@@ -486,3 +486,33 @@ no drag. Underlines, hover hints and menu copy/open actions make links discovera
 No link is fetched merely because a message is rendered. Profile/browser opening
 uses an explicit action. No follower/account-age metadata or moderation controls
 are claimed in this batch.
+
+
+## Replies and retained conversations — 2026-10-10
+
+Incoming EventSub replies retain parent/thread identifiers separately from message
+text, so text selection, copy, search and emote offsets stay unchanged. Compact
+reply context opens a live retained-conversation dialog with jump and reply actions.
+The dialog uses at most the newest 100 matching rows from the existing bounded
+channel timeline. Missing originals are labelled honestly; no remote history is
+invented or fetched. Parent previews resolve current retained messages instead of
+keeping copied text after moderation or eviction.
+
+Reply is available from the ordinary message menu and conversation rows. A compact
+composer target can be cancelled with × or Escape (after emote UI). Selecting or
+cancelling it never submits or changes the draft. The selected message ID travels
+with the pending send; the existing Helix request includes reply_parent_message_id
+only for replies. Existing uncertainty handling and no-POST-retry behavior remain.
+Shared-chat source messages are not offered as reply targets in the wrong channel.
+
+Per-pane reply targets survive switching, docking and restart alongside drafts in
+an optional `reply_drafts` workspace field. Only identifiers, name and known-deleted
+state are stored, never quoted bodies. Old workspace files remain readable. A
+known-deleted target blocks sending until explicitly cancelled/replaced. A restored
+or evicted target is labelled outside retained history; Twitch remains authoritative
+about whether that ID is still a valid send destination. Changed drafts/targets are
+not cleared by acknowledgement of an older send.
+
+Reference contracts: https://dev.twitch.tv/docs/api/reference/#send-chat-message
+and https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-message-event.
+No extra OAuth scopes, live moderation actions or synthetic chat were introduced.

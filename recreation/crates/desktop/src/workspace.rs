@@ -126,6 +126,7 @@ pub struct Workbench {
     font_size: f32,
     history_limit: usize,
     drafts: BTreeMap<String, String>,
+    reply_drafts: BTreeMap<String, Value>,
     save_revision: u64,
     save_enabled: bool,
     save_status: String,
@@ -256,6 +257,7 @@ impl Workbench {
                 .clamp(12., 24.) as f32,
             history_limit: state["history_limit"].as_u64().unwrap_or(10_000).clamp(500,10_000) as usize,
             drafts,
+            reply_drafts: state["reply_drafts"].as_object().map(|v|v.iter().map(|(k,v)|(k.clone(),v.clone())).collect()).unwrap_or_default(),
             save_revision: 0,
             save_enabled,
             save_status,
@@ -399,7 +401,8 @@ impl Workbench {
                     cx.notify();
                 }
                 crate::live::Event::Chat(channel, event) => {
-                    for pane in &panes {
+                    let moderation=!matches!(&event,chat_core::Event::Message(_));
+                    for pane in panes.iter().chain(self.closed_tabs.iter().flat_map(|tab|tab.panes.iter()).filter(|_|moderation)) {
                         if pane.read(cx).name.as_ref() == channel {
                             pane.update(cx, |p, cx| p.received(event.clone(), cx));
                         }
@@ -426,10 +429,11 @@ impl Workbench {
         let key = format!("{tab_id}:{name}");
         let draft = self.drafts.get(&key).cloned().unwrap_or_default();
         let pane = cx.new(|cx| ChannelPane::new(name, self.media.clone(), self.catalog.clone(), &draft, self.font_size, self.history_limit, window, cx));
+        if let Some(target)=self.reply_drafts.get(&key).and_then(crate::replies::Target::from_json){pane.update(cx,|p,_|p.reply_target=Some(target));}
         let channel = name.to_owned();
         cx.subscribe_in(&pane, window, move |this, pane, event, window, cx| {
-            if let PaneEvent::Send { request, text } = event {
-                if let Err(error) = this.live.send(*request, channel.clone(), text.clone()) {
+            if let PaneEvent::Send { request, text, reply_parent } = event {
+                if let Err(error) = this.live.send(*request, channel.clone(), text.clone(), reply_parent.clone()) {
                     pane.update(cx, |p, cx| {
                         p.pending = None;
                         p.send_status = error;
@@ -446,13 +450,15 @@ impl Workbench {
             let text = pane.read(cx).draft.read(cx).value().to_string();
             let owner = this
                 .tabs
-                .iter()
+                .iter().chain(this.closed_tabs.iter())
                 .find(|t| t.panes.iter().any(|p| p == pane))
                 .map(|t| t.id);
             let Some(owner) = owner else {
                 return;
             };
             this.drafts.insert(format!("{owner}:{channel}"), text);
+            let key=format!("{owner}:{channel}");
+            if let Some(target)=&pane.read(cx).reply_target {this.reply_drafts.insert(key,target.json());}else{this.reply_drafts.remove(&key);}
             if matches!(event, PaneEvent::Close) {
                 this.focus.focus(window,cx);
                 if let Some(tab) = this.tabs.iter_mut().find(|t| t.id == owner) {
@@ -471,16 +477,19 @@ impl Workbench {
     }
     fn snapshot(&self, cx: &App) -> Value {
         let mut drafts = self.drafts.clone();
-        for tab in &self.tabs {
+        let mut reply_drafts=self.reply_drafts.clone();
+        for tab in self.tabs.iter().chain(self.closed_tabs.iter()) {
             for pane in &tab.panes {
                 let pane = pane.read(cx);
+                let key=format!("{}:{}",tab.id,pane.name);
+                if let Some(target)=&pane.reply_target {reply_drafts.insert(key,target.json());}else{reply_drafts.remove(&key);}
                 drafts.insert(
                     format!("{}:{}", tab.id, pane.name),
                     pane.draft.read(cx).value().to_string(),
                 );
             }
         }
-        json!({"version":1,"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,
+        json!({"version":1,"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {

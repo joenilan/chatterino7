@@ -185,3 +185,9 @@ For Ctrl+click username inspection, dispatch a matching down/up pair immediately
 with `control:true`, then a neutral move to clear synthetic modifiers. Do not
 leave a held button between screenshots or tool calls. Browser link activation
 must not be exercised against an unreviewed URL from incoming chat.
+
+
+Reply inspection adds `reply_target` (ID and known-deleted flag only) and
+`retained_replies` per channel. These report real UI state; no synthetic reply
+injection or send shortcut exists. Drive context menus and composer controls using
+ordinary pointer/key actions. Do not press Enter or Send on a live QA draft.

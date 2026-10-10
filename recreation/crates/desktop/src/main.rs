@@ -3,6 +3,7 @@ mod auth;
 mod chat_text;
 mod chat_search;
 mod message_actions;
+mod replies;
 mod control;
 mod live;
 mod media;
@@ -79,7 +80,7 @@ fn twitch_message_text(text: &str) -> String {
 #[derive(Clone)]
 enum PaneEvent {
     DragStarted,
-    Send { request: u64, text: String },
+    Send { request: u64, text: String, reply_parent: Option<String> },
     Close,
     DraftChanged,
 }
@@ -89,7 +90,9 @@ struct ChannelPane {
     name: SharedString,
     connection: String,
     connected: bool,
-    pending: Option<(u64, String)>,
+    pending: Option<(u64, String, Option<String>, u64)>,
+    compose_revision: u64,
+    reply_target: Option<replies::Target>,
     send_status: String,
     timeline: Rc<RefCell<Timeline>>,
     media: Rc<RefCell<media::MediaCache>>,
@@ -130,7 +133,7 @@ impl ChannelPane {
         });
         cx.subscribe_in(&draft, window, |this: &mut Self, _, event, _window, cx| {
             match event {
-                InputEvent::Change => { this.complete_query(false,cx); cx.emit(PaneEvent::DraftChanged); },
+                InputEvent::Change => { this.compose_revision=this.compose_revision.wrapping_add(1); this.complete_query(false,cx); cx.emit(PaneEvent::DraftChanged); },
                 _ => {}
             }
             cx.notify();
@@ -148,6 +151,8 @@ impl ChannelPane {
             connection: "Sign in to connect".into(),
             connected: false,
             pending: None,
+            reply_target: None,
+            compose_revision: 0,
             send_status: String::new(),
             timeline: Rc::new(RefCell::new(timeline)),
             selection: Rc::new(RefCell::new(Selection::default())),
@@ -198,9 +203,14 @@ impl ChannelPane {
         }
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let request = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.pending = Some((request, text.clone()));
+        if self.reply_target.as_ref().is_some_and(|target| target.deleted) {
+            window.push_notification(Notification::info("The reply target was deleted. Cancel the reply or choose another message; your draft is kept."),cx);
+            return;
+        }
+        let reply_parent=self.reply_target.as_ref().map(|target|target.id.clone());
+        self.pending = Some((request, text.clone(), reply_parent.clone(), self.compose_revision));
         self.send_status = "Sending…".into();
-        cx.emit(PaneEvent::Send { request, text });
+        cx.emit(PaneEvent::Send { request, text, reply_parent });
         cx.notify();
     }
     fn received(&mut self, mut event: chat_core::Event, cx: &mut Context<Self>) {
@@ -208,6 +218,7 @@ impl ChannelPane {
             message.fragments = self.catalog.borrow().expand(&self.name, &message.fragments);
             message.name_color = Some(theme::readable_name_color(&message.user_id, message.name_color));
         }
+        self.observe_reply_redaction(&event,cx);
         let change = self.timeline.borrow_mut().apply(event);
         match change {
             chat_core::Change::Appended { evicted } => {
@@ -250,17 +261,20 @@ impl ChannelPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some((pending, text)) = &self.pending else {
+        let Some((pending, text, parent, revision)) = &self.pending else {
             return;
         };
         if *pending != request {
             return;
         }
-        if result.is_ok() && twitch_message_text(&self.draft.read(cx).value()) == *text {
+        let clear_reply=result.is_ok() && self.compose_revision==*revision && twitch_message_text(&self.draft.read(cx).value()) == *text && self.reply_target.as_ref().map(|r|&r.id)==parent.as_ref();
+        if clear_reply {self.reply_target=None;}
+        if clear_reply {
             self.draft
                 .update(cx, |draft, cx| draft.set_value("", window, cx));
             cx.emit(PaneEvent::DraftChanged);
         }
+        if clear_reply {cx.emit(PaneEvent::DraftChanged);}
         self.send_status = match result {
             Ok(()) => "Sent".into(),
             Err(e) => e.clone(),
@@ -458,6 +472,7 @@ impl Render for ChannelPane {
                             };
                             let row = first_order + index as u64;
                             let row_owner=menu_owner.clone();let row_id=message.id.clone();
+                            let reply_line=replies::row_context(message,&messages,menu_owner.clone());
                             let interaction=message_actions::Interaction{owner:menu_owner.clone(),message:message.id.clone(),author_len:message.display_name.len(),links:message_actions::message_links(message),pressed:link_press.clone()};
                             let matches=search_hits.get(&row).cloned().unwrap_or_default();
                             let progress = entrances.iter().find(|entry| entry.row == row)
@@ -482,6 +497,7 @@ impl Render for ChannelPane {
                                 .cursor_text()
                                 .tooltip(|w,cx|gpui_kit::component::tooltip::Tooltip::new("Ctrl+click a link to open, or a username to inspect · Right-click for actions").build(w,cx))
                                 .context_menu(move|menu,_,cx|message_actions::menu(row_owner.clone(),row_id.clone(),menu,cx))
+                                .children(reply_line)
                                 .child(div().h_flex().items_start().min_w_0().gap_1()
                                 .children(message.badges.iter().filter_map(|badge|catalog.borrow().twitch.badge(&message.channel_id,&badge.set_id,&badge.id).cloned()).map(|badge|{
                                     let image=media.borrow_mut().get(&badge.key,cx);
@@ -536,7 +552,7 @@ impl Render for ChannelPane {
                     cx.stop_propagation();
                 }))
                 .capture_action(cx.listener(|this,_: &gpui_kit::base::input::Escape,window,cx|{
-                    if this.picker.open {this.toggle_picker(window,cx);cx.stop_propagation();}else{this.completion_action("escape",window,cx);}
+                    if this.picker.open {this.toggle_picker(window,cx);cx.stop_propagation();}else if !this.completion_action("escape",window,cx) && this.reply_target.is_some(){this.cancel_reply(window,cx);cx.stop_propagation();}
                 }))
                 .capture_action(cx.listener(|this, _: &gpui_kit::base::input::Paste, window, cx| {
                     if this.picker.open {return;}
@@ -555,6 +571,7 @@ impl Render for ChannelPane {
                         cx.stop_propagation();
                     }
                 }))
+                .children(self.render_reply_target(cx))
                 .children(picker)
                 .children(suggestions)
                 .child(Textarea::new(&self.draft))
