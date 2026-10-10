@@ -324,3 +324,22 @@ chatter cards, validated provider logins and source-byte link interactions were
 added. Existing selection and search rendering remain separate from activation.
 Windows compilation and native interaction evidence are pending. No new tests,
 CI, external profile requests, chat sends or OAuth scopes were added.
+
+### Native acceptance: 8b1bcc6d
+
+Windows Rust 1.99.0 locked release build passed, exit 0, 18.38 seconds; checkout
+remained clean. On actual HutchMF traffic, no-selection message menu, chatter
+inspection, Ctrl-click username and Escape dismissal passed. The card fit the
+360x280 minimum window. Username copy, selected-text right-click copy, and exact
+real-link copy produced visible feedback. Mention insertion replaced only the
+selected composer span, sent nothing, and its temporary draft was cleared.
+
+QA workspace 12 was closed through normal confirmation. Owner tab, all preexisting
+drafts, sidebar, history limit and original 1280x820 geometry matched baseline.
+Both owner channels were connected, overlays closed, active_drag:false and
+pointer_owner:null. Running PID 44632, session jj-manual-8b1bcc6d-actions,
+owned terminal hw-1-35. Native evidence includes isolated-profile screenshots
+122–127 (menus/cards), 131 (unsent mention), 133 (link copy feedback), and
+135 (restored owner). No browser opens, sends or account authorization changes.
+Browser activation, remaining individual copy variants, and live deletion while
+an action/card remains open were not exercised; code guards are not runtime proof.
