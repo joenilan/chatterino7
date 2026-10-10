@@ -444,3 +444,19 @@ large center merges. Drag insertion respects wrapped tab rows. Tab context menus
 include left/right ordering; Ctrl+PageUp/PageDown cycles the focused group and
 retains each channel draft. Native/control drag ownership prevents cross-input
 release from moving a panel. Native acceptance is recorded in VALIDATION.md.
+
+## Retained-chat Find and channel actions (2026-10-10)
+
+Per-channel Ctrl+F opens a transient compact search bar. Find matches visible
+source text, usernames and emote labels within retained history only. Matching
+UTF-8 source ranges are highlighted independently from copying/selection, including
+inline media. Previous/next navigate matching messages, not individual occurrences;
+F3, Shift+F3, Enter and Shift+Enter wrap results. Escape closes search at the found
+location; Latest explicitly resumes live chat. Each pane owns its query and focus.
+Queries are limited to 256 characters and highlights to 128 ranges per message.
+Live appends update matches incrementally; redactions and history-limit changes
+rebuild from current retained/redacted content. No server-history request or disk
+archive is added. This is not yet Chatterino's advanced predicate/global search.
+
+Channel-tab menus now offer Open stream in browser and Copy channel URL with
+feedback, alongside grouping, live filtering, ordering and confirmed close.

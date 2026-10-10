@@ -174,3 +174,8 @@ waiting for another tool call; that can overlap the owner's physical mouse.
 Native/control pointer ownership is recorded at down and checked at release.
 A move with no left button, or input from the other source, cancels the active
 layout drag. Hover alone must not commit a layout operation.
+
+`focus` now accepts target `search` for a visible pane. It opens the actual Find
+bar and focuses its input. Inspection exposes search_open, search_matches and
+search_current_row without returning query text, and reports active_drag at the
+window level. Search input must never route Enter into the chat composer.

@@ -283,3 +283,13 @@ size and window position were preserved. No chat sends or auth changes. Running
 PID 23160, control session jj-manual-7c1d662c-atomic, owned terminal hw-2-52.
 Evidence: isolated-profile screenshots 104–109. This establishes the exercised
 regrouping paths, not complete Chatterino feature parity or all device input cases.
+
+## 2026-10-10: retained-history Find implementation
+
+Linux locked offline build passed after adding per-pane search, independent exact
+source highlights in plain and inline-media rows, keyboard navigation, incremental
+arrival matching, and channel URL actions. Compiler evidence only so far; native
+Windows behavior and keyboard/no-send acceptance remain pending. The existing
+virtualized list is retained. Its scroll-to-item positions a matching message's
+start and may resume tail following when bottom is reached; exact occurrence
+visibility and restoration to a pre-search pixel offset are not claimed.

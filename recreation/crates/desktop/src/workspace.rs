@@ -46,6 +46,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-shift-tab", PreviousTab, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-pagedown", NextChannel, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-pageup", PreviousChannel, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-f", crate::FindChat, Some("ChatWorkspace")),
+        KeyBinding::new("cmd-f", crate::FindChat, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-k", AddChannel, Some("ChatWorkspace")),
     ]);
 }
@@ -156,6 +158,10 @@ impl Workbench {
                 let pane=panes.get(pane).ok_or("No such visible pane")?;
                 let draft = pane.read(cx).draft.clone();
                 draft.update(cx, |input, cx| input.focus(window, cx));
+            }
+            "search" => {
+                let panes=self.visible_panes(cx);let pane=panes.get(pane).ok_or("No such visible pane")?;
+                pane.update(cx,|p,cx|p.open_search(window,cx));
             }
             "transcript" => {
                 let panes=self.visible_panes(cx);
@@ -757,6 +763,7 @@ impl Workbench {
         });
         tab.dock_states.clear();
         self.active = destination;
+        self.selected_channel=Some(drag.name.clone());
         self.focus.focus(window,cx);
         self.adding = false;
         self.schedule_save(cx);
@@ -871,7 +878,7 @@ impl Workbench {
     fn cycle_channel(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         let focused = self.visible_panes(cx).into_iter().find(|p| {
             let p = p.read(cx);
-            p.focus.contains_focused(window,cx) || p.draft.read(cx).focus_handle(cx).is_focused(window)
+            p.focus.contains_focused(window,cx) || p.draft.read(cx).focus_handle(cx).is_focused(window) || p.search.input.read(cx).focus_handle(cx).is_focused(window)
         }).map(|p|p.read(cx).name.to_string());
         let Some(dock) = &self.tabs[self.active].dock else { return; };
         let mut active = Vec::new(); dock.active_names(&mut active);
@@ -921,8 +928,10 @@ impl Workbench {
                         .on_click(cx.listener({let channel=channel.clone();move|this,_,window,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.select(&channel);}this.selected_channel=Some(channel.clone());this.focus.focus(window,cx);this.schedule_save(cx);cx.notify();}}));
                     let owner=cx.entity().downgrade();let menu_channel=channel.clone();
                     let menu=move |menu:gpui_kit::component::menu::PopupMenu,_:&mut Window,_:&mut Context<gpui_kit::component::menu::PopupMenu>|{
-                        let add=owner.clone();let add_channel=menu_channel.clone();let close=owner.clone();let close_channel=menu_channel.clone();let filter=owner.clone();let left=owner.clone();let left_channel=menu_channel.clone();let right=owner.clone();let right_channel=menu_channel.clone();
-                        menu.item(PopupMenuItem::new("Add channel tab").on_click(move|_,window,cx|{let _=add.update(cx,|this,cx|{this.open_add(false,window,cx);this.add_target=Some(add_channel.clone());});}))
+                        let add=owner.clone();let add_channel=menu_channel.clone();let close=owner.clone();let close_channel=menu_channel.clone();let filter=owner.clone();let left=owner.clone();let left_channel=menu_channel.clone();let right=owner.clone();let right_channel=menu_channel.clone();let open_url=format!("https://www.twitch.tv/{menu_channel}");let copy_url=open_url.clone();
+                        menu.item(PopupMenuItem::new("Open stream in browser").on_click(move|_,_,cx|cx.open_url(&open_url)))
+                            .item(PopupMenuItem::new("Copy channel URL").on_click(move|_,window,cx|{cx.write_to_clipboard(ClipboardItem::new_string(copy_url.clone()));window.push_notification(Notification::info("Channel URL copied"),cx);}))
+                            .separator().item(PopupMenuItem::new("Add channel tab").on_click(move|_,window,cx|{let _=add.update(cx,|this,cx|{this.open_add(false,window,cx);this.add_target=Some(add_channel.clone());});}))
                             .item(PopupMenuItem::new("Toggle live-only channel tabs").on_click(move|_,_,cx|{let _=filter.update(cx,|this,cx|{this.live_channels=!this.live_channels;this.schedule_save(cx);cx.notify();});}))
                             .separator().item(PopupMenuItem::new("Move tab left").on_click(move|_,_,cx|{let _=left.update(cx,|this,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.shift_tab(&left_channel,false);}this.schedule_save(cx);cx.notify();});}))
                             .item(PopupMenuItem::new("Move tab right").on_click(move|_,_,cx|{let _=right.update(cx,|this,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.shift_tab(&right_channel,true);}this.schedule_save(cx);cx.notify();});}))
@@ -1127,6 +1136,7 @@ impl Render for Workbench {
                     });
                 });
             }).absolute().size_0())
+            .on_action(cx.listener(|this,_:&crate::FindChat,w,cx|{let panes=this.visible_panes(cx);let selected=this.selected_channel.as_ref();if let Some(pane)=panes.iter().find(|p|Some(&p.read(cx).name.to_string())==selected).or(panes.first()){pane.update(cx,|p,cx|p.open_search(w,cx));}cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&NewTab,w,cx|this.new_tab(w,cx)))
             .on_action(cx.listener(|this,_:&CloseTab,window,cx|{this.confirm_close_tab(this.tabs[this.active].id,window,cx);}))
             .on_action(cx.listener(|this,_:&ReopenTab,window,cx|{this.reopen_tab(cx);this.focus.focus(window,cx);}))

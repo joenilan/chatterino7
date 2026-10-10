@@ -9,6 +9,7 @@ use gpui_kit::*;
 pub struct ChatText {
     id: ElementId,
     row: u64,
+    search: Vec<std::ops::Range<usize>>,
     text: SharedString,
     styled: StyledText,
     selection: Rc<RefCell<Selection>>,
@@ -16,6 +17,8 @@ pub struct ChatText {
     viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
 }
 impl ChatText {
+    pub fn with_search(mut self, ranges:Vec<std::ops::Range<usize>>)->Self{self.search=ranges;self}
+
     pub fn with_author(mut self, name: &str, color: Option<u32>) -> Self {
         if !self.text.starts_with(name) { return self; }
         self.styled = StyledText::new(self.text.clone()).with_highlights([
@@ -35,6 +38,7 @@ impl ChatText {
         Self {
             id: id.into(),
             row,
+            search: Vec::new(),
             styled: StyledText::new(text.clone()),
             text,
             selection,
@@ -123,8 +127,10 @@ impl Element for ChatText {
         cx: &mut App,
     ) {
         let layout = self.styled.layout().clone();
-        if let Some(range) = self.selection.borrow().range_for(self.row, &self.text)
-            && !range.is_empty()
+        let mut highlights=self.search.iter().cloned().map(|r|(r,0x66502D)).collect::<Vec<_>>();
+        if let Some(range)=self.selection.borrow().range_for(self.row,&self.text){highlights.push((range,0x315166));}
+        for (range,color) in highlights {
+        if !range.is_empty()
             && let (Some(start), Some(end)) = (
                 layout.position_for_index(range.start),
                 layout.position_for_index(range.end),
@@ -151,8 +157,9 @@ impl Element for ChatText {
                 ));
             }
             for quad in quads {
-                window.paint_quad(fill(quad, rgb(0x315166)));
+                window.paint_quad(fill(quad, rgb(color)));
             }
+        }
         }
         self.styled
             .paint(id, inspector, bounds, &mut (), &mut (), window, cx);

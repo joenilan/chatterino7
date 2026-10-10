@@ -70,6 +70,7 @@ impl Layout {
 pub struct InlineChat {
     id: ElementId,
     row: u64,
+    search: Vec<std::ops::Range<usize>>,
     text: SharedString,
     spans: Vec<Span>,
     name_color: u32,
@@ -79,6 +80,8 @@ pub struct InlineChat {
     layout: Rc<RefCell<Layout>>,
 }
 impl InlineChat {
+    pub fn with_search(mut self, ranges:Vec<std::ops::Range<usize>>)->Self{self.search=ranges;self}
+
     pub fn new(
         message: &Message,
         row: u64,
@@ -166,6 +169,7 @@ impl InlineChat {
         Some(Self {
             id: format!("inline-{}", message.id).into(),
             row,
+            search: Vec::new(),
             text,
             spans,
             name_color: message.name_color.unwrap_or(crate::theme::MUTED),
@@ -351,8 +355,10 @@ impl Element for InlineChat {
         cx: &mut App,
     ) {
         let selected = self.selection.borrow().range_for(self.row, &self.text);
+        let mut highlights=self.search.iter().cloned().map(|r|(r,0x66502D)).collect::<Vec<_>>();
+        if let Some(range)=selected.clone(){highlights.push((range,0x315166));}
         for piece in &self.layout.borrow().pieces {
-            if let Some(range) = &selected {
+            for (range,color) in &highlights {
                 let a = range.start.max(piece.range.start);
                 let b = range.end.min(piece.range.end);
                 if a < b {
@@ -372,7 +378,7 @@ impl Element for InlineChat {
                             origin + point(x1.min(x2), px(0.)),
                             size((x2 - x1).abs(), piece.bounds.size.height),
                         ),
-                        rgb(0x315166),
+                        rgb(*color),
                     ));
                 }
             }
@@ -433,7 +439,7 @@ impl Element for InlineChat {
                 );
             }
         }
-        if let Some(range) = &selected {
+        for (range,color) in &highlights {
             for piece in &self.layout.borrow().pieces {
                 if piece.text.is_none()
                     && range.start < piece.range.end
@@ -441,7 +447,7 @@ impl Element for InlineChat {
                 {
                     window.paint_quad(fill(
                         Bounds::new(bounds.origin + piece.bounds.origin, piece.bounds.size),
-                        rgba(0x31516666),
+                        rgba((*color << 8) | 0x66),
                     ));
                 }
             }

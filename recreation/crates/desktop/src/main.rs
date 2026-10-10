@@ -1,6 +1,7 @@
 use gpui_kit::prelude::FluentBuilder;
 mod auth;
 mod chat_text;
+mod chat_search;
 mod control;
 mod live;
 mod media;
@@ -31,7 +32,7 @@ use std::{cell::{Cell, RefCell}, rc::Rc, time::{Duration, Instant}};
 
 gpui_kit::actions!(
     chat_workbench,
-    [CopyChatSelection, ClearChatSelection, SelectAllChat, CompleteEmote]
+    [CopyChatSelection, ClearChatSelection, SelectAllChat, CompleteEmote, FindChat, NextChatMatch, PreviousChatMatch]
 );
 
 #[derive(Clone)]
@@ -96,6 +97,7 @@ struct ChannelPane {
     draft: Entity<TextareaState>,
     font_size: f32,
     picker: emote_picker::Picker,
+    search: chat_search::Search,
     emote_search: Entity<TextareaState>,
     last_copy_result: Option<&'static str>,
     scroller: Entity<MessageScrollerState>,
@@ -133,6 +135,7 @@ impl ChannelPane {
         .detach();
         let emote_search=cx.new(|cx|TextareaState::new(window,cx).auto_grow(1,1).placeholder("Search emotes…"));
         cx.subscribe_in(&emote_search,window,|this:&mut Self,_,event,_,cx|{if matches!(event,InputEvent::Change){this.picker.page=0;this.refresh_picker(cx);cx.notify();}}).detach();
+        let search=chat_search::create(window,cx);
         let scroller = cx.new(|cx| MessageScrollerState::new(timeline.messages().len(), cx));
         cx.observe(&scroller, |_, _, cx| cx.notify()).detach();
         Self {
@@ -150,6 +153,7 @@ impl ChannelPane {
             font_size,
             picker: emote_picker::Picker::default(),
             emote_search,
+            search,
             last_copy_result: None,
             scroller,
             next_id: 0,
@@ -158,6 +162,7 @@ impl ChannelPane {
         }
     }
     fn change_history_limit(&mut self, limit: usize, cx: &mut Context<Self>) {
+        self.search.dirty=true;
         let removed=self.timeline.borrow_mut().set_capacity(limit);
         if removed>0 {
             let first=(self.next_id-self.timeline.borrow().messages().len()) as u64;
@@ -215,6 +220,9 @@ impl ChannelPane {
                     });
                 }
                 self.next_id += 1;
+                { let timeline=self.timeline.borrow();
+                  if let Some(message)=timeline.messages().back(){self.search.appended(message,(self.next_id-1) as u64,(self.next_id-timeline.messages().len()) as u64);} }
+
                 self.scroller.update(cx, |scroller, cx| {
                     if evicted {
                         scroller.splice(0..1, 0, cx);
@@ -223,6 +231,7 @@ impl ChannelPane {
                 });
             }
             chat_core::Change::Updated => {
+                self.search.dirty=true;
                 self.selection.borrow_mut().clear();
                 self.scroller.update(cx, |s, cx| s.remeasure(cx));
             }
@@ -321,6 +330,10 @@ impl Render for ChannelPane {
         let media = self.media.clone();
         let retained = timeline.borrow().messages().len();
         let first_order = (self.next_id - retained) as u64;
+        self.search.refresh(&timeline.borrow(),first_order);
+        let search_hits=if self.search.open{self.search.hits.clone()}else{Rc::default()};
+        let search_current=self.search.open.then_some(self.search.current).flatten();
+        let search_bar=self.search.open.then(||self.render_search(cx));
         let selection = self.selection.clone();
         let focus = self.focus.clone();
         let viewport = self.viewport.clone();
@@ -336,6 +349,11 @@ impl Render for ChannelPane {
         { self.entrances.clone() } else { Vec::new() };
         div()
             .id("channel-pane")
+            .key_context("JawjackChannel")
+            .capture_action(cx.listener(|this,_:&gpui_kit::base::input::Search,w,cx|{this.open_search(w,cx);cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&FindChat,w,cx|{this.open_search(w,cx);cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&NextChatMatch,_,cx|{this.next_search(true,cx);cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&PreviousChatMatch,_,cx|{this.next_search(false,cx);cx.stop_propagation();}))
             .v_flex()
             .flex_1()
             .min_w_0()
@@ -374,9 +392,11 @@ impl Render for ChannelPane {
                             .text_color(rgb(theme::MUTED))
                             .child(if self.connected { format!("{retained}/{} · {}", self.timeline.borrow().capacity(), if following { "Latest" } else { "History" }) } else { self.connection.clone() }),
                     )
+                    .child(Button::new("find-chat").xsmall().label("⌕").tooltip("Find in chat · Ctrl+F").on_click(cx.listener(|this,_,w,cx|this.open_search(w,cx))))
                     .child(Button::new("close-pane").xsmall().label("×").tooltip("Close this split; keep draft")
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(PaneEvent::Close)))),
             )
+            .children(search_bar)
             .child(
                 div()
                     .id("transcript")
@@ -396,8 +416,8 @@ impl Render for ChannelPane {
                 this.copy(window, cx);
                 cx.stop_propagation();
             }))
-            .on_action(cx.listener(|this, _: &ClearChatSelection, _, cx| {
-                this.selection.borrow_mut().clear();
+            .on_action(cx.listener(|this, _: &ClearChatSelection, window, cx| {
+                if this.search.open {this.close_search(window,cx);}else{this.selection.borrow_mut().clear();}
                 cx.notify();
                 cx.stop_propagation();
             }))
@@ -426,6 +446,7 @@ impl Render for ChannelPane {
                                 return div().into_any_element();
                             };
                             let row = first_order + index as u64;
+                            let matches=search_hits.get(&row).cloned().unwrap_or_default();
                             let progress = entrances.iter().find(|entry| entry.row == row)
                                 .map(|entry| {
                                     let now = Instant::now();
@@ -439,6 +460,7 @@ impl Render for ChannelPane {
                             let eased = 1.0 - (1.0 - progress).powi(3);
                             div()
                                 .relative()
+                                .when(search_current==Some(row),|el|el.bg(rgb(0x272331)))
                                 .left(px(12.0 * (1.0 - eased)))
                                 .top(px(6.0 * (1.0 - eased)))
                                 .opacity(0.25 + 0.75 * eased)
@@ -451,10 +473,10 @@ impl Render for ChannelPane {
                                     div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(px(22.)).flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(emote_picker::icon(image,String::new(),18.,18.))
                                 }).collect::<Vec<_>>())
                                 .child(div().flex_1().min_w_0().child(if let Some(inline) = inline_chat::InlineChat::new(message, row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx) {
-                                    inline.into_any_element()
+                                    inline.with_search(matches).into_any_element()
                                 } else {
                                     ChatText::new(SharedString::from(format!("text-{}", message.id)), row, message.copy_line(), selection.clone(), focus.clone(), viewport.clone())
-                                        .with_author(&message.display_name, message.name_color).into_any_element()
+                                        .with_author(&message.display_name, message.name_color).with_search(matches).into_any_element()
                                 })))
                                 .into_any_element()
                         })
@@ -623,6 +645,11 @@ fn main() {
             workspace::bind_keys(cx);
             theme::install(cx);
             cx.bind_keys([
+                KeyBinding::new("ctrl-f", FindChat, Some("JawjackChannel")),
+                KeyBinding::new("cmd-f", FindChat, Some("JawjackChannel")),
+                KeyBinding::new("f3", NextChatMatch, Some("JawjackChannel")),
+                KeyBinding::new("shift-f3", PreviousChatMatch, Some("JawjackChannel")),
+                KeyBinding::new("shift-enter", PreviousChatMatch, Some("JawjackSearch")),
                 KeyBinding::new("tab", CompleteEmote, Some("JawjackComposer")),
                 KeyBinding::new("ctrl-c", CopyChatSelection, Some("ChatTranscript")),
                 KeyBinding::new("cmd-c", CopyChatSelection, Some("ChatTranscript")),
