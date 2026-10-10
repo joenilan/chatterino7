@@ -202,6 +202,38 @@ impl Catalog {
             .or_else(||self.community.global.ffz.get(token).or_else(||self.community.global.bttv.get(token)).cloned())
             .or_else(||self.global.get(token).map(make_seven))
     }
+    pub fn browser_collections(&mut self,current:&str)->Vec<crate::emote_picker::Collection>{
+        use crate::emote_picker::{BrowserChoice,Collection};
+        use crate::twitch_assets::Choice;
+        let effective=self.choices(current,"",usize::MAX).into_iter().map(|c|(c.label,c.key)).collect::<HashMap<_,_>>();
+        let seven=|set:&Emotes|set.iter().filter_map(|(name,e)|Some(Choice{label:name.clone(),provider:"7TV",key:Some(crate::media::EmoteKey::seven(&e.id,e.animated,&e.asset)?)})).collect::<Vec<_>>();
+        let community=|set:&crate::community::Set|set.ffz.iter().chain(set.bttv.iter()).filter_map(|(name,f)|{
+            if let Fragment::Emote{provider,id,animated,asset:Some(asset),..}=f{Some(Choice{label:name.clone(),provider:if provider=="ffz"{"FFZ"}else{"BTTV"},key:Some(crate::media::EmoteKey::community(provider,id,*animated,asset)?)})}else{None}
+        }).collect::<Vec<_>>();
+        let pack=|id:String,title:String,user:Option<String>,choices:Vec<Choice>|{
+            let mut items=choices.into_iter().map(|choice|BrowserChoice{available:effective.get(&choice.label)==Some(&choice.key),origin:title.clone(),choice}).collect::<Vec<_>>();
+            items.sort_by(|a,b|(a.choice.provider,a.choice.label.to_lowercase()).cmp(&(b.choice.provider,b.choice.label.to_lowercase())));
+            items.dedup_by(|a,b|a.choice.provider==b.choice.provider&&a.choice.label==b.choice.label&&a.choice.key==b.choice.key);
+            Collection{id,title,user,items}
+        };
+        let mut global=seven(&self.global);global.extend(community(&self.community.global));global.extend(self.twitch.global.emotes.clone());
+        let mut result=vec![pack("global".into(),"Global".into(),None,global)];
+        let mut personal=seven(&self.personal);
+        if let Some(user)=&self.personal_user{for id in self.entitlements.for_user(user){if let Some(set)=self.entitled_sets.get(id){personal.extend(seven(set));}}}
+        if let Some(user)=self.personal_user.clone(){self.profiles.request(&user);}
+        if !personal.is_empty(){result.push(pack("personal".into(),"Personal".into(),self.personal_user.clone(),personal));}
+        let mut channels=self.requested.iter().filter(|(name,_)|!name.is_empty()&&!name.starts_with(['@','#'])).map(|(name,(id,_))|(name.clone(),id.clone())).collect::<Vec<_>>();
+        channels.sort_by(|a,b|(a.0!=current,&a.0).cmp(&(b.0!=current,&b.0)));
+        for(name,id)in channels{
+            let mut choices=self.channels.get(&name).map(seven).unwrap_or_default();
+            if let Some(set)=self.community.channels.get(&name){choices.extend(community(set));}
+            self.profiles.request(&id);
+            result.push(pack(format!("channel:{name}"),format!("#{name}"),Some(id),choices));
+        }
+        let all=result.iter().filter(|c|c.id=="global"||c.id=="personal"||c.id==format!("channel:{current}")).flat_map(|c|c.items.iter().filter(|i|i.available).cloned()).collect();
+        result.insert(0,Collection{id:"all".into(),title:"Available here".into(),user:None,items:all});
+        result
+    }
     pub fn choices(&self,channel:&str,query:&str,limit:usize)->Vec<crate::twitch_assets::Choice>{
         let query=query.to_lowercase();let mut names=HashSet::new();
         names.extend(self.global.keys().cloned());

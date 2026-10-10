@@ -2,9 +2,10 @@
 use crate::{
     ChannelPane, ComposerFeedback, PaneEvent, media::DecodedMedia, theme, twitch_assets::Choice,
 };
+use gpui_kit::base::ElementExt;
 use gpui_kit::{
     component::{
-        Disableable, Sizable, StyledExt, WindowExt,
+        Sizable, StyledExt, WindowExt,
         button::Button,
         input::Textarea,
         notification::{Notification, NotificationDelivery},
@@ -13,16 +14,56 @@ use gpui_kit::{
     *,
 };
 use std::{ops::Range, sync::Arc};
-const PAGE: usize = 40;
+// Track visible popup bounds across panes so transcript capture handlers respect overlays.
+#[derive(Default)]
+struct BrowserOverlays(Vec<(WeakEntity<ChannelPane>, WindowId, Bounds<Pixels>)>);
+impl Global for BrowserOverlays {}
+pub fn covers(position: Point<Pixels>, window: &Window, cx: &App) -> bool {
+    cx.try_global::<BrowserOverlays>().is_some_and(|overlays| overlays.0.iter().any(|(owner, id, bounds)| {
+        *id == window.window_handle().window_id() && bounds.contains(&position)
+            && owner.upgrade().is_some_and(|pane| pane.read(cx).picker.open)
+    }))
+}
+#[derive(Clone)]
+pub struct BrowserChoice {
+    pub choice: Choice,
+    pub origin: String,
+    pub available: bool,
+}
+#[derive(Clone)]
+pub struct Collection {
+    pub id: String,
+    pub title: String,
+    pub user: Option<String>,
+    pub items: Vec<BrowserChoice>,
+}
+#[derive(Clone)]
+enum GridRow {
+    Heading(String),
+    Cells(Range<usize>),
+}
 #[derive(Default)]
 pub struct Picker {
     pub open: bool,
     pub generation: usize,
-    pub choices: Vec<Choice>,
-    pub page: usize,
     pub suggestions: Vec<Choice>,
     pub selected: usize,
     pub token: Option<(Range<usize>, String)>,
+    collections: Vec<Collection>,
+    collection: String,
+    service: String,
+    items: Vec<BrowserChoice>,
+    rows: Vec<GridRow>,
+    columns: usize,
+    current: usize,
+    hover_text: String,
+    scroll: UniformListScrollHandle,
+    tabs_scroll: ScrollHandle,
+}
+impl Picker {
+    pub fn inspection(&self) -> serde_json::Value {
+        serde_json::json!({"open":self.open,"collection":self.collection,"service":self.service,"matches":self.items.len(),"columns":self.columns,"virtual_rows":self.rows.len(),"selected":self.current,"collections":self.collections.iter().map(|c|serde_json::json!({"id":c.id,"title":c.title,"emotes":c.items.len()})).collect::<Vec<_>>()})
+    }
 }
 pub fn preview(image: Option<Arc<DecodedMedia>>, label: String) -> AnyElement {
     icon(image, label, 34., 30.)
@@ -70,12 +111,208 @@ pub fn icon(
 }
 impl ChannelPane {
     pub fn refresh_picker(&mut self, cx: &mut Context<Self>) {
-        let query = self.emote_search.read(cx).value().to_string();
-        self.picker.choices = self.catalog.borrow().choices(&self.name, &query, 10000);
-        self.picker.page = self
+        self.picker.collections = self.catalog.borrow_mut().browser_collections(&self.name);
+        if !self
             .picker
-            .page
-            .min(self.picker.choices.len().saturating_sub(1) / PAGE);
+            .collections
+            .iter()
+            .any(|c| c.id == self.picker.collection)
+        {
+            self.picker.collection = "all".into();
+        }
+        self.rebuild_browser(false, cx);
+    }
+    pub fn reset_browser_search(&mut self, cx: &mut Context<Self>) {
+        self.rebuild_browser(true, cx);
+    }
+    fn rebuild_browser(&mut self, reset: bool, cx: &mut Context<Self>) {
+        let query = self.emote_search.read(cx).value().to_lowercase();
+        let old = self.picker.items.get(self.picker.current).map(|i| {
+            (
+                i.choice.label.clone(),
+                i.choice.provider,
+                i.origin.clone(),
+                i.choice.key.clone(),
+            )
+        });
+        self.picker.items = self
+            .picker
+            .collections
+            .iter()
+            .find(|c| c.id == self.picker.collection)
+            .into_iter()
+            .flat_map(|c| c.items.iter())
+            .filter(|i| {
+                (self.picker.service.is_empty() || i.choice.provider == self.picker.service)
+                    && i.choice.label.to_lowercase().contains(&query)
+            })
+            .cloned()
+            .collect();
+        self.picker.items.sort_by(|a, b| {
+            (a.choice.provider, &a.origin, a.choice.label.to_lowercase()).cmp(&(
+                b.choice.provider,
+                &b.origin,
+                b.choice.label.to_lowercase(),
+            ))
+        });
+        self.picker.rows.clear();
+        let columns = self.picker.columns.max(1);
+        let mut start = 0;
+        while start < self.picker.items.len() {
+            let first = &self.picker.items[start];
+            let mut end = start + 1;
+            while end < self.picker.items.len()
+                && self.picker.items[end].choice.provider == first.choice.provider
+                && self.picker.items[end].origin == first.origin
+            {
+                end += 1;
+            }
+            self.picker.rows.push(GridRow::Heading(format!(
+                "{} · {} · {}",
+                first.choice.provider,
+                first.origin,
+                end - start
+            )));
+            for row in (start..end).step_by(columns) {
+                self.picker
+                    .rows
+                    .push(GridRow::Cells(row..(row + columns).min(end)));
+            }
+            start = end;
+        }
+        self.picker.current = if reset {
+            0
+        } else {
+            old.map(|key| {
+                self.picker
+                    .items
+                    .iter()
+                    .position(|i| {
+                        (
+                            i.choice.label.clone(),
+                            i.choice.provider,
+                            i.origin.clone(),
+                            i.choice.key.clone(),
+                        ) == key
+                    })
+                    .unwrap_or(usize::MAX)
+            })
+            .unwrap_or(0)
+        };
+        if reset {
+            self.picker.hover_text.clear();
+            self.picker
+                .scroll
+                .scroll_to_item_strict(0, ScrollStrategy::Top);
+        }
+    }
+    pub fn picker_action(
+        &mut self,
+        key: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.picker.open {
+            return false;
+        }
+        let len = self.picker.items.len();
+        match key {
+            "down" | "up" => {
+                if len > 0 {
+                    if let Some((row, range)) =
+                        self.picker.rows.iter().enumerate().find_map(|(row, r)| {
+                            if let GridRow::Cells(range) = r {
+                                range
+                                    .contains(&self.picker.current)
+                                    .then_some((row, range.clone()))
+                            } else {
+                                None
+                            }
+                        })
+                    {
+                        let column = self.picker.current - range.start;
+                        let target = if key == "down" {
+                            self.picker.rows.iter().skip(row + 1).find_map(|r| {
+                                if let GridRow::Cells(range) = r {
+                                    Some(range.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                        } else {
+                            self.picker.rows[..row].iter().rev().find_map(|r| {
+                                if let GridRow::Cells(range) = r {
+                                    Some(range.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                        };
+                        if let Some(target) = target {
+                            self.picker.current = target.start + column.min(target.len() - 1);
+                        }
+                    } else {
+                        self.picker.current = if key == "down" { 0 } else { len - 1 };
+                    }
+                }
+            }
+            "right" => {
+                if len > 0 {
+                    self.picker.current = if self.picker.current >= len {
+                        0
+                    } else {
+                        (self.picker.current + 1).min(len - 1)
+                    };
+                }
+            }
+            "left" => {
+                self.picker.current = if self.picker.current >= len {
+                    len.saturating_sub(1)
+                } else {
+                    self.picker.current.saturating_sub(1)
+                };
+            }
+            "enter" => {
+                if let Some(item) = self.picker.items.get(self.picker.current).cloned() {
+                    self.insert_browser_item(&item, window, cx);
+                }
+            }
+            _ => return false,
+        }
+        if let Some(row) =
+            self.picker.rows.iter().position(
+                |r| matches!(r,GridRow::Cells(range) if range.contains(&self.picker.current)),
+            )
+        {
+            self.picker
+                .scroll
+                .scroll_to_item(row, ScrollStrategy::Nearest);
+        }
+        self.picker.hover_text.clear();
+        window.prevent_default();
+        cx.stop_propagation();
+        cx.notify();
+        true
+    }
+    fn insert_browser_item(
+        &mut self,
+        item: &BrowserChoice,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let current = self
+            .catalog
+            .borrow()
+            .choices(&self.name, &item.choice.label, usize::MAX)
+            .into_iter()
+            .any(|c| c.label == item.choice.label && c.key == item.choice.key);
+        if current {
+            self.insert_emote(&item.choice, false, window, cx);
+        } else {
+            self.refresh_picker(cx);
+            window.push_notification(Notification::info("That emote is unavailable or its alias changed in this channel. Your draft is unchanged.").id::<ComposerFeedback>().delivery(NotificationDelivery::InApp),cx);
+            cx.notify();
+        }
     }
     pub fn complete_query(&mut self, forced: bool, cx: &mut Context<Self>) {
         self.picker.suggestions.clear();
@@ -105,13 +342,23 @@ impl ChannelPane {
             let mut seen = std::collections::HashSet::new();
             // Suggestions describe recent speakers, never a complete viewer roster.
             for message in self.timeline.borrow().messages().iter().rev() {
-                let Some(login) = message.login.as_deref().and_then(chat_core::twitch_login) else { continue; };
+                let Some(login) = message.login.as_deref().and_then(chat_core::twitch_login) else {
+                    continue;
+                };
                 if login.starts_with(&query) && seen.insert(login.clone()) {
-                    self.picker.suggestions.push(Choice { label: format!("@{login}"), provider: "Recent chatter", key: None });
-                    if self.picker.suggestions.len() == 8 { break; }
+                    self.picker.suggestions.push(Choice {
+                        label: format!("@{login}"),
+                        provider: "Recent chatter",
+                        key: None,
+                    });
+                    if self.picker.suggestions.len() == 8 {
+                        break;
+                    }
                 }
             }
-            if !self.picker.suggestions.is_empty() { self.picker.token = Some((start..range.end, raw.into())); }
+            if !self.picker.suggestions.is_empty() {
+                self.picker.token = Some((start..range.end, raw.into()));
+            }
             return;
         }
         let query = raw.strip_prefix(':').unwrap_or(raw);
@@ -130,6 +377,7 @@ impl ChannelPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let keep_open = self.picker.open && !completion;
         let input = self.draft.read(cx);
         let value = input.value().to_string();
         let mut range = input.selected_range();
@@ -178,7 +426,10 @@ impl ChannelPane {
             input.replace(replacement, window, cx);
             input.focus(window, cx);
         });
-        self.picker.open = false;
+        self.picker.open = keep_open;
+        if keep_open {
+            self.emote_search.update(cx, |s, cx| s.focus(window, cx));
+        }
         self.picker.suggestions.clear();
         self.picker.token = None;
         cx.emit(PaneEvent::DraftChanged);
@@ -197,8 +448,15 @@ impl ChannelPane {
         }
         cx.notify();
     }
-    pub fn completion_action(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        if self.picker.open {return false;}
+    pub fn completion_action(
+        &mut self,
+        key: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.picker.open {
+            return self.picker_action(key, window, cx);
+        }
         if key == "tab" && self.picker.suggestions.is_empty() {
             self.complete_query(true, cx);
         }
@@ -244,197 +502,255 @@ impl ChannelPane {
                     .text_color(rgb(theme::MUTED))
                     .child("Suggestions · ↑ ↓ choose · Enter / Tab inserts · Esc dismisses"),
             )
-            .children(items.into_iter().enumerate().skip((self.picker.selected / 4) * 4).take(4).map(|(i, choice)| {
-                let image = choice.key.as_ref().and_then(|key| self.media.borrow_mut().get(key, cx));
-                div()
-                    .id(("emote-suggest", i))
-                    .h_flex()
-                    .gap_2()
-                    .px_2()
-                    .rounded(px(4.))
-                    .cursor_pointer()
-                    .when(i == self.picker.selected, |el| el.bg(rgb(theme::HOVER)))
-                    .hover(|s| s.bg(rgb(theme::HOVER)))
-                    .child(preview(image, choice.label.clone()))
-                    .child(
+            .children(
+                items
+                    .into_iter()
+                    .enumerate()
+                    .skip((self.picker.selected / 4) * 4)
+                    .take(4)
+                    .map(|(i, choice)| {
+                        let image = choice
+                            .key
+                            .as_ref()
+                            .and_then(|key| self.media.borrow_mut().get(key, cx));
                         div()
-                            .flex_1()
-                            .text_size(px(12.))
-                            .child(choice.label.clone()),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(theme::MUTED))
-                            .child(choice.provider),
-                    )
-                    .on_mouse_down(MouseButton::Left, |_, window, cx| {
-                        window.prevent_default();
-                        cx.stop_propagation();
-                    })
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.insert_emote(&choice, true, window, cx)
-                    }))
-            }))
-            .into_any_element()
-    }
-    pub fn render_picker(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let reduced = cx.reduce_motion();
-        let total = self.picker.choices.len();
-        let start = self.picker.page * PAGE;
-        let choices: Vec<_> = self
-            .picker
-            .choices
-            .iter()
-            .skip(start)
-            .take(PAGE)
-            .cloned()
-            .collect();
-        let mut rows = Vec::new();
-        for (row, chunk) in choices.chunks(5).enumerate() {
-            let mut cells = Vec::new();
-            for (col, choice) in chunk.iter().cloned().enumerate() {
-                let image = choice.key.as_ref().and_then(|key| self.media.borrow_mut().get(key, cx));
-                let tooltip = format!(
-                    "{} · {} · Insert into #{}",
-                    choice.label, choice.provider, self.name
-                );
-                let clicked = choice.clone();
-                cells.push(
-                    div()
-                        .id(("emote-choice", row * 5 + col))
-                        .v_flex()
-                        .flex_1()
-                        .min_w_0()
-                        .h(px(54.))
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(4.))
-                        .cursor_pointer()
-                        .hover(|s| s.bg(rgb(theme::HOVER)))
-                        .tooltip(move |window, cx| {
-                            gpui_kit::component::tooltip::Tooltip::new(tooltip.clone())
-                                .build(window, cx)
-                        })
-                        .child(preview(image, choice.label.clone()))
-                        .child(
-                            div()
-                                .text_size(px(10.))
-                                .overflow_hidden()
-                                .child(choice.label),
-                        )
-                        .on_mouse_down(MouseButton::Left, |_, window, cx| {
-                            window.prevent_default();
-                            cx.stop_propagation();
-                        })
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.insert_emote(&clicked, false, window, cx)
-                        })),
-                );
-            }
-            rows.push(div().h_flex().gap_1().children(cells));
-        }
-        div()
-            .v_flex()
-            .gap_2()
-            .p_3()
-            .bg(rgb(theme::CANVAS))
-            .border_1()
-            .border_color(rgb(theme::BORDER))
-            .rounded(px(6.))
-
-            .child(
-                div()
-                    .h_flex()
-                    .justify_between()
-                    .child(
-                        div()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_size(px(12.))
-                            .child(format!("Emotes · #{}", self.name)),
-                    )
-                    .child(
-                        Button::new("emotes-close")
-                            .xsmall()
-                            .label("×")
-                            .tooltip("Close emotes")
-                            .on_click(cx.listener(|this, _, w, cx| this.toggle_picker(w, cx))),
-                    ),
-            )
-            .child(Textarea::new(&self.emote_search))
-            .child(
-                div()
-                    .id("emote-grid")
-                    .v_flex()
-                    .max_h(px(228.))
-                    .overflow_y_scroll()
-                    .gap_1()
-                    .children(rows)
-                    .when(total == 0, |el| {
-                        el.child(
-                            div()
-                                .p_3()
-                                .text_size(px(12.))
-                                .text_color(rgb(theme::MUTED))
-                                .child("No matching emotes yet. Catalogs load with your channel."),
-                        )
+                            .id(("emote-suggest", i))
+                            .h_flex()
+                            .gap_2()
+                            .px_2()
+                            .rounded(px(4.))
+                            .cursor_pointer()
+                            .when(i == self.picker.selected, |el| el.bg(rgb(theme::HOVER)))
+                            .hover(|s| s.bg(rgb(theme::HOVER)))
+                            .child(preview(image, choice.label.clone()))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .text_size(px(12.))
+                                    .child(choice.label.clone()),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(10.))
+                                    .text_color(rgb(theme::MUTED))
+                                    .child(choice.provider),
+                            )
+                            .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                                window.prevent_default();
+                                cx.stop_propagation();
+                            })
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.insert_emote(&choice, true, window, cx)
+                            }))
                     }),
             )
-            .child(
+            .into_any_element()
+    }
+    pub fn render_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let reduced = cx.reduce_motion();
+        let height = (f32::from(window.viewport_size().height) - 70.).clamp(180., 390.);
+        let width = self
+            .viewport
+            .borrow()
+            .map(|b| f32::from(b.size.width))
+            .unwrap_or(320.)
+            .clamp(260., 460.)
+            .min(f32::from(window.viewport_size().width) - 16.);
+        let compact = height < 260.;
+        let owner = cx.entity().downgrade();
+        let popup_owner = owner.clone();
+        let columns = self.picker.columns;
+        let mut tabs = Vec::new();
+        for collection in self
+            .picker
+            .collections
+            .iter()
+            .map(|c| Collection {
+                id: c.id.clone(),
+                title: c.title.clone(),
+                user: c.user.clone(),
+                items: Vec::new(),
+            })
+            .collect::<Vec<_>>()
+        {
+            let selected = self.picker.collection == collection.id;
+            let avatar = collection.user.as_deref().and_then(|id| {
+                self.catalog
+                    .borrow()
+                    .profiles
+                    .get(id)
+                    .and_then(|p| p.avatar.clone())
+            });
+            let image = avatar
+                .as_ref()
+                .and_then(|key| self.media.borrow_mut().get(key, cx));
+            let fallback = match collection.id.as_str() {
+                "all" => "All".into(),
+                "global" => "◎".into(),
+                "personal" => "★".into(),
+                _ => collection
+                    .title
+                    .trim_start_matches('#')
+                    .chars()
+                    .take(2)
+                    .collect::<String>()
+                    .to_uppercase(),
+            };
+            let title = collection.title.clone();
+            let id = collection.id.clone();
+            tabs.push(
                 div()
-                    .h_flex()
-                    .justify_between()
-                    .text_size(px(10.))
-                    .text_color(rgb(theme::MUTED))
-                    .child(format!("{} emotes · Twitch · 7TV · BTTV · FFZ", total))
-                    .child(
-                        div()
-                            .h_flex()
-                            .gap_1()
-                            .child(
-                                Button::new("emotes-prev")
-                                    .xsmall()
-                                    .label("‹")
-                                    .disabled(self.picker.page == 0)
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.picker.page = this.picker.page.saturating_sub(1);
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(format!(
-                                "{} / {}",
-                                self.picker.page + 1,
-                                total.div_ceil(PAGE).max(1)
-                            ))
-                            .child(
-                                Button::new("emotes-next")
-                                    .xsmall()
-                                    .label("›")
-                                    .disabled(start + PAGE >= total)
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.picker.page += 1;
-                                        cx.notify();
-                                    })),
-                            ),
-                    ),
-            )
-            .relative()
-            .with_animation(
-                ("picker-reveal", self.picker.generation),
-                Animation::new(std::time::Duration::from_millis(if reduced {
-                    1
-                } else {
-                    160
-                })),
-                move |el, p| {
-                    if reduced {
-                        el
+                    .id(SharedString::from(format!(
+                        "emote-origin-{}",
+                        collection.id
+                    )))
+                    .size(px(32.))
+                    .flex_shrink_0()
+                    .rounded(px(6.))
+                    .overflow_hidden()
+                    .border_1()
+                    .border_color(if selected {
+                        rgb(0xB9A1FF)
                     } else {
-                        let eased = 1. - (1. - p).powi(3);
-                        el.opacity(eased).top(px(6. * (1. - eased)))
+                        rgba(0x00000000)
+                    })
+                    .bg(if selected {
+                        rgb(theme::HOVER)
+                    } else {
+                        rgb(theme::PANEL)
+                    })
+                    .cursor_pointer()
+                    .hover(|s| s.bg(rgb(theme::HOVER)))
+                    .tooltip(move |w, cx| {
+                        gpui_kit::component::tooltip::Tooltip::new(title.clone()).build(w, cx)
+                    })
+                    .child(icon(image, fallback, 30., 30.))
+                    .on_mouse_down(MouseButton::Left, |_, w, cx| {
+                        w.prevent_default();
+                        cx.stop_propagation();
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.picker.collection = id.clone();
+                        this.rebuild_browser(true, cx);
+                        cx.notify();
+                    })),
+            );
+        }
+        let mut services = Vec::new();
+        for (id, label, mark, color) in [
+            ("", "All services", "≡", theme::MUTED),
+            ("Twitch", "Twitch", "T", 0xB9A1FF),
+            ("7TV", "7TV", "7TV", 0xA7DBCE),
+            ("BTTV", "BetterTTV", "BTTV", 0xF1B4BA),
+            ("FFZ", "FrankerFaceZ", "FFZ", 0xE9C99C),
+        ] {
+            let selected = self.picker.service == id;
+            services.push(
+                div()
+                    .id(SharedString::from(format!("emote-service-{id}")))
+                    .w(px(34.))
+                    .h(px(28.))
+                    .flex_shrink_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(4.))
+                    .text_size(px(13.))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(rgb(color))
+                    .bg(if selected {
+                        rgb(theme::HOVER)
+                    } else {
+                        rgb(theme::CANVAS)
+                    })
+                    .border_b_2()
+                    .border_color(if selected {
+                        rgb(color)
+                    } else {
+                        rgba(0x00000000)
+                    })
+                    .cursor_pointer()
+                    .hover(|s| s.bg(rgb(theme::HOVER)))
+                    .tooltip(move |w, cx| {
+                        gpui_kit::component::tooltip::Tooltip::new(label).build(w, cx)
+                    })
+                    .child(mark)
+                    .on_mouse_down(MouseButton::Left, |_, w, cx| {
+                        w.prevent_default();
+                        cx.stop_propagation();
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.picker.service = id.into();
+                        this.rebuild_browser(true, cx);
+                        cx.notify();
+                    })),
+            );
+        }
+        let (compact_services, bottom_services) = if compact {
+            (services, Vec::new())
+        } else {
+            (Vec::new(), services)
+        };
+        let title = self
+            .picker
+            .collections
+            .iter()
+            .find(|c| c.id == self.picker.collection)
+            .map(|c| c.title.clone())
+            .unwrap_or_default();
+        let details = if !self.picker.hover_text.is_empty() {
+            self.picker.hover_text.clone()
+        } else {
+            self.picker
+                .items
+                .get(self.picker.current)
+                .map(|i| {
+                    format!(
+                        "{} · {}",
+                        i.choice.label,
+                        if i.available {
+                            "Enter inserts · Alt ← → selects"
+                        } else {
+                            "Unavailable or shadowed here"
+                        }
+                    )
+                })
+                .unwrap_or_else(|| "Scroll to browse · Esc closes".into())
+        };
+        div().id("emote-browser").occlude().v_flex().h(px(height)).w(px(width)).min_w_0().overflow_hidden().p_2().gap_1().bg(rgb(theme::CANVAS)).border_1().border_color(rgb(theme::BORDER)).rounded(px(6.))
+            .on_prepaint(move|bounds,window,cx|{
+                let mut entries=cx.try_global::<BrowserOverlays>().map(|v|v.0.clone()).unwrap_or_default();
+                entries.retain(|(owner,_,_)|owner!=&popup_owner && owner.upgrade().is_some_and(|p|p.read(cx).picker.open));
+                entries.push((popup_owner.clone(),window.window_handle().window_id(),bounds));
+                cx.set_global(BrowserOverlays(entries));
+            })
+            .on_mouse_down(MouseButton::Left,|_,_,cx|cx.stop_propagation())
+            .on_scroll_wheel(|_,_,cx|cx.stop_propagation())
+            .when(!compact,|el|el.child(div().h(px(18.)).flex_shrink_0().text_size(px(11.)).overflow_hidden().child(format!("{title} · {} emotes",self.picker.items.len()))))
+            .child(div().h_flex().min_w_0().gap_1().flex_shrink_0().child(div().flex_1().min_w_0().child(Textarea::new(&self.emote_search))).child(Button::new("emotes-close").xsmall().label("×").tooltip("Close emotes · Esc").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
+            .child(div().id("emote-origin-tabs").h_flex().h(px(34.)).flex_shrink_0().gap_1().overflow_x_scroll().track_scroll(&self.picker.tabs_scroll).children(compact_services).children(tabs))
+            .child(div().flex_1().min_h_0().w_full().overflow_hidden().on_prepaint(move|bounds,_,cx|{
+                let next=((f32::from(bounds.size.width)+4.)/44.).floor().max(1.)as usize;
+                if next!=columns{let owner=owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|this,cx|{if this.picker.columns!=next{this.picker.columns=next;this.rebuild_browser(false,cx);if let Some(row)=this.picker.rows.iter().position(|r|matches!(r,GridRow::Cells(range)if range.contains(&this.picker.current))){this.picker.scroll.scroll_to_item(row,ScrollStrategy::Nearest);}cx.notify();}});});}
+            }).when(self.picker.items.is_empty(),|el|el.child(div().p_2().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("No emotes in this collection/filter yet.")))
+            .when(!self.picker.items.is_empty(),|el|el.child(uniform_list("emote-browser-grid",self.picker.rows.len(),cx.processor(|this,range:Range<usize>,_,cx|{
+                range.map(|row|{
+                    match this.picker.rows[row].clone(){
+                        GridRow::Heading(title)=>div().h(px(44.)).w_full().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(title).into_any_element(),
+                        GridRow::Cells(range)=>{
+                            let mut cells=Vec::new();for index in range{
+                                let item=this.picker.items[index].clone();let image=item.choice.key.as_ref().and_then(|key|this.media.borrow_mut().get(key,cx));let clicked=item.clone();
+                                let tooltip=format!("{} · {} · {}{}",item.choice.label,item.choice.provider,item.origin,if item.available{""}else{" · Not available with this alias in the current channel"});let hover=tooltip.clone();
+                                cells.push(div().id(("emote-browser-cell",index)).size(px(40.)).flex_shrink_0().flex().items_center().justify_center().rounded(px(4.)).border_1().border_color(if index==this.picker.current{rgb(0xB9A1FF)}else{rgba(0x00000000)}).opacity(if item.available{1.}else{0.4}).cursor_pointer().hover(|s|s.bg(rgb(theme::HOVER))).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(w,cx)).child(icon(image,item.choice.label,34.,34.)).on_hover(cx.listener(move|this,over,_,cx|{if *over{this.picker.hover_text=hover.clone();this.picker.current=index;cx.notify();}})).on_mouse_down(MouseButton::Left,|_,w,cx|{w.prevent_default();cx.stop_propagation();}).on_click(cx.listener(move|this,_,w,cx|{this.insert_browser_item(&clicked,w,cx);})));
+                            }
+                            div().h(px(44.)).h_flex().gap_1().children(cells).into_any_element()
+                        }
                     }
-                },
-            )
+                }).collect()
+            })).track_scroll(&self.picker.scroll).h_full().w_full())))
+            .when(!compact,|el|el.child(div().id("emote-services").h_flex().h(px(28.)).flex_shrink_0().gap_1().overflow_x_scroll().children(bottom_services)))
+            .when(!compact,|el|el.child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).overflow_hidden().h(px(14.)).flex_shrink_0().child(details)))
+            .relative().with_animation(("picker-reveal",self.picker.generation),Animation::new(std::time::Duration::from_millis(if reduced{1}else{140})),move|el,p|if reduced{el}else{el.opacity(p).top(px(5.*(1.-p)))})
             .into_any_element()
     }
 }

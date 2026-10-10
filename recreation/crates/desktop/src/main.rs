@@ -154,7 +154,7 @@ impl ChannelPane {
         })
         .detach();
         let emote_search=cx.new(|cx|TextareaState::new(window,cx).auto_grow(1,1).placeholder("Search emotes…"));
-        cx.subscribe_in(&emote_search,window,|this:&mut Self,_,event,_,cx|{if matches!(event,InputEvent::Change){this.picker.page=0;this.refresh_picker(cx);cx.notify();}}).detach();
+        cx.subscribe_in(&emote_search,window,|this:&mut Self,_,event,_,cx|{if matches!(event,InputEvent::Change){this.reset_browser_search(cx);cx.notify();}}).detach();
         let search=chat_search::create(window,cx);
         let scroller = cx.new(|cx| MessageScrollerState::new(timeline.messages().len(), cx));
         cx.observe(&scroller, |_, _, cx| cx.notify()).detach();
@@ -368,8 +368,11 @@ impl ChannelPane {
     }
 }
 impl Render for ChannelPane {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let picker = self.picker.open.then(||self.render_picker(cx));
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let picker = (self.picker.open&&!window.has_active_dialog(cx)).then(||{
+            let position=self.viewport.borrow().map(|b|point(b.origin.x,b.bottom())).unwrap_or(point(px(8.),window.viewport_size().height-px(60.)));
+            deferred(anchored().anchor(Anchor::BottomLeft).position(position).snap_to_window_with_margin(px(8.)).child(self.render_picker(window,cx))).with_priority(1).into_any_element()
+        });
         let suggestions = (!self.picker.suggestions.is_empty()&&!self.picker.open).then(||self.render_suggestions(cx));
         let catalog=self.catalog.clone();
         let timestamps=self.timestamps;
@@ -387,6 +390,7 @@ impl Render for ChannelPane {
         let focus = self.focus.clone();
         let viewport = self.viewport.clone();
         let viewport_layout = self.viewport.clone();
+        let picker_layout_owner=cx.entity().downgrade();let picker_is_open=self.picker.open;
         let finish = self.selection.clone();
         let copy_owner = cx.weak_entity();
         let menu_owner = cx.weak_entity();
@@ -485,8 +489,10 @@ impl Render for ChannelPane {
                 cx.notify();
                 cx.stop_propagation();
             }))
-                    .on_prepaint(move |bounds, _, _| {
+                    .on_prepaint(move |bounds, _, cx| {
+                        let changed=*viewport_layout.borrow()!=Some(bounds);
                         *viewport_layout.borrow_mut() = Some(bounds);
+                        if changed&&picker_is_open{let owner=picker_layout_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}
                     })
                     .when(retained == 0, |el| el.child(div().v_flex().p_6().gap_2().text_color(rgb(theme::MUTED))
                         .child(div().text_color(rgb(theme::TEXT)).text_size(px(16.)).child(format!("#{} is ready", self.name)))
@@ -567,9 +573,12 @@ impl Render for ChannelPane {
                         .h_full(),
                     ),
             )
-            .child(div().key_context("JawjackComposer").v_flex().p_1().gap_1().bg(rgb(theme::PANEL)).border_t_1().border_color(rgb(theme::BORDER))
+            .child(div().key_context("JawjackComposer").relative().v_flex().p_1().gap_1().bg(rgb(theme::PANEL)).border_t_1().border_color(rgb(theme::BORDER))
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                    if this.picker.open { return; }
+                    if this.picker.open {
+                        if event.keystroke.modifiers.alt && matches!(event.keystroke.key.as_str(),"left"|"right"){this.picker_action(&event.keystroke.key,window,cx);}
+                        return;
+                    }
                     if event.keystroke.key == "enter" && event.keystroke.modifiers.shift {
                         window.prevent_default();
                         cx.stop_propagation();
@@ -588,7 +597,7 @@ impl Render for ChannelPane {
                     // InputEvent::PressEnter after inserting a completion.
                     if !action.shift {
                         if this.picker.open {
-                            if let Some(choice)=this.picker.choices.get(this.picker.page*40).cloned(){this.insert_emote(&choice,false,window,cx);}
+                            this.picker_action("enter",window,cx);
                         } else if !this.completion_action("enter",window,cx) {this.submit(window,cx);}
                     }
                     cx.stop_propagation();
@@ -640,6 +649,7 @@ impl Render for ChannelPane {
                         let copy_viewport = copy_viewport.clone();
                         window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
                             if phase.capture() && event.button == MouseButton::Right && !window.has_active_dialog(cx)
+                                && !emote_picker::covers(event.position,window,cx)
                                 && copy_viewport.borrow().is_some_and(|bounds| bounds.contains(&event.position))
                             {
                                 let copied=copy_owner.update(cx, |pane, cx| {
