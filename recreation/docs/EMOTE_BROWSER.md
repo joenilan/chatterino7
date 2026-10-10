@@ -77,13 +77,13 @@ The base request has no broadcaster context; subscriber-unlocked follower emotes
 returned by Twitch are retained. Additional follower-only channel-context queries
 remain future work and must not grant global availability.
 
-Existing chat login requests are unchanged. **Enable subscription emotes** in the
-account popup starts an explicit same-account permission upgrade. The existing
-session remains available during the device flow; cancellation or an unsuccessful
-upgrade preserves it subject to its original expiry. Authorizing a different account
-is rejected before replacing stored credentials. The picker has an Account shortcut
-and always shows inventory status in All/Twitch views, including when other catalogs
-already contain emotes. The agent must not approve a grant on the owner's behalf.
+Normal Twitch sign-in requests chat and `user:read:emotes` together, then loads the
+account inventory automatically. There is no separate enable button or feature toggle.
+An older saved chat-only login remains usable for chat; the account popup explains
+that the owner should sign out and sign in once to update its permissions. The picker
+has an Account shortcut and shows inventory status even when other catalogs already
+contain emotes. Permission consent remains with the owner during ordinary Twitch
+sign-in. No grant is initiated automatically on application launch.
 
 Inventory work is isolated from chat, cancels stale account generations, and is
 bounded to 32 pages, 20,000 entries, 90 seconds and 4 MiB per response. Cursor loops
@@ -92,5 +92,5 @@ The inventory refreshes periodically; failed retrieval clears uncertain availabi
 Profiles are fetched through the existing bounded metadata owner. No account token
 or inventory is written into ordinary workspace settings.
 
-Linux compilation is verified. Real subscription loading, owner permission approval,
+Linux compilation is verified. Real subscription loading, normal sign-in permission approval,
 and populated owner-tab behavior still require authenticated native verification.

@@ -27,8 +27,10 @@ must settle before another sign-in or removal starts.
 - Retrying reads the existing vault and can restore saved credentials after recovery.
 - Tokens never fall back to workspace files or plaintext settings.
 - Copying a device code gives a temporary **Copied!** label.
-- Validated granted scopes are retained as metadata; the requested chat scopes have
-  not been broadened. Additional grants remain a deliberate future feature flow.
+- Validated scopes are retained as metadata. Normal sign-in includes chat and
+  account-emote reading, with consent through Twitch. Older chat-only saved sessions
+  stay usable and can be updated by signing out and in once. Inventory loads
+  automatically; there is no separate enable button.
 
 ## Verification and remaining work
 

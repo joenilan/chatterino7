@@ -33,7 +33,7 @@ impl Inventory {
             self.inflight=false; self.items.clear(); self.expires=None; self.next=Instant::now(); changed=true;
             self.status=match &self.identity {
                 None=>"Sign in to load subscription emotes",
-                Some(i) if !i.can_read_emotes=>"Enable subscription emotes in Account to load your Twitch inventory",
+                Some(i) if !i.can_read_emotes=>"Sign in again once to update this older login; subscription emotes then load automatically",
                 _=>"Loading subscription emotes…",
             }.into();
         }
