@@ -76,7 +76,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | AC09 | Shared Chat provenance | Part | Cross-source reply guard only; origin IDs, badges, source routing/dedup/moderation still missing. | providers/twitch/TwitchChannel.cpp; messages/MessageBuilder.cpp |
 | AC10 | Recent history/backfill | Research | Retained history exists; optional recent-message service, trust/privacy/source choice and prepend anchors do not. | providers/recentmessages |
 | AC11 | Bounded retention | Part | Native history cap/settings observed; day-long memory, selected/pruned rows and all duplicate-view edges remain. | common/Channel.cpp; widgets/helper/ChannelView.cpp |
-| AC12 | Room settings and capability state | Next | Initial snapshot plus changes, account role/scope model, meaningful composer restrictions. | providers/twitch/api; widgets/splits/SplitHeader.cpp |
+| AC12 | Room settings and capability state | Part | Public initial snapshot/live updates and compact hints implemented; native pending. Account role/exemption model remains. | providers/twitch/api; widgets/splits/SplitHeader.cpp |
 
 ### Reading and navigation
 
@@ -102,7 +102,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | WS03 | Per-view composer and draft ownership | V | Native tab/group changes and reply-target persistence accepted; future account/provider changes must preserve it. | widgets/splits/SplitInput.cpp |
 | WS04 | Sidebar and live-only filters | Part | Existing user workflow; hidden unread discovery in new activity batch awaits native acceptance. | widgets/splits/SplitHeader.cpp |
 | WS05 | Broadcast status | Part | Native live/offline pastel markers observed; unknown/stale edges remain. Broadcast state must remain distinct from chat connection. | widgets/splits/SplitHeader.cpp |
-| WS06 | Stream title/game/viewers/uptime | Next | Compact channel popover/header details without permanent toolbar clutter. | widgets/splits/SplitHeader.cpp |
+| WS06 | Stream title/game/viewers/uptime | Part | Ctrl+I/context-menu details, title/category/viewers/language/start timestamp implemented; native pending. Live elapsed-uptime formatting remains. | widgets/splits/SplitHeader.cpp |
 | WS07 | Quick switcher and visit history | Backlog | Keyboard-first workspace/channel switching, recent navigation and neighbor-pane focus. | widgets/dialogs/switcher; Notebook |
 | WS08 | Multiple windows and popouts | Backlog | Independent windows, split/workspace popout, cross-window drag and persisted geometry. | widgets/Window.cpp; common/WindowDescriptors |
 | WS09 | Overlay and attached windows | Backlog | Always-on-top, transparency/click-through and deliberate interaction modes; browser attachment later. | widgets/OverlayWindow; AttachedWindow; FramelessEmbedWindow |
@@ -229,7 +229,7 @@ implement them. **Receive/render and send/act have independent statuses.**
 | TW11 | Pinned Cheers | Research | Separate product feature from moderator pins. Do not route it through the mod-pin API merely because both use the word “pinned.” |
 | TW12 | Personal Twitch emote entitlements | Backlog | Paginated Get User Emotes and channel context for follower emotes. Distinguish catalog availability from permission to send. Requires an additional approved scope. |
 | TW13 | Current badge metadata | Part | Existing global/channel badge rendering; preserve newer metadata, tier/flair distinctions and unknown badge types rather than dropping them. |
-| TW14 | Initial and changing room restrictions | Next | Fetch initial settings, then reconcile live updates. Composer explains slow/follower/subscriber/emote-only or verification restrictions without erasing drafts. |
+| TW14 | Initial and changing room restrictions | P | Fetch initial settings, then reconcile live updates. Composer explains slow/follower/subscriber/emote-only or verification restrictions without erasing drafts. |
 | TW15 | Held, rejected and uncertain messages | Part | Existing drop/uncertainty feedback; add held-message lifecycle and better structured reasons. Never blindly resend an ambiguous POST. |
 | TW16 | New event and fragment types | Part | Preserve unknown identifiers and display a useful fallback. Schema changes must not make messages disappear. |
 

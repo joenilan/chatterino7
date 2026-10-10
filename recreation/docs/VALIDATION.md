@@ -492,3 +492,31 @@ independently with a visible partial-service status; metadata refresh preserves 
 successful categories; fragment-text mismatch copies original text only once; GIF
 animation cache admission falls back to static under budget pressure with cooldown
 instead of continuously evicting/reloading other visible animations.
+
+## 2026-10-10 — B2 channel context, native pending
+
+Added Ctrl+I/tab context-menu channel details, batched live metadata, title-copy
+feedback and separate broadcast/chat state. Public room snapshots plus live settings
+events normalize REST/EventSub duration fields. Optional room feeds follow mandatory
+redaction subscriptions; delayed snapshots cannot replace newer updates. Unknown
+room settings are explicit; sending remains server-authoritative. Current native
+B1 checks run independently; no B2 native acceptance is claimed before its handoff.
+
+B2 source review corrected Ctrl+I target resolution to focused visible pane, avoided
+blocking chat startup with optional settings fetch via one bounded snapshot worker,
+and seeded duplicate channel panes from existing connection/room state. Final Linux
+build passed on this source; native checks remain pending.
+
+### 317c9b4 B1 Windows result
+
+Rust1.99 locked release exit0,36.39s, clean checkout. Real incoming chat,
+badges/emotes, normal/360×280 layouts, drag selection and Select All copying passed
+(clipboard_verified). Summit/Jenny connected without optional-notice warning.
+One server notice was received among189 Summit messages; its rendered row was not
+captured, so visual notice acceptance remains pending. No GIF/Cheer/reward/intro/
+Power-up/gigantify events occurred; do not claim those rendered branches verified.
+Drafts/replydrafts/preferences matched pre-update snapshot; font14/history10000,
+sidebarhidden/livefilter/originalgeometry restored. Jenny restored and captured,
+but a later inspection showed Summit without another control tab action; cause
+unknown and possible owner change was preserved. PID17480,
+session`jj-manual-317c9b4a-rich`. No sends/purchases/auth/moderation/source changes.

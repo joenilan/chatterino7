@@ -609,3 +609,22 @@ Source/build support does not establish live acceptance of rare events. Record t
 specific received types actually observed in VALIDATION.md; never generate paid events
 or send test chat just to fill coverage. Full Shared Chat routing, exact Power-up
 reproduction, personal emote entitlements and moderator pins remain separate work.
+
+## B2: compact channel context (2026-10-10)
+
+Channel details are available from a channel-tab context menu or Ctrl+I; metadata
+is also summarized on hover. Live title, category, viewers, language and start time
+reuse the existing batched Get Streams request and three-minute freshness policy.
+No extra permanent toolbar or per-hover network request. Offline/unknown broadcast
+state remains distinct from chat connectivity. The dialog body scrolls independently
+with accessible dismissal at compact sizes; stream title copying has feedback.
+
+Public room modes use Get Chat Settings without moderator_id plus
+channel.chat_settings.update with the existing user:read:chat grant. REST/EventSub
+name differences for follower duration and slow wait are normalized. A delayed
+initial snapshot cannot overwrite a newer event; reconnect clears old room state.
+Optional room-event subscription failure is visible but cannot prevent required
+chat deletion/clear subscriptions. Compact composer hints explain restrictions;
+the client does not infer subscription/role exemptions or falsely block sending.
+Sources: https://dev.twitch.tv/docs/api/reference/#get-chat-settings and
+https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-settings-update-event

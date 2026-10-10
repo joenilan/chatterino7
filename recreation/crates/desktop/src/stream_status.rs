@@ -2,10 +2,12 @@
 use crate::{auth::CLIENT_ID,live::Identity};
 use std::{collections::HashMap,io::Read,sync::mpsc,time::{Duration,Instant}};
 use serde_json::Value;
+#[derive(Clone,Default)]
+pub struct StreamInfo {pub live:bool,pub title:String,pub category:String,pub viewers:u64,pub started_at:String,pub language:String}
 struct Job {epoch:u64,identity:Identity,channels:Vec<String>}
 pub struct Streams {
     identity:Option<Identity>,channels:Vec<String>,epoch:u64,pending:bool,last:Instant,
-    values:HashMap<String,(bool,Instant)>,tx:mpsc::SyncSender<Job>,rx:mpsc::Receiver<(u64,Option<HashMap<String,bool>>)>,
+    values:HashMap<String,(StreamInfo,Instant)>,tx:mpsc::SyncSender<Job>,rx:mpsc::Receiver<(u64,Option<HashMap<String,StreamInfo>>)>,
 }
 impl Streams {
     pub fn new()->Self {
@@ -16,7 +18,11 @@ impl Streams {
         });
         Self{identity:None,channels:vec![],epoch:0,pending:false,last:Instant::now()-Duration::from_secs(60),values:HashMap::new(),tx,rx}
     }
-    pub fn get(&self,name:&str)->Option<bool>{self.values.get(name).filter(|(_,at)|at.elapsed()<Duration::from_secs(180)).map(|(live,_)|*live)}
+    pub fn get(&self,name:&str)->Option<bool>{self.values.get(name).filter(|(_,at)|at.elapsed()<Duration::from_secs(180)).map(|(info,_)|info.live)}
+    pub fn detail(&self,name:&str)->Option<(&StreamInfo,u64)>{self.values.get(name).filter(|(_,at)|at.elapsed()<Duration::from_secs(180)).map(|(info,at)|(info,at.elapsed().as_secs()))}
+    pub fn summary(&self,name:&str)->String {
+        match self.detail(name){Some((info,_)) if info.live=>format!("{} · {} · {} viewers",info.title,info.category,info.viewers),Some(_)=>"Stream offline · chat may still be connected".into(),None=>"Stream metadata unavailable or refreshing".into()}
+    }
     pub fn pump(&mut self,identity:Option<Identity>,mut channels:Vec<String>)->bool {
         channels.sort();channels.dedup();let mut changed=false;
         if self.identity!=identity||self.channels!=channels {
@@ -32,7 +38,7 @@ impl Streams {
         changed
     }
 }
-fn load(client:&reqwest::blocking::Client,identity:&Identity,channels:&[String])->Option<HashMap<String,bool>> {
+fn load(client:&reqwest::blocking::Client,identity:&Identity,channels:&[String])->Option<HashMap<String,StreamInfo>> {
     let mut result=HashMap::new();
     for chunk in channels.chunks(100){
         let mut params=vec![("first","100")];params.extend(chunk.iter().map(|c|("user_login",c.as_str())));
@@ -40,8 +46,8 @@ fn load(client:&reqwest::blocking::Client,identity:&Identity,channels:&[String])
         if !response.status().is_success(){return None;}
         let mut bytes=vec![];response.take(4*1024*1024+1).read_to_end(&mut bytes).ok()?;if bytes.len()>4*1024*1024{return None;}
         let value:Value=serde_json::from_slice(&bytes).ok()?;let data=value["data"].as_array()?;
-        for name in chunk{result.insert(name.clone(),false);}
-        for entry in data {let name=entry["user_login"].as_str()?.to_ascii_lowercase();if result.contains_key(&name){result.insert(name,entry["type"].as_str()==Some("live"));}}
+        for name in chunk{result.insert(name.clone(),StreamInfo::default());}
+        for entry in data {let name=entry["user_login"].as_str()?.to_ascii_lowercase();if result.contains_key(&name){result.insert(name,StreamInfo{live:entry["type"].as_str()==Some("live"),title:entry["title"].as_str().unwrap_or("").chars().take(300).collect(),category:entry["game_name"].as_str().unwrap_or("").chars().take(100).collect(),viewers:entry["viewer_count"].as_u64().unwrap_or(0),started_at:entry["started_at"].as_str().unwrap_or("").chars().take(40).collect(),language:entry["language"].as_str().unwrap_or("").chars().take(20).collect()});}}
     }
     Some(result)
 }

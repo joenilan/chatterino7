@@ -19,6 +19,7 @@ mod theme;
 mod workspace;
 mod dock;
 mod stream_status;
+mod room_settings;
 use workspace::Workbench;
 
 use chat_core::{Timeline, selection::Selection};
@@ -92,6 +93,7 @@ struct ChannelPane {
     name: SharedString,
     connection: String,
     connected: bool,
+    room_settings: Option<room_settings::RoomSettings>,
     pending: Option<(u64, String, Option<String>, u64)>,
     compose_revision: u64,
     reply_target: Option<replies::Target>,
@@ -155,6 +157,7 @@ impl ChannelPane {
             catalog,
             connection: "Sign in to connect".into(),
             connected: false,
+            room_settings: None,
             pending: None,
             reply_target: None,
             attention: Default::default(),
@@ -608,6 +611,7 @@ impl Render for ChannelPane {
                 .when(!self.send_status.is_empty(), |el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(self.send_status.clone())))
                 .child(div().h_flex().justify_between().text_size(px(11.)).text_color(rgb(theme::MUTED))
                     .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500", self.draft.read(cx).value().chars().count())))
+                    .when_some(self.room_settings.as_ref().filter(|r|!r.labels().is_empty()).map(|r|r.summary()),|el,summary|el.child(div().id("room-modes-hint").max_w(px(120.)).overflow_hidden().text_ellipsis().text_color(rgb(0xC5B8E6)).tooltip({let summary=summary.clone();move|w,cx|gpui_kit::component::tooltip::Tooltip::new(format!("{summary}. Your role may grant exemptions; Twitch validates sending. Ctrl+I for channel details.")).build(w,cx)}).child(summary)))
                     .child(div().h_flex().gap_2().child(Button::new("emotes-toggle").small().label(":)").tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx))))
                     .child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else { "Send" }).disabled(!self.connected || self.pending.is_some()).tooltip("Send to this Twitch channel").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx)))))))
             .child(

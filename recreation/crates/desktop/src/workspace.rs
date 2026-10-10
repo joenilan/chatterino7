@@ -1,5 +1,7 @@
 #[path="activity.rs"]
 mod activity;
+#[path="channel_details.rs"]
+mod channel_details;
 use gpui_kit::base::ElementExt;
 use crate::dock::Dock;
 use crate::{ChannelPane, DragPreview, DraggedChannel, PaneEvent, caption_control, storage, theme};
@@ -37,11 +39,12 @@ gpui_kit::actions!(
         ToggleLiveWorkspaces,
         ToggleLiveChannels,
         QuitWithoutSaving,
-        OpenActivity, MarkAllRead, FontLarger, FontSmaller, ResetFont
+        OpenActivity, MarkAllRead, FontLarger, FontSmaller, ResetFont, ChannelDetails
     ]
 );
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
+        KeyBinding::new("ctrl-i", ChannelDetails, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-shift-m", OpenActivity, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-shift-r", MarkAllRead, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-=", FontLarger, Some("ChatWorkspace")),
@@ -388,6 +391,7 @@ impl Workbench {
             for pane in &panes {
                 pane.update(cx, |p, cx| {
                     p.connected = false;
+                    p.room_settings = None;
                     p.connection = if identity.is_some() {
                         "Connecting…"
                     } else {
@@ -406,6 +410,10 @@ impl Workbench {
                 continue;
             }
             match event {
+                crate::live::Event::RoomSettings(channel,settings,initial)=>{
+                    for pane in &panes{if pane.read(cx).name.as_ref()==channel{pane.update(cx,|p,cx|{if !initial||p.room_settings.is_none(){p.room_settings=Some(settings.clone());cx.notify();}});}}
+                    cx.notify();
+                }
                 crate::live::Event::Resolved(channel, id) => self.catalog.borrow_mut().channel(&channel, &id),
                 crate::live::Event::State(channel, status, ready) => {
                     for pane in &panes {
@@ -413,6 +421,7 @@ impl Workbench {
                             pane.update(cx, |p, cx| {
                                 p.connection = status.clone();
                                 p.connected = ready;
+                                if !ready {p.room_settings=None;}
                                 cx.notify();
                             });
                         }
@@ -448,7 +457,9 @@ impl Workbench {
     ) -> Entity<ChannelPane> {
         let key = format!("{tab_id}:{name}");
         let draft = self.drafts.get(&key).cloned().unwrap_or_default();
+        let shared_state=self.panes().iter().find(|p|p.read(cx).name.as_ref()==name).map(|p|{let p=p.read(cx);(p.connected,p.connection.clone(),p.room_settings.clone())});
         let pane = cx.new(|cx| ChannelPane::new(name, self.media.clone(), self.catalog.clone(), &draft, self.font_size, self.history_limit, window, cx));
+        if let Some((connected,connection,room))=shared_state {pane.update(cx,|p,_|{p.connected=connected;p.connection=connection;p.room_settings=room;});}
         if let Some(target)=self.reply_drafts.get(&key).and_then(crate::replies::Target::from_json){pane.update(cx,|p,_|p.reply_target=Some(target));}
         let channel = name.to_owned();
         cx.subscribe_in(&pane, window, move |this, pane, event, window, cx| {
@@ -951,10 +962,12 @@ impl Workbench {
                     let drag_pane=self.tabs[self.active].panes.iter().find(|p|p.read(cx).name.as_ref()==channel).cloned();
                     let counts=drag_pane.as_ref().map(|p|p.read(cx).attention.counts()).unwrap_or_default();
                     let tab_name=channel.clone();let tab_bounds=self.tab_bounds.clone();
+                    let stream_tip=self.streams.summary(&channel);
                     let item=div().id(SharedString::from(format!("channel-tab-{tab_id}-{channel}"))).h(px(28.)).px_2().flex().items_center().cursor_pointer()
                         .bg(rgb(if selected{theme::CONTROL}else{theme::PANEL})).border_b_2().border_color(rgb(if selected{0xA99CF4}else{theme::PANEL}))
                         .on_prepaint(move|bounds,_,_|{tab_bounds.borrow_mut().insert(tab_name.clone(),bounds);})
                         .hover(|s|s.bg(rgb(theme::HOVER)))
+                        .tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(stream_tip.clone()).build(w,cx))
                         .child(stream_marker(&channel,self.streams.get(&channel)))
                         .child(format!("#{channel}"))
                         .when(counts.0>0,|el|el.child(div().ml_1().px_1().rounded(px(3.)).text_size(px(10.)).bg(rgb(if counts.1>0{0x403250}else{0x2B3038})).text_color(rgb(if counts.1>0{0xE4BCFA}else{theme::TEXT})).child(if counts.1>0{format!("@{}",crate::attention::count(counts.1))}else{crate::attention::count(counts.0)})))
@@ -963,7 +976,9 @@ impl Workbench {
                     let owner=cx.entity().downgrade();let menu_channel=channel.clone();
                     let menu=move |menu:gpui_kit::component::menu::PopupMenu,_:&mut Window,_:&mut Context<gpui_kit::component::menu::PopupMenu>|{
                         let add=owner.clone();let add_channel=menu_channel.clone();let close=owner.clone();let close_channel=menu_channel.clone();let filter=owner.clone();let left=owner.clone();let left_channel=menu_channel.clone();let right=owner.clone();let right_channel=menu_channel.clone();let open_url=format!("https://www.twitch.tv/{menu_channel}");let copy_url=open_url.clone();let read=owner.clone();let read_channel=menu_channel.clone();
-                        menu.item(PopupMenuItem::new("Mark channel read").on_click(move|_,_,cx|{let _=read.update(cx,|this,cx|{if let Some(pane)=this.tabs[this.active].panes.iter().find(|p|p.read(cx).name.as_ref()==read_channel){pane.update(cx,|p,cx|{p.attention.mark_all();cx.notify();});}cx.notify();});}))
+                        let details=owner.clone();let details_channel=menu_channel.clone();
+                        menu.item(PopupMenuItem::new("Channel details · Ctrl+I").on_click(move|_,w,cx|{let _=details.update(cx,|this,cx|this.open_channel_details(details_channel.clone(),w,cx));}))
+                            .item(PopupMenuItem::new("Mark channel read").on_click(move|_,_,cx|{let _=read.update(cx,|this,cx|{if let Some(pane)=this.tabs[this.active].panes.iter().find(|p|p.read(cx).name.as_ref()==read_channel){pane.update(cx,|p,cx|{p.attention.mark_all();cx.notify();});}cx.notify();});}))
                             .item(PopupMenuItem::new("Open stream in browser").on_click(move|_,_,cx|cx.open_url(&open_url)))
                             .item(PopupMenuItem::new("Copy channel URL").on_click(move|_,window,cx|{cx.write_to_clipboard(ClipboardItem::new_string(copy_url.clone()));window.push_notification(Notification::info("Channel URL copied"),cx);}))
                             .separator().item(PopupMenuItem::new("Add channel tab").on_click(move|_,window,cx|{let _=add.update(cx,|this,cx|{this.open_add(false,window,cx);this.add_target=Some(add_channel.clone());});}))
@@ -1181,6 +1196,7 @@ impl Render for Workbench {
                 });
             }).absolute().size_0())
             .on_action(cx.listener(|this,_:&crate::FindChat,w,cx|{let panes=this.visible_panes(cx);let selected=this.selected_channel.as_ref();if let Some(pane)=panes.iter().find(|p|Some(&p.read(cx).name.to_string())==selected).or(panes.first()){pane.update(cx,|p,cx|p.open_search(w,cx));}cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&ChannelDetails,w,cx|this.open_focused_channel_details(w,cx)))
             .on_action(cx.listener(|this,_:&OpenActivity,w,cx|this.open_activity(w,cx)))
             .on_action(cx.listener(|this,_:&MarkAllRead,_,cx|this.mark_all_read(cx)))
             .on_action(cx.listener(|this,_:&FontLarger,w,cx|this.font_feedback(1.,false,w,cx)))

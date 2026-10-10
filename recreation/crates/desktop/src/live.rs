@@ -28,6 +28,7 @@ struct Config {
 pub enum Event {
     State(String, String, bool),
     Resolved(String, String),
+    RoomSettings(String,crate::room_settings::RoomSettings,bool),
     Chat(String, ChatEvent),
     Sent(u64, Result<(), String>),
 }
@@ -263,6 +264,20 @@ fn frame(socket: &mut Socket) -> Result<Option<Value>, String> {
         Err(_) => Err("Twitch connection interrupted".into()),
     }
 }
+struct RoomSnapshot { version:u64,identity:Identity,channel:String,id:String }
+fn room_snapshot_worker(tx:mpsc::SyncSender<(u64,Event)>,epoch:Arc<std::sync::atomic::AtomicU64>)->mpsc::SyncSender<RoomSnapshot>{
+    let(sender,jobs)=mpsc::sync_channel::<RoomSnapshot>(32);
+    std::thread::spawn(move||{
+        let Ok(client)=client()else{return;};
+        while let Ok(job)=jobs.recv(){
+            if epoch.load(Ordering::Relaxed)!=job.version{continue;}
+            if let Ok(response)=client.get("https://api.twitch.tv/helix/chat/settings").query(&[("broadcaster_id",job.id.as_str())]).header("Client-Id",CLIENT_ID).bearer_auth(&job.identity.access).send(){
+                if epoch.load(Ordering::Relaxed)!=job.version{continue;}
+                if let Ok((200,value))=response_json(response){if let Some(settings)=crate::room_settings::RoomSettings::parse(&value["data"][0]){let _=tx.send((job.version,Event::RoomSettings(job.channel,settings,true)));}}
+            }
+        }
+    });sender
+}
 fn subscribe(
     c: Config,
     session: String,
@@ -270,6 +285,7 @@ fn subscribe(
     epoch: Arc<std::sync::atomic::AtomicU64>,
     version: u64,
     map: Arc<Mutex<HashMap<String, String>>>,
+    snapshots:mpsc::SyncSender<RoomSnapshot>,
 ) {
     std::thread::spawn(move || {
         let Some(identity) = c.identity else { return };
@@ -294,6 +310,7 @@ fn subscribe(
                     "channel.chat.clear_user_messages",
                     "channel.chat.clear",
                     "channel.chat.notification",
+                    "channel.chat_settings.update",
                 ] {
                     if epoch.load(Ordering::Relaxed) != version {
                         return Err("Channel subscription cancelled".into());
@@ -311,21 +328,23 @@ fn subscribe(
                     ) })();
                     let (status,response)=match subscription {
                         Ok(value)=>value,
-                        Err(_) if kind=="channel.chat.notification"=>{notices_unavailable=true;continue;},
+                        Err(_) if matches!(kind,"channel.chat.notification"|"channel.chat_settings.update")=>{notices_unavailable=true;continue;},
                         Err(error)=>return Err(error),
                     };
                     if status != 202 || response["data"][0]["status"].as_str() != Some("enabled") {
-                        if kind=="channel.chat.notification"{notices_unavailable=true;continue;}
+                        if matches!(kind,"channel.chat.notification"|"channel.chat_settings.update"){notices_unavailable=true;continue;}
                         return Err(format!("Chat subscription failed (HTTP {status})"));
                     }
                 }
+                // Bounded independent worker: metadata cannot delay chat readiness.
+                let _=snapshots.try_send(RoomSnapshot{version,identity:identity.clone(),channel:channel.clone(),id});
                 Ok(())
             })();
             if epoch.load(Ordering::Relaxed) != version {
                 break;
             }
             let (message, ready) = match result {
-                Ok(()) => (if notices_unavailable{"Connected · Twitch notices unavailable until reconnect".into()}else{"Connected".into()}, true),
+                Ok(()) => (if notices_unavailable{"Connected · Some room events unavailable until reconnect".into()}else{"Connected".into()}, true),
                 Err(e) => (e, false),
             };
             if tx
@@ -356,6 +375,7 @@ fn run(
     tx: mpsc::SyncSender<(u64, Event)>,
     epoch: Arc<std::sync::atomic::AtomicU64>,
 ) {
+    let snapshots=room_snapshot_worker(tx.clone(),epoch.clone());
     let mut dedup = HashSet::new();
     let mut order = VecDeque::new();
     let mut retry = 1;
@@ -407,6 +427,7 @@ fn run(
                             epoch.clone(),
                             version,
                             map.clone(),
+                            snapshots.clone(),
                         );
                         welcome = true;
                     }
@@ -524,6 +545,10 @@ fn deliver(
     let Some(channel) = map.lock().ok().and_then(|m| m.get(id).cloned()) else {
         return;
     };
+    if v["payload"]["subscription"]["type"]=="channel.chat_settings.update" {
+        if let Some(settings)=crate::room_settings::RoomSettings::parse(e){let _=tx.send((version,Event::RoomSettings(channel,settings,false)));}
+        return;
+    }
     let text = |key: &str| e[key].as_str().unwrap_or("").to_owned();
     let event = match v["payload"]["subscription"]["type"].as_str().unwrap_or("") {
         "channel.chat.message" | "channel.chat.notification" => ChatEvent::Message(Message {
