@@ -15,15 +15,17 @@ pub type Emotes = HashMap<String, Fragment>;
 pub struct Set {
     pub bttv: Emotes,
     pub ffz: Emotes,
+    pub roles:crate::ffz_role_badges::Roles,
+    pub ffz_room_id:String,
 }
 pub struct Community {
     pub global: Set,
     pub global_bttv_state: LoadState,
     pub global_ffz_state: LoadState,
     pub channels: HashMap<String, Set>,
-    requested: HashMap<String, Instant>,
+    requested: HashMap<String, (String,Instant)>,
     tx: mpsc::SyncSender<(String, String)>,
-    rx: mpsc::Receiver<(String, Option<Emotes>, Option<Emotes>)>,
+    rx: mpsc::Receiver<(String, String, Option<Emotes>, Option<(Emotes,crate::ffz_role_badges::Roles)>)>,
 }
 impl Community {
     pub fn new() -> Self {
@@ -56,8 +58,14 @@ impl Community {
                         format!("https://api.frankerfacez.com/v1/room/id/{id}")
                     },
                 )
-                .map(|v| parse_ffz(&v, id.is_empty()));
-                if results.send((channel, bttv, ffz)).is_err() {
+                .and_then(|v|{
+                    if !id.is_empty()&&!v.is_null(){
+                        let returned=v["room"]["twitch_id"].as_u64().map(|id|id.to_string()).or_else(||v["room"]["twitch_id"].as_str().map(str::to_owned));
+                        if returned.as_deref()!=Some(id.as_str()){return None;}
+                    }
+                    Some((parse_ffz(&v,id.is_empty()),crate::ffz_role_badges::Roles::parse(&v)))
+                });
+                if results.send((channel, id, bttv, ffz)).is_err() {
                     break;
                 }
             }
@@ -83,17 +91,17 @@ impl Community {
             if self
                 .requested
                 .get(channel)
-                .is_some_and(|at| at.elapsed() < Duration::from_secs(300))
+                .is_some_and(|(requested_id,at)| requested_id==id && at.elapsed() < Duration::from_secs(300))
             {
                 continue;
             }
             if self.tx.try_send((channel.into(), id.into())).is_ok() {
-                self.requested.insert(channel.into(), Instant::now());
+                self.requested.insert(channel.into(), (id.into(),Instant::now()));
             }
         }
         let mut changed = false;
-        while let Ok((channel, bttv, ffz)) = self.rx.try_recv() {
-            if !channel.is_empty() && !channels.contains_key(&channel) {
+        while let Ok((channel, id, bttv, ffz)) = self.rx.try_recv() {
+            if !channel.is_empty() && !channels.get(&channel).is_some_and(|(current,_)|current==&id) {
                 continue;
             }
             if channel.is_empty(){
@@ -111,8 +119,8 @@ impl Community {
                 set.bttv = emotes;
                 changed = true;
             }
-            if let Some(emotes) = ffz {
-                set.ffz = emotes;
+            if let Some((emotes,roles)) = ffz {
+                set.ffz = emotes;set.roles=roles;set.ffz_room_id=id;
                 changed = true;
             }
         }

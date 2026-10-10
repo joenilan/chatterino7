@@ -19,6 +19,7 @@ mod gif_frames;
 mod media_hover;
 mod catalog;
 mod community;
+mod ffz_role_badges;
 mod twitch_assets;
 mod emote_picker;
 mod inline_chat;
@@ -405,6 +406,7 @@ impl ChannelPane {
 }
 impl Render for ChannelPane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let channel_name=self.name.clone();
         let picker = (self.picker.open&&!window.has_active_dialog(cx)).then(||{
             let position=self.picker.button_bounds.get().map(|b|point(b.right(),b.origin.y-px(6.))).or_else(||self.viewport.borrow().map(|b|point(b.right(),b.bottom()))).unwrap_or(point(window.viewport_size().width-px(8.),window.viewport_size().height-px(60.)));
             deferred(anchored().anchor(Anchor::BottomRight).position(position).snap_to_window_with_margin(px(8.)).child(self.render_picker(window,cx))).with_priority(1).into_any_element()
@@ -564,6 +566,15 @@ impl Render for ChannelPane {
                             };
                             let inline = inline_chat::InlineChat::new(message, paint.clone(), row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx);
                             let first_line_height = if inline.is_some() { inline_chat::InlineChat::line_height(window,message) } else { window.line_height() };
+                            let mut badge_images=message.badges.iter().filter_map(|badge|{
+                                let custom=if message.presentation.source.is_none(){catalog.borrow().community.channels.get(channel_name.as_ref()).filter(|set|set.ffz_room_id==message.channel_id).and_then(|set|set.roles.get(&badge.set_id)).cloned()}else{None};
+                                if let Some(custom)=custom{
+                                    let image=media.borrow_mut().get(&custom.key,cx);
+                                    if image.is_some(){return Some((custom,image,(badge.set_id=="moderator").then_some(0x34AE0A)));}
+                                }
+                                catalog.borrow().twitch.badge(&message.channel_id,&badge.set_id,&badge.id).cloned().map(|badge|{let image=media.borrow_mut().get(&badge.key,cx);(badge,image,None)})
+                            }).collect::<Vec<_>>();
+                            if let Some(badge)=catalog.borrow().badges.for_user(&message.user_id).cloned(){let image=media.borrow_mut().get(&badge.key,cx);badge_images.push((badge,image,None));}
                             let row_owner=menu_owner.clone();let row_id=message.id.clone();
                             let timestamp=if timestamps>0{message.sent_at.and_then(|time|chrono::DateTime::from_timestamp(time,0)).map(|time|{
                                 let local=time.with_timezone(&chrono::Local);(local.format(if timestamps==2{"%H:%M:%S"}else{"%H:%M"}).to_string(),local.format("%Y-%m-%d %H:%M:%S %:z").to_string())
@@ -614,9 +625,8 @@ impl Render for ChannelPane {
                                 .children(reply_line)
                                 .child(div().h_flex().items_start().min_w_0().gap_1()
                                 .when_some(timestamp,|el,(label,full)|el.child(div().id(SharedString::from(format!("timestamp-{}",message.id))).w(px(if timestamps==2{55.}else{37.})).h(first_line_height).flex_shrink_0().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(w,cx)).child(label)))
-                                .children(message.badges.iter().filter_map(|badge|catalog.borrow().twitch.badge(&message.channel_id,&badge.set_id,&badge.id).cloned()).chain(catalog.borrow().badges.for_user(&message.user_id).cloned()).map(|badge|{
-                                    let image=media.borrow_mut().get(&badge.key,cx);
-                                    div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(emote_picker::icon(image,String::new(),18.,18.))
+                                .children(badge_images.into_iter().map(|(badge,image,background)|{
+                                    div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(div().size(px(18.)).when_some(background,|el,color|el.bg(rgb(color))).child(emote_picker::icon(image,String::new(),18.,18.)))
                                 }).collect::<Vec<_>>())
                                 .child(div().flex_1().min_w_0().child(if let Some(inline) = inline {
                                     inline.with_search(matches).with_interaction(interaction).into_any_element()
