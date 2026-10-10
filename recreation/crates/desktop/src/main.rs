@@ -10,6 +10,7 @@ mod replies;
 mod rich_messages;
 mod attention;
 mod highlight_rules;
+mod chatter_appearance;
 mod control;
 mod live;
 mod media;
@@ -100,6 +101,7 @@ enum PaneEvent {
     EmotePreferencesChanged,
     OpenAccount,
     OpenCommands(String),
+    EditChatter(chatter_appearance::Target),
     SearchAll(String),
 }
 impl EventEmitter<PaneEvent> for ChannelPane {}
@@ -121,6 +123,7 @@ struct ChannelPane {
     media: Rc<RefCell<media::MediaCache>>,
     catalog: Rc<RefCell<catalog::Catalog>>,
     custom_commands: custom_commands::Definitions,
+    chatter_appearance: chatter_appearance::Preferences,
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
     draft: Entity<TextareaState>,
@@ -174,6 +177,7 @@ impl ChannelPane {
             media,
             catalog,
             custom_commands: Default::default(),
+            chatter_appearance: Default::default(),
             connection: "Sign in to connect".into(),
             connected: false,
             room_settings: None,
@@ -250,7 +254,7 @@ impl ChannelPane {
     fn received(&mut self, mut event: chat_core::Event, cx: &mut Context<Self>) {
         if let chat_core::Event::Message(message) = &mut event {
             message.fragments = self.catalog.borrow().expand(&self.name, &message.user_id, &message.fragments);
-            message.name_color = Some(theme::readable_name_color(&message.user_id, message.name_color));
+            chatter_appearance::apply(&self.chatter_appearance,message);
         }
         self.observe_reply_redaction(&event,cx);
         let change = self.timeline.borrow_mut().apply(event);
@@ -530,7 +534,7 @@ impl Render for ChannelPane {
                             let rich_heading=rich_messages::heading(message);
                             let rich_attachments=rich_messages::attachments(message,&mut media.borrow_mut(),cx);
                             let reply_line=replies::row_context(message,&messages,menu_owner.clone());
-                            let interaction=message_actions::Interaction{owner:menu_owner.clone(),message:message.id.clone(),author_len:message.display_name.len(),links:message_actions::message_links(message),pressed:link_press.clone()};
+                            let interaction=message_actions::Interaction{owner:menu_owner.clone(),message:message.id.clone(),author_len:message.author_label().len(),links:message_actions::message_links(message),pressed:link_press.clone()};
                             let presented=presented_row.clone();let eligible=read_eligible.clone();
                             let matches=search_hits.get(&row).cloned().unwrap_or_default();
                             let progress = entrances.iter().find(|entry| entry.row == row)
@@ -577,7 +581,7 @@ impl Render for ChannelPane {
                                     inline.with_search(matches).with_interaction(interaction).into_any_element()
                                 } else {
                                     ChatText::new(SharedString::from(format!("text-{}", message.id)), row, message.copy_line(), selection.clone(), focus.clone(), viewport.clone())
-                                        .with_author(&message.display_name, message.name_color).with_search(matches).with_interaction(interaction).into_any_element()
+                                        .with_author(message.author_label(), message.author_color()).with_search(matches).with_interaction(interaction).into_any_element()
                                 })))
                                 .children(rich_attachments)
                                 .into_any_element()

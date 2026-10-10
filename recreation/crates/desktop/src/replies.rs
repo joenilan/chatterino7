@@ -26,7 +26,7 @@ pub fn row_context(message:&chat_core::Message,timeline:&chat_core::Timeline,own
     let parent=timeline.messages().iter().find(|m|m.id==reply.parent_id);
     let preview=if reply.parent_deleted||parent.is_some_and(|m|m.deleted){"[message deleted]".into()}
         else{parent.map(|m|short(&m.body(),100)).unwrap_or_else(||"Original outside retained history".into())};
-    let label=format!("↱ {} · {preview}",short(&reply.parent_name,30));let id=message.id.clone();
+    let label=format!("↱ {} · {preview}",short(parent.map(|m|m.author_label()).unwrap_or(&reply.parent_name),30));let id=message.id.clone();
     Some(div().id(SharedString::from(format!("reply-{}",message.id))).px_1().text_size(px(11.)).line_height(px(16.)).text_color(rgb(0xB6A9E6)).min_w_0().overflow_hidden().text_ellipsis().cursor_pointer()
         .hover(|s|s.bg(rgb(theme::CONTROL)))
         .on_click(move|_,w,cx|{let _=owner.update(cx,|p,cx|p.message_action(&id,crate::message_actions::Action::Thread,w,cx));cx.stop_propagation();})
@@ -59,7 +59,7 @@ impl ChannelPane {
         let target=self.reply_target.as_ref()?;
         let timeline=self.timeline.borrow();let message=timeline.messages().iter().find(|m|m.id==target.id);
         let label=if target.deleted||message.is_some_and(|m|m.deleted){"Reply target deleted · cancel or choose another".to_owned()}
-            else{format!("Replying to {}",short(&target.name,32))};
+            else{format!("Replying to {}",short(message.map(|m|m.author_label()).unwrap_or(&target.name),32))};
         let preview=message.map(|m|short(&m.body(),100)).unwrap_or_else(||"Original outside retained history; reply target saved".into());
         let id=target.id.clone();
         Some(div().h_flex().gap_1().min_w_0().px_2().py_1().bg(rgb(0x282333)).border_l_2().border_color(rgb(0xB6A9E6))
@@ -82,7 +82,7 @@ impl ChannelPane {
             let p=pane.read(cx);let timeline=p.timeline.borrow();
             let all=timeline.messages().iter().filter(|m|m.id==root||m.reply.as_ref().is_some_and(|r|r.thread_id==root)).collect::<Vec<_>>();
             let count=all.len();let has_root=all.iter().any(|m|m.id==root);
-            let rows=all.into_iter().rev().take(100).collect::<Vec<_>>().into_iter().rev().map(|m|(m.id.clone(),m.display_name.clone(),m.body(),m.deleted,m.replyable)).collect::<Vec<_>>();
+            let rows=all.into_iter().rev().take(100).collect::<Vec<_>>().into_iter().rev().map(|m|(m.id.clone(),m.author_label().to_owned(),m.body(),m.deleted,m.replyable)).collect::<Vec<_>>();
             let width=(f32::from(window.viewport_size().width)-24.).clamp(180.,560.);
             let height=(f32::from(window.viewport_size().height)-180.).clamp(70.,520.);
             dialog.w(px(width)).title("Retained conversation")

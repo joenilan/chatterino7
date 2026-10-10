@@ -47,6 +47,9 @@ pub struct Reply {
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MessagePresentation {
+    /// Private UI overlay; never supplied to provider APIs.
+    pub local_alias: Option<String>,
+    pub local_color: Option<u32>,
     pub kind: String,
     pub bits: u64,
     pub reward_id: Option<String>,
@@ -72,6 +75,8 @@ pub struct Message {
     pub deleted: bool,
 }
 impl Message {
+    pub fn author_label(&self)->&str {self.presentation.local_alias.as_deref().filter(|s|!s.is_empty()).unwrap_or(&self.display_name)}
+    pub fn author_color(&self)->Option<u32> {self.presentation.local_color.or(self.name_color)}
     pub fn body(&self) -> String {
         if self.deleted {
             return "[message deleted]".into();
@@ -82,7 +87,7 @@ impl Message {
         self.fragments.iter().map(Fragment::copy_text).collect()
     }
     pub fn copy_line(&self) -> String {
-        format!("{}: {}", self.display_name, self.body())
+        format!("{}: {}", self.author_label(), self.body())
     }
 }
 
@@ -118,6 +123,14 @@ pub struct Timeline {
     ids: HashSet<String>,
 }
 impl Timeline {
+    /// Restyle authors without touching identity, body or deletion state.
+    pub fn update_author_appearance(&mut self, mut lookup:impl FnMut(&str,Option<u32>)->(Option<String>,Option<u32>)) {
+        for message in &mut self.messages {
+            let (alias,color)=lookup(&message.user_id,message.name_color);
+            message.presentation.local_alias=alias;message.presentation.local_color=color;
+        }
+    }
+
     pub fn enrich(&mut self, mut apply: impl FnMut(&mut Message)) {
         for message in &mut self.messages { if !message.deleted { apply(message); } }
     }
@@ -198,7 +211,11 @@ impl Timeline {
             if !message.deleted && matches(message) {
                 message.deleted = true;
                 message.fragments.clear();
-                message.presentation = MessagePresentation::default();
+                message.presentation = MessagePresentation {
+                    local_alias:message.presentation.local_alias.take(),
+                    local_color:message.presentation.local_color,
+                    ..MessagePresentation::default()
+                };
                 if let Some(reply)=&mut message.reply {reply.parent_deleted=true;}
                 changed = true;
             }

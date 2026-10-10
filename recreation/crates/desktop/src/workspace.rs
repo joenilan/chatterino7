@@ -46,7 +46,7 @@ gpui_kit::actions!(
         ToggleLiveWorkspaces,
         ToggleLiveChannels,
         QuitWithoutSaving,
-        OpenActivity, MarkAllRead, FontLarger, FontSmaller, ResetFont, ChannelDetails, SwitchChannel, SearchOpenChannels, EditCustomCommands
+        OpenActivity, MarkAllRead, FontLarger, FontSmaller, ResetFont, ChannelDetails, SwitchChannel, SearchOpenChannels, EditCustomCommands, EditChatterAppearance
     ]
 );
 pub fn bind_keys(cx: &mut App) {
@@ -159,6 +159,8 @@ pub struct Workbench {
     highlight_terms: Vec<String>,
     highlight_rules: crate::highlight_rules::Rules,
     highlight_editor: Option<Entity<crate::highlight_rules::Editor>>,
+    chatter_appearance: crate::chatter_appearance::Preferences,
+    chatter_editor: Option<Entity<crate::chatter_appearance::Editor>>,
     custom_commands: crate::custom_commands::Definitions,
     activity_all: bool,
     zoom_accumulator: f32,
@@ -258,6 +260,8 @@ impl Workbench {
             custom_commands: crate::custom_commands::load(&state["custom_commands"]),
             highlight_rules: crate::highlight_rules::load(&state["highlight_rules"]),
             highlight_editor: None,
+            chatter_appearance: crate::chatter_appearance::load(&state["chatter_appearance"]),
+            chatter_editor:None,
             highlight_terms: crate::attention::terms(state["highlight_words"].as_str().unwrap_or("")),
             highlight_input, activity_all:false, zoom_accumulator:0.,
             live: crate::live::LiveChat::new(),
@@ -491,6 +495,26 @@ impl Workbench {
             }
         }
     }
+    fn open_chatter_appearance(&mut self,target:Option<crate::chatter_appearance::Target>,window:&mut Window,cx:&mut Context<Self>){
+        self.settings=false;
+        let editor=if let Some(editor)=&self.chatter_editor{editor.clone()}else{
+            let editor=cx.new(|cx|crate::chatter_appearance::Editor::new(self.chatter_appearance.clone(),window,cx));
+            cx.subscribe(&editor,|this,_,_:&crate::chatter_appearance::Changed,cx|{
+                for pane in this.panes().iter().chain(this.closed_tabs.iter().flat_map(|tab|tab.panes.iter())){
+                    pane.update(cx,|p,cx|{
+                        crate::chatter_appearance::restyle(&this.chatter_appearance,&mut p.timeline.borrow_mut());
+                        p.selection.borrow_mut().clear();p.link_press.borrow_mut().take();p.search.dirty=true;
+                        p.scroller.update(cx,|s,cx|s.remeasure(cx));cx.notify();
+                    });
+                }
+                this.schedule_save(cx);cx.notify();
+            }).detach();
+            self.chatter_editor=Some(editor.clone());editor
+        };
+        editor.update(cx,|editor,cx|editor.open(target,window,cx));
+        let width=(f32::from(window.viewport_size().width)-24.).clamp(180.,520.);
+        window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Chatter nicknames & colors").child(editor.clone()));
+    }
     fn open_highlight_rules(&mut self,window:&mut Window,cx:&mut Context<Self>){
         let channel=self.selected_channel.clone().or_else(||self.visible_panes(cx).first().map(|p|p.read(cx).name.to_string())).unwrap_or_else(||"channel".into());
         self.settings=false;
@@ -523,7 +547,7 @@ impl Workbench {
         let draft = self.drafts.get(&key).cloned().unwrap_or_default();
         let shared_state=self.panes().iter().find(|p|p.read(cx).name.as_ref()==name).map(|p|{let p=p.read(cx);(p.connected,p.connection.clone(),p.room_settings.clone())});
         let pane = cx.new(|cx| ChannelPane::new(name, self.media.clone(), self.catalog.clone(), &draft, self.font_size, self.history_limit, window, cx));
-        pane.update(cx,|p,_|{p.timestamps=self.timestamps;p.custom_commands=self.custom_commands.clone();});
+        pane.update(cx,|p,_|{p.timestamps=self.timestamps;p.custom_commands=self.custom_commands.clone();p.chatter_appearance=self.chatter_appearance.clone();});
         if let Some((connected,connection,room))=shared_state {pane.update(cx,|p,_|{p.connected=connected;p.connection=connection;p.room_settings=room;});}
         if let Some(target)=self.reply_drafts.get(&key).and_then(crate::replies::Target::from_json){pane.update(cx,|p,_|p.reply_target=Some(target));}
         let channel = name.to_owned();
@@ -538,6 +562,7 @@ impl Workbench {
                 }
                 return;
             }
+            if let PaneEvent::EditChatter(target)=event {this.open_chatter_appearance(Some(target.clone()),window,cx);return;}
             if let PaneEvent::OpenCommands(channel)=event {this.open_custom_commands(Some(channel.clone()),window,cx);return;}
             if let PaneEvent::SearchAll(query)=event {
                 this.open_workspace_search(Some(query.clone()),window,cx);return;
@@ -607,7 +632,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
@@ -1301,6 +1326,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|this,_:&FocusPaneDown,w,cx|this.focus_neighbor(0,1,w,cx)))
             .on_action(cx.listener(|this,_:&EqualizeSplit,w,cx|this.equalize_panes(None,false,w,cx)))
             .on_action(cx.listener(|this,_:&EqualizeAllSplits,w,cx|this.equalize_panes(None,true,w,cx)))
+            .on_action(cx.listener(|this,_:&EditChatterAppearance,w,cx|this.open_chatter_appearance(None,w,cx)))
             .on_action(cx.listener(|this,_:&EditCustomCommands,w,cx|this.open_custom_commands(None,w,cx)))
             .on_action(cx.listener(|this,_:&SearchOpenChannels,w,cx|this.open_workspace_search(None,w,cx)))
             .on_action(cx.listener(|this,_:&SwitchChannel,w,cx|this.open_switcher(w,cx)))
@@ -1341,6 +1367,7 @@ impl Render for Workbench {
                     .menu("Highlights & unread",Box::new(OpenActivity))
                     .menu("Mark all read",Box::new(MarkAllRead))
                     .menu("Custom commands",Box::new(EditCustomCommands))
+                    .menu("Chatter nicknames & colors",Box::new(EditChatterAppearance))
                     .menu("Appearance & memory",Box::new(ToggleAppearance))
                     .menu(if live_channels{"Show all channel tabs"}else{"Only show live channel tabs"},Box::new(ToggleLiveChannels))
                     .separator().menu("New workspace",Box::new(NewTab)).menu("Rename workspace",Box::new(RenameWorkspace))

@@ -29,7 +29,7 @@ pub fn links(text:&str)->Vec<Link>{
 }
 pub fn message_links(message:&chat_core::Message)->Vec<Link>{
     if message.deleted{return Vec::new();}
-    let mut offset=message.display_name.len()+2;let mut result=Vec::new();
+    let mut offset=message.author_label().len()+2;let mut result=Vec::new();
     for fragment in &message.fragments{
         if let chat_core::Fragment::Text(text)=fragment{
             for mut link in links(text){link.range.start+=offset;link.range.end+=offset;result.push(link);if result.len()==12{return result;}}
@@ -62,7 +62,7 @@ impl Interaction{
     }
 }
 #[derive(Clone,PartialEq)]
-pub enum Action{CopyLine,CopyBody,CopyName,CopyId,Inspect,SearchAuthor,Mention,Reply,Thread,Profile,OpenLink(String),CopyLink(String)}
+pub enum Action{CopyLine,CopyBody,CopyName,CopyId,Inspect,Customize,SearchAuthor,Mention,Reply,Thread,Profile,OpenLink(String),CopyLink(String)}
 fn copy(text:String,window:&mut Window,cx:&mut App){
     cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
     let verified=cx.read_from_clipboard().and_then(|item|item.text()).as_deref()==Some(&text);
@@ -71,7 +71,8 @@ fn copy(text:String,window:&mut Window,cx:&mut App){
 pub fn menu(owner:WeakEntity<ChannelPane>,id:String,mut menu:PopupMenu,cx:&mut Context<PopupMenu>)->PopupMenu{
     let current=owner.upgrade().and_then(|pane|pane.read(cx).timeline.borrow().messages().iter().find(|m|m.id==id).cloned());
     let Some(message)=current else{return menu.item(PopupMenuItem::new("Message is no longer retained"));};
-    for (label,action) in [("Reply to message",Action::Reply),("View conversation",Action::Thread),("Inspect chatter",Action::Inspect),("Search this chatter’s messages",Action::SearchAuthor),("Mention in composer",Action::Mention),("Open Twitch profile",Action::Profile),("Copy message",Action::CopyLine),("Copy message text",Action::CopyBody),("Copy username",Action::CopyName),("Copy user ID",Action::CopyId)]{
+    for (label,action) in [("Reply to message",Action::Reply),("View conversation",Action::Thread),("Inspect chatter",Action::Inspect),("Personalize chatter…",Action::Customize),("Search this chatter’s messages",Action::SearchAuthor),("Mention in composer",Action::Mention),("Open Twitch profile",Action::Profile),("Copy message",Action::CopyLine),("Copy message text",Action::CopyBody),("Copy username",Action::CopyName),("Copy user ID",Action::CopyId)]{
+        if action==Action::Customize&&!crate::chatter_appearance::valid_id(&message.user_id){continue;}
         if action==Action::SearchAuthor&&message.user_id.is_empty(){continue;}
         if action==Action::Reply&&(message.deleted||!message.replyable){continue;}
         if matches!(action,Action::Mention|Action::Profile|Action::CopyName)&&message.login.is_none(){continue;}
@@ -93,6 +94,7 @@ impl ChannelPane{
         let Some(message)=message else{window.push_notification(Notification::info("That message is no longer in retained history"),cx);return;};
         let opening=matches!(&action,Action::OpenLink(_));
         match action{
+            Action::Customize=>if crate::chatter_appearance::valid_id(&message.user_id){cx.emit(PaneEvent::EditChatter(crate::chatter_appearance::Target{id:message.user_id,login:message.login.unwrap_or_default(),name:message.display_name}));},
             Action::SearchAuthor=>if !message.user_id.is_empty(){self.search_for_author(&message.user_id,window,cx)},
             Action::Reply=>self.begin_reply(&message,window,cx),
             Action::Thread=>self.open_conversation(&message,window,cx),
@@ -108,14 +110,14 @@ impl ChannelPane{
             Action::Mention=>if let Some(login)=message.login{self.insert_mention(&login,window,cx)},
             Action::Inspect=>{
                 if message.user_id.is_empty(){return;}
-                let clicked_name=message.display_name.clone();let clicked_login=message.login.clone();
+                let clicked_name=message.author_label().to_owned();let clicked_login=message.login.clone();
                 let user_id=message.user_id;self.catalog.borrow_mut().profiles.request(&user_id);let owner=cx.entity().downgrade();
                 window.open_dialog(cx,move|dialog,window,cx|{
                     let current=owner.upgrade().map(|pane|{
                         let pane=pane.read(cx);let timeline=pane.timeline.borrow();
                         let messages=timeline.messages().iter().filter(|m|m.user_id==user_id).collect::<Vec<_>>();
                         let last=messages.last().copied();
-                        (pane.name.to_string(),messages.len(),last.map(|m|m.display_name.clone()).unwrap_or_else(||clicked_name.clone()),last.and_then(|m|m.login.clone()).or_else(||clicked_login.clone()),messages.iter().rev().take(20).map(|m|m.body()).collect::<Vec<_>>(),last.map(|m|m.badges.iter().map(|b|b.set_id.clone()).collect::<Vec<_>>()).unwrap_or_default())
+                        (pane.name.to_string(),messages.len(),last.map(|m|m.author_label().to_owned()).unwrap_or_else(||clicked_name.clone()),last.and_then(|m|m.login.clone()).or_else(||clicked_login.clone()),messages.iter().rev().take(20).map(|m|m.body()).collect::<Vec<_>>(),last.map(|m|m.badges.iter().map(|b|b.set_id.clone()).collect::<Vec<_>>()).unwrap_or_default())
                     });
                     let Some((channel,count,name,login,recent,badges))=current else{return dialog.title("Channel closed");};
                     if let Some(pane)=owner.upgrade(){pane.read(cx).catalog.borrow_mut().profiles.request(&user_id);}

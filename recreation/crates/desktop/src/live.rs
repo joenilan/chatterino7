@@ -571,6 +571,7 @@ fn deliver(
             badges: e["badges"].as_array().into_iter().flatten().take(8).filter_map(|b|{Some(chat_core::Badge{set_id:b["set_id"].as_str()?.chars().take(128).collect(),id:b["id"].as_str()?.chars().take(128).collect()})}).collect(),
             fragments: twitch_fragments(&e["message"]),
             presentation: chat_core::MessagePresentation {
+                local_alias:None,local_color:None,
                 kind: e["message_type"].as_str().unwrap_or("text").chars().take(80).collect(),
                 bits: e["cheer"]["bits"].as_u64().unwrap_or(0),
                 reward_id: e["channel_points_custom_reward_id"].as_str().map(|s|s.chars().take(128).collect()),

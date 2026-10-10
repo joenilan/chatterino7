@@ -116,17 +116,17 @@ impl InlineChat {
         }
         let mut spans = vec![
             Span {
-                range: 0..message.display_name.len(),
+                range: 0..message.author_label().len(),
                 author: true,
                 media: None,
             },
             Span {
-                range: message.display_name.len()..message.display_name.len() + 2,
+                range: message.author_label().len()..message.author_label().len() + 2,
                 author: false,
                 media: None,
             },
         ];
-        let mut offset = message.display_name.len() + 2;
+        let mut offset = message.author_label().len() + 2;
         for run in chat_core::emotes::group_for_layout(&message.fragments) {
             let end = offset + run.copy_text().len();
             let mut assets = Vec::new();
@@ -185,7 +185,7 @@ impl InlineChat {
             search: Vec::new(),
             text,
             spans,
-            name_color: message.name_color.unwrap_or(crate::theme::MUTED),
+            name_color: message.author_color().unwrap_or(crate::theme::MUTED),
             emote_size: if message.presentation.kind=="power_ups_gigantified_emote" {56.}else{28.},
             interaction: None,
             selection,

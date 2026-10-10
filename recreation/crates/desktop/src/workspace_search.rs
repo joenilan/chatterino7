@@ -134,7 +134,7 @@ impl Render for WorkspaceSearch {
                     let p=pane.read(cx);let timeline=p.timeline.borrow();
                     timeline.messages().iter().find(|m|m.id==hit.id)
                         .filter(|m|self.query.as_ref().is_some_and(|q|q.matches(m).is_some()))
-                        .map(|m|(m.display_name.clone(),m.body().chars().take(220).collect::<String>()))
+                        .map(|m|(m.author_label().to_owned(),m.body().chars().take(220).collect::<String>()))
                 });
                 let valid=preview.is_some();let (author,body)=preview.unwrap_or_else(||("Result unavailable".into(),"Message changed, was pruned, or no longer matches.".into()));
                 div().id(("global-hit",index)).v_flex().gap_1().p_2().min_w_0().rounded(px(4.))

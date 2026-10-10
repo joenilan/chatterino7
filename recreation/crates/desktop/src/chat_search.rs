@@ -108,7 +108,7 @@ impl Query {
         for range in ranges {if let Some(last)=merged.last_mut().filter(|last|range.start<=last.end){last.end=last.end.max(range.end);}else{merged.push(range);}}
         let mut ranges=merged;ranges.truncate(128);
         // Filter-only results still receive a visible author marker.
-        if ranges.is_empty()&&!message.display_name.is_empty(){ranges.push(0..message.display_name.len());}
+        if ranges.is_empty()&&!message.author_label().is_empty(){ranges.push(0..message.author_label().len());}
         Some(ranges)
     }
 }

@@ -83,7 +83,7 @@ impl Workbench {
                         .when(rows.is_empty(),|el|el.child(div().p_3().text_color(rgb(theme::MUTED)).child(if all{"You're caught up."}else{"Mentions, replies to you and your highlight words appear here."})))
                         .children(rows.into_iter().filter_map(|(_,channel,id,pane,index,highlight,unread)|{
                             let p=pane.read(cx);let timeline=p.timeline.borrow();let message=timeline.messages().get(index).filter(|m|m.id==id&&!m.deleted)?;
-                            let name=message.display_name.clone();let body=message.body();
+                            let name=message.author_label().to_owned();let body=message.body();
                             let row=(p.next_id-timeline.messages().len()+index) as u64;
                             let (_,accent,background)=crate::highlight_rules::COLORS[p.attention.colors.get(&row).copied().unwrap_or(0)];
                             let jump=owner.clone();let text=body.chars().take(240).collect::<String>();let suffix=if body.chars().count()>240{"…"}else{""};
