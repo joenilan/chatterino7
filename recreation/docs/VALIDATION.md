@@ -411,3 +411,18 @@ that selecting a Haiwire project is an intended connector requirement.
   longer receive pointer input through the card. Native retest pending.
 - No sends, authentication changes or moderation performed. Remaining font/activity
   checks and owner-state restoration are tracked by the existing native task.
+
+### ec327c2 native follow-up and compact close correction
+
+Windows locked release build passed (20.69s). Actual Settings typing/editing,
+right-click and scrolling no longer activated underlying chat. Temporary highlight
+word matched genuine HutchMF rows in transcript/activity. Activity shortcut,
+All unread, Mark all read, dialog read suppression, tail clearing, hidden-channel
+and sidebar badges, font shortcuts/reset/plain scrolling, pastel stream markers,
+upward reply glyph and compact activity were observed. Restart and final cleanup
+were still pending at this report.
+
+At 360×280 the scrolling Settings Done label overlapped the footer and did not
+close when clicked. Moved Done into a non-scrolling header; only the settings body
+scrolls, and dismissal returns focus to the workspace. Linux build passed (3.88s);
+native compact retest remains pending. No outbound chat or auth changes.
