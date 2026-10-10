@@ -16,7 +16,9 @@ Every currently open workspace and hidden channel tab participates. Closed
 workspaces do not. Duplicate channel views retain their own result identity and
 workspace label because their retained timelines can differ. Jump resolves the
 exact pane in its current workspace, including after moves, and rechecks both
-message retention and the query before navigating.
+message retention and the query before navigating. The target pane opens its
+Find bar with the shared query and marks the exact selected row, so the landing
+point remains visible even when a short transcript cannot scroll farther.
 
 The scan captures absolute retained-row bounds, advances round-robin in slices
 of at most 256 messages or 6 ms, and yields 16 ms between slices. New input cancels the

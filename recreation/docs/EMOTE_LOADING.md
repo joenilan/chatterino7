@@ -47,3 +47,8 @@ completion pump are drained on the next tick. Dependency keys also cover queue-r
 cache entries and are capped at 1024. Overflow switches to conservative full
 invalidation for the rest of the cache session, preserving correctness. This is a source-level reduction in
 unnecessary work; no frame-time speedup is claimed without measurement.
+
+Picker cells now retry the static asset when an animated asset returns an error
+or exceeds decode limits, matching the existing transcript fallback policy. A
+failed animation does not by itself leave an emote permanently blank. Animated
+failure counts remain visible for diagnosis even when static fallback succeeds.

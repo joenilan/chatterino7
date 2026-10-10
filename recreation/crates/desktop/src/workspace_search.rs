@@ -82,7 +82,16 @@ impl WorkspaceSearch {
             window.close_dialog(cx); owner.select_tab(index,cx);
             if let Some(dock)=&mut owner.tabs[index].dock {dock.select(&channel);}
             owner.selected_channel=Some(channel);owner.schedule_save(cx);
-            pane.update(cx,|p,cx|p.jump_message(&hit.id,window,cx));cx.notify();true
+            pane.update(cx,|p,cx| {
+                p.set_search_query(self.requested.clone(),window,cx);
+                p.open_search(window,cx);
+                let timeline=p.timeline.borrow();
+                if let Some(index)=timeline.messages().iter().position(|m|m.id==hit.id) {
+                    p.search.current=Some((p.next_id-timeline.messages().len()+index) as u64);
+                }
+                drop(timeline);
+                p.jump_message(&hit.id,window,cx);
+            });cx.notify();true
         }).unwrap_or(false);
         if !changed {self.stale(window,cx);}
     }
@@ -158,7 +167,7 @@ impl Workbench {
             }).detach();
             let mut observers=panes.iter().map(|pane|cx.observe(pane,|_,_,cx|cx.notify())).collect::<Vec<_>>();
             if let Some(view)=owner.upgrade(){observers.push(cx.observe(&view,|_,_,cx|cx.notify()));}
-            WorkspaceSearch{owner,input,query:None,requested:String::new(),hits:BTreeMap::new(),cursors:vec![],cursor:0,scanned:0,matches:0,selected:0,running:false,dirty:true,error:None,generation:0,serial:0,task:None,_observers:observers}
+            WorkspaceSearch{owner,input,query:None,requested:String::new(),hits:BTreeMap::new(),cursors:vec![],cursor:0,scanned:0,matches:0,selected:0,running:false,dirty:false,error:None,generation:0,serial:0,task:None,_observers:observers}
         });
         let focus=view.read(cx).input.read(cx).focus_handle(cx);let body=view.clone();
         window.open_dialog(cx,move|dialog,w,_|dialog.w(px((f32::from(w.viewport_size().width)-24.).clamp(180.,640.))).title("Search open channels").child(body.clone()));

@@ -855,7 +855,7 @@ impl ChannelPane {
                         GridRow::Heading(title)=>div().h(px(44.)).w_full().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(title).into_any_element(),
                         GridRow::Cells(range)=>{
                             let mut cells=Vec::new();for index in range{
-                                let item=this.picker.items[index].clone();let image=item.choice.key.as_ref().and_then(|key|this.media.borrow_mut().get(key,cx));let loading=image.is_none() && item.choice.key.as_ref().is_some_and(|key|!this.media.borrow().failed(key));let shown=image.as_ref().map(|image|{
+                                let item=this.picker.items[index].clone();let (image,loading)=item.choice.key.as_ref().map(|key|this.media.borrow_mut().get_picker(key,cx)).unwrap_or((None,false));let shown=image.as_ref().map(|image|{
                                     if !this.picker.reveals.contains_key(&image.image.id.0) && this.picker.reveals.len()>=1024 {if let Some(old)=this.picker.reveals.iter().min_by_key(|(_,at)|at.get()).map(|(id,_)|*id){this.picker.reveals.remove(&old);}}
                                     this.picker.reveals.entry(image.image.id.0).or_default().clone()
                                 });let clicked=item.clone();let favorited=item.saved_key.is_some() || this.catalog.borrow().is_favorite(&item.choice);let favorite_item=item.clone();

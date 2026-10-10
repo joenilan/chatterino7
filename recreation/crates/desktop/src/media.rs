@@ -256,6 +256,18 @@ impl MediaCache {
         }
         None
     }
+    /// Picker cells use the static asset when animation is missing or over budget.
+    /// A failed animated request must not strand an otherwise usable emote.
+    pub fn get_picker(&mut self, key: &EmoteKey, cx: &mut App) -> (Option<Arc<DecodedMedia>>, bool) {
+        let mut requested = key.clone();
+        let mut image = self.get(&requested, cx);
+        if image.is_none() && requested.animated && self.failed(&requested) {
+            requested.animated = false;
+            image = self.get(&requested, cx);
+        }
+        let loading = image.is_none() && !self.failed(&requested);
+        (image, loading)
+    }
     /// Only base inline assets can change transcript geometry. This set
     /// includes queue-rejected interest and is pruned on eviction, capped at 1024.
     /// Overflow falls back conservatively to invalidating every completion.
