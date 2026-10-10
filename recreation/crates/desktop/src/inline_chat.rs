@@ -152,10 +152,10 @@ impl InlineChat {
                             continue;
                         }
                     };
-                    let mut image = media.get(&key, cx);
+                    let mut image = if index == 0 { media.get_layout(&key, cx) } else { media.get(&key, cx) };
                     if image.is_none() && media.failed(&key) && key.animated {
                         key.animated = false;
-                        image = media.get(&key, cx);
+                        image = if index == 0 { media.get_layout(&key, cx) } else { media.get(&key, cx) };
                     }
                     if image.is_none() && media.failed(&key) && index == 0 {
                         break;

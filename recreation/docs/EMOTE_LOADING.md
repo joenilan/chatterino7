@@ -28,3 +28,22 @@ The prior implementation had ineffective canvas opacity and a cache-age fade
 that could expire before an image became visible. Those source defects are
 corrected here. Linux compilation and native visual verification are separate
 checks; do not infer that a still screenshot proves a temporal fade.
+
+## Decode feedback and layout invalidation
+
+The cache inspection exposes aggregate failure categories (HTTP status, timeout,
+transport, wire limit, unsupported format, decoder failure, dimensions, frame
+limit, decoded-memory limit and cache budget). These are fixed labels; request
+URLs, credentials and raw network errors are not included. A failed count alone
+is not evidence of a network outage. Existing fallback and cooldown behavior is
+unchanged.
+
+Only base inline emote/cheer assets register transcript geometry dependencies.
+Picker-only images, avatars, fixed-size badges and GIF cards still repaint when
+ready, but do not independently trigger a full transcript remeasurement. A known
+inline asset completing, failing, expiring its failed cooldown or being evicted
+still invalidates geometry conservatively across panes. Evictions outside the
+completion pump are drained on the next tick. Dependency keys also cover queue-rejected inline requests, are removed with
+cache entries and are capped at 1024. Overflow switches to conservative full
+invalidation for the rest of the cache session, preserving correctness. This is a source-level reduction in
+unnecessary work; no frame-time speedup is claimed without measurement.

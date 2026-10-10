@@ -408,7 +408,14 @@ impl Workbench {
             }); }
             cx.notify();
         }
-        if self.media.borrow_mut().pump(cx) { for pane in &panes { pane.update(cx, |p, cx| { p.scroller.update(cx, |s, cx| s.remeasure(cx)); cx.notify(); }); } }
+        let (media_changed, layout_changed) = {
+            let mut media = self.media.borrow_mut();
+            (media.pump(cx), media.take_layout_dirty())
+        };
+        if media_changed || layout_changed { for pane in &panes { pane.update(cx, |p, cx| {
+            if layout_changed { p.scroller.update(cx, |s, cx| s.remeasure(cx)); }
+            cx.notify();
+        }); } }
         if self.live.configure(
             identity.clone(),
             panes.iter().map(|p| p.read(cx).name.to_string()).collect(),

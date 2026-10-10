@@ -2,7 +2,7 @@
 use gpui_kit::*;
 use image::{AnimationDecoder, ImageDecoder, ImageFormat};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::{Cursor, Read},
     sync::{Arc, Mutex, mpsc},
     time::{Duration, Instant},
@@ -145,15 +145,29 @@ enum Entry {
         bytes: usize,
         used: u64,
     },
-    Failed(Instant),
+    Failed(Instant, MediaFailure),
 }
-type Download = (EmoteKey, Result<(Arc<DecodedMedia>, usize), ()>);
+#[derive(Clone, Copy)]
+enum MediaFailure { Transport, Timeout, Http(u16), WireLimit, Format, Decode, Dimensions, FrameLimit, DecodedLimit, CacheBudget }
+impl MediaFailure {
+    fn label(self) -> String { match self {
+        Self::Transport => "transport".into(), Self::Timeout => "timeout".into(),
+        Self::Http(status) => format!("http_{status}"), Self::WireLimit => "wire_limit".into(),
+        Self::Format => "unsupported_format".into(), Self::Decode => "decode".into(),
+        Self::Dimensions => "dimensions".into(), Self::FrameLimit => "frame_limit".into(),
+        Self::DecodedLimit => "decoded_limit".into(), Self::CacheBudget => "cache_budget".into(),
+    }}
+}
+type Download = (EmoteKey, Result<(Arc<DecodedMedia>, usize), MediaFailure>);
 pub struct MediaCache {
     entries: HashMap<EmoteKey, Entry>,
     tx: mpsc::SyncSender<EmoteKey>,
     rx: mpsc::Receiver<Download>,
     used: u64,
     bytes: usize,
+    layout_keys: HashSet<EmoteKey>,
+    layout_dirty: bool,
+    conservative_layout: bool,
 }
 impl MediaCache {
     pub fn new() -> Self {
@@ -193,10 +207,18 @@ impl MediaCache {
             rx,
             used: 0,
             bytes: 0,
+            layout_keys: HashSet::new(),
+            layout_dirty: false,
+            conservative_layout: false,
         }
     }
     pub fn inspection(&self) -> serde_json::Value {
-        serde_json::json!({"decoded_bytes":self.bytes,"entries":self.entries.len(),"pending":self.entries.values().filter(|e|matches!(e,Entry::Pending)).count(),"failed":self.entries.values().filter(|e|matches!(e,Entry::Failed(_))).count(),"assets":self.entries.iter().filter_map(|(key,entry)| {
+        // Aggregate fixed categories only: no credentials, request URLs or raw errors.
+        let mut failure_reasons = std::collections::BTreeMap::<String, usize>::new();
+        for entry in self.entries.values() { if let Entry::Failed(_, reason) = entry {
+            *failure_reasons.entry(reason.label()).or_default() += 1;
+        }}
+        serde_json::json!({"failure_reasons":failure_reasons,"decoded_bytes":self.bytes,"entries":self.entries.len(),"pending":self.entries.values().filter(|e|matches!(e,Entry::Pending)).count(),"failed":self.entries.values().filter(|e|matches!(e,Entry::Failed(..))).count(),"assets":self.entries.iter().filter_map(|(key,entry)| {
             if let Entry::Ready{image,..}=entry { Some(serde_json::json!({"id":key.id,"provider":key.provider(),"animated_requested":key.animated,"frames":image.image.frame_count(),"frame_now":image.frame(false)})) } else {None}
         }).collect::<Vec<_>>()})
     }
@@ -208,7 +230,7 @@ impl MediaCache {
         if let Some(Entry::Ready{used,..})=self.entries.get_mut(key){*used=self.used;}
     }
     pub fn failed(&self, key: &EmoteKey) -> bool {
-        matches!(self.entries.get(key), Some(Entry::Failed(at)) if at.elapsed() < Duration::from_secs(60))
+        matches!(self.entries.get(key), Some(Entry::Failed(at, _)) if at.elapsed() < Duration::from_secs(60))
     }
     pub fn get(&mut self, key: &EmoteKey, cx: &mut App) -> Option<Arc<DecodedMedia>> {
         self.used = self.used.wrapping_add(1);
@@ -218,8 +240,13 @@ impl MediaCache {
                 return Some(image.clone());
             }
             Some(Entry::Pending) => return None,
-            Some(Entry::Failed(at)) if at.elapsed() < Duration::from_secs(60) => return None,
+            Some(Entry::Failed(at, _)) if at.elapsed() < Duration::from_secs(60) => return None,
             _ => {}
+        }
+        // Expired failure changes the inline fallback from text back to an image
+        // reservation, even if a full queue defers the actual retry.
+        if (self.layout_keys.contains(key) || self.conservative_layout) && matches!(self.entries.get(key), Some(Entry::Failed(..))) {
+            self.layout_dirty = true;
         }
         if self.tx.try_send(key.clone()).is_ok() {
             // A full queue must not evict usable images on every paint.
@@ -229,10 +256,22 @@ impl MediaCache {
         }
         None
     }
+    /// Only base inline assets can change transcript geometry. This set
+    /// includes queue-rejected interest and is pruned on eviction, capped at 1024.
+    /// Overflow falls back conservatively to invalidating every completion.
+    /// Overlay/picker/avatar reads otherwise only need repaint.
+    pub fn get_layout(&mut self, key: &EmoteKey, cx: &mut App) -> Option<Arc<DecodedMedia>> {
+        let image = self.get(key, cx);
+        if self.layout_keys.len() < 1024 || self.layout_keys.contains(key) {
+            self.layout_keys.insert(key.clone());
+        } else { self.conservative_layout = true; }
+        image
+    }
+    pub fn take_layout_dirty(&mut self) -> bool { std::mem::take(&mut self.layout_dirty) }
     /// Low-priority look-ahead never fills the queue ahead of visible chat.
     pub fn prefetch(&mut self, key: &EmoteKey, cx: &mut App) {
         if matches!(self.entries.get(key),Some(Entry::Ready{..}|Entry::Pending))
-            || matches!(self.entries.get(key),Some(Entry::Failed(at)) if at.elapsed()<Duration::from_secs(60))
+            || matches!(self.entries.get(key),Some(Entry::Failed(at, _)) if at.elapsed()<Duration::from_secs(60))
             || self.entries.values().filter(|e| matches!(e, Entry::Pending)).count() >= 12 { return; }
         self.get(key, cx);
     }
@@ -242,7 +281,7 @@ impl MediaCache {
             .iter()
             .min_by_key(|(_, e)| match e {
                 Entry::Ready { used, .. } => *used,
-                Entry::Failed(_) => 0,
+                Entry::Failed(..) => 0,
                 Entry::Pending => u64::MAX,
             })
             .map(|(key, _)| key.clone());
@@ -251,6 +290,7 @@ impl MediaCache {
         }
     }
     fn remove(&mut self, key: &EmoteKey, cx: &mut App) {
+        self.layout_dirty |= self.layout_keys.remove(key) || self.conservative_layout;
         if let Some(Entry::Ready { image, bytes, .. }) = self.entries.remove(key) {
             self.bytes = self.bytes.saturating_sub(bytes);
             cx.drop_image(image.image.clone(), None);
@@ -262,6 +302,7 @@ impl MediaCache {
             if !matches!(self.entries.get(&key), Some(Entry::Pending)) {
                 continue;
             }
+            self.layout_dirty |= self.layout_keys.contains(&key) || self.conservative_layout;
             match result {
                 Ok((mut image, bytes)) => {
                     if let Some(decoded) = Arc::get_mut(&mut image) { decoded.epoch = Instant::now(); }
@@ -269,7 +310,7 @@ impl MediaCache {
                     // continuously. Reject excess animation for one cooldown; the
                     // renderer requests the bounded static variant instead.
                     if key.id.starts_with("gif:") && key.animated && self.bytes + bytes > 48 * 1024 * 1024 {
-                        self.entries.insert(key,Entry::Failed(Instant::now()));
+                        self.entries.insert(key,Entry::Failed(Instant::now(), MediaFailure::CacheBudget));
                         changed=true;
                         continue;
                     }
@@ -287,8 +328,8 @@ impl MediaCache {
                         },
                     );
                 }
-                Err(()) => {
-                    self.entries.insert(key, Entry::Failed(Instant::now()));
+                Err(reason) => {
+                    self.entries.insert(key, Entry::Failed(Instant::now(), reason));
                 }
             }
             changed = true;
@@ -299,7 +340,7 @@ impl MediaCache {
 fn download(
     client: &reqwest::blocking::Client,
     key: &EmoteKey,
-) -> Result<(Arc<DecodedMedia>, usize), ()> {
+) -> Result<(Arc<DecodedMedia>, usize), MediaFailure> {
     let format = if key.animated { "animated" } else { "static" };
     let url = key
         .external
@@ -317,9 +358,9 @@ fn download(
                 key.id
             )
         });
-    let response = client.get(url).send().map_err(|_| ())?;
+    let response = client.get(url).send().map_err(|e| if e.is_timeout() {MediaFailure::Timeout} else {MediaFailure::Transport})?;
     if !response.status().is_success() {
-        return Err(());
+        return Err(MediaFailure::Http(response.status().as_u16()));
     }
     let rich_gif=key.id.starts_with("gif:");
     let max_wire: usize = if rich_gif { 12 * 1024 * 1024 } else { 2 * 1024 * 1024 };
@@ -329,27 +370,28 @@ fn download(
         .content_length()
         .is_some_and(|n| n > max_wire as u64)
     {
-        return Err(());
+        return Err(MediaFailure::WireLimit);
     }
     let mut bytes = Vec::new();
     response
         .take(max_wire as u64 + 1)
         .read_to_end(&mut bytes)
-        .map_err(|_| ())?;
+        .map_err(|_| MediaFailure::Transport)?;
     if bytes.len() > max_wire {
-        return Err(());
+        return Err(MediaFailure::WireLimit);
     }
-    let format = image::guess_format(&bytes).map_err(|_| ())?;
+    let format = image::guess_format(&bytes).map_err(|_| MediaFailure::Format)?;
     let mut frames = Vec::new();
     let mut decoded = 0usize;
-    let mut push = |mut frame: image::Frame| -> Result<(), ()> {
+    let mut push = |mut frame: image::Frame| -> Result<(), MediaFailure> {
         let (w, h) = frame.buffer().dimensions();
-        if w == 0 || h == 0 || w > max_dimension || h > max_dimension || frames.len() >= 120 {
-            return Err(());
+        if w == 0 || h == 0 || w > max_dimension || h > max_dimension {
+            return Err(MediaFailure::Dimensions);
         }
-        decoded = decoded.checked_add(w as usize * h as usize * 4).ok_or(())?;
+        if frames.len() >= 120 { return Err(MediaFailure::FrameLimit); }
+        decoded = decoded.checked_add(w as usize * h as usize * 4).ok_or(MediaFailure::DecodedLimit)?;
         if decoded > max_decoded {
-            return Err(());
+            return Err(MediaFailure::DecodedLimit);
         }
         for pixel in frame.buffer_mut().chunks_exact_mut(4) {
             pixel.swap(0, 2);
@@ -360,16 +402,16 @@ fn download(
     match format {
         ImageFormat::Gif => {
             let mut decoder =
-                image::codecs::gif::GifDecoder::new(Cursor::new(&bytes)).map_err(|_| ())?;
+                image::codecs::gif::GifDecoder::new(Cursor::new(&bytes)).map_err(|_| MediaFailure::Decode)?;
             let (w, h) = decoder.dimensions();
             if w > max_dimension || h > max_dimension {
-                return Err(());
+                return Err(MediaFailure::Dimensions);
             }
             let mut limits = image::Limits::default();
             limits.max_alloc = Some(max_decoded as u64);
-            decoder.set_limits(limits).map_err(|_| ())?;
+            decoder.set_limits(limits).map_err(|_| MediaFailure::Decode)?;
             for frame in decoder.into_frames() {
-                push(frame.map_err(|_| ())?)?;
+                push(frame.map_err(|_| MediaFailure::Decode)?)?;
                 if !key.animated {
                     break;
                 }
@@ -377,16 +419,16 @@ fn download(
         }
         ImageFormat::WebP if key.animated => {
             let mut decoder =
-                image::codecs::webp::WebPDecoder::new(Cursor::new(&bytes)).map_err(|_| ())?;
+                image::codecs::webp::WebPDecoder::new(Cursor::new(&bytes)).map_err(|_| MediaFailure::Decode)?;
             let (w, h) = decoder.dimensions();
             if w > max_dimension || h > max_dimension {
-                return Err(());
+                return Err(MediaFailure::Dimensions);
             }
             let mut limits = image::Limits::default();
             limits.max_alloc = Some(max_decoded as u64);
-            decoder.set_limits(limits).map_err(|_| ())?;
+            decoder.set_limits(limits).map_err(|_| MediaFailure::Decode)?;
             for frame in decoder.into_frames() {
-                push(frame.map_err(|_| ())?)?;
+                push(frame.map_err(|_| MediaFailure::Decode)?)?;
             }
         }
         ImageFormat::Png | ImageFormat::WebP | ImageFormat::Jpeg => {
@@ -397,13 +439,13 @@ fn download(
             limits.max_alloc = Some(max_decoded as u64);
             reader.limits(limits);
             push(image::Frame::new(
-                reader.decode().map_err(|_| ())?.into_rgba8(),
+                reader.decode().map_err(|_| MediaFailure::Decode)?.into_rgba8(),
             ))?;
         }
-        _ => return Err(()),
+        _ => return Err(MediaFailure::Format),
     }
     if frames.is_empty() {
-        return Err(());
+        return Err(MediaFailure::Decode);
     }
     let image = Arc::new(RenderImage::new(frames));
     let mut cycle_ms = 0;
