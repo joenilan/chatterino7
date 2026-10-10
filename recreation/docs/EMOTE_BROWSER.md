@@ -86,11 +86,31 @@ contain emotes. Permission consent remains with the owner during ordinary Twitch
 sign-in. No grant is initiated automatically on application launch.
 
 Inventory work is isolated from chat, cancels stale account generations, and is
-bounded to 32 pages, 20,000 entries, 90 seconds and 4 MiB per response. Cursor loops
-are rejected. Reaching a budget is visibly **partial**, never reported as complete.
-The inventory refreshes periodically; failed retrieval clears uncertain availability.
+processed in 16-page / 90-second batches, continuing from the last cursor rather
+than repeatedly restarting the first pages. Intermediate results are usable while
+loading continues. A complete pass is bounded to 512 pages, 20,000 entries and
+4 MiB per response. Cursor loops are rejected. Reaching a total budget is visibly
+**partial**, never reported as complete.
+The inventory refreshes periodically. Transient failures retain same-account results
+only until their original ten-minute expiry; authorization failures clear them.
 Profiles are fetched through the existing bounded metadata owner. No account token
 or inventory is written into ordinary workspace settings.
 
-Linux compilation is verified. Real subscription loading, normal sign-in permission approval,
-and populated owner-tab behavior still require authenticated native verification.
+Windows build 5067379 verified normal-login account inventory loading (1,199 emotes),
+with the owner completing consent. That run exposed a partial-inventory cap; the
+continuation change requires a fresh native verification.
+
+
+## Smooth media loading
+
+The virtualized picker requests visible images first and preloads at most two rows
+ahead, only when fewer than twelve media requests are pending. Four bounded download
+workers feed a shared 512-entry, 48 MiB decoded cache. A full download queue never
+evicts already decoded images. Pending requests are not duplicated just because
+they have waited in the queue.
+
+Unloaded tiles keep a fixed-size neutral placeholder, then fade in over 160 ms.
+Reduced-motion mode skips the fade. Already cached images appear immediately.
+Failed images retain their readable label and tooltip. The picker remains usable
+throughout loading; the full account inventory is never downloaded into image
+memory at once. Native visual verification is required for this loading revision.

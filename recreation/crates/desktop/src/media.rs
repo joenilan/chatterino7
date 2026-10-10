@@ -128,6 +128,8 @@ pub struct DecodedMedia {
     epoch: Instant,
 }
 impl DecodedMedia {
+    /// Short arrival fade; cached images never replay it when scrolling.
+    pub fn arrival_opacity(&self) -> f32 { (self.epoch.elapsed().as_secs_f32() / 0.16).min(1.) }
     pub fn frame(&self, reduced: bool) -> usize {
         if reduced || self.ends_ms.len() <= 1 {
             return 0;
@@ -139,7 +141,7 @@ impl DecodedMedia {
     }
 }
 enum Entry {
-    Pending(Instant),
+    Pending,
     Ready {
         image: Arc<DecodedMedia>,
         bytes: usize,
@@ -159,8 +161,8 @@ impl MediaCache {
     pub fn new() -> Self {
         let (tx, jobs) = mpsc::sync_channel::<EmoteKey>(32);
         let jobs = Arc::new(Mutex::new(jobs));
-        let (results, rx) = mpsc::sync_channel(2);
-        for _ in 0..2 {
+        let (results, rx) = mpsc::sync_channel(8);
+        for _ in 0..4 {
             let jobs = jobs.clone();
             let results = results.clone();
             std::thread::spawn(move || {
@@ -210,18 +212,22 @@ impl MediaCache {
                 *used = self.used;
                 return Some(image.clone());
             }
-            Some(Entry::Pending(at)) if at.elapsed() < Duration::from_secs(30) => return None,
+            Some(Entry::Pending) => return None,
             Some(Entry::Failed(at)) if at.elapsed() < Duration::from_secs(60) => return None,
             _ => {}
         }
-        if self.entries.len() >= 128 {
-            self.evict(cx);
-        }
         if self.tx.try_send(key.clone()).is_ok() {
+            // A full queue must not evict usable images on every paint.
+            if self.entries.len() >= 512 { self.evict(cx); }
             self.entries
-                .insert(key.clone(), Entry::Pending(Instant::now()));
+                .insert(key.clone(), Entry::Pending);
         }
         None
+    }
+    /// Low-priority look-ahead never fills the queue ahead of visible chat.
+    pub fn prefetch(&mut self, key: &EmoteKey, cx: &mut App) {
+        if self.entries.contains_key(key) || self.entries.values().filter(|e| matches!(e, Entry::Pending)).count() >= 12 { return; }
+        self.get(key, cx);
     }
     fn evict(&mut self, cx: &mut App) {
         let key = self
@@ -230,7 +236,7 @@ impl MediaCache {
             .min_by_key(|(_, e)| match e {
                 Entry::Ready { used, .. } => *used,
                 Entry::Failed(_) => 0,
-                Entry::Pending(_) => u64::MAX,
+                Entry::Pending => u64::MAX,
             })
             .map(|(key, _)| key.clone());
         if let Some(key) = key {
@@ -246,11 +252,12 @@ impl MediaCache {
     pub fn pump(&mut self, cx: &mut App) -> bool {
         let mut changed = false;
         while let Ok((key, result)) = self.rx.try_recv() {
-            if !matches!(self.entries.get(&key), Some(Entry::Pending(_))) {
+            if !matches!(self.entries.get(&key), Some(Entry::Pending)) {
                 continue;
             }
             match result {
-                Ok((image, bytes)) => {
+                Ok((mut image, bytes)) => {
+                    if let Some(decoded) = Arc::get_mut(&mut image) { decoded.epoch = Instant::now(); }
                     // Large visible GIFs must not evict and redownload one another
                     // continuously. Reject excess animation for one cooldown; the
                     // renderer requests the bounded static variant instead.

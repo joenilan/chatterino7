@@ -75,8 +75,13 @@ pub fn icon(
     width: f32,
     height: f32,
 ) -> AnyElement {
+    smooth_icon(image, label, width, height, true)
+}
+fn smooth_icon(image: Option<Arc<DecodedMedia>>, label: String, width: f32, height: f32, reduced: bool) -> AnyElement {
     if let Some(media) = image {
-        canvas(
+        let reveal = media.clone();
+        let image_id = media.image.id.0;
+        let element = canvas(
             |bounds, _, _| bounds,
             move |bounds, _, window, cx| {
                 let frame = media.frame(cx.reduce_motion());
@@ -95,8 +100,10 @@ pub fn icon(
             },
         )
         .w(px(width))
-        .h(px(height))
-        .into_any_element()
+        .h(px(height));
+        if !reduced && reveal.arrival_opacity() < 1. {
+            element.with_animation(("emote-arrival", image_id), Animation::new(std::time::Duration::from_millis(180)), move |el, _| el.opacity(reveal.arrival_opacity())).into_any_element()
+        } else { element.into_any_element() }
     } else {
         div()
             .w(px(width))
@@ -768,19 +775,28 @@ impl ChannelPane {
                 if next!=columns{let owner=owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|this,cx|{if this.picker.columns!=next{this.picker.columns=next;this.rebuild_browser(false,cx);if let Some(row)=this.picker.rows.iter().position(|r|matches!(r,GridRow::Cells(range)if range.contains(&this.picker.current))){this.picker.scroll.scroll_to_item(row,ScrollStrategy::Nearest);}cx.notify();}});});}
             }).when(self.picker.items.is_empty(),|el|el.child(div().p_2().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(empty_message).when(can_retry,|el|el.child(Button::new("retry-public-emotes").xsmall().label("Retry public emotes").on_click(cx.listener(|this,_,_,cx|{if this.catalog.borrow_mut().retry_public(){this.refresh_picker(cx);cx.notify();}}))))))
             .when(!self.picker.items.is_empty(),|el|el.child(uniform_list("emote-browser-grid",self.picker.rows.len(),cx.processor(|this,range:Range<usize>,_,cx|{
-                range.map(|row|{
+                let ahead = range.end..(range.end + 2).min(this.picker.rows.len());
+                let elements: Vec<_> = range.map(|row|{
                     match this.picker.rows[row].clone(){
                         GridRow::Heading(title)=>div().h(px(44.)).w_full().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(title).into_any_element(),
                         GridRow::Cells(range)=>{
                             let mut cells=Vec::new();for index in range{
-                                let item=this.picker.items[index].clone();let image=item.choice.key.as_ref().and_then(|key|this.media.borrow_mut().get(key,cx));let clicked=item.clone();let favorited=item.saved_key.is_some() || this.catalog.borrow().is_favorite(&item.choice);let favorite_item=item.clone();
+                                let item=this.picker.items[index].clone();let image=item.choice.key.as_ref().and_then(|key|this.media.borrow_mut().get(key,cx));let loading=image.is_none() && item.choice.key.as_ref().is_some_and(|key|!this.media.borrow().failed(key));let clicked=item.clone();let favorited=item.saved_key.is_some() || this.catalog.borrow().is_favorite(&item.choice);let favorite_item=item.clone();
                                 let tooltip=format!("{} · {} · {}{}",item.choice.label,item.choice.provider,item.origin,if item.available{""}else{" · Not available with this alias in the current channel"});let tooltip=format!("{tooltip} · {}",if favorited{"Favorite · right-click to remove"}else{"Right-click to favorite"});let hover=tooltip.clone();
-                                cells.push(div().id(("emote-browser-cell",index)).size(px(40.)).flex_shrink_0().flex().items_center().justify_center().rounded(px(4.)).border_1().border_color(if index==this.picker.current{rgb(0xB9A1FF)}else{rgba(0x00000000)}).opacity(if item.available{1.}else{0.4}).cursor_pointer().hover(|s|s.bg(rgb(theme::HOVER))).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(w,cx)).relative().child(icon(image,item.choice.label,34.,34.)).when(favorited,|el|el.child(div().absolute().top_0().right_0().text_size(px(9.)).text_color(rgb(0xE9C99C)).child("★"))).on_hover(cx.listener(move|this,over,_,cx|{if *over{this.picker.hover_text=hover.clone();this.picker.current=index;cx.notify();}})).on_mouse_down(MouseButton::Left,|_,w,cx|{w.prevent_default();cx.stop_propagation();}).on_mouse_down(MouseButton::Right,cx.listener(move|this,_,w,cx|{w.prevent_default();cx.stop_propagation();this.toggle_browser_favorite(&favorite_item,w,cx);})).on_click(cx.listener(move|this,_,w,cx|{this.insert_browser_item(&clicked,w,cx);})));
+                                cells.push(div().id(("emote-browser-cell",index)).size(px(40.)).flex_shrink_0().flex().items_center().justify_center().rounded(px(4.)).border_1().border_color(if index==this.picker.current{rgb(0xB9A1FF)}else{rgba(0x00000000)}).opacity(if item.available{1.}else{0.4}).cursor_pointer().hover(|s|s.bg(rgb(theme::HOVER))).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(w,cx)).relative().child(if loading { div().size(px(34.)).flex().items_center().justify_center().child(div().size(px(20.)).rounded(px(5.)).bg(rgb(theme::HOVER))).into_any_element() } else { smooth_icon(image,item.choice.label,34.,34.,cx.reduce_motion()) }).when(favorited,|el|el.child(div().absolute().top_0().right_0().text_size(px(9.)).text_color(rgb(0xE9C99C)).child("★"))).on_hover(cx.listener(move|this,over,_,cx|{if *over{this.picker.hover_text=hover.clone();this.picker.current=index;cx.notify();}})).on_mouse_down(MouseButton::Left,|_,w,cx|{w.prevent_default();cx.stop_propagation();}).on_mouse_down(MouseButton::Right,cx.listener(move|this,_,w,cx|{w.prevent_default();cx.stop_propagation();this.toggle_browser_favorite(&favorite_item,w,cx);})).on_click(cx.listener(move|this,_,w,cx|{this.insert_browser_item(&clicked,w,cx);})));
                             }
                             div().h(px(44.)).h_flex().gap_1().children(cells).into_any_element()
                         }
                     }
-                }).collect()
+                }).collect();
+                for row in ahead {
+                    if let GridRow::Cells(indices) = this.picker.rows[row].clone() {
+                        for index in indices {
+                            if let Some(key) = &this.picker.items[index].choice.key { this.media.borrow_mut().prefetch(key,cx); }
+                        }
+                    }
+                }
+                elements
             })).track_scroll(&self.picker.scroll).h_full().w_full())))
             .when(!compact,|el|el.child(div().id("emote-services").h_flex().h(px(28.)).flex_shrink_0().gap_1().overflow_x_scroll().children(bottom_services)))
             .when(!compact,|el|el.child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).overflow_hidden().h(px(14.)).flex_shrink_0().child(details)))
