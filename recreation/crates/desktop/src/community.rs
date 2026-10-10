@@ -212,7 +212,13 @@ fn parse_bttv(v: &Value, global: bool) -> Emotes {
         if width == 0 || height == 0 || width > 256 || height > 256 {
             continue;
         }
-        let still = format!("https://cdn.betterttv.net/emote/{id}/static/2x.webp");
+        // BTTV exposes /static only for still frames of animated emotes.
+        // Nonanimated assets live at the ordinary size URL.
+        let still = if animated {
+            format!("https://cdn.betterttv.net/emote/{id}/static/2x.webp")
+        } else {
+            format!("https://cdn.betterttv.net/emote/{id}/2x.webp")
+        };
         let url = if animated {
             format!("https://cdn.betterttv.net/emote/{id}/2x.gif")
         } else {
