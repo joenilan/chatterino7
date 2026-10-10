@@ -713,3 +713,12 @@ sets and special/commercial sets require the next event reducer. Do not infer
 permissions from arbitrary style IDs or merge personal tokens into channel maps.
 
 Detailed next-stage entitlement and glyph-mask rendering design: [SEVENTV_COSMETICS.md](SEVENTV_COSMETICS.md).
+
+### Passive sender 7TV sets — source implemented
+
+Added anonymous channel entitlement subscriptions, sender-only Personal/Commercial
+lookup, own-only picker entries, bounded complete-set refreshes, revoke/reset/expiry
+handling and late-result guards. See SEVENTV_COSMETICS.md for limits. Next native
+batch: observe actual grants, correct sender rendering and own picker behavior;
+reconnect/channel changes must discard event-derived grants. Windows remains at
+c3177eb5 until the owner restores Deadlink. Badges/paints still next.

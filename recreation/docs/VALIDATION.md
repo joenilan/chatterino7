@@ -635,3 +635,13 @@ action limit for this session was reached; start a new turn". One supported new
 turn retry returned the same error; no permissions/settings or alternate execution
 routes were used to evade it. Prior807 subscription acceptance remains valid for
 that earlier revision, not a claimed check of c3177eb5. No sends/auth/source edits.
+
+### Passive 7TV entitlement slice — 2026-10-10
+
+Cloud locked/offline chat-workbench build passed after implementation (7.14s).
+Read-only source review found and fixed per-grant expiry and Reset fetch-state
+cleanup. Full-set refetches replace sparse patch mutation; versions reject late
+HTTP results. No new harness or artificial chat messages were added.
+Windows build and real entitlement-event rendering are NOT yet run for this slice.
+Existing native app remains c3177eb5; user is debugging Deadlink's terminal-action
+limit. Do not retry that blocked execution route until access is restored.

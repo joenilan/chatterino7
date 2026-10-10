@@ -7,8 +7,10 @@
 - The signed-in user's first owned Personal set has source support, with public
   identity/flag checks, sender-scoped expansion and own picker entries. Native
   evidence is tracked separately in VALIDATION.md.
-- Other users' entitlement sets, special/commercial sets, badges and paints are
-  unfinished. A public style ID alone is not proof of an active entitlement.
+- Passive sender-scoped Personal/Commercial set grants now have source support,
+  with bounded anonymous channel subscriptions and complete-set refetches. This
+  is awaiting Windows verification. Badges and paints remain unfinished. A public
+  style ID alone is not proof of an active entitlement.
 - No automatic presence publishing. This would disclose user/channel activity.
 
 ## Next data slice: passive sender-scoped entitlements
@@ -124,3 +126,33 @@ Grayscale masks may look different from ClearType, so Windows review is essentia
 - https://github.com/SevenTV/SevenTV/blob/main/shared/src/old_types/cosmetic.rs
 - https://github.com/SevenTV/SevenTV/blob/main/apps/api/src/http/v3/rest/users.rs
 - https://github.com/SevenTV/EventAPI#close-codes
+
+## Implemented passive entitlement slice (2026-10-10)
+
+One anonymous socket now subscribes to channel entitlement create/delete/reset
+and emote-set events. It never publishes presence. Grants use numeric Twitch
+connection IDs; aliases resolve only for their sender. The picker exposes only
+the signed-in user's grants. Owned-set bootstrap remains independent.
+
+Dispatches carry no channel provenance, so grants are connection-session-scoped.
+Changing the watched channel list recreates the connection and clears grants,
+also releasing the server's hidden presence topics. Disconnect, reset and queue
+overflow clear event-derived state. Each individual grant expires after 30 minutes
+without another observation; a different grant cannot extend it. Passive coverage
+is not a historical roster or a claim that every sender's personal set is known.
+
+Create/update events invalidate cached set contents and trigger a coalesced full
+REST fetch rather than guessing sparse rename/removal semantics. Set deletion
+removes grants. Per-set request versions reject old results after newer changes;
+empty responses replace old contents. Only Personal/Commercial sets and listed,
+PERSONAL-eligible, Twitch-allowed emotes pass through the existing media policy.
+
+Limits: 2,048 sender mappings, eight grants per sender, 256 referenced sets,
+10,000 cached aliases, 1,024 normalized event changes, existing 32-job/2-result
+HTTP queues. Half the announced subscription budget is reserved for object
+updates; channel bundles use the remaining half including their hidden presence
+topic. This bounds live coverage, not the number of chat panes. HTTP refreshes
+retain the five-second minimum, 60-second failure cooldown and five-minute poll.
+
+No source-level or native live event acceptance is implied by successful compilation.
+The Windows verification queue remains blocked on the reported Deadlink action cap.

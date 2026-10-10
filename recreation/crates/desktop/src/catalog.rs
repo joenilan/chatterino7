@@ -22,6 +22,10 @@ pub struct Catalog {
     personal_user:Option<String>,
     personal_ready:bool,
     personal_epoch:u64,
+    entitlements:crate::seven_entitlements::Entitlements,
+    entitled_sets:HashMap<String,Emotes>,
+    event_versions:HashMap<String,u64>,
+    event_revision:u64,
     watches:HashMap<String,crate::seven_events::Watch>,
     events:crate::seven_events::Events,
     dirty:HashSet<String>,
@@ -51,10 +55,12 @@ impl Catalog {
             while let Ok((channel, id, generation)) = jobs.recv() {
                 let url = if channel.is_empty() {
                     "https://7tv.io/v3/emote-sets/global".to_owned()
+                } else if channel.starts_with('#') {
+                    format!("https://7tv.io/v3/emote-sets/{id}")
                 } else {
                     format!("https://7tv.io/v3/users/twitch/{id}")
                 };
-                let result = if channel.starts_with('@'){load_personal(&client,&url)}else{load(&client, &url, channel.is_empty())};
+                let result = if channel.starts_with('@'){load_personal(&client,&url)}else if channel.starts_with('#'){load_entitled(&client,&url,&id)}else{load(&client, &url, channel.is_empty())};
                 if results.send((channel, generation, result)).is_err() {
                     return;
                 }
@@ -64,6 +70,7 @@ impl Catalog {
         Self {
             global: HashMap::new(),
             personal:HashMap::new(),personal_user:None,personal_ready:false,personal_epoch:0,
+            entitlements:Default::default(),entitled_sets:HashMap::new(),event_versions:HashMap::new(),event_revision:0,
             watches:HashMap::new(),events:crate::seven_events::Events::new(),dirty:HashSet::new(),
             in_flight:HashSet::from([String::new()]),retry_after:HashMap::new(),
             twitch: crate::twitch_assets::TwitchAssets::new(),
@@ -77,7 +84,7 @@ impl Catalog {
         }
     }
     pub fn inspection(&self) -> Value {
-        serde_json::json!({"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"personal_emotes":self.personal.len(),"personal_catalog_loaded":self.personal_ready,"personal_scope":"signed-in owned set","global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
+        serde_json::json!({"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"personal_emotes":self.personal.len(),"personal_catalog_loaded":self.personal_ready,"personal_scope":"owned set plus passive session grants","seventv_entitled_senders":self.entitlements.len(),"seventv_entitled_sets":self.entitled_sets.len(),"seventv_entitled_emotes":self.entitled_sets.values().map(HashMap::len).sum::<usize>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
     }
     pub fn channel(&mut self, name: &str, id: &str) {
         if id.is_empty() || id.len() > 32 || !id.bytes().all(|b| b.is_ascii_digit()) {
@@ -102,12 +109,42 @@ impl Catalog {
         let account_changed=self.personal_user!=user;
         if account_changed {self.personal_epoch=self.personal_epoch.wrapping_add(1);self.personal.clear();self.personal_ready=false;self.personal_user=user;}
         let personal_key=self.personal_user.as_ref().map(|id|format!("@{id}"));
-        let wanted=|k:&String|k.is_empty()||active.contains(k)||personal_key.as_ref()==Some(k);
+        let channels=self.requested.iter().filter(|(name,_)|active.contains(*name)).map(|(_, (id,_))|id.clone()).collect();
+        let (dirty,events)=self.events.pump(self.watches.values().cloned().collect(),channels);
+        self.dirty.extend(dirty);
+        let mut event_changed=self.entitlements.expire();
+        for event in events {
+            event_changed |= self.entitlements.apply(&event);
+            match event {
+                crate::seven_entitlements::Change::Reset => {
+                    self.event_revision=self.event_revision.wrapping_add(1);
+                    event_changed |= !self.entitled_sets.is_empty();self.entitled_sets.clear();self.event_versions.clear();self.requested.retain(|k,_|!k.starts_with('#'));self.retry_after.retain(|k,_|!k.starts_with('#'));
+                }
+                crate::seven_entitlements::Change::Set{id,removed} => {
+                    // Refetch complete authoritative sets instead of guessing sparse patch semantics.
+                    if self.event_versions.contains_key(&id){
+                        self.event_revision=self.event_revision.wrapping_add(1);self.event_versions.insert(id.clone(),self.event_revision);
+                        event_changed |= self.entitled_sets.remove(&id).is_some();
+                        if !removed{self.dirty.insert(format!("#{id}"));}
+                    }
+                }
+                _=>{}
+            }
+        }
+        let entitled=self.entitlements.sets();
+        self.entitled_sets.retain(|id,_|entitled.contains(id));
+        self.event_versions.retain(|id,_|entitled.contains(id));
+        for id in &entitled {
+            if !self.event_versions.contains_key(id){self.event_revision=self.event_revision.wrapping_add(1);self.event_versions.insert(id.clone(),self.event_revision);}
+            let name=format!("#{id}");
+            if !self.requested.contains_key(&name)&&!self.in_flight.contains(&name)&&self.tx.try_send((name.clone(),id.clone(),self.event_versions[id])).is_ok(){self.in_flight.insert(name.clone());self.requested.insert(name,(id.clone(),Instant::now()));}
+        }
+        let wanted=|k:&String|k.is_empty()||active.contains(k)||personal_key.as_ref()==Some(k)||k.strip_prefix('#').is_some_and(|id|entitled.contains(id));
         self.channels.retain(|k, _| active.contains(k));
         self.watches.retain(|k,_|wanted(k));
         self.dirty.retain(|k|wanted(k));
         self.retry_after.retain(|k,_|wanted(k));
-        self.dirty.extend(self.events.pump(self.watches.values().cloned().collect()));
+
         self.requested.retain(|k, _| wanted(k));
         if let Some(id)=self.personal_user.clone(){self.channel(&format!("@{id}"),&id);}
         if (self.global_requested.elapsed() >= Duration::from_secs(300) || (self.dirty.contains("") && self.global_requested.elapsed()>=Duration::from_secs(5)))
@@ -119,22 +156,30 @@ impl Catalog {
         for (name, (id, at)) in &mut self.requested {
             if (at.elapsed() >= Duration::from_secs(300) || (self.dirty.contains(name) && at.elapsed()>=Duration::from_secs(5)))
                 && !self.in_flight.contains(name) && self.retry_after.get(name).is_none_or(|at|Instant::now()>=*at)
-                && self.tx.try_send((name.clone(), id.clone(), if name.starts_with('@'){self.personal_epoch}else{0})).is_ok()
+                && self.tx.try_send((name.clone(), id.clone(), if name.starts_with('@'){self.personal_epoch}else if let Some(id)=name.strip_prefix('#'){self.event_versions.get(id).copied().unwrap_or(0)}else{0})).is_ok()
             {
                 *at = Instant::now();self.dirty.remove(name);self.in_flight.insert(name.clone());
             }
         }
-        let channel_requests=self.requested.iter().filter(|(name,_)|!name.starts_with('@')).map(|(name,value)|(name.clone(),value.clone())).collect();
-        let mut changed = account_changed | self.twitch.pump(identity, &channel_requests);
+        let channel_requests=self.requested.iter().filter(|(name,_)|!name.starts_with('@')&&!name.starts_with('#')).map(|(name,value)|(name.clone(),value.clone())).collect();
+        let mut changed = event_changed | account_changed | self.twitch.pump(identity, &channel_requests);
         changed |= self.community.pump(&channel_requests);
         while let Ok((name, generation, result)) = self.rx.try_recv() {
             self.in_flight.remove(&name);
             if name.starts_with('@')&&generation!=self.personal_epoch{continue;}
+            if let Some(id)=name.strip_prefix('#'){if self.event_versions.get(id)!=Some(&generation){if wanted(&name){self.dirty.insert(name.clone());}continue;}}
             if result.is_none() && wanted(&name) {self.retry_after.insert(name.clone(),Instant::now()+Duration::from_secs(60));self.dirty.insert(name.clone());}else{self.retry_after.remove(&name);}
             if let Some(loaded) = result {
-                if wanted(&name){self.watches.insert(name.clone(),crate::seven_events::Watch{channel:name.clone(),set:loaded.set,owner:loaded.owner});}
+                if wanted(&name)&&!name.starts_with('#'){self.watches.insert(name.clone(),crate::seven_events::Watch{channel:name.clone(),set:loaded.set,owner:loaded.owner});}
                 let emotes=loaded.emotes;
-                if personal_key.as_ref()==Some(&name){
+                if let Some(id)=name.strip_prefix('#') {
+                    if entitled.contains(id){
+                        let remaining=10000usize.saturating_sub(self.entitled_sets.iter().filter(|(key,_)|key.as_str()!=id).map(|(_,v)|v.len()).sum());
+                        let mut entries=emotes.into_iter().collect::<Vec<_>>();entries.sort_by(|a,b|a.0.cmp(&b.0));entries.truncate(remaining);
+                        let emotes=entries.into_iter().collect();
+                        if self.entitled_sets.get(id)!=Some(&emotes){self.entitled_sets.insert(id.into(),emotes);changed=true;}
+                    }
+                } else if personal_key.as_ref()==Some(&name){
                     self.personal_ready=true;
                     if self.personal!=emotes{self.personal=emotes;changed=true;}
                 } else if name.is_empty() {
@@ -150,6 +195,7 @@ impl Catalog {
         let make_seven=|e:&Emote|Fragment::Emote{provider:"7tv".into(),id:e.id.clone(),label:token.into(),overlay:e.overlay,animated:e.animated,asset:Some(e.asset.clone())};
         let local=self.community.channels.get(channel);
         sender.filter(|id|Some(*id)==self.personal_user.as_deref()).and_then(|_|self.personal.get(token)).map(make_seven)
+            .or_else(||sender.and_then(|id|self.entitlements.for_user(id).find_map(|set|self.entitled_sets.get(set).and_then(|s|s.get(token)))).map(make_seven))
             .or_else(||local.and_then(|s|s.ffz.get(token)).or_else(||local.and_then(|s|s.bttv.get(token))).cloned())
             .or_else(||self.channels.get(channel).and_then(|s|s.get(token)).map(make_seven))
             .or_else(||self.community.global.ffz.get(token).or_else(||self.community.global.bttv.get(token)).cloned())
@@ -159,13 +205,14 @@ impl Catalog {
         let query=query.to_lowercase();let mut names=HashSet::new();
         names.extend(self.global.keys().cloned());
         names.extend(self.personal.keys().cloned());
+        if let Some(user)=&self.personal_user{for id in self.entitlements.for_user(user){if let Some(set)=self.entitled_sets.get(id){names.extend(set.keys().cloned());}}}
         if let Some(set)=self.channels.get(channel){names.extend(set.keys().cloned());}
         for set in std::iter::once(&self.community.global).chain(self.community.channels.get(channel)) {names.extend(set.ffz.keys().cloned());names.extend(set.bttv.keys().cloned());}
         let mut choices=HashMap::new();
         for name in names {if !name.to_lowercase().contains(&query){continue;}
             if let Some(Fragment::Emote{provider,id,animated,asset:Some(asset),..})=self.lookup(channel,&name,self.personal_user.as_deref()){
                 if let Some(key)=crate::media::EmoteKey::community(&provider,&id,animated,&asset){
-                    let provider=match provider.as_str(){"bttv"=>"BTTV","ffz"=>"FFZ",_ if self.personal.contains_key(&name)=>"7TV Personal",_=>"7TV"};
+                    let provider=match provider.as_str(){"bttv"=>"BTTV","ffz"=>"FFZ",_ if self.personal.contains_key(&name)||self.personal_user.as_deref().is_some_and(|u|self.entitlements.for_user(u).any(|id|self.entitled_sets.get(id).is_some_and(|set|set.contains_key(&name))))=>"7TV Personal",_=>"7TV"};
                     choices.insert(name.clone(),crate::twitch_assets::Choice{label:name,provider,key:Some(key)});
                 }
             }
@@ -231,6 +278,12 @@ fn fetch(client: &reqwest::blocking::Client, url: &str) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 fn load(client:&reqwest::blocking::Client,url:&str,global:bool)->Option<Loaded>{parse(&fetch(client,url)?,global,false)}
+fn load_entitled(client:&reqwest::blocking::Client,url:&str,id:&str)->Option<Loaded>{
+    let data=fetch(client,url)?;
+    if !data.is_null()&&data["id"].as_str()!=Some(id){return None;}
+    if !data.is_null()&&data["flags"].as_u64().unwrap_or(0)&12==0{return Some(Loaded{emotes:HashMap::new(),set:String::new(),owner:String::new()});}
+    parse(&data,true,true)
+}
 fn load_personal(client:&reqwest::blocking::Client,url:&str)->Option<Loaded>{
     let user=fetch(client,url)?;
     if !user.is_null()&&(!user["user"].is_object()||user["id"].as_str()!=url.rsplit('/').next()||user["platform"].as_str()!=Some("TWITCH")){return None;}
