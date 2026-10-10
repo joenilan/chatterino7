@@ -46,7 +46,7 @@ pub struct Catalog {
     requested: HashMap<String, (String, Instant)>,
     global_requested: Instant,
     tx: mpsc::SyncSender<(String, String, u64)>,
-    rx: mpsc::Receiver<(String, u64, Option<Loaded>)>,
+    rx: mpsc::Receiver<(String, String, u64, Option<Loaded>)>,
 }
 impl Catalog {
     pub fn new() -> Self {
@@ -69,7 +69,7 @@ impl Catalog {
                     format!("https://7tv.io/v3/users/twitch/{id}")
                 };
                 let result = if channel.starts_with('@'){load_personal(&client,&url)}else if channel.starts_with('#'){load_entitled(&client,&url,&id)}else{load(&client, &url, channel.is_empty())};
-                if results.send((channel, generation, result)).is_err() {
+                if results.send((channel, id, generation, result)).is_err() {
                     return;
                 }
             }
@@ -102,16 +102,25 @@ impl Catalog {
         if id.is_empty() || id.len() > 32 || !id.bytes().all(|b| b.is_ascii_digit()) {
             return;
         }
+        // A login can resolve to a different account; refresh the identity binding
+        // before consulting time-based retry/cache state. Old queued results are rejected below.
+        if !name.is_empty()&&!name.starts_with(['@','#'])&&self.requested.get(name).is_some_and(|(old,_)|old!=id){
+            self.requested.insert(name.into(),(id.into(),Instant::now()-Duration::from_secs(300)));
+            self.channels.remove(name);self.watches.remove(name);self.retry_after.remove(name);self.dirty.insert(name.into());
+        }
+        // Keep desired work even when the worker queue is full or an older job
+        // for a recently closed/reopened channel is still finishing.
+        self.requested.entry(name.into()).or_insert_with(||(id.into(),Instant::now()-Duration::from_secs(300)));
         if self.retry_after.get(name).is_some_and(|at|Instant::now()<*at){return;}
         if self
             .requested
             .get(name)
-            .is_some_and(|(_, t)| t.elapsed() < Duration::from_secs(300))
+            .is_some_and(|(requested_id, t)| requested_id==id && t.elapsed() < Duration::from_secs(300))
         {
             return;
         }
         if !self.in_flight.contains(name) && self.tx.try_send((name.into(), id.into(), if name.starts_with('@'){self.personal_epoch}else{0})).is_ok() {
-            self.in_flight.insert(name.into());
+            self.dirty.remove(name);self.in_flight.insert(name.into());
             self.requested
                 .insert(name.into(), (id.into(), Instant::now()));
         }
@@ -179,8 +188,12 @@ impl Catalog {
         let channel_requests=self.requested.iter().filter(|(name,_)|!name.starts_with('@')&&!name.starts_with('#')).map(|(name,value)|(name.clone(),value.clone())).collect();
         let mut changed = owned_changed | event_changed | account_changed | self.twitch.pump(identity, &channel_requests);
         changed |= self.community.pump(&channel_requests);
-        while let Ok((name, generation, result)) = self.rx.try_recv() {
+        while let Ok((name, requested_id, generation, result)) = self.rx.try_recv() {
             self.in_flight.remove(&name);
+            if !name.is_empty()&&!name.starts_with(['@','#'])&&!self.requested.get(&name).is_some_and(|(id,_)|id==&requested_id){
+                if wanted(&name){self.dirty.insert(name.clone());}
+                continue;
+            }
             if name.is_empty(){self.global_state=if result.is_some(){crate::community::LoadState::Ready}else{crate::community::LoadState::Failed};}
             if name.starts_with('@')&&generation!=self.personal_epoch{continue;}
             if let Some(id)=name.strip_prefix('#'){if self.event_versions.get(id)!=Some(&generation){if wanted(&name){self.dirty.insert(name.clone());}continue;}}

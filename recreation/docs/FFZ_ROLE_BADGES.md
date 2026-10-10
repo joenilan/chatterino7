@@ -8,7 +8,7 @@ The badge keeps the original slot and 18×18 size. Moderator art uses the refere
 
 Image delivery accepts HTTPS `cdn.frankerfacez.com` role-specific `/room-badge/mod/` and `/room-badge/vip/` paths only. Protocol-relative provider URLs are normalized to HTTPS. Credentials, queries, fragments, unusual ports and unsafe paths are rejected. The existing bounded anonymous media cache handles fetching and decoding without redirects. Successful empty role maps clear previous replacements; transport failures keep the last successful catalog.
 
-A channel-login reassignment still needs broader catalog identity-refresh work; mismatched cached FFZ replacements are suppressed rather than displayed for the wrong channel.
+Channel-login identity changes invalidate the parent catalog binding immediately. Old queued results are rejected, and mismatched cached FFZ replacements are suppressed while the new channel catalog loads.
 
 This slice does not implement global FFZ supporter badges, channel-specific badge grants, arbitrary CSS or browser-extension slot replacement rules.
 
