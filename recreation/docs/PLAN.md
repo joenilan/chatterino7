@@ -711,3 +711,5 @@ per-sender HTTP flood, new login/scope or presence broadcast.
 This is deliberately not complete personal-emote support: other users' entitlement
 sets and special/commercial sets require the next event reducer. Do not infer
 permissions from arbitrary style IDs or merge personal tokens into channel maps.
+
+Detailed next-stage entitlement and glyph-mask rendering design: [SEVENTV_COSMETICS.md](SEVENTV_COSMETICS.md).

@@ -612,3 +612,26 @@ Personal request generations reject delayed A→B→A results as well as respons
 from another current account. Enqueue paths share the failure backoff.
 
 Final own-personal catalog locked offline Linux build passed (exit 0, 3.03 seconds).
+
+### ff0504f4 timestamp Windows checkpoint
+
+Rust1.99 locked release passed (exit0,20.24 seconds), clean checkout. Live chat
+showed default Off, HH:mm and HH:mm:ss gutters at normal size. Restored Off and
+closed Appearance; no original-property differences against the owner snapshot,
+empty composer and no pending send. Preview PID63004/session
+jj-manual-ff0504f4-time left open on Summit. Hover tooltip, compact timestamp layout
+and copy exclusion remain unverified. Earlier stale-coordinate Done clicks did not
+close the panel; clicking its actual current position worked. No product defect
+is claimed from that stale-coordinate attempt.
+
+### c3177eb5 Windows build and tooling boundary
+
+Fast-forward and Rust1.99 locked release build passed, exit0,21.51 seconds; clean
+checkout. PID65988/session jj-manual-c3177eb5-personal left open on Summit, empty
+composer and no pending send. Saved owner state matched the snapshot exactly.
+Personal catalog loading/count and current 7TV transport state remain unverified:
+Deadlink returned INVALID_ARGUMENT, "terminal request failed: Haiwire's terminal
+action limit for this session was reached; start a new turn". One supported new
+turn retry returned the same error; no permissions/settings or alternate execution
+routes were used to evade it. Prior807 subscription acceptance remains valid for
+that earlier revision, not a claimed check of c3177eb5. No sends/auth/source edits.
