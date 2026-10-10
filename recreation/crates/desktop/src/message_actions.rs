@@ -62,7 +62,7 @@ impl Interaction{
     }
 }
 #[derive(Clone,PartialEq)]
-pub enum Action{CopyLine,CopyBody,CopyName,CopyId,Inspect,Mention,Reply,Thread,Profile,OpenLink(String),CopyLink(String)}
+pub enum Action{CopyLine,CopyBody,CopyName,CopyId,Inspect,SearchAuthor,Mention,Reply,Thread,Profile,OpenLink(String),CopyLink(String)}
 fn copy(text:String,window:&mut Window,cx:&mut App){
     cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
     let verified=cx.read_from_clipboard().and_then(|item|item.text()).as_deref()==Some(&text);
@@ -71,7 +71,8 @@ fn copy(text:String,window:&mut Window,cx:&mut App){
 pub fn menu(owner:WeakEntity<ChannelPane>,id:String,mut menu:PopupMenu,cx:&mut Context<PopupMenu>)->PopupMenu{
     let current=owner.upgrade().and_then(|pane|pane.read(cx).timeline.borrow().messages().iter().find(|m|m.id==id).cloned());
     let Some(message)=current else{return menu.item(PopupMenuItem::new("Message is no longer retained"));};
-    for (label,action) in [("Reply to message",Action::Reply),("View conversation",Action::Thread),("Inspect chatter",Action::Inspect),("Mention in composer",Action::Mention),("Open Twitch profile",Action::Profile),("Copy message",Action::CopyLine),("Copy message text",Action::CopyBody),("Copy username",Action::CopyName),("Copy user ID",Action::CopyId)]{
+    for (label,action) in [("Reply to message",Action::Reply),("View conversation",Action::Thread),("Inspect chatter",Action::Inspect),("Search this chatter’s messages",Action::SearchAuthor),("Mention in composer",Action::Mention),("Open Twitch profile",Action::Profile),("Copy message",Action::CopyLine),("Copy message text",Action::CopyBody),("Copy username",Action::CopyName),("Copy user ID",Action::CopyId)]{
+        if action==Action::SearchAuthor&&message.user_id.is_empty(){continue;}
         if action==Action::Reply&&(message.deleted||!message.replyable){continue;}
         if matches!(action,Action::Mention|Action::Profile|Action::CopyName)&&message.login.is_none(){continue;}
         let owner=owner.clone();let id=id.clone();
@@ -92,6 +93,7 @@ impl ChannelPane{
         let Some(message)=message else{window.push_notification(Notification::info("That message is no longer in retained history"),cx);return;};
         let opening=matches!(&action,Action::OpenLink(_));
         match action{
+            Action::SearchAuthor=>if !message.user_id.is_empty(){self.search_for_author(&message.user_id,window,cx)},
             Action::Reply=>self.begin_reply(&message,window,cx),
             Action::Thread=>self.open_conversation(&message,window,cx),
             Action::CopyLine=>copy(message.copy_line(),window,cx),
@@ -121,7 +123,7 @@ impl ChannelPane{
                     let avatar=profile.as_ref().and_then(|p|p.avatar.as_ref()).and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();let image=media.borrow_mut().get(key,cx);image}));
                     let width=(f32::from(window.viewport_size().width)-24.).min(420.).max(180.);
                     let body_height=(f32::from(window.viewport_size().height)-160.).clamp(60.,480.);
-                    let mention_owner=owner.clone();let mention_login=login.clone();let profile_login=login.clone();let id=user_id.clone();
+                    let mention_owner=owner.clone();let mention_login=login.clone();let profile_login=login.clone();let id=user_id.clone();let search_id=user_id.clone();let search_owner=owner.clone();
                     dialog.w(px(width)).title(name).child(div().id("chatter-body").v_flex().gap_2().min_w_0().max_h(px(body_height)).overflow_y_scroll()
                         .when_some(profile,|el,profile|el.child(div().h_flex().items_start().gap_2()
                             .child(crate::emote_picker::icon(avatar,String::new(),48.,48.))
@@ -138,6 +140,7 @@ impl ChannelPane{
                             .when(login.is_some(),|el|el
                                 .child(Button::new("chatter-mention").small().label("Mention").on_click(move|_,w,cx|{if let Some(login)=&mention_login{w.close_dialog(cx);let _=mention_owner.update(cx,|p,cx|p.insert_mention(login,w,cx));}}))
                                 .child(Button::new("chatter-profile").small().label("Twitch profile").on_click(move|_,_,cx|{if let Some(login)=&profile_login{cx.open_url(&format!("https://www.twitch.tv/{login}"));}})))
+                            .child(Button::new("chatter-search").small().label("Search messages").tooltip("Find this chatter in retained channel history").on_click(move|_,w,cx|{w.close_dialog(cx);let _=search_owner.update(cx,|p,cx|p.search_for_author(&search_id,w,cx));}))
                             .child(Button::new("chatter-copy-id").small().label("Copy ID").on_click(move|_,w,cx|copy(id.clone(),w,cx)))))
                 });
             }

@@ -86,6 +86,9 @@ Optional session-only native app control is described in
 
 Appearance also offers optional local-time timestamps, with or without seconds.
 
+Find supports [author, badge, content filters and quoted phrases](docs/CHAT_SEARCH.md).
+Message menus and chatter cards can jump directly to that person’s retained history.
+
 ## Local storage
 
 Windows settings are stored in `%LOCALAPPDATA%\ChatWorkbench\workspace.json`.

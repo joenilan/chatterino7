@@ -117,3 +117,11 @@ memory at once. The Windows build and populated scrolling were verified; the bri
 placeholder appearance were not visually captured, so their visual acceptance remains
 open. Final read-back after a transient connection timeout verified that layout,
 drafts, preferences, favorites and active channel matched the pre-update snapshot.
+
+
+## Picker placement
+
+The popup follows the actual emote button's upper-right corner, opening upward.
+Its measured anchor follows pane resizing and docking; the window margin clamps
+the popup on narrow layouts. The composer button remains the spatial origin rather
+than the transcript's unrelated left edge. Native placement acceptance is pending.

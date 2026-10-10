@@ -373,10 +373,13 @@ impl ChannelPane {
 impl Render for ChannelPane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let picker = (self.picker.open&&!window.has_active_dialog(cx)).then(||{
-            let position=self.viewport.borrow().map(|b|point(b.origin.x,b.bottom())).unwrap_or(point(px(8.),window.viewport_size().height-px(60.)));
-            deferred(anchored().anchor(Anchor::BottomLeft).position(position).snap_to_window_with_margin(px(8.)).child(self.render_picker(window,cx))).with_priority(1).into_any_element()
+            let position=self.picker.button_bounds.get().map(|b|point(b.right(),b.origin.y-px(6.))).or_else(||self.viewport.borrow().map(|b|point(b.right(),b.bottom()))).unwrap_or(point(window.viewport_size().width-px(8.),window.viewport_size().height-px(60.)));
+            deferred(anchored().anchor(Anchor::BottomRight).position(position).snap_to_window_with_margin(px(8.)).child(self.render_picker(window,cx))).with_priority(1).into_any_element()
         });
         let suggestions = (!self.picker.suggestions.is_empty()&&!self.picker.open).then(||self.render_suggestions(cx));
+        let emote_button_bounds=self.picker.button_bounds.clone();
+        let emote_button_owner=cx.entity().downgrade();
+        let emote_picker_open=self.picker.open;
         let catalog=self.catalog.clone();
         let timestamps=self.timestamps;
         let timeline = self.timeline.clone();
@@ -642,7 +645,7 @@ impl Render for ChannelPane {
                 .child(div().h_flex().justify_between().text_size(px(11.)).text_color(rgb(theme::MUTED))
                     .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500", self.draft.read(cx).value().chars().count())))
                     .when_some(self.room_settings.as_ref().filter(|r|!r.labels().is_empty()).map(|r|r.summary()),|el,summary|el.child(div().id("room-modes-hint").max_w(px(120.)).overflow_hidden().text_ellipsis().text_color(rgb(0xC5B8E6)).tooltip({let summary=summary.clone();move|w,cx|gpui_kit::component::tooltip::Tooltip::new(format!("{summary}. Your role may grant exemptions; Twitch validates sending. Ctrl+I for channel details.")).build(w,cx)}).child(summary)))
-                    .child(div().h_flex().gap_2().child(Button::new("emotes-toggle").small().label(":)").tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx))))
+                    .child(div().h_flex().gap_2().child(div().on_prepaint(move|bounds,_,cx|{if emote_button_bounds.replace(Some(bounds))!=Some(bounds)&&emote_picker_open{let owner=emote_button_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}}).child(Button::new("emotes-toggle").small().label(":)").tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
                     .child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else { "Send" }).disabled(!self.connected || self.pending.is_some()).tooltip("Send to this Twitch channel").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx)))))))
             .child(
                 canvas(

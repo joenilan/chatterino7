@@ -47,6 +47,7 @@ enum GridRow {
 pub struct Picker {
     pub open: bool,
     pub generation: usize,
+    pub button_bounds: std::rc::Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
     pub suggestions: Vec<Choice>,
     pub selected: usize,
     pub token: Option<(Range<usize>, String)>,
