@@ -28,7 +28,10 @@ frame and a compact channel-first layout. The original C++ application is untouc
 
 This is still a development client. Full Chatterino7 parity, modern Twitch rich
 messages, moderation and additional providers are tracked in the
-[master feature plan](docs/FEATURE_COVERAGE.md). A listed plan is not a shipped feature.
+[master feature plan](docs/FEATURE_COVERAGE.md). Planned
+[Viewer, Moderator and Streamer experiences](docs/ROLE_EXPERIENCES.md) and
+[multiservice chat](docs/MULTIPLATFORM.md) extend that scope. A listed plan is not
+a shipped feature.
 
 ## Twitch connection
 
@@ -100,6 +103,7 @@ its draft for reopening in that workspace. Native QA may use an isolated profile
 - [Complete feature coverage and delivery order](docs/FEATURE_COVERAGE.md)
 - [Architecture and design decisions](docs/PLAN.md)
 - [Multiplatform chat direction](docs/MULTIPLATFORM.md)
+- [Viewer, Moderator and Streamer experience plan](docs/ROLE_EXPERIENCES.md)
 
 Accessibility/IME, full Unicode selection, richer media and provider behavior,
 moderation, multiwindow workflows and daily-client parity remain active work.

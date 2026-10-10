@@ -92,3 +92,11 @@ The owner explicitly made TikTok low priority; it must not delay those integrati
 
 Recheck these sources before implementation; provider capabilities and limits can
 change. Documentation feasibility is not a measured latency or reliability result.
+
+## Role-based experiences
+
+The [Viewer / Moderator / Streamer plan](ROLE_EXPERIENCES.md) specifies onboarding,
+chat-first layouts, protected own-chat behavior, incremental permissions and shared
+feed/action identities. It is additive to this provider roadmap and the complete
+Chatterino7 parity register. Platform roles are per account/channel; the selected
+experience is a reversible presentation preference, not proof of authority.
