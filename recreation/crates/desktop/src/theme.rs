@@ -10,6 +10,9 @@ pub const HOVER: u32 = 0x27292D;
 pub const BORDER: u32 = 0x222428;
 pub const TEXT: u32 = 0xECEEF1;
 pub const MUTED: u32 = 0xA4A9B1;
+pub const STREAM_LIVE: u32 = 0x91D7BA;
+pub const STREAM_OFFLINE: u32 = 0xB4ACC6;
+pub const STREAM_UNKNOWN: u32 = 0xE8C68A;
 
 pub fn install(cx: &mut App) {
     Theme::change(ThemeMode::Dark, None, cx);

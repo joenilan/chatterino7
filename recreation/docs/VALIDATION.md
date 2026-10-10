@@ -388,3 +388,12 @@ activity jump, keyword highlights using naturally arriving traffic, compact layo
 Ctrl+wheel versus plain scrolling, reset and saved font/keyword settings. Preserve
 owner's newly edited five-channel grouped workspace. No outgoing QA messages.
 Unavailable real self-mentions/account switching/moderation must remain unverified.
+
+
+### Stream marker polish — 2026-10-10 02:30 UTC
+
+Pastel state markers and explanatory tooltips added to the pending attention/font
+batch. Native validation remains blocked by Deadlink's no-project-selected error
+and the desktop executor setup-refresh failure. No Windows pull or relaunch has
+occurred; da39e26b is still the last-confirmed preview. The error does not establish
+that selecting a Haiwire project is an intended connector requirement.

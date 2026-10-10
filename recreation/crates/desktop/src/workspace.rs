@@ -954,7 +954,9 @@ impl Workbench {
                     let item=div().id(SharedString::from(format!("channel-tab-{tab_id}-{channel}"))).h(px(28.)).px_2().flex().items_center().cursor_pointer()
                         .bg(rgb(if selected{theme::CONTROL}else{theme::PANEL})).border_b_2().border_color(rgb(if selected{0xA99CF4}else{theme::PANEL}))
                         .on_prepaint(move|bounds,_,_|{tab_bounds.borrow_mut().insert(tab_name.clone(),bounds);})
-                        .hover(|s|s.bg(rgb(theme::HOVER))).child(format!("{} #{channel}",match self.streams.get(&channel){Some(true)=>"●",Some(false)=>"○",None=>"◌"}))
+                        .hover(|s|s.bg(rgb(theme::HOVER)))
+                        .child(stream_marker(&channel,self.streams.get(&channel)))
+                        .child(format!("#{channel}"))
                         .when(counts.0>0,|el|el.child(div().ml_1().px_1().rounded(px(3.)).text_size(px(10.)).bg(rgb(if counts.1>0{0x403250}else{0x2B3038})).text_color(rgb(if counts.1>0{0xE4BCFA}else{theme::TEXT})).child(if counts.1>0{format!("@{}",crate::attention::count(counts.1))}else{crate::attention::count(counts.0)})))
                         .on_mouse_down(MouseButton::Middle,cx.listener({let channel=channel.clone();move|this,_,window,cx|{window.prevent_default();cx.stop_propagation();this.confirm_close_channel(channel.clone(),window,cx);}}))
                         .on_click(cx.listener({let channel=channel.clone();move|this,_,window,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.select(&channel);}this.selected_channel=Some(channel.clone());this.focus.focus(window,cx);this.schedule_save(cx);cx.notify();}}));
@@ -1258,4 +1260,19 @@ impl Render for Workbench {
             .child(div().h_flex().h(px(20.)).flex_shrink_0().px_2().gap_2().border_t_1().border_color(rgb(theme::BORDER)).text_size(px(10.)).text_color(rgb(theme::MUTED))
                 .child(div().flex_1().min_w_0().overflow_hidden().child(live_status)).child(self.save_status.clone()))
     }
+}
+
+
+fn stream_marker(channel:&str,status:Option<bool>)->impl IntoElement {
+    let (color,label)=match status {
+        Some(true)=>(theme::STREAM_LIVE,"Stream live"),
+        Some(false)=>(theme::STREAM_OFFLINE,"Stream offline · chat may still be connected"),
+        None=>(theme::STREAM_UNKNOWN,"Stream status unknown · not checked yet or unavailable"),
+    };
+    div().id(SharedString::from(format!("stream-status-{channel}"))).w(px(12.)).h(px(16.)).mr_1().flex_shrink_0().flex().items_center().justify_center().text_color(rgb(color))
+        .tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(label).build(w,cx))
+        .child(match status {
+            Some(live)=>div().size(px(8.)).rounded(px(4.)).border_1().border_color(rgb(color)).when(live,|el|el.bg(rgb(color))).into_any_element(),
+            None=>div().text_size(px(13.)).line_height(px(16.)).child("◇").into_any_element(),
+        })
 }

@@ -563,3 +563,12 @@ It shows up to 200 newest matching retained messages, with Highlights / All unre
 Mark all read and Jump. No copied message log, sounds or OS notifications. Unread
 counts and activity are session-local because transcript history is not persisted;
 font size and highlight words are saved. Compact badges cap visually at 99+.
+
+
+### Pastel stream status markers — owner request 2026-10-10
+
+Channel tabs use mint filled circles for live broadcasts, lavender outlined circles
+for offline broadcasts, and amber diamonds for unknown/unavailable status. Shapes
+and tooltips distinguish states without relying on color alone. These represent
+broadcast state, separately from chat connectivity and unread/highlight badges.
+The markers reuse existing stream observations; no additional requests or polling.
