@@ -692,3 +692,22 @@ the immutable event time, formatted in the PC's local timezone. Hover reveals da
 and UTC offset. Missing/invalid times are absent rather than fabricated. Fixed
 left gutter follows the first text/emote line height. Existing selected/copied text
 continues to contain message text/name, not this display metadata.
+
+## B3 second slice: signed-in user's owned personal set (2026-10-10)
+
+Bootstrap the signed-in user's public 7TV connection and first owned Personal set,
+matching the original Chatterino7 account bootstrap. This sends only the public
+Twitch ID, never its token. Validate Twitch/platform and 7TV user/set identities,
+Personal flags and optional set ownership. Filter to listed PERSONAL assets and
+exclude Twitch-disallowed content. A valid empty/removed set clears prior entries.
+
+Personal aliases precede community aliases only for messages whose Twitch sender
+ID matches that account. The own-account picker/completion includes them, labeled
+7TV Personal. Account changes clear the map and recompute suggestions; old-account
+responses cannot populate the current account. Existing bounded REST workers,
+set/owner EventAPI watches, invalidation and fallback polling are reused. No
+per-sender HTTP flood, new login/scope or presence broadcast.
+
+This is deliberately not complete personal-emote support: other users' entitlement
+sets and special/commercial sets require the next event reducer. Do not infer
+permissions from arbitrary style IDs or merge personal tokens into channel maps.

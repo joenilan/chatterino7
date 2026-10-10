@@ -384,9 +384,9 @@ impl Workbench {
         if self.catalog.borrow_mut().profiles.pump(identity.clone()){cx.notify();}
         if self.catalog.borrow_mut().pump(panes.iter().map(|p|p.read(cx).name.to_string()).collect(), identity.clone()) {
             for pane in &panes { pane.update(cx, |p,cx| {
-                p.timeline.borrow_mut().enrich(|message| message.fragments = self.catalog.borrow().expand(&p.name, &message.fragments));
+                p.timeline.borrow_mut().enrich(|message| message.fragments = self.catalog.borrow().expand(&p.name, &message.user_id, &message.fragments));
                 p.attention.reconcile(&p.timeline.borrow(),(p.next_id-p.timeline.borrow().messages().len()) as u64);
-                p.scroller.update(cx, |s,cx|s.remeasure(cx)); if p.picker.open {p.refresh_picker(cx);} cx.notify();
+                p.scroller.update(cx, |s,cx|s.remeasure(cx)); if p.picker.open {p.refresh_picker(cx);}else{p.complete_query(false,cx);} cx.notify();
             }); }
             cx.notify();
         }

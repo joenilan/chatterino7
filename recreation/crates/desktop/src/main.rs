@@ -234,7 +234,7 @@ impl ChannelPane {
     }
     fn received(&mut self, mut event: chat_core::Event, cx: &mut Context<Self>) {
         if let chat_core::Event::Message(message) = &mut event {
-            message.fragments = self.catalog.borrow().expand(&self.name, &message.fragments);
+            message.fragments = self.catalog.borrow().expand(&self.name, &message.user_id, &message.fragments);
             message.name_color = Some(theme::readable_name_color(&message.user_id, message.name_color));
         }
         self.observe_reply_redaction(&event,cx);

@@ -135,7 +135,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | EM02 | Available account emote inventory | Backlog | Subscriber/follower/Bits/reward/temporary entitlements; catalog presence alone is insufficient. | providers/twitch/TwitchEmotes.cpp |
 | EM03 | Twitch badges | Part | Native global/channel badge media observed; category settings and all metadata/flair variants remain. | providers/twitch/TwitchBadges.cpp |
 | EM04 | 7TV channel/global aliases | Part | Public catalogs and basic zero-width support exist; special/unlisted sets and provider controls remain. | providers/seventv/SeventvEmotes.cpp |
-| EM05 | 7TV personal emotes | Backlog | Per-user entitlements, multiple linked-platform accounts, set changes and highest-priority resolution. | providers/seventv/SeventvPersonalEmotes |
+| EM05 | 7TV personal emotes | Part | Source loads signed-in first-owned Personal set into own picker and sender-scoped priority; native pending. Other-sender entitlements and special/multiple sets remain. | providers/seventv/SeventvPersonalEmotes |
 | EM06 | 7TV live updates and presence | Part | Anonymous object subscriptions acknowledged on Windows, coalesced REST invalidation and polling fallback; actual set changes untested. Personal/cosmetic/presence remain. | providers/seventv/SeventvEventAPI; eventapi |
 | EM07 | 7TV paints | Backlog | Linear/radial/image paints, animated textures, shadows, DPI and mentions; user-selectable effect limits. | providers/seventv/SeventvPaints; paints |
 | EM08 | 7TV badges | Backlog | Entitlements, animation and visibility options. | providers/seventv/SeventvBadges |

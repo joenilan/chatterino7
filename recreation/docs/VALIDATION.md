@@ -598,3 +598,17 @@ clearing against stale session results. Native timestamp acceptance pending.
 
 Final timestamp-source locked offline Linux build passed (exit 0, 2.84 seconds).
 Chrono0.4.45 was already in the lockfile; added as a direct desktop dependency.
+
+### Own-account personal catalog source checkpoint
+
+Source implements only public first-owned Personal set bootstrap for the signed-in
+Twitch ID, with sender-scoped expansion and own picker entries. Review corrected
+valid empty-set handling (emotes may be omitted), identity/flag validation, and
+autocomplete refresh after account/catalog changes. Native catalog loading and
+real personal-emote rendering remain pending; zero owned sets is valid absence.
+Other-sender entitlements/paints are not implemented by this slice.
+
+Personal request generations reject delayed A→B→A results as well as responses
+from another current account. Enqueue paths share the failure backoff.
+
+Final own-personal catalog locked offline Linux build passed (exit 0, 3.03 seconds).
