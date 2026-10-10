@@ -355,3 +355,22 @@ replacement, channel/workspace isolation, saved target after relaunch, compact
 Use existing real traffic only; never send a message to validate the controls.
 Outgoing delivery, live moderation redaction and unavailable-parent edge cases
 remain unverified until directly observed. Restore owner geometry/layout/drafts.
+
+## Native replies accepted — 2026-10-10 01:43 UTC
+
+Windows exact da39e26b2c7767646a53d333adfbe3e2da157c96 fast-forwarded cleanly.
+Rust 1.99 locked release build exited 0 in 16.91s. Actual native interactions:
+- Selecting/replacing reply targets preserved draft text.
+- × and Escape cancelled targets without erasing text.
+- Channel/workspace switching kept draft and target isolated.
+- Naturally arriving replies showed context; conversation, Jump and Reply worked.
+- Reply target and conversation dialog fit 360×280.
+- Find navigated reply rows; atomic selection/right-copy returned clipboard_verified.
+- Controlled restart restored exact target and draft with outside-history label.
+QA13 text/target cleared and workspace removed through normal confirmation.
+Owner drafts, layout, sidebar, history cap and original bounds were restored;
+both owner channels connected, overlays closed, no active drag/pointer owner.
+Running session jj-manual-da39e26b-replies-restart, PID 45920, owned terminal hw-1-99.
+No messages sent, URLs opened or authentication actions performed.
+Outgoing delivery, real moderation/deletion and a thread with its original parent
+retained remain untested. Build/runtime evidence is not full Chatterino parity.
