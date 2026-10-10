@@ -128,8 +128,6 @@ pub struct DecodedMedia {
     epoch: Instant,
 }
 impl DecodedMedia {
-    /// Short arrival fade; cached images never replay it when scrolling.
-    pub fn arrival_opacity(&self) -> f32 { (self.epoch.elapsed().as_secs_f32() / 0.16).min(1.) }
     pub fn frame(&self, reduced: bool) -> usize {
         if reduced || self.ends_ms.len() <= 1 {
             return 0;
@@ -198,9 +196,16 @@ impl MediaCache {
         }
     }
     pub fn inspection(&self) -> serde_json::Value {
-        serde_json::json!({"decoded_bytes":self.bytes,"entries":self.entries.len(),"assets":self.entries.iter().filter_map(|(key,entry)| {
+        serde_json::json!({"decoded_bytes":self.bytes,"entries":self.entries.len(),"pending":self.entries.values().filter(|e|matches!(e,Entry::Pending)).count(),"failed":self.entries.values().filter(|e|matches!(e,Entry::Failed(_))).count(),"assets":self.entries.iter().filter_map(|(key,entry)| {
             if let Entry::Ready{image,..}=entry { Some(serde_json::json!({"id":key.id,"provider":key.provider(),"animated_requested":key.animated,"frames":image.image.frame_count(),"frame_now":image.frame(false)})) } else {None}
         }).collect::<Vec<_>>()})
+    }
+    pub fn peek(&self,key:&EmoteKey)->Option<Arc<DecodedMedia>> {
+        match self.entries.get(key){Some(Entry::Ready{image,..})=>Some(image.clone()),_=>None}
+    }
+    pub fn touch(&mut self,key:&EmoteKey){
+        self.used=self.used.wrapping_add(1);
+        if let Some(Entry::Ready{used,..})=self.entries.get_mut(key){*used=self.used;}
     }
     pub fn failed(&self, key: &EmoteKey) -> bool {
         matches!(self.entries.get(key), Some(Entry::Failed(at)) if at.elapsed() < Duration::from_secs(60))
@@ -226,7 +231,9 @@ impl MediaCache {
     }
     /// Low-priority look-ahead never fills the queue ahead of visible chat.
     pub fn prefetch(&mut self, key: &EmoteKey, cx: &mut App) {
-        if self.entries.contains_key(key) || self.entries.values().filter(|e| matches!(e, Entry::Pending)).count() >= 12 { return; }
+        if matches!(self.entries.get(key),Some(Entry::Ready{..}|Entry::Pending))
+            || matches!(self.entries.get(key),Some(Entry::Failed(at)) if at.elapsed()<Duration::from_secs(60))
+            || self.entries.values().filter(|e| matches!(e, Entry::Pending)).count() >= 12 { return; }
         self.get(key, cx);
     }
     fn evict(&mut self, cx: &mut App) {
