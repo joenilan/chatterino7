@@ -552,6 +552,7 @@ fn deliver(
     let text = |key: &str| e[key].as_str().unwrap_or("").to_owned();
     let event = match v["payload"]["subscription"]["type"].as_str().unwrap_or("") {
         "channel.chat.message" | "channel.chat.notification" => ChatEvent::Message(Message {
+            sent_at: v["metadata"]["message_timestamp"].as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok()).map(|time|time.timestamp()),
             id: if text("message_id").is_empty() { envelope.to_owned() } else { text("message_id") },
             channel_id: channel.clone(),
             user_id: text("chatter_user_id"),

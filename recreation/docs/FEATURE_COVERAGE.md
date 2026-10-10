@@ -102,8 +102,8 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | WS03 | Per-view composer and draft ownership | V | Native tab/group changes and reply-target persistence accepted; future account/provider changes must preserve it. | widgets/splits/SplitInput.cpp |
 | WS04 | Sidebar and live-only filters | Part | Existing user workflow; hidden unread discovery in new activity batch awaits native acceptance. | widgets/splits/SplitHeader.cpp |
 | WS05 | Broadcast status | Part | Native live/offline pastel markers observed; unknown/stale edges remain. Broadcast state must remain distinct from chat connection. | widgets/splits/SplitHeader.cpp |
-| WS06 | Stream title/game/viewers/uptime | Part | Ctrl+I/context-menu details, title/category/viewers/language/start timestamp implemented; native pending. Live elapsed-uptime formatting remains. | widgets/splits/SplitHeader.cpp |
-| WS07 | Quick switcher and visit history | Part | Ctrl+P searches open channels/workspace names, including offline-hidden tabs; keyboard/click activates correct dock and composer. Native pending; visit history/neighbor focus remain. | widgets/dialogs/switcher; Notebook |
+| WS06 | Stream title/game/viewers/uptime | Part | Ctrl+I/context-menu details, title/category/viewers/language/start timestamp implemented and native accepted. Live elapsed-uptime formatting remains. | widgets/splits/SplitHeader.cpp |
+| WS07 | Quick switcher and visit history | Part | Ctrl+P searches open channels/workspace names, including offline-hidden tabs; keyboard/click activates correct dock and composer; native keyboard/click/compact accepted. visit history/neighbor focus remain. | widgets/dialogs/switcher; Notebook |
 | WS08 | Multiple windows and popouts | Backlog | Independent windows, split/workspace popout, cross-window drag and persisted geometry. | widgets/Window.cpp; common/WindowDescriptors |
 | WS09 | Overlay and attached windows | Backlog | Always-on-top, transparency/click-through and deliberate interaction modes; browser attachment later. | widgets/OverlayWindow; AttachedWindow; FramelessEmbedWindow |
 | WS10 | Special channels | Part | New local activity dialog only; mentions, whispers, watching/live and AutoMod feeds need explicit models. | widgets/dialogs/SelectChannelDialog.cpp |
@@ -116,7 +116,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | --- | --- | --- | --- | --- |
 | IN01 | Single-message editor and saved drafts | Part | Native editing/500-character/newline behavior observed; full IME/accessibility and send-wait states remain. | widgets/splits/SplitInput.cpp |
 | IN02 | Emote completion | Part | Native keyboard selection/insertion accepted; configurable prefixes, ranking/favorites and account inventory remain. | controllers/completion |
-| IN03 | Username completion | P | @ recent-speaker completion (eight, canonical login, retained channel history), Enter/Tab insert and Escape dismiss; native pending; full roster/broadcaster ranking remains. | controllers/completion/sources; widgets/ChatterListWidget |
+| IN03 | Username completion | Part | @ recent-speaker completion (eight, canonical login, retained channel history), Enter/Tab insert and Escape dismiss; native Enter/Tab/Escape accepted; full roster/broadcaster ranking remains. | controllers/completion/sources; widgets/ChatterListWidget |
 | IN04 | Sent-message input history | P | Alt+Up/Down bounded session-local successful sends with draft restoration and account clearing; native pending, persistence/search remains. | widgets/splits/SplitInput.cpp |
 | IN05 | Command routing | Next | Prevent unsupported slash commands being mistaken for working moderator commands; deliberate literal-text behavior. | controllers/commands/CommandController.cpp |
 | IN06 | Custom command editor | Backlog | Aliases, parameters/context variables, multiword expansion and validation. | controllers/commands/CommandModel.cpp; settingspages/CommandPage.cpp |
@@ -136,10 +136,10 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | EM03 | Twitch badges | Part | Native global/channel badge media observed; category settings and all metadata/flair variants remain. | providers/twitch/TwitchBadges.cpp |
 | EM04 | 7TV channel/global aliases | Part | Public catalogs and basic zero-width support exist; special/unlisted sets and provider controls remain. | providers/seventv/SeventvEmotes.cpp |
 | EM05 | 7TV personal emotes | Backlog | Per-user entitlements, multiple linked-platform accounts, set changes and highest-priority resolution. | providers/seventv/SeventvPersonalEmotes |
-| EM06 | 7TV live updates and presence | Backlog | EventAPI lifecycle/deltas, cosmetic changes, set migration and optional presence/activity. Current implementation polls. | providers/seventv/SeventvEventAPI; eventapi |
+| EM06 | 7TV live updates and presence | Part | Anonymous object subscriptions acknowledged on Windows, coalesced REST invalidation and polling fallback; actual set changes untested. Personal/cosmetic/presence remain. | providers/seventv/SeventvEventAPI; eventapi |
 | EM07 | 7TV paints | Backlog | Linear/radial/image paints, animated textures, shadows, DPI and mentions; user-selectable effect limits. | providers/seventv/SeventvPaints; paints |
 | EM08 | 7TV badges | Backlog | Entitlements, animation and visibility options. | providers/seventv/SeventvBadges |
-| EM09 | Twitch and 7TV avatars | Part | On-demand Twitch avatar with allowlisted bounded JPEG/PNG/WebP; native pending; 7TV identity remains. | widgets/dialogs/UserInfoPopup.cpp |
+| EM09 | Twitch and 7TV avatars | Part | On-demand Twitch avatar with allowlisted bounded JPEG/PNG/WebP; real native avatar accepted; 7TV identity remains. | widgets/dialogs/UserInfoPopup.cpp |
 | EM10 | BTTV and FFZ core | Part | Catalog counts observed; source media support exists, provider-specific visual/picker checks remain. | providers/bttv; providers/ffz |
 | EM11 | BTTV live updates and FFZ badges | Backlog | Activity/update lifecycle, custom mod/VIP/supporter badges and provider options. | providers/bttv; providers/ffz |
 | EM12 | Provider modifiers and overlays | Part | 7TV overlay foundation exists; BTTV/FFZ modifiers currently skipped; multiple-overlay geometry/copy/wrap still needs coverage. | messages/layouts; providers/bttv; providers/ffz |
@@ -169,7 +169,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | ID | Feature | State | Remaining work and evidence boundary | Reference |
 | --- | --- | --- | --- | --- |
 | MD01 | Local chatter cards | V | Native retained-message card/copy/mention accepted; richer account data remains below. | widgets/dialogs/UserInfoPopup.cpp |
-| MD02 | Full profile context | Part | Public Twitch created-at/avatar/bio/broadcaster role in compact card; native pending. Follow/subscription data and moderation remain. | UserInfoPopup.cpp |
+| MD02 | Full profile context | Part | Public Twitch created-at/avatar/bio/broadcaster role in compact card; avatar/date/bio/compact native accepted, role display untested. Follow/subscription data and moderation remain. | UserInfoPopup.cpp |
 | MD03 | Persistent notes | Backlog | Local notes editor/storage and streamer-mode redaction. | controllers/userdata; EditUserNotesDialog.cpp |
 | MD04 | Chatter list and roles | Backlog | Filtering/fetch limits, actual account permissions, distinguish chatters from viewers. | widgets/ChatterListWidget.cpp |
 | MD05 | Delete, timeout, ban and undo-family actions | Backlog | Target/reason/duration, channel role/scopes, result handling; receiving redaction is not action support. | controllers/moderationactions; builtin/twitch/Ban.cpp; Unban.cpp; DeleteMessages.cpp |
@@ -229,7 +229,7 @@ implement them. **Receive/render and send/act have independent statuses.**
 | TW11 | Pinned Cheers | Research | Separate product feature from moderator pins. Do not route it through the mod-pin API merely because both use the word “pinned.” |
 | TW12 | Personal Twitch emote entitlements | Backlog | Paginated Get User Emotes and channel context for follower emotes. Distinguish catalog availability from permission to send. Requires an additional approved scope. |
 | TW13 | Current badge metadata | Part | Existing global/channel badge rendering; preserve newer metadata, tier/flair distinctions and unknown badge types rather than dropping them. |
-| TW14 | Initial and changing room restrictions | P | Fetch initial settings, then reconcile live updates. Composer explains slow/follower/subscriber/emote-only or verification restrictions without erasing drafts. |
+| TW14 | Initial and changing room restrictions | Part | Native follower restriction and unrestricted snapshots accepted; live changes remain untested. Composer explains slow/follower/subscriber/emote-only or verification restrictions without erasing drafts. |
 | TW15 | Held, rejected and uncertain messages | Part | Existing drop/uncertainty feedback; add held-message lifecycle and better structured reasons. Never blindly resend an ambiguous POST. |
 | TW16 | New event and fragment types | Part | Preserve unknown identifiers and display a useful fallback. Schema changes must not make messages disappear. |
 
@@ -415,3 +415,6 @@ Source now includes anonymous 7TV global/channel-set and owner-update subscripti
 with ACK/reconnect reconciliation, coalesced REST refresh and polling fallback.
 Windows acceptance and real remote set changes remain pending. Personal emotes,
 entitlement badges and paints are still separate unfinished features.
+
+Optional local timestamps now have Off/Hours-minutes/With-seconds appearance
+settings and date/offset hover; exact Linux build passed, native acceptance pending.

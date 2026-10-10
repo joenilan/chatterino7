@@ -877,6 +877,7 @@ name = "chat-workbench"
 version = "0.1.0"
 dependencies = [
  "chat-core",
+ "chrono",
  "gpui-kit",
  "image",
  "reqwest",

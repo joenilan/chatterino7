@@ -112,6 +112,7 @@ struct ChannelPane {
     focus: FocusHandle,
     draft: Entity<TextareaState>,
     font_size: f32,
+    timestamps:u8,
     picker: emote_picker::Picker,
     search: chat_search::Search,
     link_press: message_actions::PressState,
@@ -175,6 +176,7 @@ impl ChannelPane {
             focus: cx.focus_handle(),
             draft,
             font_size,
+            timestamps:0,
             picker: emote_picker::Picker::default(),
             emote_search,
             search,
@@ -287,7 +289,7 @@ impl ChannelPane {
             return;
         }
         if result.is_ok() && current_session { self.input_history.record(text); }
-        let clear_reply=result.is_ok() && self.compose_revision==*revision && twitch_message_text(&self.draft.read(cx).value()) == *text && self.reply_target.as_ref().map(|r|&r.id)==parent.as_ref();
+        let clear_reply=result.is_ok() && current_session && self.compose_revision==*revision && twitch_message_text(&self.draft.read(cx).value()) == *text && self.reply_target.as_ref().map(|r|&r.id)==parent.as_ref();
         if clear_reply {self.reply_target=None;}
         if clear_reply {
             self.draft
@@ -368,6 +370,7 @@ impl Render for ChannelPane {
         let picker = self.picker.open.then(||self.render_picker(cx));
         let suggestions = (!self.picker.suggestions.is_empty()&&!self.picker.open).then(||self.render_suggestions(cx));
         let catalog=self.catalog.clone();
+        let timestamps=self.timestamps;
         let timeline = self.timeline.clone();
         let media = self.media.clone();
         let retained = timeline.borrow().messages().len();
@@ -496,6 +499,9 @@ impl Render for ChannelPane {
                             let inline = inline_chat::InlineChat::new(message, row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx);
                             let first_line_height = if inline.is_some() { inline_chat::InlineChat::line_height(window,message) } else { window.line_height() };
                             let row_owner=menu_owner.clone();let row_id=message.id.clone();
+                            let timestamp=if timestamps>0{message.sent_at.and_then(|time|chrono::DateTime::from_timestamp(time,0)).map(|time|{
+                                let local=time.with_timezone(&chrono::Local);(local.format(if timestamps==2{"%H:%M:%S"}else{"%H:%M"}).to_string(),local.format("%Y-%m-%d %H:%M:%S %:z").to_string())
+                            })}else{None};
                             let rich_heading=rich_messages::heading(message);
                             let rich_attachments=rich_messages::attachments(message,&mut media.borrow_mut(),cx);
                             let reply_line=replies::row_context(message,&messages,menu_owner.clone());
@@ -538,6 +544,7 @@ impl Render for ChannelPane {
                                 .children(rich_heading)
                                 .children(reply_line)
                                 .child(div().h_flex().items_start().min_w_0().gap_1()
+                                .when_some(timestamp,|el,(label,full)|el.child(div().id(SharedString::from(format!("timestamp-{}",message.id))).w(px(if timestamps==2{55.}else{37.})).h(first_line_height).flex_shrink_0().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(w,cx)).child(label)))
                                 .children(message.badges.iter().filter_map(|badge|catalog.borrow().twitch.badge(&message.channel_id,&badge.set_id,&badge.id).cloned()).map(|badge|{
                                     let image=media.borrow_mut().get(&badge.key,cx);
                                     div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(emote_picker::icon(image,String::new(),18.,18.))

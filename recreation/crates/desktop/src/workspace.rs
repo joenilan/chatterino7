@@ -138,6 +138,7 @@ pub struct Workbench {
     sidebar: bool,
     settings: bool,
     font_size: f32,
+    timestamps:u8,
     history_limit: usize,
     highlight_input: Entity<InputState>,
     highlight_terms: Vec<String>,
@@ -195,7 +196,7 @@ impl Workbench {
     }
     pub fn media_inspection(&self) -> Value { json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()}) }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>()})
+        json!({"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>()})
     }
     pub fn panes(&self) -> Vec<Entity<ChannelPane>> {
         self.tabs
@@ -277,6 +278,7 @@ impl Workbench {
                 .filter(|n| n.is_finite())
                 .unwrap_or(14.)
                 .clamp(12., 24.) as f32,
+            timestamps:state["timestamps"].as_u64().unwrap_or(0).min(2)as u8,
             history_limit: state["history_limit"].as_u64().unwrap_or(10_000).clamp(500,10_000) as usize,
             drafts,
             reply_drafts: state["reply_drafts"].as_object().map(|v|v.iter().map(|(k,v)|(k.clone(),v.clone())).collect()).unwrap_or_default(),
@@ -464,6 +466,7 @@ impl Workbench {
         let draft = self.drafts.get(&key).cloned().unwrap_or_default();
         let shared_state=self.panes().iter().find(|p|p.read(cx).name.as_ref()==name).map(|p|{let p=p.read(cx);(p.connected,p.connection.clone(),p.room_settings.clone())});
         let pane = cx.new(|cx| ChannelPane::new(name, self.media.clone(), self.catalog.clone(), &draft, self.font_size, self.history_limit, window, cx));
+        pane.update(cx,|p,_|p.timestamps=self.timestamps);
         if let Some((connected,connection,room))=shared_state {pane.update(cx,|p,_|{p.connected=connected;p.connection=connection;p.room_settings=room;});}
         if let Some(target)=self.reply_drafts.get(&key).and_then(crate::replies::Target::from_json){pane.update(cx,|p,_|p.reply_target=Some(target));}
         let channel = name.to_owned();
@@ -525,7 +528,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
@@ -902,6 +905,11 @@ impl Workbench {
         self.schedule_save(cx);
         cx.notify();
     }
+    fn change_timestamps(&mut self,mode:u8,cx:&mut Context<Self>){
+        self.timestamps=mode.min(2);
+        for pane in self.panes().iter().chain(self.closed_tabs.iter().flat_map(|tab|tab.panes.iter())){pane.update(cx,|p,cx|{p.timestamps=self.timestamps;p.scroller.update(cx,|s,cx|s.remeasure(cx));cx.notify();});}
+        self.schedule_save(cx);cx.notify();
+    }
     fn change_history_limit(&mut self, limit: usize, cx: &mut Context<Self>) {
         self.history_limit=limit.clamp(500,10_000);
         for pane in self.panes().iter().chain(self.closed_tabs.iter().flat_map(|t|t.panes.iter())) {
@@ -1271,6 +1279,9 @@ impl Render for Workbench {
                             .child(div().h_flex().gap_2().child(Button::new("font-minus").small().label("A−").on_click(cx.listener(|this,_,_,cx|this.change_font(-1.,cx))))
                                 .child(format!("{} px",self.font_size as u32)).child(Button::new("font-reset").small().label("Reset").tooltip("Ctrl+0").on_click(cx.listener(|this,_,w,cx|this.font_feedback(0.,true,w,cx)))).child(Button::new("font-plus").small().label("A+").on_click(cx.listener(|this,_,_,cx|this.change_font(1.,cx)))))
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Ctrl+wheel or Ctrl+plus/minus · Ctrl+0 resets"))
+                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Timestamps"))
+                            .child(div().h_flex().flex_wrap().gap_1().children([(0u8,"Off"),(1,"Hours/minutes"),(2,"With seconds")].into_iter().map(|(mode,label)|Button::new(("timestamps",mode as usize)).small().label(label).disabled(self.timestamps==mode).on_click(cx.listener(move|this,_,_,cx|this.change_timestamps(mode,cx))))))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Twitch event time in your local timezone. Hover for date and UTC offset."))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Highlights"))
                             .child(Input::new(&self.highlight_input).small())
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Your mentions and replies are included. Add up to 8 words/phrases (40 characters each). Whole-word, case-insensitive; no alerts or sounds."))

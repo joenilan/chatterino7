@@ -683,3 +683,12 @@ selection pages according to available height so the selected result stays visib
 in the compact window. Enter/click activates the existing dock and focuses its
 composer without changing the draft; Escape dismisses. No new channels, permanent
 toolbar, network lookup or duplicate workspace tabs.
+
+## B4: optional local chat timestamps (2026-10-10)
+
+Appearance offers Off, Hours/minutes and With seconds. Off is the default to keep
+the current compact layout; preference persists. Twitch envelope metadata supplies
+the immutable event time, formatted in the PC's local timezone. Hover reveals date
+and UTC offset. Missing/invalid times are absent rather than fabricated. Fixed
+left gutter follows the first text/emote line height. Existing selected/copied text
+continues to contain message text/name, not this display metadata.

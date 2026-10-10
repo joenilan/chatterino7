@@ -56,6 +56,7 @@ pub struct MessagePresentation {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
+    pub sent_at: Option<i64>,
     pub id: String,
     pub channel_id: String,
     pub user_id: String,
@@ -220,6 +221,7 @@ pub fn fixture(channel: &str, index: usize) -> Message {
         _ => "Replay fixture. Twitch authentication and emotes are not connected yet.",
     };
     Message {
+        sent_at: None,
         id: format!("{channel}-{index}"),
         channel_id: channel.into(),
         login: None,

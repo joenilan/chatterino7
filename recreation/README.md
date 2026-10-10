@@ -81,6 +81,8 @@ Optional session-only native app control is described in
 - Composer uses ordinary editing shortcuts. Text wraps visually; Shift+Enter
   does not create a multiline Twitch message.
 
+Appearance also offers optional local-time timestamps, with or without seconds.
+
 ## Local storage
 
 Windows settings are stored in `%LOCALAPPDATA%\ChatWorkbench\workspace.json`.

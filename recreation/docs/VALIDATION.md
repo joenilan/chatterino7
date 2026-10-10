@@ -569,3 +569,32 @@ compact-height paging, correct composer focus and preserved drafts.
 Switcher source review corrected Enter to one synchronous capture handler, avoiding
 dialog confirmation also consuming it. Final locked offline Linux build passed
 (exit 0, 3.63 seconds). Native focus/compact acceptance remains pending.
+
+### 807de665 combined Windows result
+
+Rust 1.99 locked release passed, exit 0, 20.76 seconds; checkout clean. Public
+chatter avatar, creation date and bio appeared; compact profile scrolling and
+dismissal passed. Enter and Tab inserted @kungfujo23 without a send; Escape kept
+the prefix and dismissed suggestions. Ctrl+P found hidden offline Jenny, clicked
+selection focused her composer, and keyboard selection returned to Summit. Both
+normal and 360×280 layouts passed.
+
+7TV live_updates=true with Live catalog updates status confirmed real subscription
+ACKs; actual remote set-change invalidation remains untested. Real Twitch/7TV/BTTV
+media continued. A genuine highlighted reward visibly rendered label, tinted row
+and text and appeared in inspection. Successful-send recall and broadcaster-role
+presentation remain untested. Final saved drafts, reply drafts, tabs and preferences
+matched the latest snapshot exactly. PID60260/session jj-manual-807de665-switcher
+left open; no sends, auth changes or source edits.
+
+### Optional local timestamps source checkpoint
+
+Adds Off/Hours-minutes/With-seconds settings, saved locally and defaulting off.
+Uses parsed Twitch EventSub metadata time, shown in OS local timezone; hover includes
+date and UTC offset. Unknown timestamps stay absent. Separate fixed-width gutter
+preserves body/name selection offsets and existing copy format. Pane remeasurement
+on setting changes includes retained closed panes. Also guarded pending-send draft
+clearing against stale session results. Native timestamp acceptance pending.
+
+Final timestamp-source locked offline Linux build passed (exit 0, 2.84 seconds).
+Chrono0.4.45 was already in the lockfile; added as a direct desktop dependency.
