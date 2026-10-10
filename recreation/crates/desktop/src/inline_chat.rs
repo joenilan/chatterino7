@@ -86,6 +86,8 @@ pub struct InlineChat {
     layout: Rc<RefCell<Layout>>,
 }
 impl InlineChat {
+    pub fn line_height(window: &Window) -> Pixels { window.line_height().max(px(30.)) }
+
     pub fn with_interaction(mut self, interaction:crate::message_actions::Interaction)->Self{self.interaction=Some(interaction);self}
 
     pub fn with_search(mut self, ranges:Vec<std::ops::Range<usize>>)->Self{self.search=ranges;self}
@@ -216,7 +218,7 @@ impl Element for InlineChat {
         let layout = self.layout.clone();
         let style = window.text_style();
         let font_size = style.font_size.to_pixels(window.rem_size());
-        let line_height = window.line_height().max(px(30.));
+        let line_height = Self::line_height(window);
         let name_color = self.name_color;
         let id = window.request_measured_layout(
             Default::default(),

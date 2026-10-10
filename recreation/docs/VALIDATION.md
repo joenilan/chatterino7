@@ -442,3 +442,18 @@ jennybunnybean selected. Isolated preview PID 65088, session
 `jj-manual-0cfe8325-settings`, left running. No sends, auth or moderation actions.
 Activity Jump, inactive/offscreen acknowledgment and natural own-mention/reply
 matching remain unverified. This is acceptance of named behaviors, not full parity.
+
+## 2026-10-10 — Jenny purple-heart first-line alignment
+
+Owner reported username movement beside a heart. Native read-only capture on
+0cfe8325 showed JennyBunnyBean remained on the same line as Twitch static purple
+heart 555555584, with ample width, but lower than the badge strip. Font14,
+window1280×820, five retained messages, no active entrance effects. Evidence in
+isolated profile: 167-jenny-heart-original.png and inspection JSON. Raw message
+IDs/fragments/dimensions are not exposed by current inspection; no claims on them.
+
+Cause: inline media text uses a minimum30px line box; badges used a fixed22px
+box. Badge slots now share the actual first-line height and center their18px
+images, for both plain and media rows and changed font sizes. Inline layout is
+created once and shares its line-height helper with badge placement. No wrapping
+or decoded-media sizing changes are claimed in this narrow fix. Native retest pending.

@@ -482,6 +482,8 @@ impl Render for ChannelPane {
                                 return div().into_any_element();
                             };
                             let row = first_order + index as u64;
+                            let inline = inline_chat::InlineChat::new(message, row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx);
+                            let first_line_height = if inline.is_some() { inline_chat::InlineChat::line_height(window) } else { window.line_height() };
                             let row_owner=menu_owner.clone();let row_id=message.id.clone();
                             let reply_line=replies::row_context(message,&messages,menu_owner.clone());
                             let interaction=message_actions::Interaction{owner:menu_owner.clone(),message:message.id.clone(),author_len:message.display_name.len(),links:message_actions::message_links(message),pressed:link_press.clone()};
@@ -523,9 +525,9 @@ impl Render for ChannelPane {
                                 .child(div().h_flex().items_start().min_w_0().gap_1()
                                 .children(message.badges.iter().filter_map(|badge|catalog.borrow().twitch.badge(&message.channel_id,&badge.set_id,&badge.id).cloned()).map(|badge|{
                                     let image=media.borrow_mut().get(&badge.key,cx);
-                                    div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(px(22.)).flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(emote_picker::icon(image,String::new(),18.,18.))
+                                    div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(emote_picker::icon(image,String::new(),18.,18.))
                                 }).collect::<Vec<_>>())
-                                .child(div().flex_1().min_w_0().child(if let Some(inline) = inline_chat::InlineChat::new(message, row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx) {
+                                .child(div().flex_1().min_w_0().child(if let Some(inline) = inline {
                                     inline.with_search(matches).with_interaction(interaction).into_any_element()
                                 } else {
                                     ChatText::new(SharedString::from(format!("text-{}", message.id)), row, message.copy_line(), selection.clone(), focus.clone(), viewport.clone())
