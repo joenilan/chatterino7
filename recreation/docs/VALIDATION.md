@@ -264,3 +264,22 @@ shared hover/release resolver, drag tab ordering, context-menu left/right orderi
 and Ctrl+PageUp/PageDown cycling within the focused channel group. Added atomic
 control drag and source-matched pointer releases, plus hover cancellation for
 stale drags. Linux build passed; Windows build and manual acceptance pending.
+
+### Native acceptance: 7c1d662c
+
+Windows locked release build passed with Rust 1.99.0, exit 0, 18.80 seconds.
+Using only atomic drag calls in temporary QA workspace 10:
+- Center B (70,430) to A (640,210): merged [A,B].
+- B (210,48) to right edge (1170,400): A left / B right.
+- B (710,48) to A tab strip (75,48): merged [B,A].
+- B (75,48) to end of strip (270,48): reordered [A,B].
+- Ctrl+PageUp selected A; Ctrl+PageDown selected B.
+
+All drag responses reported released:true, pointer_owner:null and local-control
+input. Screenshots showed no drag left active; no routing failures or unexpected
+layout changes. QA workspace 10 was closed through normal confirmation. Owner
+workspace 4, exact saved layout/drafts/sidebar, history 10000, original 1280x820
+size and window position were preserved. No chat sends or auth changes. Running
+PID 23160, control session jj-manual-7c1d662c-atomic, owned terminal hw-2-52.
+Evidence: isolated-profile screenshots 104–109. This establishes the exercised
+regrouping paths, not complete Chatterino feature parity or all device input cases.
