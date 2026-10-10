@@ -23,8 +23,8 @@ frame and a compact channel-first layout. The original C++ application is untouc
 - Live-only channel filtering and compact layouts down to 360×280. Normal startup
   size is 1280×820; compact support does not force a small window.
 - Latest source adds unread/activity views, mention/word highlighting, font
-  shortcuts and pastel live/offline/unknown indicators. Windows verification of
-  this newest batch remains pending.
+  shortcuts and pastel live/offline/unknown indicators. Named native Windows checks have passed; remaining edge cases are recorded in
+  the evidence log.
 
 This is still a development client. Full Chatterino7 parity, modern Twitch rich
 messages, moderation and additional providers are tracked in the

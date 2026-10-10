@@ -426,3 +426,19 @@ At 360×280 the scrolling Settings Done label overlapped the footer and did not
 close when clicked. Moved Done into a non-scrolling header; only the settings body
 scrolls, and dismissal returns focus to the workspace. Linux build passed (3.88s);
 native compact retest remains pending. No outbound chat or auth changes.
+
+### 0cfe832 final native acceptance
+
+Exact Windows revision 0cfe83251850745e10db5f02e7ab0a474826d0ed built with
+Rust 1.99.0, locked release, exit 0 in 18.76 seconds; checkout clean.
+At normal size and 360×280, Settings Done remained visible and dismissed before
+and after scrolling. Input accepted typing without touching the chat draft; no
+footer overlap observed. Earlier checks also verified font controls, custom-word
+highlighting, All unread, Mark all read and saved-settings persistence.
+
+QA14 was removed. Saved owner tabs, preexisting drafts, preferences and highlight
+terms matched the original snapshot exactly; original geometry/sidebar restored,
+jennybunnybean selected. Isolated preview PID 65088, session
+`jj-manual-0cfe8325-settings`, left running. No sends, auth or moderation actions.
+Activity Jump, inactive/offscreen acknowledgment and natural own-mention/reply
+matching remain unverified. This is acceptance of named behaviors, not full parity.

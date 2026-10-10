@@ -28,10 +28,11 @@ register is recreation/gpui-foundation at c12a498d82e48fc79fbb446b0d46d7ec263920
 - **Unavailable**: only use after verifying the relevant capability is unavailable;
   otherwise use Research with the unresolved question. Never silently delete a row.
 
-Last accepted Windows code is da39e26b: replies, retained conversations, prior
-workspace/media/search/message actions. Attention/font/pastel markers at c12a498
-have passed the Linux build but are awaiting Windows access and native checks.
-The current blocker is tooling, not an acceptance failure of those features.
+Latest accepted Windows code is 0cfe8325, including the attention/font/pastel
+batch and Settings pointer/compact-layout fixes. Named native checks passed for
+custom-word highlights, All unread, Mark all read, visible-tail clearing, hidden
+channel badges, font controls and settings persistence. Activity Jump, inactive/
+offscreen acknowledgment and natural own-mention/reply matching remain unverified.
 Actual delivered chat sends and live moderation are still unverified. Detailed
 measured evidence stays in VALIDATION.md, not in a blanket “everything works” label.
 
@@ -100,7 +101,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | WS02 | Recursive split layout and channel decks | Part | Native edge splitting/center regrouping/tab reorder accepted; all divider/cancel/device permutations remain. No artificial two-pane cap. | widgets/splits |
 | WS03 | Per-view composer and draft ownership | V | Native tab/group changes and reply-target persistence accepted; future account/provider changes must preserve it. | widgets/splits/SplitInput.cpp |
 | WS04 | Sidebar and live-only filters | Part | Existing user workflow; hidden unread discovery in new activity batch awaits native acceptance. | widgets/splits/SplitHeader.cpp |
-| WS05 | Broadcast status | P | Live metadata exists; newest pastel markers need native acceptance. Broadcast state must remain distinct from chat connection. | widgets/splits/SplitHeader.cpp |
+| WS05 | Broadcast status | Part | Native live/offline pastel markers observed; unknown/stale edges remain. Broadcast state must remain distinct from chat connection. | widgets/splits/SplitHeader.cpp |
 | WS06 | Stream title/game/viewers/uptime | Next | Compact channel popover/header details without permanent toolbar clutter. | widgets/splits/SplitHeader.cpp |
 | WS07 | Quick switcher and visit history | Backlog | Keyboard-first workspace/channel switching, recent navigation and neighbor-pane focus. | widgets/dialogs/switcher; Notebook |
 | WS08 | Multiple windows and popouts | Backlog | Independent windows, split/workspace popout, cross-window drag and persisted geometry. | widgets/Window.cpp; common/WindowDescriptors |
@@ -124,7 +125,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | IN09 | Broadcaster commands | Backlog | Clip/marker, title/game/color, announcements and engagement commands as supported by current APIs. | controllers/commands/builtin/twitch |
 | IN10 | Configurable hotkeys | Part | Fixed shortcuts exist; action registry/editor, conflicts, contexts, arguments and import/export remain. | controllers/hotkeys; settingspages/KeyboardSettingsPage.cpp |
 | IN11 | Spellcheck | Backlog | Optional dictionaries/languages/suggestions with editable-input integration. | controllers/spellcheck |
-| IN12 | Font and input QoL | P | Ctrl+wheel, sizing/reset shortcuts and saved size built, native pending. Continue feedback/focus/cancellation polish. | widgets/splits/SplitInput.cpp; Jawjack workspace.rs |
+| IN12 | Font and input QoL | Part | Native font controls/reset and saved-setting persistence observed. Continue feedback/focus/cancellation polish. | widgets/splits/SplitInput.cpp; Jawjack workspace.rs |
 
 ### Emotes and Chatterino7 identity
 
@@ -151,8 +152,8 @@ The next-action column is intentionally behavioral rather than a list of buttons
 
 | ID | Feature | State | Remaining work and evidence boundary | Reference |
 | --- | --- | --- | --- | --- |
-| AT01 | Unread and retained activity | P | Built session-local pane references, presented-row acknowledgement and global dedupe; native pending. | Jawjack attention.rs; activity.rs |
-| AT02 | Basic mentions and highlight words | P | Built self-mention/reply and eight bounded phrases; native pending. | controllers/highlights; settingspages/HighlightingPage.cpp |
+| AT01 | Unread and retained activity | Part | Native unread/tail clearing, activity filters and Mark all read observed; Jump and inactive/offscreen edges unverified. | Jawjack attention.rs; activity.rs |
+| AT02 | Basic mentions and highlight words | Part | Native custom-word highlighting observed; natural own-mention/reply matching unverified. | controllers/highlights; settingspages/HighlightingPage.cpp |
 | AT03 | Advanced highlight rules | Backlog | Regex/case/user/badge rules, colors, priority/exclusions and bounded evaluation. | controllers/highlights |
 | AT04 | Special-event highlight policies | Backlog | Whisper/sub/reward/first-message/announcement/AutoMod/thread rules. | singletons/Settings.hpp |
 | AT05 | Sounds, taskbar and attention preferences | Backlog | Per-rule/per-channel sound/mute, foreground behavior, duration and privacy controls. | controllers/pings; sound; highlights |
@@ -327,7 +328,7 @@ be recorded here; adding a task must not silently remove an earlier item.
 
 | Batch | Outcome | Dependencies and evidence |
 | --- | --- | --- |
-| B0 Current native acceptance | Run attention, font controls, corrected reply arrow and pastel status markers on Windows; restore latest owner layout. | c12a498 source is published. Tooling recovery required; do not describe it as already running. |
+| B0 Current native acceptance | Named Windows checks passed; Settings defects fixed and owner state restored. | 0cfe8325 running; remaining edge cases stay explicit above and in VALIDATION.md. |
 | B1 Current Twitch rich messages | Preserve typed rich fragments and notices; render GIFs, Cheers, reward highlights, introductory/system messages and power-up fallbacks. | TW01–08, TW16; current schemas; bounded media design. Verify actual received events where available; clearly mark unavailable cases. |
 | B2 Channel and chatter context | Channel title/game/live state, room restrictions, richer usercards, chat history navigation and safe user actions. | Initial metadata snapshots plus live updates; explicit rate/cache budgets and role visibility. |
 | B3 Personal emotes and 7TV depth | Account-aware picker entitlements, personal sets, cosmetics/paints/badges/avatars, event-driven provider updates and precedence. | Additional scope approval where required; current provider contracts; independent cosmetic rendering budget. |
