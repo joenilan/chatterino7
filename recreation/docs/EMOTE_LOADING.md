@@ -69,3 +69,16 @@ Pending cells keep one consistent skeleton; terminal failures use a small muted
 unavailable-image glyph and explanatory tooltip rather than a box of name text.
 The emote name stays in the normal tooltip/details area. A usable static image
 stays visible while an animated request retries after cooldown.
+
+## Visible residency and recovery
+
+Visible picker images and their static fallback variants are protected from cache
+byte-pressure eviction. Animation admission leaves 8 MiB of the 48 MiB decoded
+budget for still images. If offscreen eviction cannot make space, the animation
+enters the existing failure cooldown and the picker requests its static fallback.
+Byte-pressure eviction preserves failure markers, preventing repeated expensive
+animation retries. Pending downloads are never evicted to admit other keys.
+
+The refresh arrow beside picker search retries failed images in the selected
+collection without clearing loaded images, duplicating in-flight downloads,
+resetting scroll position, or requiring an application restart.

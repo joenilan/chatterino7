@@ -262,6 +262,10 @@ impl MediaCache {
         if (self.layout_keys.contains(key) || self.conservative_layout) && matches!(self.entries.get(key), Some(Entry::Failed(..))) {
             self.layout_dirty = true;
         }
+        // Only this UI owner enqueues; workers can only free queue slots.
+        let has_room=self.jobs.0.lock().is_ok_and(|queue|!queue.closed && queue.jobs.len()<32);
+        if !has_room {return None;}
+        if !self.entries.contains_key(key) && self.entries.len() >= 512 && !self.evict(cx, false) { return None; }
         let queued = if let Ok(mut queue)=self.jobs.0.lock() {
             if queue.closed || queue.jobs.len()>=32 {false} else {
                 queue.jobs.push_back(QueuedDownload{key:key.clone(),priority});
@@ -271,7 +275,6 @@ impl MediaCache {
         } else {false};
         if queued {
             // A full queue must not evict usable images on every paint.
-            if self.entries.len() >= 512 { self.evict(cx); }
             self.entries
                 .insert(key.clone(), Entry::Pending);
         }
@@ -329,19 +332,26 @@ impl MediaCache {
             || self.entries.values().filter(|e| matches!(e, Entry::Pending)).count() >= 12 { return; }
         self.request(key, 2, cx);
     }
-    fn evict(&mut self, cx: &mut App) {
-        let key = self
-            .entries
-            .iter()
-            .min_by_key(|(_, e)| match e {
+    /// Keep the current picker viewport resident. Evicting its images on every
+    /// completion causes an endless download/evict loop in animation-heavy sets.
+    fn evict(&mut self, cx: &mut App, bytes_only: bool) -> bool {
+        let key = self.entries.iter()
+            .filter(|(key, entry)| !matches!(entry, Entry::Pending)
+                && (!bytes_only || matches!(entry, Entry::Ready{..}))
+                && !self.picker_view.iter().any(|visible| visible == *key
+                    || (visible.animated && !key.animated && visible.id == key.id && visible.external == key.external)))
+            .min_by_key(|(_, entry)| match entry {
                 Entry::Ready { used, .. } => *used,
-                Entry::Failed(..) => 0,
-                Entry::Pending => u64::MAX,
-            })
-            .map(|(key, _)| key.clone());
-        if let Some(key) = key {
-            self.remove(&key, cx);
-        }
+                _ => 0,
+            }).map(|(key, _)| key.clone());
+        if let Some(key) = key { self.remove(&key, cx); true } else { false }
+    }
+    /// Retry failures without discarding usable images or duplicating active jobs.
+    pub fn retry_images(&mut self, keys: &[EmoteKey], cx: &mut App) {
+        let failed=self.entries.iter().filter(|(key,entry)| matches!(entry,Entry::Failed(..))
+            && keys.iter().any(|wanted|wanted.id==key.id && wanted.external==key.external))
+            .map(|(key,_)|key.clone()).collect::<Vec<_>>();
+        for key in failed {self.remove(&key,cx);}
     }
     fn remove(&mut self, key: &EmoteKey, cx: &mut App) {
         self.layout_dirty |= self.layout_keys.remove(key) || self.conservative_layout;
@@ -368,8 +378,16 @@ impl MediaCache {
                         changed=true;
                         continue;
                     }
-                    while self.bytes + bytes > 48 * 1024 * 1024 && self.bytes > 0 {
-                        self.evict(cx);
+                    // Reserve room for small static fallbacks instead of letting
+                    // animated cells consume the complete residency budget.
+                    let budget = if key.animated {40 * 1024 * 1024} else {48 * 1024 * 1024};
+                    while self.bytes + bytes > budget && self.bytes > 0 {
+                        if !self.evict(cx, true) {break;}
+                    }
+                    if self.bytes + bytes > budget {
+                        self.entries.insert(key,Entry::Failed(Instant::now(),MediaFailure::CacheBudget));
+                        changed=true;
+                        continue;
                     }
                     self.used = self.used.wrapping_add(1);
                     self.bytes += bytes;

@@ -840,7 +840,23 @@ impl ChannelPane {
             .on_scroll_wheel(|_,_,cx|cx.stop_propagation())
             .when(!compact,|el|el.child(div().h(px(18.)).flex_shrink_0().text_size(px(11.)).overflow_hidden().child(format!("{title} · {} emotes",self.picker.items.len()))))
             .child(div().h_flex().min_w_0().gap_1().flex_shrink_0().child(div().flex_1().min_w_0().child(Textarea::new(&self.emote_search))).when_some(selected_item,|el,item|el.child(Button::new("emote-favorite-selected").xsmall().label(if selected_favorite{"★"}else{"☆"}).tooltip(if selected_favorite{"Remove selected emote from favorites"}else{"Favorite selected emote · right-click also works"}).on_click(cx.listener(move|this,_,w,cx|this.toggle_browser_favorite(&item,w,cx)))))
+                .child(Button::new("emotes-retry-images").xsmall().label("↻").tooltip("Retry failed emote images without restarting or clearing loaded images").on_click(cx.listener(|this,_,_,cx|{
+                    let keys=this.picker.items.iter().filter_map(|item|item.choice.key.clone()).collect::<Vec<_>>();
+                    this.media.borrow_mut().retry_images(&keys,cx);
+                    this.picker.row_reveals.clear();
+                    this.picker.last_warm=None;
+                    this.picker.hover_text="Retrying failed images; loaded images are kept".into();
+                    cx.notify();
+                })))
                 .child(Button::new("emotes-close").xsmall().label("×").tooltip("Close emotes · Esc").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
+            .when(!self.emote_search.read(cx).value().trim().is_empty() || !self.picker.service.is_empty(),|el|el.child(
+                div().h_flex().gap_1().flex_shrink_0().child(div().flex_1().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(format!("Filtered · {} · {} matches",if self.picker.service.is_empty(){"All services"}else{&self.picker.service},self.picker.items.len())))
+                .child(Button::new("emotes-clear-filters").xsmall().label("Clear filters").on_click(cx.listener(|this,_,window,cx|{
+                    this.picker.service.clear();
+                    this.emote_search.update(cx,|input,cx|input.set_value("",window,cx));
+                    this.rebuild_browser(true,cx);cx.notify();
+                })))
+            ))
             .child(div().id("emote-origin-tabs").h_flex().h(px(34.)).flex_shrink_0().gap_1().overflow_x_scroll().track_scroll(&self.picker.tabs_scroll).children(compact_services).children(tabs))
             .when(self.picker.service.is_empty()||self.picker.service=="Twitch",|el|el.child(div().h_flex().min_w_0().gap_1().flex_shrink_0()
                 .child(div().flex_1().min_w_0().overflow_hidden().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(owned_status))
