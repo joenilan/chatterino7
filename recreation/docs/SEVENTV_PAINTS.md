@@ -1,8 +1,8 @@
 # 7TV paint pipeline checkpoint
 
-This slice adds paint entitlement ingestion and inspectable cosmetic metadata.
-**It does not yet paint transcript usernames.** The ordinary readable name remains
-in use until the glyph-mask renderer is integrated and visually verified.
+This slice adds observed paint entitlements, cosmetic inspection, and bounded
+static gradient rendering on transcript usernames. Native visual acceptance
+is still pending; Linux compilation alone is not visual verification.
 
 ## Implemented
 
@@ -35,31 +35,33 @@ Passive events do not provide a historical roster. A paint or badge may be absen
 until the current connection observes the corresponding grant. Cosmetic grants
 are distinct from saved local nicknames and color overrides.
 
-## Remaining renderer integration
+## Static username rendering
 
-Use actual shaped author glyphs from the existing text layout. Preserve advances,
-baseline, fallback fonts, hit-test/copy offsets, selection and search backgrounds.
-Only author foreground changes; colon and following space remain ordinary text.
+Actual shaped author glyphs supply grayscale masks. Plain rows retain ChatText's
+original wrapping, link colors, hit testing and selection; inline-media rows retain
+InlineChat's existing geometry. The author foreground changes without recoloring
+its colon or following space. Explicit saved local name colors take priority.
 
-The pinned gpui-pre 0.3.8 has private raster_bounds/rasterize_glyph methods.
-A narrow vendored API is required for the planned production grayscale-mask
-route. Do not modify the shared Cargo registry or substitute a rectangular mask.
+The vendored gpui-pre 0.3.8 patch exposes bounded grayscale rasterization and an
+original-layout prefix foreground replacement. It does not edit the shared Cargo
+registry or platform backends. Rasterization uses actual returned dimensions,
+including possible macOS phase padding, and preserves glyph vertical offsets.
 
-The wrapper must return raster origin, actual bitmap dimensions and coverage,
-reject emoji/subpixel-color output, enforce pixel budgets before and after
-rasterization, and account for macOS's possible extra subpixel-phase pixel.
-Windows returns one grayscale coverage byte per pixel in this mode.
+Composition limits: 64 glyphs, scale up to 4×, 128K pixels per raster, 2048×512
+combined bounds, 512K pixels per composite, two new composites per 16ms interval.
+Cached entries are capped at 256 and 16 MiB; pending image retirement is included
+in a 32 MiB transient cap. Image retirement is deferred and forces fresh scenes
+so retained GPUI paint ranges cannot replay freed atlas tiles.
 
-InlineChat should retain Span.author on each painted Piece and replace only the
-matching original shaped foreground. ChatText needs a narrow foreground-exclusion
-path so glyph overhang is neither clipped nor painted twice. Cache keys must
-include glyph/font identity, positions, size, scale/phase, paint and base color.
-Draw precomposited images at exact device/logical correspondence.
+Unsupported paints, emoji glyphs, negative origins, unsafe cluster boundaries,
+names spanning visual wraps, or exhausted budgets retain ordinary readable text.
+Cache identity includes paint, font/glyph layout, metrics, device phase and scale.
+Paints use the currently observed numeric Twitch-ID grant; no historical roster
+or extra per-sender fetch is implied.
 
-Native Windows review must cover accents, combining marks, fallback fonts,
-fractional/2× DPI, wrap, selection, author actions, clipping and busy-feed cost.
-Image/animated paints and shadows require their own bounded follow-on rendering
-work; they are not included in static-preview support.
+Native Windows review remains: accents and combining marks, fallback fonts,
+fractional/2× DPI, wrapping, selection, author actions, clipping and busy-feed
+cost. Image/animated paints, layered effects and shadows remain unsupported.
 
 ## Evidence
 
@@ -67,7 +69,9 @@ The locked Linux development build passed for this checkpoint. Focused temporary
 checks covered 13 parsing/sampling cases: gradient endpoints/midpoint, angle
 normalization, signed color, alpha, duplicate stops, invalid repeat span, radial
 center, unsupported effects, invalid bounds and solid colors. No live paint
-entitlement or native inspector acceptance is claimed.
+entitlement or native rendering acceptance is claimed. The static username
+renderer also passed the locked Linux development build; its GPU output still
+needs native review.
 
 ## Sources
 

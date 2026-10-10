@@ -154,6 +154,7 @@ pub struct Workbench {
     settings: bool,
     font_size: f32,
     timestamps:u8,
+    pause_mode:u8,
     history_limit: usize,
     highlight_input: Entity<InputState>,
     highlight_terms: Vec<String>,
@@ -216,7 +217,7 @@ impl Workbench {
     }
     pub fn media_inspection(&self) -> Value { json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()}) }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>()})
+        json!({"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>()})
     }
     pub fn panes(&self) -> Vec<Entity<ChannelPane>> {
         self.tabs
@@ -303,6 +304,7 @@ impl Workbench {
                 .filter(|n| n.is_finite())
                 .unwrap_or(14.)
                 .clamp(12., 24.) as f32,
+            pause_mode:state["pause_mode"].as_u64().unwrap_or(0).min(2)as u8,
             timestamps:state["timestamps"].as_u64().unwrap_or(0).min(2)as u8,
             history_limit: state["history_limit"].as_u64().unwrap_or(10_000).clamp(500,10_000) as usize,
             drafts,
@@ -547,7 +549,7 @@ impl Workbench {
         let draft = self.drafts.get(&key).cloned().unwrap_or_default();
         let shared_state=self.panes().iter().find(|p|p.read(cx).name.as_ref()==name).map(|p|{let p=p.read(cx);(p.connected,p.connection.clone(),p.room_settings.clone())});
         let pane = cx.new(|cx| ChannelPane::new(name, self.media.clone(), self.catalog.clone(), &draft, self.font_size, self.history_limit, window, cx));
-        pane.update(cx,|p,_|{p.timestamps=self.timestamps;p.custom_commands=self.custom_commands.clone();p.chatter_appearance=self.chatter_appearance.clone();});
+        pane.update(cx,|p,_|{p.timestamps=self.timestamps;p.pause_mode=self.pause_mode;p.custom_commands=self.custom_commands.clone();p.chatter_appearance=self.chatter_appearance.clone();});
         if let Some((connected,connection,room))=shared_state {pane.update(cx,|p,_|{p.connected=connected;p.connection=connection;p.room_settings=room;});}
         if let Some(target)=self.reply_drafts.get(&key).and_then(crate::replies::Target::from_json){pane.update(cx,|p,_|p.reply_target=Some(target));}
         let channel = name.to_owned();
@@ -632,7 +634,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
@@ -1008,6 +1010,11 @@ impl Workbench {
         tab.split = cx.new(|_| ResizableState::default());
         self.schedule_save(cx);
         cx.notify();
+    }
+    fn change_pause_mode(&mut self,mode:u8,window:&Window,cx:&mut Context<Self>){
+        self.pause_mode=mode.min(2);
+        for pane in self.panes().iter().chain(self.closed_tabs.iter().flat_map(|tab|tab.panes.iter())){pane.update(cx,|p,cx|{p.pause_mode=self.pause_mode;p.update_hover_pause(window,cx);cx.notify();});}
+        self.schedule_save(cx);cx.notify();
     }
     fn change_timestamps(&mut self,mode:u8,cx:&mut Context<Self>){
         self.timestamps=mode.min(2);
@@ -1403,6 +1410,9 @@ impl Render for Workbench {
                             .child(div().h_flex().gap_2().child(Button::new("font-minus").small().label("A−").on_click(cx.listener(|this,_,_,cx|this.change_font(-1.,cx))))
                                 .child(format!("{} px",self.font_size as u32)).child(Button::new("font-reset").small().label("Reset").tooltip("Ctrl+0").on_click(cx.listener(|this,_,w,cx|this.font_feedback(0.,true,w,cx)))).child(Button::new("font-plus").small().label("A+").on_click(cx.listener(|this,_,_,cx|this.change_font(1.,cx)))))
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Ctrl+wheel or Ctrl+plus/minus · Ctrl+0 resets"))
+                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Pause scrolling"))
+                            .child(div().h_flex().flex_wrap().gap_1().children([(0u8,"Manual"),(1,"On hover"),(2,"Alt + hover")].into_iter().map(|(mode,label)|Button::new(("pause-mode",mode as usize)).small().label(label).disabled(self.pause_mode==mode).on_click(cx.listener(move|this,_,w,cx|this.change_pause_mode(mode,w,cx))))))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Ctrl+Space toggles pause. Incoming chat keeps arriving. Scrolling up or selecting text keeps your reading position."))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Timestamps"))
                             .child(div().h_flex().flex_wrap().gap_1().children([(0u8,"Off"),(1,"Hours/minutes"),(2,"With seconds")].into_iter().map(|(mode,label)|Button::new(("timestamps",mode as usize)).small().label(label).disabled(self.timestamps==mode).on_click(cx.listener(move|this,_,_,cx|this.change_timestamps(mode,cx))))))
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Twitch event time in your local timezone. Hover for date and UTC offset."))

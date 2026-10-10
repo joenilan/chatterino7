@@ -22,6 +22,7 @@ struct Span {
 }
 #[derive(Clone)]
 struct Piece {
+    author:bool,
     range: Range<usize>,
     bounds: Bounds<Pixels>,
     text: Option<ShapedLine>,
@@ -79,6 +80,7 @@ pub struct InlineChat {
     text: SharedString,
     spans: Vec<Span>,
     name_color: u32,
+    paint:Option<crate::name_paint::Request>,
     emote_size: f32,
     interaction: Option<crate::message_actions::Interaction>,
     selection: Rc<RefCell<Selection>>,
@@ -95,6 +97,7 @@ impl InlineChat {
 
     pub fn new(
         message: &Message,
+        paint:Option<crate::name_paint::Request>,
         row: u64,
         media: &mut MediaCache,
         selection: Rc<RefCell<Selection>>,
@@ -186,6 +189,7 @@ impl InlineChat {
             text,
             spans,
             name_color: message.author_color().unwrap_or(crate::theme::MUTED),
+            paint,
             emote_size: if message.presentation.kind=="power_ups_gigantified_emote" {56.}else{28.},
             interaction: None,
             selection,
@@ -298,6 +302,7 @@ impl Element for InlineChat {
                                 (Some(shaped), Vec::new(), w)
                             };
                             result.pieces.push(Piece {
+                                author:span.author,
                                 range: a..b,
                                 bounds: Bounds::new(point(x, y), size(w, line_height)),
                                 text: shaped,
@@ -432,6 +437,8 @@ impl Element for InlineChat {
                 }
             }
             if let Some(text) = &piece.text {
+                if piece.author&&piece.range.start==0&&self.spans.first().is_some_and(|s|s.range==piece.range)
+                    &&self.paint.as_ref().is_some_and(|paint|paint.draw(text,bounds.origin+piece.bounds.origin,piece.bounds.size.height,self.name_color,window,cx)){continue;}
                 let _ = text.paint(
                     bounds.origin + piece.bounds.origin,
                     piece.bounds.size.height,

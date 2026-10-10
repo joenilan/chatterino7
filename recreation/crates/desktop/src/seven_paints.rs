@@ -97,7 +97,7 @@ impl Paints{
         "definitions":self.definitions.len(),"sender_grants":self.users.len(),
         "unresolved_grants":self.users.values().filter(|(id,_)|!self.definitions.contains_key(id)).count(),
         "unsupported_definitions":self.definitions.values().filter(|(p,_)|p.limitation.is_some()).count(),
-        "name_rendering":"pending glyph-mask integration","scope":"observed session entitlements only"
+        "name_rendering":"bounded static glyph-mask rendering","scope":"observed session entitlements only"
     })}
 }
 

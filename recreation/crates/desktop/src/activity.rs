@@ -11,6 +11,8 @@ impl Workbench {
         for pane in self.panes().iter().chain(self.closed_tabs.iter().flat_map(|t|t.panes.iter())) {
             let eligible=available&&visible.contains(pane);
             pane.update(cx,|p,cx|{
+                p.transcript_available=eligible;
+                p.update_hover_pause(window,cx);
                 let timeline=p.timeline.borrow();let first=(p.next_id-timeline.messages().len()) as u64;
                 let configured=p.attention.configure(identity.clone(),&self.highlight_terms,&self.highlight_rules.borrow(),&p.name,&timeline,first,p.next_id as u64);
                 drop(timeline);

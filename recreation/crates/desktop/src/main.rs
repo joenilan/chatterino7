@@ -32,6 +32,9 @@ mod seven_events;
 mod seven_entitlements;
 mod seven_badges;
 mod seven_paints;
+mod name_paint;
+mod message_scroller;
+mod chat_pause;
 mod input_history;
 use workspace::Workbench;
 
@@ -43,15 +46,15 @@ use gpui_kit::component::{
     Disableable, Icon, IconName, Sizable, StyledExt, WindowExt,
     button::Button,
     input::{InputEvent, Textarea, TextareaState},
-    message_scroller::{MessageScroller, MessageScrollerState},
     notification::{Notification, NotificationDelivery},
 };
 use gpui_kit::*;
+use message_scroller::{MessageScroller,MessageScrollerState};
 use std::{cell::{Cell, RefCell}, rc::Rc, time::{Duration, Instant}};
 
 gpui_kit::actions!(
     chat_workbench,
-    [CopyChatSelection, ClearChatSelection, SelectAllChat, CompleteEmote, FindChat, NextChatMatch, PreviousChatMatch, PreviousInput, NextInput]
+    [CopyChatSelection, ClearChatSelection, SelectAllChat, CompleteEmote, FindChat, NextChatMatch, PreviousChatMatch, PreviousInput, NextInput, ToggleChatPause, ResumeChat, SentHistory]
 );
 
 #[derive(Clone)]
@@ -131,6 +134,9 @@ struct ChannelPane {
     draft: Entity<TextareaState>,
     font_size: f32,
     timestamps:u8,
+    pause_mode:u8,
+    transcript_hover:bool,
+    transcript_available:bool,
     picker: emote_picker::Picker,
     search: chat_search::Search,
     link_press: message_actions::PressState,
@@ -197,6 +203,9 @@ impl ChannelPane {
             draft,
             font_size,
             timestamps:0,
+            pause_mode:0,
+            transcript_hover:false,
+            transcript_available:false,
             picker: emote_picker::Picker::default(),
             emote_search,
             search,
@@ -397,6 +406,7 @@ impl Render for ChannelPane {
         let emote_button_owner=cx.entity().downgrade();
         let emote_picker_open=self.picker.open;
         let catalog=self.catalog.clone();
+        let appearance=self.chatter_appearance.clone();
         let timestamps=self.timestamps;
         let timeline = self.timeline.clone();
         let media = self.media.clone();
@@ -421,6 +431,7 @@ impl Render for ChannelPane {
         let finish_link=self.link_press.clone();
         let copy_viewport = self.viewport.clone();
         let following = self.scroller.read(cx).is_following_tail();
+        let paused=self.scroller.read(cx).paused();
         let now = Instant::now();
         self.entrances.retain(|entry| entry.active(now));
         let entrances = if following && !cx.reduce_motion()
@@ -430,6 +441,9 @@ impl Render for ChannelPane {
             .id("channel-pane")
             .key_context("JawjackChannel")
             .capture_action(cx.listener(|this,_:&gpui_kit::base::input::Search,w,cx|{this.open_search(w,cx);cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&SentHistory,w,cx|{this.open_input_history(w,cx);cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&ToggleChatPause,_,cx|{this.scroller.update(cx,|s,cx|s.toggle_pause(cx));cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&ResumeChat,_,cx|{this.scroller.update(cx,|s,cx|s.scroll_to_end(cx));cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&FindChat,w,cx|{this.open_search(w,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&NextChatMatch,_,cx|{this.next_search(true,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&PreviousChatMatch,_,cx|{this.next_search(false,cx);cx.stop_propagation();}))
@@ -469,8 +483,9 @@ impl Render for ChannelPane {
                         div()
                             .text_size(px(12.))
                             .text_color(rgb(theme::MUTED))
-                            .child(if self.connected { if following { "Latest".to_owned() } else { format!("{retained}/{} · History", self.timeline.borrow().capacity()) } } else { self.connection.clone() }),
+                            .child(if self.connected { if paused { "Paused".to_owned() } else if following { "Latest".to_owned() } else { format!("{retained}/{} · History", self.timeline.borrow().capacity()) } } else { self.connection.clone() }),
                     )
+                    .child(Button::new("pause-chat").xsmall().label(if paused{"▶"}else{"Ⅱ"}).tooltip(if paused{"Resume live chat · Ctrl+End"}else{"Pause scrolling · Ctrl+Space"}).on_click(cx.listener(|this,_,_,cx|{this.scroller.update(cx,|s,cx|{if s.paused(){s.scroll_to_end(cx);}else{s.toggle_pause(cx);}});})))
                     .child(Button::new("find-chat").xsmall().label("⌕").tooltip("Find in chat · Ctrl+F").on_click(cx.listener(|this,_,w,cx|this.open_search(w,cx))))
                     .child(Button::new("close-pane").xsmall().label("×").tooltip("Close this split…; keep draft")
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(PaneEvent::RequestClose)))),
@@ -479,6 +494,10 @@ impl Render for ChannelPane {
             .child(
                 div()
                     .id("transcript")
+                    .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
+                    .capture_any_mouse_down(cx.listener(|this,event:&MouseDownEvent,_,cx|{if event.button==MouseButton::Left{this.scroller.update(cx,|s,_|s.cancel_auto_resume());}}))
+                    .on_hover(cx.listener(|this,over,w,cx|{this.transcript_hover=*over;this.update_hover_pause(w,cx);}))
+                    .on_modifiers_changed(cx.listener(|this,_,w,cx|this.update_hover_pause(w,cx)))
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
@@ -527,7 +546,10 @@ impl Render for ChannelPane {
                                 return div().into_any_element();
                             };
                             let row = first_order + index as u64;
-                            let inline = inline_chat::InlineChat::new(message, row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx);
+                            let paint=if appearance.borrow().get(&message.user_id).is_some_and(|a|a.color.is_some()){None}else{
+                                let catalog=catalog.borrow();catalog.paints.for_user(&message.user_id).filter(|p|p.limitation.is_none()).cloned().map(|paint|crate::name_paint::Request{paint,cache:catalog.paint_cache.clone()})
+                            };
+                            let inline = inline_chat::InlineChat::new(message, paint.clone(), row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx);
                             let first_line_height = if inline.is_some() { inline_chat::InlineChat::line_height(window,message) } else { window.line_height() };
                             let row_owner=menu_owner.clone();let row_id=message.id.clone();
                             let timestamp=if timestamps>0{message.sent_at.and_then(|time|chrono::DateTime::from_timestamp(time,0)).map(|time|{
@@ -583,7 +605,7 @@ impl Render for ChannelPane {
                                     inline.with_search(matches).with_interaction(interaction).into_any_element()
                                 } else {
                                     ChatText::new(SharedString::from(format!("text-{}", message.id)), row, message.copy_line(), selection.clone(), focus.clone(), viewport.clone())
-                                        .with_author(message.author_label(), message.author_color()).with_search(matches).with_interaction(interaction).into_any_element()
+                                        .with_author(message.author_label(), message.author_color()).with_paint(paint).with_search(matches).with_interaction(interaction).into_any_element()
                                 })))
                                 .children(rich_attachments)
                                 .into_any_element()
@@ -661,7 +683,7 @@ impl Render for ChannelPane {
                 .child(div().h_flex().justify_between().text_size(px(11.)).text_color(rgb(theme::MUTED))
                     .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500", self.draft.read(cx).value().chars().count())))
                     .when_some(self.room_settings.as_ref().filter(|r|!r.labels().is_empty()).map(|r|r.summary()),|el,summary|el.child(div().id("room-modes-hint").max_w(px(120.)).overflow_hidden().text_ellipsis().text_color(rgb(0xC5B8E6)).tooltip({let summary=summary.clone();move|w,cx|gpui_kit::component::tooltip::Tooltip::new(format!("{summary}. Your role may grant exemptions; Twitch validates sending. Ctrl+I for channel details.")).build(w,cx)}).child(summary)))
-                    .child(div().h_flex().gap_2().child(div().id("emote-button-area").on_prepaint(move|bounds,_,cx|{if emote_button_bounds.replace(Some(bounds))!=Some(bounds)&&emote_picker_open{let owner=emote_button_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}}).on_hover(cx.listener(|this,over,_,cx|{if *over{this.prepare_picker_media(cx);}})).child(Button::new("emotes-toggle").small().label(":)").tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
+                    .child(div().h_flex().gap_2().child(Button::new("sent-history").small().label("↶").tooltip("Sent message history · Ctrl+Shift+H").on_click(cx.listener(|this,_,w,cx|this.open_input_history(w,cx)))).child(div().id("emote-button-area").on_prepaint(move|bounds,_,cx|{if emote_button_bounds.replace(Some(bounds))!=Some(bounds)&&emote_picker_open{let owner=emote_button_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}}).on_hover(cx.listener(|this,over,_,cx|{if *over{this.prepare_picker_media(cx);}})).child(Button::new("emotes-toggle").small().label(":)").tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
                     .child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else if commands::is_command(&self.draft.read(cx).value()) { "Run" } else { "Send" }).disabled(self.pending.is_some() || (!self.connected && !commands::is_command(&self.draft.read(cx).value()))).tooltip("Send a message or run a local /command").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx)))))))
             .child(
                 canvas(
@@ -762,6 +784,9 @@ fn main() {
             workspace::bind_keys(cx);
             theme::install(cx);
             cx.bind_keys([
+                KeyBinding::new("ctrl-shift-h", SentHistory, Some("JawjackChannel")),
+                KeyBinding::new("ctrl-space", ToggleChatPause, Some("JawjackChannel")),
+                KeyBinding::new("ctrl-end", ResumeChat, Some("ChatTranscript")),
                 KeyBinding::new("ctrl-f", FindChat, Some("JawjackChannel")),
                 KeyBinding::new("cmd-f", FindChat, Some("JawjackChannel")),
                 KeyBinding::new("f3", NextChatMatch, Some("JawjackChannel")),

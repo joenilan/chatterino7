@@ -13,12 +13,14 @@ pub struct ChatText {
     text: SharedString,
     styled: StyledText,
     author: Option<(String,Option<u32>)>,
+    paint: Option<crate::name_paint::Request>,
     interaction: Option<crate::message_actions::Interaction>,
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
     viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
 }
 impl ChatText {
+    pub fn with_paint(mut self, paint:Option<crate::name_paint::Request>)->Self{self.paint=paint;self}
     pub fn with_search(mut self, ranges:Vec<std::ops::Range<usize>>)->Self{self.search=ranges;self}
 
     pub fn with_interaction(mut self, interaction:crate::message_actions::Interaction)->Self{
@@ -50,6 +52,7 @@ impl ChatText {
             search: Vec::new(),
             styled: StyledText::new(text.clone()),
             author: None,
+            paint: None,
             interaction: None,
             text,
             selection,
@@ -197,8 +200,16 @@ impl Element for ChatText {
             }
         }
         }
-        self.styled
-            .paint(id, inspector, bounds, &mut (), &mut (), window, cx);
+        let painted = if let (Some(request),Some((name,color)))=(&self.paint,&self.author) {
+            layout.shaped_prefix(name.len()).is_some_and(|prefix| {
+                request.draw(&prefix,bounds.origin,layout.line_height(),color.unwrap_or(crate::theme::MUTED),window,cx)
+            })
+        } else { false };
+        if painted {
+            let _=layout.paint_foreground_without_prefix(self.author.as_ref().unwrap().0.len(),window,cx);
+        } else {
+            self.styled.paint(id, inspector, bounds, &mut (), &mut (), window, cx);
+        }
         let row = self.row;
         let selection = self.selection.clone();
         let text = self.text.clone();
