@@ -113,10 +113,11 @@ provider where the official API supports it.
 
 ## 6. Streamer experience: the own-chat anchor
 
-### Recommended pin rule
+### Approved account-level pin rule
 
-The first-tab protection is approved. The per-workspace interpretation below is a
-planning recommendation to validate before implementation.
+Owner decision, 2026-10-10: the own-chat anchor belongs to the broadcaster account,
+independently of workspaces. It must be present in every workspace. A dedicated
+Streamer/Home workspace alone does not satisfy this requirement.
 
 The selected primary broadcast channel is always the **first tab in the primary
 chat group of the active workspace**, visibly pinned. It cannot be reordered,
@@ -145,12 +146,18 @@ To make the invariant predictable:
 - Account changes rebind only after verifying the new account's stable channel ID.
   Preserve the previous account's drafts separately; never send them as the new user.
 
-Use one canonical own-channel binding, with a separate anchored ViewId in each
-workspace under this proposed all-workspace behavior; never move one physical view between
-workspaces or create duplicate network subscriptions. An alternative worth reviewing
-is one protected Streamer/Home workspace with freely arranged other workspaces.
-The migration must not silently duplicate an owner's existing layout before this
-cross-workspace behavior is chosen.
+Use one canonical account-level own-channel binding and streamer session, with
+workspace-local anchor presentations. Workspace changes must not disconnect the
+feed, duplicate network subscriptions, reset the own-chat draft/reply target, or
+lose an in-progress Studio edit. The anchor's composer state is keyed by account,
+provider and owned channel rather than workspace. Switching accounts must still
+isolate drafts and control targets. View-local scroll/selection may remain separate.
+
+Streamer tools and current broadcast state remain available from every anchor.
+A workspace may remember drawer placement/open state, but must not own the
+broadcast session or require switching to another workspace to reach its controls.
+Migration reuses the existing own-channel feed where possible, preserves other tabs
+and splits, and creates only the required protected presentation in each workspace.
 
 Multiple broadcast accounts/providers: choose a primary anchor explicitly. Other
 owned feeds can appear after it as secondary pinned tabs or in a Broadcast workspace.
@@ -302,7 +309,10 @@ migration is incomplete, use a readable recovery path rather than resetting layo
 
 Shared feeds may share receive/network work. Each view still owns scroll position,
 selection and focused composer interaction. Define draft sharing explicitly: default
-independent drafts per account/feed/view. Moving preserves the same ViewId and its
+independent drafts per account/feed/view for ordinary views. The protected own-chat
+anchor is an explicit exception: its account-level draft/reply state follows the
+streamer across workspaces. Additional ordinary mirrors remain independent.
+Moving preserves the same ViewId and its
 account-scoped draft/reply state; account/feed-only recovery must never select another
 view's draft. Moving is not copying, and a mirror must not silently consume its draft.
 
@@ -371,12 +381,14 @@ fresh/signed-out/empty data states and never pass a mockup off as running behavi
 ## 14. Decisions already made and open research
 
 Approved direction: three setup choices; own chat first and protected in Streamer
-mode; readily accessible streamer/moderator tools; Viewer/Moderator switchability;
+mode in every workspace as an account-level anchor; readily accessible
+streamer/moderator tools; Viewer/Moderator switchability;
 continued full parity and multi-service plans; compact chat-first design.
 
-Planning recommendation: anchor each workspace's primary group and choose one
-primary broadcast account. This resolves the otherwise ambiguous meaning of “first”
-with multiple split groups. Validate that interaction before locking the storage model.
+Approved cross-workspace behavior: own chat is always first in the primary group
+of every workspace, with shared account-level streamer context. No dedicated-home-
+workspace-only alternative. With multiple owned broadcast accounts, select the
+primary explicitly; never infer it from whichever account most recently signed in.
 
 Open research does not block the initial role presentation: provider eligibility,
 moderator-versus-broadcaster endpoint differences, rate limits, optional grant UX,
