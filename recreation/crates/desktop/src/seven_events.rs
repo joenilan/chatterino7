@@ -157,10 +157,11 @@ fn subscriptions(watches: &[Watch], channels: &[String], limit: usize) -> BTreeS
     // Each channel context has one additional server-side presence topic.
     let mut cost = object_limit;
     for id in channels {
-        if cost + 5 > limit {
+        if cost + 6 > limit {
             break;
         }
         for kind in [
+            "cosmetic.create",
             "entitlement.create",
             "entitlement.delete",
             "entitlement.reset",
@@ -172,7 +173,7 @@ fn subscriptions(watches: &[Watch], channels: &[String], limit: usize) -> BTreeS
                 channel: true,
             });
         }
-        cost += 5;
+        cost += 6;
     }
     set
 }
@@ -199,9 +200,17 @@ fn dispatch(changes: &Mutex<Vec<Change>>, kind: &str, body: &Value) {
         reset(changes);
         return;
     }
+    if kind == "cosmetic.create" {
+        if body["object"]["kind"].as_str() == Some("BADGE") {
+            if let Some((id, badge)) = crate::seven_badges::definition(&body["object"]["data"]) {
+                push(changes, Change::BadgeDefinition { id, badge });
+            }
+        }
+        return;
+    }
     if matches!(kind, "entitlement.create" | "entitlement.delete") {
         let object = &body["object"];
-        if object["kind"].as_str() != Some("EMOTE_SET") {
+        if !matches!(object["kind"].as_str(), Some("EMOTE_SET" | "BADGE")) {
             return;
         }
         let Some(set) = object["ref_id"].as_str().filter(|s| valid_id(s)) else {
@@ -220,10 +229,18 @@ fn dispatch(changes: &Mutex<Vec<Change>>, kind: &str, body: &Value) {
         if !users.is_empty() {
             push(
                 changes,
-                Change::Grant {
-                    users,
-                    set: set.into(),
-                    remove: kind == "entitlement.delete",
+                if object["kind"].as_str() == Some("BADGE") {
+                    Change::BadgeGrant {
+                        users,
+                        badge: set.into(),
+                        remove: kind == "entitlement.delete",
+                    }
+                } else {
+                    Change::Grant {
+                        users,
+                        set: set.into(),
+                        remove: kind == "entitlement.delete",
+                    }
                 },
             );
         }

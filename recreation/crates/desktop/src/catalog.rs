@@ -23,6 +23,7 @@ pub struct Catalog {
     personal_ready:bool,
     personal_epoch:u64,
     entitlements:crate::seven_entitlements::Entitlements,
+    pub badges:crate::seven_badges::Badges,
     entitled_sets:HashMap<String,Emotes>,
     event_versions:HashMap<String,u64>,
     event_revision:u64,
@@ -70,7 +71,7 @@ impl Catalog {
         Self {
             global: HashMap::new(),
             personal:HashMap::new(),personal_user:None,personal_ready:false,personal_epoch:0,
-            entitlements:Default::default(),entitled_sets:HashMap::new(),event_versions:HashMap::new(),event_revision:0,
+            entitlements:Default::default(),badges:Default::default(),entitled_sets:HashMap::new(),event_versions:HashMap::new(),event_revision:0,
             watches:HashMap::new(),events:crate::seven_events::Events::new(),dirty:HashSet::new(),
             in_flight:HashSet::from([String::new()]),retry_after:HashMap::new(),
             twitch: crate::twitch_assets::TwitchAssets::new(),
@@ -84,7 +85,7 @@ impl Catalog {
         }
     }
     pub fn inspection(&self) -> Value {
-        serde_json::json!({"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"personal_emotes":self.personal.len(),"personal_catalog_loaded":self.personal_ready,"personal_scope":"owned set plus passive session grants","seventv_entitled_senders":self.entitlements.len(),"seventv_entitled_sets":self.entitled_sets.len(),"seventv_entitled_emotes":self.entitled_sets.values().map(HashMap::len).sum::<usize>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
+        serde_json::json!({"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"personal_emotes":self.personal.len(),"personal_catalog_loaded":self.personal_ready,"personal_scope":"owned set plus passive session grants","seventv_badges":self.badges.inspection(),"seventv_entitled_senders":self.entitlements.len(),"seventv_entitled_sets":self.entitled_sets.len(),"seventv_entitled_emotes":self.entitled_sets.values().map(HashMap::len).sum::<usize>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
     }
     pub fn channel(&mut self, name: &str, id: &str) {
         if id.is_empty() || id.len() > 32 || !id.bytes().all(|b| b.is_ascii_digit()) {
@@ -112,9 +113,9 @@ impl Catalog {
         let channels=self.requested.iter().filter(|(name,_)|active.contains(*name)).map(|(_, (id,_))|id.clone()).collect();
         let (dirty,events)=self.events.pump(self.watches.values().cloned().collect(),channels);
         self.dirty.extend(dirty);
-        let mut event_changed=self.entitlements.expire();
+        let mut event_changed=self.entitlements.expire() | self.badges.expire();
         for event in events {
-            event_changed |= self.entitlements.apply(&event);
+            event_changed |= self.entitlements.apply(&event) | self.badges.apply(&event);
             match event {
                 crate::seven_entitlements::Change::Reset => {
                     self.event_revision=self.event_revision.wrapping_add(1);

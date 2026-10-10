@@ -23,6 +23,7 @@ mod room_settings;
 mod profiles;
 mod seven_events;
 mod seven_entitlements;
+mod seven_badges;
 mod input_history;
 use workspace::Workbench;
 
@@ -546,7 +547,7 @@ impl Render for ChannelPane {
                                 .children(reply_line)
                                 .child(div().h_flex().items_start().min_w_0().gap_1()
                                 .when_some(timestamp,|el,(label,full)|el.child(div().id(SharedString::from(format!("timestamp-{}",message.id))).w(px(if timestamps==2{55.}else{37.})).h(first_line_height).flex_shrink_0().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(w,cx)).child(label)))
-                                .children(message.badges.iter().filter_map(|badge|catalog.borrow().twitch.badge(&message.channel_id,&badge.set_id,&badge.id).cloned()).map(|badge|{
+                                .children(message.badges.iter().filter_map(|badge|catalog.borrow().twitch.badge(&message.channel_id,&badge.set_id,&badge.id).cloned()).chain(catalog.borrow().badges.for_user(&message.user_id).cloned()).map(|badge|{
                                     let image=media.borrow_mut().get(&badge.key,cx);
                                     div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(emote_picker::icon(image,String::new(),18.,18.))
                                 }).collect::<Vec<_>>())

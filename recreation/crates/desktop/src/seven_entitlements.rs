@@ -6,6 +6,15 @@ use std::{
 
 #[derive(Clone)]
 pub enum Change {
+    BadgeDefinition {
+        id: String,
+        badge: crate::twitch_assets::Badge,
+    },
+    BadgeGrant {
+        users: Vec<String>,
+        badge: String,
+        remove: bool,
+    },
     Reset,
     Grant {
         users: Vec<String>,
@@ -20,6 +29,7 @@ pub enum Change {
 
 #[derive(Default)]
 pub struct Entitlements {
+    last_expiry: Option<Instant>,
     users: HashMap<String, BTreeMap<String, Instant>>,
     pub generation: u64,
 }
@@ -69,6 +79,13 @@ impl Entitlements {
         }
     }
     pub fn expire(&mut self) -> bool {
+        if self
+            .last_expiry
+            .is_some_and(|at| at.elapsed() < Duration::from_secs(10))
+        {
+            return false;
+        }
+        self.last_expiry = Some(Instant::now());
         let before: usize = self.users.values().map(BTreeMap::len).sum();
         // Passive events are not a roster. Missing revocations must not persist forever.
         self.users.retain(|_, sets| {

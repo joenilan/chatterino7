@@ -33,6 +33,14 @@ pub fn valid_seven_url(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'.'))
 }
 impl EmoteKey {
+    pub fn seven_badge(id:&str,animated:bool,asset:&chat_core::EmoteAsset)->Option<Self>{
+        for value in [&asset.url,&asset.static_url]{
+            let url=reqwest::Url::parse(value).ok()?;
+            if value.len()>2048||url.scheme()!="https"||url.host_str()!=Some("cdn.7tv.app")||!url.username().is_empty()||url.password().is_some()||url.port().is_some_and(|p|p!=443)||url.query().is_some()||url.fragment().is_some()||!url.path().starts_with("/badge/")||url.path().contains("..")||!url.path().bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'/'|b'_'|b'-'|b'.')){return None;}
+        }
+        if asset.width==0||asset.height==0||asset.width>256||asset.height>256{return None;}
+        Some(Self{id:format!("7tv-badge:{id}"),animated,external:Some(asset.clone())})
+    }
     pub fn seven(id: &str, animated: bool, asset: &chat_core::EmoteAsset) -> Option<Self> {
         if !valid_seven_url(&asset.url)
             || !valid_seven_url(&asset.static_url)
@@ -79,6 +87,7 @@ impl EmoteKey {
         Some(Self{id:format!("cheer:{id}"),animated,external:Some(asset.clone())})
     }
     pub fn provider(&self)->&'static str {
+        if self.id.starts_with("7tv-badge:"){return "7tv_badge";}
         if self.id.starts_with("avatar:"){return "twitch_avatar";}
         if self.id.starts_with("gif:"){return "twitch_gif";}
         if self.id.starts_with("cheer:"){return "twitch_cheer";}

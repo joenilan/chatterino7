@@ -135,17 +135,17 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | EM02 | Available account emote inventory | Backlog | Subscriber/follower/Bits/reward/temporary entitlements; catalog presence alone is insufficient. | providers/twitch/TwitchEmotes.cpp |
 | EM03 | Twitch badges | Part | Native global/channel badge media observed; category settings and all metadata/flair variants remain. | providers/twitch/TwitchBadges.cpp |
 | EM04 | 7TV channel/global aliases | Part | Public catalogs and basic zero-width support exist; special/unlisted sets and provider controls remain. | providers/seventv/SeventvEmotes.cpp |
-| EM05 | 7TV personal emotes | Part | Source loads signed-in first-owned Personal set into own picker and sender-scoped priority; native pending. Other-sender entitlements and special/multiple sets remain. | providers/seventv/SeventvPersonalEmotes |
-| EM06 | 7TV live updates and presence | Part | Anonymous object subscriptions acknowledged on Windows, coalesced REST invalidation and polling fallback; actual set changes untested. Personal/cosmetic/presence remain. | providers/seventv/SeventvEventAPI; eventapi |
+| EM05 | 7TV personal emotes | Part | Source supports own bootstrap plus passive sender-scoped Personal/Commercial grants and own picker; native acceptance pending. Passive feed is not a historical roster. | providers/seventv/SeventvPersonalEmotes |
+| EM06 | 7TV live updates and presence | Part | Anonymous object subscriptions acknowledged on Windows, coalesced REST invalidation and polling fallback; actual set changes untested. Passive channel entitlement/cosmetic subscriptions now in source, native pending; presence publishing remains excluded. | providers/seventv/SeventvEventAPI; eventapi |
 | EM07 | 7TV paints | Backlog | Linear/radial/image paints, animated textures, shadows, DPI and mentions; user-selectable effect limits. | providers/seventv/SeventvPaints; paints |
-| EM08 | 7TV badges | Backlog | Entitlements, animation and visibility options. | providers/seventv/SeventvBadges |
+| EM08 | 7TV badges | Part | Passive sender grants, updated definitions, bounded animated media/reduced motion in source; native acceptance and visibility controls remain. | providers/seventv/SeventvBadges |
 | EM09 | Twitch and 7TV avatars | Part | On-demand Twitch avatar with allowlisted bounded JPEG/PNG/WebP; real native avatar accepted; 7TV identity remains. | widgets/dialogs/UserInfoPopup.cpp |
 | EM10 | BTTV and FFZ core | Part | Catalog counts observed; source media support exists, provider-specific visual/picker checks remain. | providers/bttv; providers/ffz |
 | EM11 | BTTV live updates and FFZ badges | Backlog | Activity/update lifecycle, custom mod/VIP/supporter badges and provider options. | providers/bttv; providers/ffz |
 | EM12 | Provider modifiers and overlays | Part | 7TV overlay foundation exists; BTTV/FFZ modifiers currently skipped; multiple-overlay geometry/copy/wrap still needs coverage. | messages/layouts; providers/bttv; providers/ffz |
 | EM13 | Emoji | Part | Unicode text only; shortcodes, picker styles, favorites and boundary correctness remain. | providers/emoji |
 | EM14 | Picker and favorites | Part | Native searchable animated picker/paging; source/creator details, tabs, tags, favorites and rich menus remain. | widgets/dialogs/EmotePopup.cpp |
-| EM15 | Precedence and consistency | Part | Deterministic channel/global order exists; personal 7TV first and agreement across picker/completion/rendering remain. | messages/MessageBuilder.cpp |
+| EM15 | Precedence and consistency | Part | Personal sender-first lookup is shared by picker/completion/rendering; native coverage and more provider cases remain. | messages/MessageBuilder.cpp |
 | EM16 | Formats, scale and motion | Part | GIF/WebP emote decode exists; 4×/AVIF and full DPI/background/hidden/minimized policy need explicit decisions and evidence. | messages/Image; layouts; CHANGELOG.c7.md |
 
 ### Attention and filtering

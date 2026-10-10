@@ -645,3 +645,20 @@ HTTP results. No new harness or artificial chat messages were added.
 Windows build and real entitlement-event rendering are NOT yet run for this slice.
 Existing native app remains c3177eb5; user is debugging Deadlink's terminal-action
 limit. Do not retry that blocked execution route until access is restored.
+
+### Passive 7TV badges and cloud recovery — 2026-10-10
+
+The initial badge implementation passed a locked offline cloud build in 3.07s.
+The cloud executor then restarted during publication and lost its local checkout
+and build tools. GitHub still held 7004fae5. Badge changes were reconstructed on
+that exact commit. A new build of this restored tree is required; the earlier
+build is historical evidence, not acceptance of reconstructed bytes.
+
+Read-only review identified and fixed a misplaced expiry field and incorrect
+badge-definition expiry. Grant expiry is bounded; definitions survive until
+capacity eviction/session reset. No fake chat traffic or test UI was added.
+Windows badge animation, compact wrapping, copy/selection and sender mapping
+remain unverified while the owner repairs Deadlink's terminal-action limit.
+
+Recovered exact-tree locked/offline cloud build PASSED: Rust 1.99.0, 3m 48s, exit 0.
+This includes all reconstructed badge source and corrected expiry fields.

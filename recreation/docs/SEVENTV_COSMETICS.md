@@ -9,7 +9,8 @@
   evidence is tracked separately in VALIDATION.md.
 - Passive sender-scoped Personal/Commercial set grants now have source support,
   with bounded anonymous channel subscriptions and complete-set refetches. This
-  is awaiting Windows verification. Badges and paints remain unfinished. A public
+  is awaiting Windows verification. Passive badge source support is also present;
+  paints remain unfinished. A public
   style ID alone is not proof of an active entitlement.
 - No automatic presence publishing. This would disclose user/channel activity.
 
@@ -156,3 +157,23 @@ retain the five-second minimum, 60-second failure cooldown and five-minute poll.
 
 No source-level or native live event acceptance is implied by successful compilation.
 The Windows verification queue remains blocked on the reported Deadlink action cap.
+
+## Passive 7TV badges — source implemented
+
+Cosmetic definitions and sender grants stay separate; registration alone never
+equips a badge. Either arrival order resolves. One active badge per sender is
+replaced on a newer grant; a delayed delete for an old ID cannot remove the new
+badge. Repeated definitions replace metadata/artwork. Session resets clear both.
+Each grant expires conservatively after 30 minutes without re-observation, which
+can temporarily omit a still-equipped badge. Definitions remain until bounded
+capacity eviction/session reset because the server may not resend known artwork.
+
+The channel bundle now costs six slots, including cosmetic.create and the hidden
+presence topic. Definitions are capped at 256 and grants at 2,048 senders. Expiry
+scans run at most every ten seconds. WEBP artwork near 36px uses a separate strict
+HTTPS cdn.7tv.app/badge path validator and existing anonymous media/cache budgets.
+
+The UI uses a fixed 18px slot beside Twitch badges, aligned to the actual first
+text line, with a 7TV tooltip, animation and reduced-motion support. Existing text
+selection/copy/author targeting remain untouched. Native Windows rendering is
+still awaiting verification.

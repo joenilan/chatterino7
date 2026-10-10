@@ -722,3 +722,16 @@ handling and late-result guards. See SEVENTV_COSMETICS.md for limits. Next nativ
 batch: observe actual grants, correct sender rendering and own picker behavior;
 reconnect/channel changes must discard event-derived grants. Windows remains at
 c3177eb5 until the owner restores Deadlink. Badges/paints still next.
+
+### Passive 7TV badges — source implemented
+
+Added separately cached definitions and sender grants, out-of-order arrival,
+replacement, matching-ID removal, animated/reduced-motion rendering and tooltips.
+The badge UI remains an 18px first-line sibling to preserve selection and layout.
+Windows verification is queued with passive personal emotes. Paint glyph-mask
+integration remains the next distinct slice and has not been implemented.
+
+Cloud recovery: the original terminal restarted during badge publication. The
+published 7004fae5 entitlement checkpoint was cloned into a fresh cloud checkout;
+the unpublished badge source was reconstructed and requires a fresh exact-tree
+build before commit. No Windows session was touched during recovery.
