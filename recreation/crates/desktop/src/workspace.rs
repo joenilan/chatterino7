@@ -1,3 +1,5 @@
+#[path="workspace_search.rs"]
+mod workspace_search;
 #[path="pane_navigation.rs"]
 mod pane_navigation;
 #[path="activity.rs"]
@@ -44,7 +46,7 @@ gpui_kit::actions!(
         ToggleLiveWorkspaces,
         ToggleLiveChannels,
         QuitWithoutSaving,
-        OpenActivity, MarkAllRead, FontLarger, FontSmaller, ResetFont, ChannelDetails, SwitchChannel
+        OpenActivity, MarkAllRead, FontLarger, FontSmaller, ResetFont, ChannelDetails, SwitchChannel, SearchOpenChannels
     ]
 );
 pub fn bind_keys(cx: &mut App) {
@@ -58,6 +60,7 @@ pub fn bind_keys(cx: &mut App) {
         // Input owns vertical multicursor shortcuts; pane movement takes precedence here.
         KeyBinding::new("ctrl-alt-up", FocusPaneUp, Some("ChatWorkspace > Input")),
         KeyBinding::new("ctrl-alt-down", FocusPaneDown, Some("ChatWorkspace > Input")),
+        KeyBinding::new("ctrl-shift-f", SearchOpenChannels, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-p", SwitchChannel, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-i", ChannelDetails, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-shift-m", OpenActivity, Some("ChatWorkspace")),
@@ -495,6 +498,9 @@ impl Workbench {
                     });
                 }
                 return;
+            }
+            if let PaneEvent::SearchAll(query)=event {
+                this.open_workspace_search(Some(query.clone()),window,cx);return;
             }
             if matches!(event, PaneEvent::RequestClose) {
                 this.confirm_close_channel(channel.clone(),window,cx);
@@ -1254,6 +1260,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|this,_:&FocusPaneDown,w,cx|this.focus_neighbor(0,1,w,cx)))
             .on_action(cx.listener(|this,_:&EqualizeSplit,w,cx|this.equalize_panes(None,false,w,cx)))
             .on_action(cx.listener(|this,_:&EqualizeAllSplits,w,cx|this.equalize_panes(None,true,w,cx)))
+            .on_action(cx.listener(|this,_:&SearchOpenChannels,w,cx|this.open_workspace_search(None,w,cx)))
             .on_action(cx.listener(|this,_:&SwitchChannel,w,cx|this.open_switcher(w,cx)))
             .on_action(cx.listener(|this,_:&ChannelDetails,w,cx|this.open_focused_channel_details(w,cx)))
             .on_action(cx.listener(|this,_:&OpenActivity,w,cx|this.open_activity(w,cx)))
@@ -1288,6 +1295,7 @@ impl Render for Workbench {
                     .on_click(cx.listener(|this,_,window,cx|{let account=this.account.clone();let width=(f32::from(window.viewport_size().width)-24.).min(380.);window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Twitch account").child(account.clone()));})))
                 .child(Button::new("settings-menu").ghost().small().label("⚙").tooltip("Settings and workspace actions").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
                     .menu("Switch channel · Ctrl+P",Box::new(SwitchChannel))
+                    .menu("Search open channels · Ctrl+Shift+F",Box::new(SearchOpenChannels))
                     .menu("Highlights & unread",Box::new(OpenActivity))
                     .menu("Mark all read",Box::new(MarkAllRead))
                     .menu("Appearance & memory",Box::new(ToggleAppearance))

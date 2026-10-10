@@ -96,6 +96,7 @@ enum PaneEvent {
     DraftChanged,
     EmotePreferencesChanged,
     OpenAccount,
+    SearchAll(String),
 }
 impl EventEmitter<PaneEvent> for ChannelPane {}
 

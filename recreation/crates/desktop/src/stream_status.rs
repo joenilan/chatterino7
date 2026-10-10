@@ -4,6 +4,23 @@ use std::{collections::HashMap,io::Read,sync::mpsc,time::{Duration,Instant}};
 use serde_json::Value;
 #[derive(Clone,Default)]
 pub struct StreamInfo {pub live:bool,pub title:String,pub category:String,pub viewers:u64,pub started_at:String,pub language:String}
+impl StreamInfo {
+    pub fn uptime(&self) -> Option<String> {
+        if !self.live { return None; }
+        let started = chrono::DateTime::parse_from_rfc3339(&self.started_at).ok()?;
+        let seconds = (chrono::Utc::now() - started.with_timezone(&chrono::Utc)).num_seconds();
+        if seconds < 0 { return None; }
+        let minutes = seconds / 60;
+        Some(if minutes < 1 { "less than a minute".into() }
+            else if minutes < 60 { format!("{minutes}m") }
+            else if minutes < 1440 { format!("{}h {}m", minutes / 60, minutes % 60) }
+            else { format!("{}d {}h {}m", minutes / 1440, minutes / 60 % 24, minutes % 60) })
+    }
+    pub fn local_start(&self) -> Option<String> {
+        chrono::DateTime::parse_from_rfc3339(&self.started_at).ok()
+            .map(|at| at.with_timezone(&chrono::Local).format("%b %d, %Y · %H:%M %:z").to_string())
+    }
+}
 struct Job {epoch:u64,identity:Identity,channels:Vec<String>}
 pub struct Streams {
     identity:Option<Identity>,channels:Vec<String>,epoch:u64,pending:bool,last:Instant,

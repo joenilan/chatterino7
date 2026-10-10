@@ -48,9 +48,10 @@ fn token_spans(value:&str)->Vec<Range<usize>> {
     if let Some(start)=start{result.push(start..value.len());}result
 }
 /// A bounded AND query. Plain unstructured text retains the original phrase behavior.
-struct Query { terms: Vec<(bool,String)>, filters: Vec<(bool,String,String)>, error: Option<String> }
+pub(crate) struct Query { terms: Vec<(bool,String)>, filters: Vec<(bool,String,String)>, error: Option<String> }
 impl Query {
-    fn parse(value:&str)->Self {
+    pub(crate) fn error(&self)->Option<&str>{self.error.as_deref()}
+    pub(crate) fn parse(value:&str)->Self {
         let value=value.chars().take(256).collect::<String>();
         let tokens=token_spans(&value).into_iter().map(|r|value[r].to_owned()).collect::<Vec<_>>();
         let structured=value.contains('"')||tokens.iter().any(|t|t.starts_with('-')||t.split_once(':').is_some_and(|(k,_)|matches!(k,"from"|"from-id"|"badge"|"has"|"is")));
@@ -75,7 +76,7 @@ impl Query {
         }
         result
     }
-    fn matches(&self,message:&chat_core::Message)->Option<Vec<Range<usize>>>{
+    pub(crate) fn matches(&self,message:&chat_core::Message)->Option<Vec<Range<usize>>>{
         use chat_core::Fragment;
         if self.error.is_some()||(self.terms.iter().all(|(_,t)|t.is_empty())&&self.filters.is_empty()){return None;}
         for (negative,key,value) in &self.filters {
@@ -188,6 +189,7 @@ impl ChannelPane {
                 .child(div().flex_1().min_w_0().child(Input::new(&self.search.input).small()))
                 .child(Button::new("search-close").xsmall().label("×").tooltip("Close search · Escape").on_click(cx.listener(|this,_,w,cx|this.close_search(w,cx)))))
             .child(div().h_flex().flex_wrap().gap_1().children(filters)
+                .child(Button::new("search-all-channels").xsmall().label("All chats").tooltip("Search all open channels · Ctrl+Shift+F").on_click(cx.listener(|this,_,_,cx|cx.emit(crate::PaneEvent::SearchAll(this.search.query.clone())))))
                 .child(Button::new("search-help").xsmall().label("?").tooltip("Combine from:username, badge:moderator (Twitch), has:link/emote/reply/gif/bits, is:notice/deleted, quoted phrases and -excluded words. Search is local to retained chat.")))
             .child(div().h_flex().gap_1().justify_between().text_size(px(11.)).text_color(rgb(theme::MUTED))
                 .child(if let Some(error)=error {error}else if self.search.query.trim().is_empty(){"Search retained messages".to_string()}else{format!("{ordinal} / {count} messages")})

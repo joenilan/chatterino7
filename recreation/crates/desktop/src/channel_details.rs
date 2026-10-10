@@ -27,7 +27,8 @@ impl Workbench {
                     body=body.child(div().font_weight(FontWeight::SEMIBOLD).child(info.title.clone()))
                         .child(div().h_flex().flex_wrap().gap_2().text_color(rgb(0xC5B8E6)).child(info.category.clone()).child(format!("{} viewers",info.viewers)))
                         .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(format!("Language · {}",info.language)))
-                        .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(format!("Started · {}",info.started_at)))
+                        .child(div().text_size(px(12.)).text_color(rgb(0xB3DCC7)).child(info.uptime().map(|value|format!("Live for {value}")).unwrap_or_else(||"Uptime unavailable".into())))
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(info.local_start().map(|value|format!("Started · {value}")).unwrap_or_else(||"Start time unavailable".into())))
                         .child(Button::new("copy-stream-title").ghost().small().label("Copy stream title").on_click({let title=info.title.clone();move|_,window,cx|{cx.write_to_clipboard(ClipboardItem::new_string(title.clone()));window.push_notification(Notification::info("Stream title copied"),cx);}}));
                 }
                 body=body.child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(format!("Snapshot {age}s ago · refreshes about every minute")));
