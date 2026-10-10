@@ -157,6 +157,8 @@ pub struct Workbench {
     history_limit: usize,
     highlight_input: Entity<InputState>,
     highlight_terms: Vec<String>,
+    highlight_rules: crate::highlight_rules::Rules,
+    highlight_editor: Option<Entity<crate::highlight_rules::Editor>>,
     custom_commands: crate::custom_commands::Definitions,
     activity_all: bool,
     zoom_accumulator: f32,
@@ -254,6 +256,8 @@ impl Workbench {
         cx.subscribe_in(&highlight_input,window,|this:&mut Self,_,event,_,cx|{if matches!(event,InputEvent::Change){this.highlight_terms=crate::attention::terms(&this.highlight_input.read(cx).value());this.schedule_save(cx);cx.notify();}}).detach();
         let mut this = Self {
             custom_commands: crate::custom_commands::load(&state["custom_commands"]),
+            highlight_rules: crate::highlight_rules::load(&state["highlight_rules"]),
+            highlight_editor: None,
             highlight_terms: crate::attention::terms(state["highlight_words"].as_str().unwrap_or("")),
             highlight_input, activity_all:false, zoom_accumulator:0.,
             live: crate::live::LiveChat::new(),
@@ -487,6 +491,17 @@ impl Workbench {
             }
         }
     }
+    fn open_highlight_rules(&mut self,window:&mut Window,cx:&mut Context<Self>){
+        let channel=self.selected_channel.clone().or_else(||self.visible_panes(cx).first().map(|p|p.read(cx).name.to_string())).unwrap_or_else(||"channel".into());
+        self.settings=false;
+        let editor=if let Some(editor)=&self.highlight_editor{editor.update(cx,|editor,cx|editor.set_channel(channel,cx));editor.clone()}else{
+            let editor=cx.new(|cx|crate::highlight_rules::Editor::new(self.highlight_rules.clone(),channel,window,cx));
+            cx.subscribe(&editor,|this,_,_:&crate::highlight_rules::Changed,cx|{this.schedule_save(cx);cx.notify();}).detach();
+            self.highlight_editor=Some(editor.clone());editor
+        };
+        let width=(f32::from(window.viewport_size().width)-24.).clamp(180.,540.);
+        window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Highlight rules").child(editor.clone()));
+    }
     fn open_custom_commands(&mut self,origin:Option<String>,window:&mut Window,cx:&mut Context<Self>){
         let channel=origin.or_else(||self.selected_channel.clone()).or_else(||self.visible_panes(cx).first().map(|p|p.read(cx).name.to_string())).unwrap_or_else(||"channel".into());
         let editor=cx.new(|cx|crate::custom_commands::Editor::new(self.custom_commands.clone(),channel,window,cx));
@@ -592,7 +607,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
@@ -1365,6 +1380,7 @@ impl Render for Workbench {
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Twitch event time in your local timezone. Hover for date and UTC offset."))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Highlights"))
                             .child(Input::new(&self.highlight_input).small())
+                            .child(Button::new("edit-highlight-rules").small().label("Manage highlight rules…").on_click(cx.listener(|this,_,w,cx|this.open_highlight_rules(w,cx))))
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Your mentions and replies are included. Add up to 8 words/phrases (40 characters each). Whole-word, case-insensitive; no alerts or sounds."))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Chat memory"))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Newest messages per channel. Older history is released; drafts stay saved."))

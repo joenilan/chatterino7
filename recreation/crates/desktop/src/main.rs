@@ -9,6 +9,7 @@ mod message_actions;
 mod replies;
 mod rich_messages;
 mod attention;
+mod highlight_rules;
 mod control;
 mod live;
 mod media;
@@ -398,6 +399,7 @@ impl Render for ChannelPane {
         self.search.refresh(&timeline.borrow(),first_order);
         let search_hits=if self.search.open{self.search.hits.clone()}else{Rc::default()};
         let highlight_rows=self.attention.highlights.clone();
+        let highlight_colors=self.attention.colors.clone();
         let presented_row=self.presented_row.clone();let read_eligible=self.read_eligible.clone();
         let search_current=self.search.open.then_some(self.search.current).flatten();
         let search_bar=self.search.open.then(||self.render_search(cx));
@@ -546,7 +548,7 @@ impl Render for ChannelPane {
                                 .relative()
                                 .border_l_2().border_color(rgba(0x00000000))
                                 .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(0xA99CF40D)))
-                                .when(highlight_rows.contains(&row),|el|el.bg(rgb(0x272237)).border_color(rgb(0xA99CF4)))
+                                .when(highlight_rows.contains(&row),|el|{let (_,accent,background)=highlight_rules::COLORS[highlight_colors.get(&row).copied().unwrap_or(0)];el.bg(rgb(background)).border_color(rgb(accent))})
                                 .on_prepaint(move|bounds,window,cx|{
                                     let clip=window.content_mask().bounds;
                                     if following&&eligible.get()&&window.is_window_active()&&!window.has_active_dialog(cx)

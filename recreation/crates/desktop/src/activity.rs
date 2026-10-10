@@ -12,7 +12,7 @@ impl Workbench {
             let eligible=available&&visible.contains(pane);
             pane.update(cx,|p,cx|{
                 let timeline=p.timeline.borrow();let first=(p.next_id-timeline.messages().len()) as u64;
-                let configured=p.attention.configure(identity.clone(),&self.highlight_terms,&timeline,first,p.next_id as u64);
+                let configured=p.attention.configure(identity.clone(),&self.highlight_terms,&self.highlight_rules.borrow(),&p.name,&timeline,first,p.next_id as u64);
                 drop(timeline);
                 let eligible=eligible&&p.scroller.read(cx).is_following_tail()&&!p.search.open;
                 let was=p.read_eligible.replace(eligible);
@@ -84,10 +84,12 @@ impl Workbench {
                         .children(rows.into_iter().filter_map(|(_,channel,id,pane,index,highlight,unread)|{
                             let p=pane.read(cx);let timeline=p.timeline.borrow();let message=timeline.messages().get(index).filter(|m|m.id==id&&!m.deleted)?;
                             let name=message.display_name.clone();let body=message.body();
+                            let row=(p.next_id-timeline.messages().len()+index) as u64;
+                            let (_,accent,background)=crate::highlight_rules::COLORS[p.attention.colors.get(&row).copied().unwrap_or(0)];
                             let jump=owner.clone();let text=body.chars().take(240).collect::<String>();let suffix=if body.chars().count()>240{"…"}else{""};
-                            Some(div().p_2().v_flex().gap_1().rounded(px(4.)).bg(rgb(if highlight{0x272237}else{theme::CONTROL})).min_w_0()
+                            Some(div().p_2().v_flex().gap_1().rounded(px(4.)).bg(rgb(if highlight{background}else{theme::CONTROL})).min_w_0()
                                 .child(div().h_flex().min_w_0().gap_1()
-                                    .child(div().flex_1().min_w_0().text_size(px(11.)).text_color(rgb(0xC9BAF7)).overflow_hidden().text_ellipsis().child(format!("#{channel} · {name}{}",if unread{" · unread"}else{""})))
+                                    .child(div().flex_1().min_w_0().text_size(px(11.)).text_color(rgb(if highlight{accent}else{0xC9BAF7})).overflow_hidden().text_ellipsis().child(format!("#{channel} · {name}{}",if unread{" · unread"}else{""})))
                                     .child(Button::new(SharedString::from(format!("activity-jump-{channel}-{id}"))).xsmall().label("Jump").on_click(move|_,w,cx|{w.close_dialog(cx);let _=jump.update(cx,|p,cx|p.jump_activity(&channel,&id,w,cx));})))
                                 .child(div().text_size(px(12.)).child(format!("{text}{suffix}"))))
                         }))))

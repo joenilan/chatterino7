@@ -883,6 +883,7 @@ dependencies = [
  "reqwest",
  "serde_json",
  "tungstenite",
+ "unicode-segmentation",
 ]
 
 [[package]]
