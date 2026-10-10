@@ -13,11 +13,19 @@ impl Workbench {
             pane.update(cx,|p,cx|{
                 p.transcript_available=eligible;
                 p.update_hover_pause(window,cx);
+                let old_boundary=p.attention.read_boundary;
                 let timeline=p.timeline.borrow();let first=(p.next_id-timeline.messages().len()) as u64;
                 let configured=p.attention.configure(identity.clone(),&self.highlight_terms,&self.highlight_rules.borrow(),&p.name,&timeline,first,p.next_id as u64);
                 drop(timeline);
                 let eligible=eligible&&p.scroller.read(cx).is_following_tail()&&!p.search.open;
                 let was=p.read_eligible.replace(eligible);
+                let was=if configured{p.presented_row.set(None);false}else{was};
+                if configured{p.attention_cursor=None;p.jump_pulse=None;}
+                p.attention.reading_transition(was,eligible,p.next_id as u64);
+                if old_boundary!=p.attention.read_boundary {
+                    let rows=[old_boundary,p.attention.read_boundary];let count=p.timeline.borrow().messages().len();
+                    p.scroller.update(cx,|s,cx|{for row in rows.into_iter().flatten(){if row>=first&&(row-first)<count as u64{let index=(row-first)as usize;s.remeasure_items(index..index+1,cx);}}});
+                }
                 let read=if eligible&&was {p.presented_row.take().is_some_and(|row|p.attention.mark_through(row))}
                     else{p.presented_row.set(None);false};
                 if configured||read||was!=eligible{cx.notify();changed=true;}
@@ -37,7 +45,7 @@ impl Workbench {
         self.panes().iter().map(|p|self.displayed_attention(p,reading_available,cx)).fold((0,0),|(u,h),(a,b)|(u+a,h+b))
     }
     pub(super) fn mark_all_read(&mut self,cx:&mut Context<Self>){
-        for pane in self.panes(){pane.update(cx,|p,cx|{if p.attention.mark_all(){cx.notify();}});}
+        for pane in self.panes(){pane.update(cx,|p,cx|{if p.attention.mark_all(){p.scroller.update(cx,|s,cx|s.remeasure(cx));cx.notify();}});}
         cx.notify();
     }
     pub(super) fn font_feedback(&mut self,delta:f32,reset:bool,window:&mut Window,cx:&mut Context<Self>){

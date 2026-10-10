@@ -91,6 +91,12 @@ impl MessageScrollerState {
         self.hover = active;
         self.reconcile_pause(was, cx);
     }
+    pub fn hold_for_navigation(&mut self, cx: &mut Context<Self>) {
+        let was = self.paused();
+        self.manual = true;
+        self.reconcile_pause(was, cx);
+        self.resume_tail = false;
+    }
     pub fn toggle_pause(&mut self, cx: &mut Context<Self>) {
         if self.manual {
             self.scroll_to_end(cx);

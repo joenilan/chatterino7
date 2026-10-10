@@ -1,6 +1,7 @@
 # Reading and sent-message tools
 
-Advances Chatterino parity RD01 (reading pause) and IN04 (sent history).
+Advances Chatterino parity RD01 (reading pause), RD09 (read markers),
+AT01–02 (unread/highlight navigation), and IN04 (sent history).
 
 ## Pause scrolling
 
@@ -35,6 +36,30 @@ the current account/session history. Account changes clear session history.
 
 History remains memory-only, capped at 100 entries per channel. It does not add
 persistent chat logging, backfill requests or failed-send records.
+
+## Catch-up and highlight navigation
+
+Right-click a channel tab and open Reading & highlights:
+- First unread / last read jumps to the oldest retained unread message, or the
+  frozen last-read boundary when unread has already been acknowledged.
+- Previous / Next highlight cycles through retained highlights, including ones
+  already read. Alt+PageUp and Alt+PageDown are channel shortcuts.
+- Ctrl+Home performs the unread/last-read jump when the transcript is focused;
+  composer editing keeps its usual Ctrl+Home behavior.
+
+A quiet Last read position divider marks where new messages began when leaving
+live reading. It survives ordinary unread acknowledgment and is updated on the
+next departure. Explicit Mark read dismisses it. Pruned boundaries disappear
+rather than moving to a misleading replacement. Account changes reset it.
+
+Catch-up jumps hold scrolling until Resume/Latest, so a short history cannot
+immediately re-enter live following and acknowledge content unintentionally.
+Targets are re-resolved from retained, nondeleted rows. Deletions and history
+limits remain authoritative; there is no stored body copy or remote backfill.
+
+Navigation gently accents the target for 1.2 seconds. Reduced motion keeps the
+accent static. Rapid repeated jumps cannot let an earlier cleanup timer erase a
+new target. Thread/activity jumps also receive this location feedback.
 
 ## Evidence
 

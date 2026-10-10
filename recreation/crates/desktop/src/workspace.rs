@@ -1098,13 +1098,24 @@ impl Workbench {
                         .on_mouse_down(MouseButton::Middle,cx.listener({let channel=channel.clone();move|this,_,window,cx|{window.prevent_default();cx.stop_propagation();this.confirm_close_channel(channel.clone(),window,cx);}}))
                         .on_click(cx.listener({let channel=channel.clone();move|this,_,window,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.select(&channel);}this.selected_channel=Some(channel.clone());this.focus.focus(window,cx);this.schedule_save(cx);cx.notify();}}));
                     let owner=cx.entity().downgrade();let menu_channel=channel.clone();let menu_pane=name.clone();
-                    let menu=move |menu:gpui_kit::component::menu::PopupMenu,_:&mut Window,cx:&mut Context<gpui_kit::component::menu::PopupMenu>|{
+                    let menu=move |menu:gpui_kit::component::menu::PopupMenu,window:&mut Window,cx:&mut Context<gpui_kit::component::menu::PopupMenu>|{
                         let live_only=owner.upgrade().is_some_and(|owner|owner.read(cx).live_channels);
                         let add=owner.clone();let add_channel=menu_channel.clone();let close=owner.clone();let close_channel=menu_channel.clone();let filter=owner.clone();let left=owner.clone();let left_channel=menu_channel.clone();let right=owner.clone();let right_channel=menu_channel.clone();let open_url=format!("https://www.twitch.tv/{menu_channel}");let copy_url=open_url.clone();let read=owner.clone();let read_channel=menu_channel.clone();
                         let details=owner.clone();let details_channel=menu_channel.clone();
                         let equal=owner.clone();let equal_channel=menu_channel.clone();let equal_all=owner.clone();let next_pane=owner.clone();let next_origin=menu_pane.clone();
-                        menu.item(PopupMenuItem::new("Channel details · Ctrl+I").on_click(move|_,w,cx|{let _=details.update(cx,|this,cx|this.open_channel_details(details_channel.clone(),w,cx));}))
-                            .item(PopupMenuItem::new("Mark channel read").on_click(move|_,_,cx|{let _=read.update(cx,|this,cx|{if let Some(pane)=this.tabs[this.active].panes.iter().find(|p|p.read(cx).name.as_ref()==read_channel){pane.update(cx,|p,cx|{p.attention.mark_all();cx.notify();});}cx.notify();});}))
+                        let nav_owner=owner.clone();let nav_channel=menu_channel.clone();
+                        menu.submenu("Reading & highlights",window,cx,move|mut menu,_,_|{
+                            for (label,direction) in [("First unread / last read · Ctrl+Home",0i8),("Previous highlight · Alt+PageUp",-1),("Next highlight · Alt+PageDown",1)]{
+                                let owner=nav_owner.clone();let channel=nav_channel.clone();
+                                menu=menu.item(PopupMenuItem::new(label).on_click(move|_,w,cx|{let _=owner.update(cx,|this,cx|{
+                                    let Some(tab)=this.tabs.iter().position(|tab|tab.id==tab_id)else{return;};
+                                    let Some(pane)=this.tabs[tab].panes.iter().find(|p|p.read(cx).name.as_ref()==channel).cloned()else{return;};
+                                    this.select_tab(tab,cx);if let Some(dock)=&mut this.tabs[tab].dock{dock.select(&channel);}this.selected_channel=Some(channel.clone());this.schedule_save(cx);
+                                    pane.update(cx,|p,cx|p.navigate_attention(direction,w,cx));cx.notify();
+                                });}));
+                            }menu
+                        }).item(PopupMenuItem::new("Channel details · Ctrl+I").on_click(move|_,w,cx|{let _=details.update(cx,|this,cx|this.open_channel_details(details_channel.clone(),w,cx));}))
+                            .item(PopupMenuItem::new("Mark channel read").on_click(move|_,_,cx|{let _=read.update(cx,|this,cx|{if let Some(pane)=this.tabs[this.active].panes.iter().find(|p|p.read(cx).name.as_ref()==read_channel){pane.update(cx,|p,cx|{p.attention.mark_all();p.scroller.update(cx,|s,cx|s.remeasure(cx));cx.notify();});}cx.notify();});}))
                             .item(PopupMenuItem::new("Open stream in browser").on_click(move|_,_,cx|cx.open_url(&open_url)))
                             .item(PopupMenuItem::new("Copy channel URL").on_click(move|_,window,cx|{cx.write_to_clipboard(ClipboardItem::new_string(copy_url.clone()));window.push_notification(Notification::info("Channel URL copied"),cx);}))
                             .separator().item(PopupMenuItem::new("Add channel tab").on_click(move|_,window,cx|{let _=add.update(cx,|this,cx|{this.open_add(false,window,cx);this.add_target=Some(add_channel.clone());});}))

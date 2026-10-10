@@ -72,7 +72,12 @@ impl ChannelPane {
     }
     pub fn jump_message(&mut self,id:&str,window:&mut Window,cx:&mut Context<Self>){
         let index=self.timeline.borrow().messages().iter().position(|m|m.id==id);
-        if let Some(index)=index{self.scroller.update(cx,|s,cx|s.scroll_to_item(index,cx));self.focus.focus(window,cx);cx.notify();}
+        if let Some(index)=index{
+            let row=(self.next_id-self.timeline.borrow().messages().len()+index)as u64;
+            self.attention_cursor=Some(row);let started=std::time::Instant::now();self.jump_pulse=Some((row,started));
+            self.scroller.update(cx,|s,cx|s.scroll_to_item(index,cx));self.focus.focus(window,cx);cx.notify();
+            cx.spawn(async move|pane,cx|{cx.background_executor().timer(std::time::Duration::from_millis(1200)).await;let _=pane.update(cx,|p,cx|{if p.jump_pulse==Some((row,started)){p.jump_pulse=None;cx.notify();}});}).detach();
+        }
         else{window.push_notification(Notification::info("That message is no longer retained"),cx);}
     }
     pub fn open_conversation(&mut self,message:&chat_core::Message,window:&mut Window,cx:&mut Context<Self>){

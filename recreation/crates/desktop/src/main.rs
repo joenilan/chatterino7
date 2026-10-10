@@ -35,6 +35,7 @@ mod seven_paints;
 mod name_paint;
 mod message_scroller;
 mod chat_pause;
+mod attention_navigation;
 mod input_history;
 use workspace::Workbench;
 
@@ -54,7 +55,7 @@ use std::{cell::{Cell, RefCell}, rc::Rc, time::{Duration, Instant}};
 
 gpui_kit::actions!(
     chat_workbench,
-    [CopyChatSelection, ClearChatSelection, SelectAllChat, CompleteEmote, FindChat, NextChatMatch, PreviousChatMatch, PreviousInput, NextInput, ToggleChatPause, ResumeChat, SentHistory]
+    [CopyChatSelection, ClearChatSelection, SelectAllChat, CompleteEmote, FindChat, NextChatMatch, PreviousChatMatch, PreviousInput, NextInput, ToggleChatPause, ResumeChat, SentHistory, CatchUpChat, PreviousHighlight, NextHighlight]
 );
 
 #[derive(Clone)]
@@ -121,6 +122,8 @@ struct ChannelPane {
     input_history: input_history::History,
     reply_target: Option<replies::Target>,
     attention: attention::Attention,
+    attention_cursor:Option<u64>,
+    jump_pulse:Option<(u64,Instant)>,
     read_eligible: Rc<Cell<bool>>,
     presented_row: Rc<Cell<Option<u64>>>,
     send_status: String,
@@ -192,6 +195,8 @@ impl ChannelPane {
             pending: None,
             reply_target: None,
             attention: Default::default(),
+            attention_cursor:None,
+            jump_pulse:None,
             read_eligible: Rc::new(Cell::new(false)),
             presented_row: Rc::new(Cell::new(None)),
             compose_revision: 0,
@@ -414,6 +419,8 @@ impl Render for ChannelPane {
         let first_order = (self.next_id - retained) as u64;
         self.search.refresh(&timeline.borrow(),first_order);
         let search_hits=if self.search.open{self.search.hits.clone()}else{Rc::default()};
+        let read_boundary=self.attention.read_boundary;
+        let jump_pulse=self.jump_pulse;
         let highlight_rows=self.attention.highlights.clone();
         let highlight_colors=self.attention.colors.clone();
         let presented_row=self.presented_row.clone();let read_eligible=self.read_eligible.clone();
@@ -441,6 +448,9 @@ impl Render for ChannelPane {
             .id("channel-pane")
             .key_context("JawjackChannel")
             .capture_action(cx.listener(|this,_:&gpui_kit::base::input::Search,w,cx|{this.open_search(w,cx);cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&CatchUpChat,w,cx|{this.navigate_attention(0,w,cx);cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&PreviousHighlight,w,cx|{this.navigate_attention(-1,w,cx);cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&NextHighlight,w,cx|{this.navigate_attention(1,w,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&SentHistory,w,cx|{this.open_input_history(w,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&ToggleChatPause,_,cx|{this.scroller.update(cx,|s,cx|s.toggle_pause(cx));cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&ResumeChat,_,cx|{this.scroller.update(cx,|s,cx|s.scroll_to_end(cx));cx.stop_propagation();}))
@@ -555,6 +565,8 @@ impl Render for ChannelPane {
                             let timestamp=if timestamps>0{message.sent_at.and_then(|time|chrono::DateTime::from_timestamp(time,0)).map(|time|{
                                 let local=time.with_timezone(&chrono::Local);(local.format(if timestamps==2{"%H:%M:%S"}else{"%H:%M"}).to_string(),local.format("%Y-%m-%d %H:%M:%S %:z").to_string())
                             })}else{None};
+                            let pulse=jump_pulse.filter(|(target,at)|*target==row&&at.elapsed()<Duration::from_millis(1200));
+                            if pulse.is_some()&&!cx.reduce_motion(){window.request_animation_frame();}
                             let rich_heading=rich_messages::heading(message);
                             let rich_attachments=rich_messages::attachments(message,&mut media.borrow_mut(),cx);
                             let reply_line=replies::row_context(message,&messages,menu_owner.clone());
@@ -586,6 +598,7 @@ impl Render for ChannelPane {
                                     }
                                 })
                                 .when(search_current==Some(row),|el|el.bg(rgb(0x272331)))
+                                .when_some(pulse,|el,(_,at)|{let alpha=if cx.reduce_motion(){255}else{(255.*(1.-at.elapsed().as_secs_f32()/1.2).clamp(0.,1.))as u32};el.border_color(rgba((0x9DD8CB<<8)|alpha))})
                                 .left(px(12.0 * (1.0 - eased)))
                                 .top(px(6.0 * (1.0 - eased)))
                                 .opacity(0.25 + 0.75 * eased)
@@ -593,6 +606,7 @@ impl Render for ChannelPane {
                                 .min_w_0()
                                 .cursor_text()
                                 .context_menu(move|menu,_,cx|message_actions::menu(row_owner.clone(),row_id.clone(),menu,cx))
+                                .when(read_boundary==Some(row),|el|el.child(div().h_flex().items_center().gap_2().h(px(18.)).text_size(px(10.)).text_color(rgb(0x9DBFCE)).child(div().h(px(1.)).flex_1().bg(rgb(0x40535E))).child("Last read position").child(div().h(px(1.)).flex_1().bg(rgb(0x40535E)))))
                                 .children(rich_heading)
                                 .children(reply_line)
                                 .child(div().h_flex().items_start().min_w_0().gap_1()
@@ -784,6 +798,9 @@ fn main() {
             workspace::bind_keys(cx);
             theme::install(cx);
             cx.bind_keys([
+                KeyBinding::new("alt-pageup", PreviousHighlight, Some("JawjackChannel")),
+                KeyBinding::new("alt-pagedown", NextHighlight, Some("JawjackChannel")),
+                KeyBinding::new("ctrl-home", CatchUpChat, Some("ChatTranscript")),
                 KeyBinding::new("ctrl-shift-h", SentHistory, Some("JawjackChannel")),
                 KeyBinding::new("ctrl-space", ToggleChatPause, Some("JawjackChannel")),
                 KeyBinding::new("ctrl-end", ResumeChat, Some("ChatTranscript")),

@@ -4,6 +4,7 @@ use chat_core::{Message,Fragment,Timeline};
 #[derive(Default)]
 pub struct Attention {
     pub unread:BTreeSet<u64>,
+    pub read_boundary:Option<u64>,
     pub highlights:Rc<BTreeSet<u64>>,
     pub colors:Rc<BTreeMap<u64,usize>>,
     pub arrivals:BTreeMap<u64,Instant>,
@@ -38,7 +39,7 @@ impl Attention {
     }
     pub fn configure(&mut self,identity:Option<(String,String)>,terms:&[String],rules:&[crate::highlight_rules::Rule],channel:&str,timeline:&Timeline,first:u64,next:u64)->bool{
         let changed=self.identity!=identity||self.terms!=terms||self.rules!=rules||self.channel!=channel;
-        if self.identity!=identity {self.identity=identity;self.since=next;self.unread.clear();Rc::make_mut(&mut self.highlights).clear();Rc::make_mut(&mut self.colors).clear();}
+        if self.identity!=identity {self.identity=identity;self.since=next;self.read_boundary=None;self.unread.clear();Rc::make_mut(&mut self.highlights).clear();Rc::make_mut(&mut self.colors).clear();}
         if changed{self.terms=terms.to_vec();self.rules=rules.to_vec();self.channel=channel.into();self.reconcile(timeline,first);}
         changed
     }
@@ -48,6 +49,7 @@ impl Attention {
         self.prune(first);
     }
     fn prune(&mut self,first:u64){
+        if self.read_boundary.is_some_and(|row|row<first){self.read_boundary=None;}
         while self.arrivals.first_key_value().is_some_and(|(row,_)|*row<first){self.arrivals.pop_first();}
         while self.unread.first().is_some_and(|row|*row<first){self.unread.pop_first();}
         let colors=Rc::make_mut(&mut self.colors);while colors.first_key_value().is_some_and(|(row,_)|*row<first){colors.pop_first();}
@@ -66,7 +68,11 @@ impl Attention {
     pub fn mark_through(&mut self,row:u64)->bool{
         let before=self.unread.len();self.unread.retain(|r|*r>row);before!=self.unread.len()
     }
-    pub fn mark_all(&mut self)->bool{let changed=!self.unread.is_empty();self.unread.clear();changed}
+    pub fn reading_transition(&mut self,was:bool,reading:bool,next:u64){
+        if was&&!reading {self.read_boundary=Some(self.unread.first().copied().unwrap_or(next));}
+        else if !was&&reading&&self.read_boundary.is_none(){self.read_boundary=self.unread.first().copied();}
+    }
+    pub fn mark_all(&mut self)->bool{let changed=!self.unread.is_empty()||self.read_boundary.is_some();self.unread.clear();self.read_boundary=None;changed}
     pub fn counts(&self)->(usize,usize){(self.unread.len(),self.unread.intersection(&self.highlights).count())}
 }
 pub fn count(value:usize)->String{if value>99{"99+".into()}else{value.to_string()}}
