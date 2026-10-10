@@ -76,6 +76,20 @@ impl Dock {
             else if sizes.len()==children.len() && sizes.iter().all(|n|n.is_finite() && *n>0.) {*weights=sizes;}
         }
     }
+    /// Equalize the nearest split containing a channel, preserving decks and order.
+    pub fn equalize_nearest(&mut self, name: &str) -> bool {
+        let Self::Split {weights,children,..}=self else{return false;};
+        if children.iter_mut().any(|child|child.equalize_nearest(name)){return true;}
+        if children.iter().any(|child|child.contains_direct(name)){
+            *weights=vec![1.;children.len()];return true;
+        }
+        false
+    }
+    pub fn equalize_all(&mut self) -> usize {
+        let Self::Split {weights,children,..}=self else{return 0;};
+        *weights=vec![1.;children.len()];
+        1+children.iter_mut().map(Self::equalize_all).sum::<usize>()
+    }
     pub fn rotate(&mut self) {if let Self::Split {vertical,..}=self {*vertical=!*vertical;}}
     fn contains_direct(&self,name:&str)->bool {match self{Self::Leaf(n)=>n==name,Self::Deck{channels,..}=>channels.iter().any(|n|n==name),_=>false}}
     pub fn companion(&self,name:&str)->Option<String>{match self{Self::Deck{channels,..} if channels.iter().any(|n|n==name)=>channels.iter().find(|n|n.as_str()!=name).cloned(),Self::Split{children,..}=>children.iter().find_map(|c|c.companion(name)),_=>None}}

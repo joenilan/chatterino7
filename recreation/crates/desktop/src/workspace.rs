@@ -1,3 +1,5 @@
+#[path="pane_navigation.rs"]
+mod pane_navigation;
 #[path="activity.rs"]
 mod activity;
 #[path="channel_details.rs"]
@@ -24,6 +26,7 @@ use std::{collections::BTreeMap, time::Duration};
 gpui_kit::actions!(
     workspace,
     [
+        FocusNextPane, FocusPreviousPane, FocusPaneLeft, FocusPaneRight, FocusPaneUp, FocusPaneDown, EqualizeSplit, EqualizeAllSplits,
         NewTab,
         CloseTab,
         ReopenTab,
@@ -46,6 +49,15 @@ gpui_kit::actions!(
 );
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
+        KeyBinding::new("f6", FocusNextPane, Some("ChatWorkspace")),
+        KeyBinding::new("shift-f6", FocusPreviousPane, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-alt-left", FocusPaneLeft, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-alt-right", FocusPaneRight, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-alt-up", FocusPaneUp, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-alt-down", FocusPaneDown, Some("ChatWorkspace")),
+        // Input owns vertical multicursor shortcuts; pane movement takes precedence here.
+        KeyBinding::new("ctrl-alt-up", FocusPaneUp, Some("ChatWorkspace > Input")),
+        KeyBinding::new("ctrl-alt-down", FocusPaneDown, Some("ChatWorkspace > Input")),
         KeyBinding::new("ctrl-p", SwitchChannel, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-i", ChannelDetails, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-shift-m", OpenActivity, Some("ChatWorkspace")),
@@ -482,6 +494,10 @@ impl Workbench {
                         cx.notify();
                     });
                 }
+                return;
+            }
+            if matches!(event, PaneEvent::RequestClose) {
+                this.confirm_close_channel(channel.clone(),window,cx);
                 return;
             }
             if matches!(event, PaneEvent::OpenAccount) {
@@ -1003,10 +1019,11 @@ impl Workbench {
                         .when(counts.0>0,|el|el.child(div().ml_1().px_1().rounded(px(3.)).text_size(px(10.)).bg(rgb(if counts.1>0{0x403250}else{0x2B3038})).text_color(rgb(if counts.1>0{0xE4BCFA}else{theme::TEXT})).child(if counts.1>0{format!("@{}",crate::attention::count(counts.1))}else{crate::attention::count(counts.0)})))
                         .on_mouse_down(MouseButton::Middle,cx.listener({let channel=channel.clone();move|this,_,window,cx|{window.prevent_default();cx.stop_propagation();this.confirm_close_channel(channel.clone(),window,cx);}}))
                         .on_click(cx.listener({let channel=channel.clone();move|this,_,window,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.select(&channel);}this.selected_channel=Some(channel.clone());this.focus.focus(window,cx);this.schedule_save(cx);cx.notify();}}));
-                    let owner=cx.entity().downgrade();let menu_channel=channel.clone();
+                    let owner=cx.entity().downgrade();let menu_channel=channel.clone();let menu_pane=name.clone();
                     let menu=move |menu:gpui_kit::component::menu::PopupMenu,_:&mut Window,_:&mut Context<gpui_kit::component::menu::PopupMenu>|{
                         let add=owner.clone();let add_channel=menu_channel.clone();let close=owner.clone();let close_channel=menu_channel.clone();let filter=owner.clone();let left=owner.clone();let left_channel=menu_channel.clone();let right=owner.clone();let right_channel=menu_channel.clone();let open_url=format!("https://www.twitch.tv/{menu_channel}");let copy_url=open_url.clone();let read=owner.clone();let read_channel=menu_channel.clone();
                         let details=owner.clone();let details_channel=menu_channel.clone();
+                        let equal=owner.clone();let equal_channel=menu_channel.clone();let equal_all=owner.clone();let next_pane=owner.clone();let next_origin=menu_pane.clone();
                         menu.item(PopupMenuItem::new("Channel details · Ctrl+I").on_click(move|_,w,cx|{let _=details.update(cx,|this,cx|this.open_channel_details(details_channel.clone(),w,cx));}))
                             .item(PopupMenuItem::new("Mark channel read").on_click(move|_,_,cx|{let _=read.update(cx,|this,cx|{if let Some(pane)=this.tabs[this.active].panes.iter().find(|p|p.read(cx).name.as_ref()==read_channel){pane.update(cx,|p,cx|{p.attention.mark_all();cx.notify();});}cx.notify();});}))
                             .item(PopupMenuItem::new("Open stream in browser").on_click(move|_,_,cx|cx.open_url(&open_url)))
@@ -1015,6 +1032,9 @@ impl Workbench {
                             .item(PopupMenuItem::new("Toggle live-only channel tabs").on_click(move|_,_,cx|{let _=filter.update(cx,|this,cx|{this.live_channels=!this.live_channels;this.schedule_save(cx);cx.notify();});}))
                             .separator().item(PopupMenuItem::new("Move tab left").on_click(move|_,_,cx|{let _=left.update(cx,|this,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.shift_tab(&left_channel,false);}this.schedule_save(cx);cx.notify();});}))
                             .item(PopupMenuItem::new("Move tab right").on_click(move|_,_,cx|{let _=right.update(cx,|this,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.shift_tab(&right_channel,true);}this.schedule_save(cx);cx.notify();});}))
+                            .separator().item(PopupMenuItem::new("Focus next pane · F6").on_click(move|_,w,cx|{let _=next_pane.update(cx,|this,cx|this.cycle_pane_from(true,Some(next_origin.clone()),w,cx));}))
+                            .item(PopupMenuItem::new("Equalize this split").on_click(move|_,w,cx|{let _=equal.update(cx,|this,cx|this.equalize_panes(Some(equal_channel.clone()),false,w,cx));}))
+                            .item(PopupMenuItem::new("Equalize all splits").on_click(move|_,w,cx|{let _=equal_all.update(cx,|this,cx|this.equalize_panes(None,true,w,cx));}))
                             .separator().item(PopupMenuItem::new("Close channel…").on_click(move|_,window,cx|{let _=close.update(cx,|this,cx|this.confirm_close_channel(close_channel.clone(),window,cx));}))
                     };
                     if let Some(pane)=drag_pane{item.on_drag(DraggedChannel{pane,name:channel.clone()},move|drag,_,_,cx|cx.new(|_|DragPreview(drag.name.clone()))).context_menu(menu).into_any_element()}else{item.context_menu(menu).into_any_element()}
@@ -1226,6 +1246,14 @@ impl Render for Workbench {
                 });
             }).absolute().size_0())
             .on_action(cx.listener(|this,_:&crate::FindChat,w,cx|{let panes=this.visible_panes(cx);let selected=this.selected_channel.as_ref();if let Some(pane)=panes.iter().find(|p|Some(&p.read(cx).name.to_string())==selected).or(panes.first()){pane.update(cx,|p,cx|p.open_search(w,cx));}cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&FocusNextPane,w,cx|this.cycle_pane(true,w,cx)))
+            .on_action(cx.listener(|this,_:&FocusPreviousPane,w,cx|this.cycle_pane(false,w,cx)))
+            .on_action(cx.listener(|this,_:&FocusPaneLeft,w,cx|this.focus_neighbor(-1,0,w,cx)))
+            .on_action(cx.listener(|this,_:&FocusPaneRight,w,cx|this.focus_neighbor(1,0,w,cx)))
+            .on_action(cx.listener(|this,_:&FocusPaneUp,w,cx|this.focus_neighbor(0,-1,w,cx)))
+            .on_action(cx.listener(|this,_:&FocusPaneDown,w,cx|this.focus_neighbor(0,1,w,cx)))
+            .on_action(cx.listener(|this,_:&EqualizeSplit,w,cx|this.equalize_panes(None,false,w,cx)))
+            .on_action(cx.listener(|this,_:&EqualizeAllSplits,w,cx|this.equalize_panes(None,true,w,cx)))
             .on_action(cx.listener(|this,_:&SwitchChannel,w,cx|this.open_switcher(w,cx)))
             .on_action(cx.listener(|this,_:&ChannelDetails,w,cx|this.open_focused_channel_details(w,cx)))
             .on_action(cx.listener(|this,_:&OpenActivity,w,cx|this.open_activity(w,cx)))
