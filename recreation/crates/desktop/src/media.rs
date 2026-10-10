@@ -59,7 +59,23 @@ impl EmoteKey {
         if asset.width==0||asset.height==0||asset.width>256||asset.height>256{return None;}
         Some(Self{id:id.into(),animated,external:Some(asset.clone())})
     }
+    pub fn gif(id: &str, value: &str, animated: bool) -> Option<Self> {
+        let url=reqwest::Url::parse(value).ok()?;
+        // Known GIPHY delivery hosts from Twitch's documented integration. Unknown
+        // origins retain their readable message fallback; never fetch arbitrary URLs.
+        if value.len()>4096 || url.scheme()!="https" || !matches!(url.host_str(),Some("media.giphy.com"|"media0.giphy.com"|"media1.giphy.com"|"media2.giphy.com"|"media3.giphy.com"|"media4.giphy.com")) || !url.username().is_empty() || url.password().is_some() || url.port().is_some_and(|p|p!=443) || url.fragment().is_some() || !url.path().starts_with("/media/") {return None;}
+        Some(Self{id:format!("gif:{id}"),animated,external:Some(chat_core::EmoteAsset{url:value.into(),static_url:value.into(),width:160,height:100})})
+    }
+    pub fn cheer(id:&str,animated:bool,asset:&chat_core::EmoteAsset)->Option<Self>{
+        for value in [&asset.url,&asset.static_url] {
+            let url=reqwest::Url::parse(value).ok()?;
+            if url.scheme()!="https" || !matches!(url.host_str(),Some("d3aqoihi2n8ty8.cloudfront.net"|"static-cdn.jtvnw.net")) || !url.path().starts_with("/actions/") || !url.username().is_empty() || url.password().is_some() || url.port().is_some_and(|p|p!=443) || url.fragment().is_some() || url.query().is_some() {return None;}
+        }
+        Some(Self{id:format!("cheer:{id}"),animated,external:Some(asset.clone())})
+    }
     pub fn provider(&self)->&'static str {
+        if self.id.starts_with("gif:"){return "twitch_gif";}
+        if self.id.starts_with("cheer:"){return "twitch_cheer";}
         if self.id.starts_with("badge:"){return "twitch_badge";}
         match self.external.as_ref().and_then(|a|reqwest::Url::parse(&a.url).ok()).and_then(|u|u.host_str().map(str::to_owned)).as_deref(){Some("cdn.betterttv.net")=>"bttv",Some("cdn.frankerfacez.com")=>"ffz",Some("cdn.7tv.app")=>"7tv",_=>"twitch"}
     }
@@ -220,6 +236,14 @@ impl MediaCache {
             }
             match result {
                 Ok((image, bytes)) => {
+                    // Large visible GIFs must not evict and redownload one another
+                    // continuously. Reject excess animation for one cooldown; the
+                    // renderer requests the bounded static variant instead.
+                    if key.id.starts_with("gif:") && key.animated && self.bytes + bytes > 48 * 1024 * 1024 {
+                        self.entries.insert(key,Entry::Failed(Instant::now()));
+                        changed=true;
+                        continue;
+                    }
                     while self.bytes + bytes > 48 * 1024 * 1024 && self.bytes > 0 {
                         self.evict(cx);
                     }
@@ -268,19 +292,22 @@ fn download(
     if !response.status().is_success() {
         return Err(());
     }
-    const MAX_WIRE: usize = 2 * 1024 * 1024;
+    let rich_gif=key.id.starts_with("gif:");
+    let max_wire: usize = if rich_gif { 12 * 1024 * 1024 } else { 2 * 1024 * 1024 };
+    let max_dimension = if rich_gif { 512 } else { 256 };
+    let max_decoded = if rich_gif { 24 * 1024 * 1024 } else { 8 * 1024 * 1024 };
     if response
         .content_length()
-        .is_some_and(|n| n > MAX_WIRE as u64)
+        .is_some_and(|n| n > max_wire as u64)
     {
         return Err(());
     }
     let mut bytes = Vec::new();
     response
-        .take(MAX_WIRE as u64 + 1)
+        .take(max_wire as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(|_| ())?;
-    if bytes.len() > MAX_WIRE {
+    if bytes.len() > max_wire {
         return Err(());
     }
     let format = image::guess_format(&bytes).map_err(|_| ())?;
@@ -288,11 +315,11 @@ fn download(
     let mut decoded = 0usize;
     let mut push = |mut frame: image::Frame| -> Result<(), ()> {
         let (w, h) = frame.buffer().dimensions();
-        if w == 0 || h == 0 || w > 256 || h > 256 || frames.len() >= 120 {
+        if w == 0 || h == 0 || w > max_dimension || h > max_dimension || frames.len() >= 120 {
             return Err(());
         }
         decoded = decoded.checked_add(w as usize * h as usize * 4).ok_or(())?;
-        if decoded > 8 * 1024 * 1024 {
+        if decoded > max_decoded {
             return Err(());
         }
         for pixel in frame.buffer_mut().chunks_exact_mut(4) {
@@ -306,11 +333,11 @@ fn download(
             let mut decoder =
                 image::codecs::gif::GifDecoder::new(Cursor::new(&bytes)).map_err(|_| ())?;
             let (w, h) = decoder.dimensions();
-            if w > 256 || h > 256 {
+            if w > max_dimension || h > max_dimension {
                 return Err(());
             }
             let mut limits = image::Limits::default();
-            limits.max_alloc = Some(8 * 1024 * 1024);
+            limits.max_alloc = Some(max_decoded as u64);
             decoder.set_limits(limits).map_err(|_| ())?;
             for frame in decoder.into_frames() {
                 push(frame.map_err(|_| ())?)?;
@@ -323,11 +350,11 @@ fn download(
             let mut decoder =
                 image::codecs::webp::WebPDecoder::new(Cursor::new(&bytes)).map_err(|_| ())?;
             let (w, h) = decoder.dimensions();
-            if w > 256 || h > 256 {
+            if w > max_dimension || h > max_dimension {
                 return Err(());
             }
             let mut limits = image::Limits::default();
-            limits.max_alloc = Some(8 * 1024 * 1024);
+            limits.max_alloc = Some(max_decoded as u64);
             decoder.set_limits(limits).map_err(|_| ())?;
             for frame in decoder.into_frames() {
                 push(frame.map_err(|_| ())?)?;
@@ -336,9 +363,9 @@ fn download(
         ImageFormat::Png | ImageFormat::WebP => {
             let mut reader = image::ImageReader::with_format(Cursor::new(&bytes), format);
             let mut limits = image::Limits::default();
-            limits.max_image_width = Some(256);
-            limits.max_image_height = Some(256);
-            limits.max_alloc = Some(8 * 1024 * 1024);
+            limits.max_image_width = Some(max_dimension);
+            limits.max_image_height = Some(max_dimension);
+            limits.max_alloc = Some(max_decoded as u64);
             reader.limits(limits);
             push(image::Frame::new(
                 reader.decode().map_err(|_| ())?.into_rgba8(),

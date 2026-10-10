@@ -40,6 +40,11 @@ pub fn group_for_layout(fragments: &[Fragment]) -> Vec<RenderRun> {
     for fragment in fragments {
         match fragment {
             Fragment::Text(text) => runs.push(RenderRun::Text(text.clone())),
+            Fragment::Cheer { prefix, label, asset: Some(asset), .. } if label.get(..prefix.len()).is_some_and(|s|s.eq_ignore_ascii_case(prefix)) => {
+                runs.push(RenderRun::EmoteStack { layers: vec![EmoteLayer { provider: "twitch-cheer".into(), id: prefix.clone(), label: label[..prefix.len()].into(), animated: true, asset: Some(asset.clone()) }], copy_text: label[..prefix.len()].into() });
+                runs.push(RenderRun::Text(label[prefix.len()..].into()));
+            }
+            Fragment::Gif { label, .. } | Fragment::Cheer { label, .. } | Fragment::Unknown { label, .. } => runs.push(RenderRun::Text(label.clone())),
             Fragment::Emote {
                 provider,
                 id,

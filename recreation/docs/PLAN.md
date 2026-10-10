@@ -581,3 +581,31 @@ for offline broadcasts, and amber diamonds for unknown/unavailable status. Shape
 and tooltips distinguish states without relying on color alone. These represent
 broadcast state, separately from chat connectivity and unread/highlight badges.
 The markers reuse existing stream observations; no additional requests or polling.
+
+## B1: typed Twitch rich messages (2026-10-10)
+
+Implementation now preserves GIF, Cheermote and unknown fragments, message-type
+classification, total Bits, reward IDs, Shared Chat source labels and typed notice
+names/server text. GIF cards use unchanged supplied GIPHY URLs, anonymous downloads
+and stable 160×112 slots; up to four render per message. Unsupported hosts or oversized
+assets remain readable. GIF policy is separate from emotes: 12 MiB wire, 512px maximum
+dimension, 120 frames, 24 MiB decoded per asset, within the existing 48 MiB total cache.
+Failed animation can fall back to first-frame decoding of the same URL. No GIF sending.
+
+Get Cheermotes metadata uses existing authorized Helix access, separate from anonymous
+image loads. Prefix/tier mapping preserves source labels and visible Bits digits;
+metadata refresh failures keep previous successful categories and retry after a minute.
+Reward/intro/Power-up labels distinguish server meaning from local word highlights.
+Gigantified messages use bounded 56px emotes. Message Effects receive a native pastel
+accent and descriptive label, not an invented exact effect animation.
+
+The existing user:read:chat connection also subscribes to channel.chat.notification.
+Subscription/gift/raid/other notice text comes from Twitch's server fallback; unknown
+notice names remain visible. No broader OAuth grant, paid action or private endpoint.
+Existing arrival animation applies to these rows; visible GIFs share the media clock
+and honor reduced motion. Deletion clears rich presentation and fragments.
+
+Source/build support does not establish live acceptance of rare events. Record the
+specific received types actually observed in VALIDATION.md; never generate paid events
+or send test chat just to fill coverage. Full Shared Chat routing, exact Power-up
+reproduction, personal emote entitlements and moderator pins remain separate work.

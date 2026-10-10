@@ -281,6 +281,7 @@ fn subscribe(
             if epoch.load(Ordering::Relaxed) != version {
                 break;
             }
+            let mut notices_unavailable=false;
             let result: Result<(), String> = (|| {
                 let id = resolve(&client, &identity, &channel)?;
                 if let Ok(mut names) = map.lock() {
@@ -292,12 +293,13 @@ fn subscribe(
                     "channel.chat.message_delete",
                     "channel.chat.clear_user_messages",
                     "channel.chat.clear",
+                    "channel.chat.notification",
                 ] {
                     if epoch.load(Ordering::Relaxed) != version {
                         return Err("Channel subscription cancelled".into());
                     }
                     let body = json!({"type":kind,"version":"1","condition":{"broadcaster_user_id":id,"user_id":identity.user_id},"transport":{"method":"websocket","session_id":session}});
-                    let (status, response) = response_json(
+                    let subscription = (|| { response_json(
                         client
                             .post("https://api.twitch.tv/helix/eventsub/subscriptions")
                             .header("Client-Id", CLIENT_ID)
@@ -306,8 +308,14 @@ fn subscribe(
                             .body(body.to_string())
                             .send()
                             .map_err(|_| "Twitch subscription request interrupted")?,
-                    )?;
+                    ) })();
+                    let (status,response)=match subscription {
+                        Ok(value)=>value,
+                        Err(_) if kind=="channel.chat.notification"=>{notices_unavailable=true;continue;},
+                        Err(error)=>return Err(error),
+                    };
                     if status != 202 || response["data"][0]["status"].as_str() != Some("enabled") {
+                        if kind=="channel.chat.notification"{notices_unavailable=true;continue;}
                         return Err(format!("Chat subscription failed (HTTP {status})"));
                     }
                 }
@@ -317,7 +325,7 @@ fn subscribe(
                 break;
             }
             let (message, ready) = match result {
-                Ok(()) => ("Connected".into(), true),
+                Ok(()) => (if notices_unavailable{"Connected · Twitch notices unavailable until reconnect".into()}else{"Connected".into()}, true),
                 Err(e) => (e, false),
             };
             if tx
@@ -518,13 +526,13 @@ fn deliver(
     };
     let text = |key: &str| e[key].as_str().unwrap_or("").to_owned();
     let event = match v["payload"]["subscription"]["type"].as_str().unwrap_or("") {
-        "channel.chat.message" => ChatEvent::Message(Message {
-            id: text("message_id"),
+        "channel.chat.message" | "channel.chat.notification" => ChatEvent::Message(Message {
+            id: if text("message_id").is_empty() { envelope.to_owned() } else { text("message_id") },
             channel_id: channel.clone(),
             user_id: text("chatter_user_id"),
-            display_name: text("chatter_user_name"),
+            display_name: if e["chatter_is_anonymous"].as_bool()==Some(true) { "Anonymous".into() } else if text("chatter_user_name").is_empty() { "Twitch".into() } else { text("chatter_user_name") },
             login: chat_core::twitch_login(&text("chatter_user_login")),
-            replyable: e["source_broadcaster_user_id"].as_str().is_none_or(|source|source==id),
+            replyable: v["payload"]["subscription"]["type"]=="channel.chat.message" && e["source_broadcaster_user_id"].as_str().is_none_or(|source|source==id),
             reply: parse_reply(&e["reply"]),
             mentions: e["message"]["fragments"].as_array().into_iter().flatten().filter(|f|f["type"]=="mention").filter_map(|f|f["mention"]["user_id"].as_str()).filter(|s|!s.is_empty()&&s.len()<=128).take(64).map(str::to_owned).collect(),
             name_color: e["color"].as_str().and_then(|s| s.strip_prefix('#'))
@@ -532,6 +540,14 @@ fn deliver(
                 .and_then(|s| u32::from_str_radix(s, 16).ok()),
             badges: e["badges"].as_array().into_iter().flatten().take(8).filter_map(|b|{Some(chat_core::Badge{set_id:b["set_id"].as_str()?.chars().take(128).collect(),id:b["id"].as_str()?.chars().take(128).collect()})}).collect(),
             fragments: twitch_fragments(&e["message"]),
+            presentation: chat_core::MessagePresentation {
+                kind: e["message_type"].as_str().unwrap_or("text").chars().take(80).collect(),
+                bits: e["cheer"]["bits"].as_u64().unwrap_or(0),
+                reward_id: e["channel_points_custom_reward_id"].as_str().map(|s|s.chars().take(128).collect()),
+                notice_type: e["notice_type"].as_str().map(|s|s.chars().take(80).collect()),
+                notice: e["system_message"].as_str().filter(|s|!s.is_empty()).map(|s|s.chars().take(1200).collect()),
+                source: e["source_broadcaster_user_name"].as_str().filter(|_|e["source_broadcaster_user_id"].as_str().is_some_and(|source|source!=id)).map(|s|s.chars().take(80).collect()),
+            },
             deleted: false,
         }),
         "channel.chat.message_delete" => ChatEvent::DeleteMessage {
@@ -552,20 +568,41 @@ fn deliver(
 
 fn twitch_fragments(message: &Value) -> Vec<Fragment> {
     let original = message["text"].as_str().unwrap_or("");
-    let fragments: Vec<_> = message["fragments"].as_array().into_iter().flatten().map(|fragment| {
+    let raw: Vec<_> = message["fragments"].as_array().into_iter().flatten().take(256).collect();
+    let joined: String = raw.iter().filter_map(|f|f["text"].as_str()).collect();
+    let mut fragments: Vec<_> = raw.into_iter().map(|fragment| {
         let text = fragment["text"].as_str().unwrap_or("").to_owned();
-        if fragment["type"] == "emote" {
-            if let Some(id) = fragment["emote"]["id"].as_str() {
-                if crate::media::EmoteKey::twitch(id, false).is_some() {
+        match fragment["type"].as_str().unwrap_or("text") {
+            "emote" => {
+                if let Some(id) = fragment["emote"]["id"].as_str().filter(|id|crate::media::EmoteKey::twitch(id,false).is_some()) {
                     return Fragment::Emote { provider: "twitch".into(), id: id.into(), label: text, overlay: false, asset: None,
                         animated: fragment["emote"]["format"].as_array().is_some_and(|formats| formats.iter().any(|f| f == "animated")) };
                 }
             }
+            "gif" => {
+                let gif=&fragment["gif"];
+                return Fragment::Gif { id: gif["id"].as_str().or_else(||gif["gif_id"].as_str()).unwrap_or("").chars().take(128).collect(),
+                    url: gif["url"].as_str().filter(|u|u.len()<=4096).unwrap_or("").into(),
+                    label: if text.is_empty(){"[GIF]".into()}else{text} };
+            }
+            "cheermote" => {
+                let c=&fragment["cheermote"];
+                return Fragment::Cheer {prefix:c["prefix"].as_str().unwrap_or("").chars().take(64).collect(),bits:c["bits"].as_u64().unwrap_or(0),tier:c["tier"].as_u64().unwrap_or(0),label:if text.is_empty(){format!("{} Bits",c["bits"].as_u64().unwrap_or(0))}else{text},asset:None};
+            }
+            "text" | "mention" => return Fragment::Text(text),
+            kind => return Fragment::Unknown {kind:kind.chars().take(64).collect(),label:if text.is_empty(){"[Unsupported content]".into()}else{text}},
         }
         Fragment::Text(text)
     }).collect();
-    if fragments.iter().map(Fragment::copy_text).collect::<String>() == original && !fragments.is_empty() { fragments }
-    else { vec![Fragment::Text(original.into())] }
+    if joined != original || fragments.is_empty() {
+        // Keep rich content even if Twitch's fallback text differs from fragment text.
+        fragments.retain(|f|matches!(f,Fragment::Gif{..}|Fragment::Unknown{..}));
+        if !original.is_empty(){
+            for fragment in &mut fragments {match fragment {Fragment::Gif{label,..}|Fragment::Unknown{label,..}=>label.clear(),_=>{}}}
+            fragments.insert(0,Fragment::Text(original.into()));
+        }
+    }
+    fragments
 }
 
 fn parse_reply(value:&Value)->Option<chat_core::Reply>{

@@ -13,6 +13,9 @@ pub struct EmoteAsset {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Fragment {
     Text(String),
+    Gif { id: String, url: String, label: String },
+    Cheer { prefix: String, bits: u64, tier: u64, label: String, asset: Option<EmoteAsset> },
+    Unknown { kind: String, label: String },
     Emote {
         provider: String,
         id: String,
@@ -26,7 +29,7 @@ impl Fragment {
     pub fn copy_text(&self) -> &str {
         match self {
             Self::Text(text) => text,
-            Self::Emote { label, .. } => label,
+            Self::Emote { label, .. } | Self::Gif { label, .. } | Self::Cheer { label, .. } | Self::Unknown { label, .. } => label,
         }
     }
 }
@@ -42,6 +45,15 @@ pub struct Reply {
     pub thread_id: String,
     pub parent_deleted: bool,
 }
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MessagePresentation {
+    pub kind: String,
+    pub bits: u64,
+    pub reward_id: Option<String>,
+    pub notice: Option<String>,
+    pub notice_type: Option<String>,
+    pub source: Option<String>,
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     pub id: String,
@@ -55,12 +67,16 @@ pub struct Message {
     pub name_color: Option<u32>,
     pub badges: Vec<Badge>,
     pub fragments: Vec<Fragment>,
+    pub presentation: MessagePresentation,
     pub deleted: bool,
 }
 impl Message {
     pub fn body(&self) -> String {
         if self.deleted {
             return "[message deleted]".into();
+        }
+        if self.fragments.is_empty() {
+            if let Some(notice)=&self.presentation.notice { return notice.clone(); }
         }
         self.fragments.iter().map(Fragment::copy_text).collect()
     }
@@ -181,6 +197,7 @@ impl Timeline {
             if !message.deleted && matches(message) {
                 message.deleted = true;
                 message.fragments.clear();
+                message.presentation = MessagePresentation::default();
                 if let Some(reply)=&mut message.reply {reply.parent_deleted=true;}
                 changed = true;
             }
@@ -214,6 +231,7 @@ pub fn fixture(channel: &str, index: usize) -> Message {
         name_color: None,
         badges: Vec::new(),
         fragments: vec![Fragment::Text(body.into())],
+        presentation: MessagePresentation::default(),
         deleted: false,
     }
 }

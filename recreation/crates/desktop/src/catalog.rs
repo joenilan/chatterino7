@@ -140,6 +140,9 @@ impl Catalog {
     pub fn expand(&self, channel: &str, fragments: &[Fragment]) -> Vec<Fragment> {
         let mut result = Vec::new();
         for fragment in fragments {
+            if let Fragment::Cheer{prefix,bits,tier,label,..}=fragment {
+                result.push(Fragment::Cheer{prefix:prefix.clone(),bits:*bits,tier:*tier,label:label.clone(),asset:self.twitch.cheer(channel,prefix,*tier).cloned()});continue;
+            }
             let text = match fragment {
                 Fragment::Text(text) => text.as_str(),
                 Fragment::Emote {

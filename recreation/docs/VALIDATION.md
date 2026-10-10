@@ -470,3 +470,25 @@ session`jj-manual-b09e5780-emote` left running.
 Jenny's exact heart did not recur after restart and was not rechecked. Original
 167 screenshot preserved. Decode-time relayout and narrow wrapping remain unverified.
 No fabricated messages, sends, auth actions or unrelated QA.
+
+## 2026-10-10 — B1 rich-message implementation, native pending
+
+Typed GIF/Cheermote/unknown fragments, server classifications/rewards/Bits and notices
+added. GIF cards, Cheer catalog/inline media, enlarged emotes and compact status accents
+implemented. Existing bounded media workers/cache reused with a separate GIF budget.
+Full GIF URL retained, credentials absent from media client, redirects disabled,
+known-origin validation and explicit unavailable/loading fallbacks. No live rendering
+claim for GIFs, Cheers, rewards or notifications until actual events are observed.
+
+Official contracts audited: EventSub reference, Get Cheermotes, IRC GIF example and
+Twitch changelog. GIF id/gif_id alias tolerated due documentation discrepancy. Native
+access readiness confirmed at prior b09e578: owner workspace4, five channels,
+jennybunnybean selected, font14, history10000, sidebarhidden, emptyhighlightwords,
+livefilterenabled. No state mutation in readiness check.
+
+Final Linux exact-source build passed, exit0 in3.54s. Source review corrections:
+optional notice subscription installs after mandatory chat/redaction feeds and fails
+independently with a visible partial-service status; metadata refresh preserves prior
+successful categories; fragment-text mismatch copies original text only once; GIF
+animation cache admission falls back to static under budget pressure with cooldown
+instead of continuously evicting/reloading other visible animations.

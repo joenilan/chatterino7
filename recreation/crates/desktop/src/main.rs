@@ -4,6 +4,7 @@ mod chat_text;
 mod chat_search;
 mod message_actions;
 mod replies;
+mod rich_messages;
 mod attention;
 mod control;
 mod live;
@@ -483,8 +484,10 @@ impl Render for ChannelPane {
                             };
                             let row = first_order + index as u64;
                             let inline = inline_chat::InlineChat::new(message, row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx);
-                            let first_line_height = if inline.is_some() { inline_chat::InlineChat::line_height(window) } else { window.line_height() };
+                            let first_line_height = if inline.is_some() { inline_chat::InlineChat::line_height(window,message) } else { window.line_height() };
                             let row_owner=menu_owner.clone();let row_id=message.id.clone();
+                            let rich_heading=rich_messages::heading(message);
+                            let rich_attachments=rich_messages::attachments(message,&mut media.borrow_mut(),cx);
                             let reply_line=replies::row_context(message,&messages,menu_owner.clone());
                             let interaction=message_actions::Interaction{owner:menu_owner.clone(),message:message.id.clone(),author_len:message.display_name.len(),links:message_actions::message_links(message),pressed:link_press.clone()};
                             let presented=presented_row.clone();let eligible=read_eligible.clone();
@@ -503,6 +506,7 @@ impl Render for ChannelPane {
                             div()
                                 .relative()
                                 .border_l_2().border_color(rgba(0x00000000))
+                                .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(0xA99CF40D)))
                                 .when(highlight_rows.contains(&row),|el|el.bg(rgb(0x272237)).border_color(rgb(0xA99CF4)))
                                 .on_prepaint(move|bounds,window,cx|{
                                     let clip=window.content_mask().bounds;
@@ -521,6 +525,7 @@ impl Render for ChannelPane {
                                 .cursor_text()
                                 .tooltip(|w,cx|gpui_kit::component::tooltip::Tooltip::new("Ctrl+click a link to open, or a username to inspect · Right-click for actions").build(w,cx))
                                 .context_menu(move|menu,_,cx|message_actions::menu(row_owner.clone(),row_id.clone(),menu,cx))
+                                .children(rich_heading)
                                 .children(reply_line)
                                 .child(div().h_flex().items_start().min_w_0().gap_1()
                                 .children(message.badges.iter().filter_map(|badge|catalog.borrow().twitch.badge(&message.channel_id,&badge.set_id,&badge.id).cloned()).map(|badge|{
@@ -533,6 +538,7 @@ impl Render for ChannelPane {
                                     ChatText::new(SharedString::from(format!("text-{}", message.id)), row, message.copy_line(), selection.clone(), focus.clone(), viewport.clone())
                                         .with_author(&message.display_name, message.name_color).with_search(matches).with_interaction(interaction).into_any_element()
                                 })))
+                                .children(rich_attachments)
                                 .into_any_element()
                         })
                         .flex_1()

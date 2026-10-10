@@ -79,6 +79,7 @@ pub struct InlineChat {
     text: SharedString,
     spans: Vec<Span>,
     name_color: u32,
+    emote_size: f32,
     interaction: Option<crate::message_actions::Interaction>,
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
@@ -86,7 +87,7 @@ pub struct InlineChat {
     layout: Rc<RefCell<Layout>>,
 }
 impl InlineChat {
-    pub fn line_height(window: &Window) -> Pixels { window.line_height().max(px(30.)) }
+    pub fn line_height(window: &Window, message: &Message) -> Pixels { window.line_height().max(px(if message.presentation.kind=="power_ups_gigantified_emote" {58.}else{30.})) }
 
     pub fn with_interaction(mut self, interaction:crate::message_actions::Interaction)->Self{self.interaction=Some(interaction);self}
 
@@ -105,7 +106,7 @@ impl InlineChat {
             || !message
                 .fragments
                 .iter()
-                .any(|f| matches!(f, Fragment::Emote { .. }))
+                .any(|f| matches!(f, Fragment::Emote { .. } | Fragment::Cheer { asset: Some(_), .. }))
         {
             return None;
         }
@@ -134,6 +135,8 @@ impl InlineChat {
                     let animated = layer.animated && !cx.reduce_motion();
                     let key = if layer.provider == "twitch" {
                         EmoteKey::twitch(&layer.id, animated)
+                    } else if layer.provider == "twitch-cheer" {
+                        layer.asset.as_ref().and_then(|a|EmoteKey::cheer(&layer.id,animated,a))
                     } else if matches!(layer.provider.as_str(), "7tv" | "bttv" | "ffz") {
                         layer
                             .asset
@@ -183,6 +186,7 @@ impl InlineChat {
             text,
             spans,
             name_color: message.name_color.unwrap_or(crate::theme::MUTED),
+            emote_size: if message.presentation.kind=="power_ups_gigantified_emote" {56.}else{28.},
             interaction: None,
             selection,
             focus,
@@ -218,7 +222,8 @@ impl Element for InlineChat {
         let layout = self.layout.clone();
         let style = window.text_style();
         let font_size = style.font_size.to_pixels(window.rem_size());
-        let line_height = Self::line_height(window);
+        let emote_size=self.emote_size;
+        let line_height = window.line_height().max(px(emote_size+2.));
         let name_color = self.name_color;
         let id = window.request_measured_layout(
             Default::default(),
@@ -246,7 +251,7 @@ impl Element for InlineChat {
                         .iter()
                         .map(|s| {
                             if let Some(media) = &s.media {
-                                LineFragment::element(px(media_width(media)), s.range.len())
+                                LineFragment::element(px(media_width(media)*emote_size/28.).min(width), s.range.len())
                             } else {
                                 LineFragment::text(&text[s.range.clone()])
                             }
@@ -275,7 +280,7 @@ impl Element for InlineChat {
                                 (
                                     None,
                                     layers.iter().map(|(_, image)| image.clone()).collect(),
-                                    px(media_width(layers)),
+                                    px(media_width(layers)*emote_size/28.).min(width),
                                 )
                             } else {
                                 let mut run_style = style.clone();
@@ -436,8 +441,8 @@ impl Element for InlineChat {
             let slot = Bounds::new(
                 bounds.origin
                     + piece.bounds.origin
-                    + point(px(0.), (piece.bounds.size.height - px(28.)) / 2.),
-                size(piece.bounds.size.width, px(28.)),
+                    + point(px(0.), (piece.bounds.size.height - px(self.emote_size)) / 2.),
+                size(piece.bounds.size.width, px(self.emote_size)),
             );
             let clip = self.viewport.borrow().map_or(slot, |v| slot.intersect(&v));
             if clip.size.width <= px(0.) || clip.size.height <= px(0.) {

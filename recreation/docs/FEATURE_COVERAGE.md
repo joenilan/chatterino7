@@ -216,14 +216,14 @@ implement them. **Receive/render and send/act have independent statuses.**
 
 | ID | Feature | Current Jawjack | Planned treatment and boundary |
 | --- | --- | --- | --- |
-| TW01 | GIF Keyboard messages | Next | A dedicated GIF fragment and renderer; never silently discard a GIF-only row. Paid Tier 2/3 eligibility applies to sending in enabled channels, not to viewing received GIFs. Public GIF sending remains Research. |
-| TW02 | Cheers and Cheermotes | Next | Preserve amounts and tier, resolve the appropriate media, show readable fallback and accessible amount. Generic emote rendering alone is not Cheer support. |
-| TW03 | Bits Message Effects | Next | Respect the ordinary message classification and offer a restrained native effect/fallback. Exact effect reproduction needs a documented mapping and sufficient metadata; do not invent it from a color or badge. |
-| TW04 | Gigantify an Emote | Next | Use a distinct bounded presentation rather than treating it as an ordinary-size emote. Preserve identity and readable selection/copy behavior. |
+| TW01 | GIF Keyboard messages | P | A dedicated GIF fragment and renderer; never silently discard a GIF-only row. Paid Tier 2/3 eligibility applies to sending in enabled channels, not to viewing received GIFs. Public GIF sending remains Research. |
+| TW02 | Cheers and Cheermotes | P | Preserve amounts and tier, resolve the appropriate media, show readable fallback and accessible amount. Generic emote rendering alone is not Cheer support. |
+| TW03 | Bits Message Effects | Part | Respect the ordinary message classification and offer a restrained native effect/fallback. Exact effect reproduction needs a documented mapping and sufficient metadata; do not invent it from a color or badge. |
+| TW04 | Gigantify an Emote | P | Use a distinct bounded presentation rather than treating it as an ordinary-size emote. Preserve identity and readable selection/copy behavior. |
 | TW05 | On-Screen Celebration and custom Power-ups | Research | Distinguish broadcaster-authorized detail from ordinary chat. A desktop chat client should not claim to reproduce a stream-video celebration from absent data. |
-| TW06 | Channel Points highlighted messages | Next | Separate reward styling from local keyword highlights and Bits effects; retain reward provenance. |
-| TW07 | Sub-only reward messages and introductions | Next | Typed message presentation, compact labeling and graceful handling when detail is absent. |
-| TW08 | Subscription and community notices | Next | Rich system rows for subscriptions, resubs, gifts, upgrades, raids, announcements, streaks and newer notices. Respect anonymity and server fallback text. |
+| TW06 | Channel Points highlighted messages | P | Separate reward styling from local keyword highlights and Bits effects; retain reward provenance. |
+| TW07 | Sub-only reward messages and introductions | P | Typed message presentation, compact labeling and graceful handling when detail is absent. |
+| TW08 | Subscription and community notices | Part | Rich system rows for subscriptions, resubs, gifts, upgrades, raids, announcements, streaks and newer notices. Respect anonymity and server fallback text. |
 | TW09 | Shared Chat | Part | Current cross-channel reply guard exists; full provenance, source badges, origin links, deduplication and explicit send semantics remain missing. |
 | TW10 | Moderator-pinned messages | Research | Public pin APIs now exist, but they are privileged. Provide read/manage affordances only with verified scope and channel role; ordinary-viewer pin parity is not established. |
 | TW11 | Pinned Cheers | Research | Separate product feature from moderator pins. Do not route it through the mod-pin API merely because both use the word “pinned.” |
@@ -231,7 +231,12 @@ implement them. **Receive/render and send/act have independent statuses.**
 | TW13 | Current badge metadata | Part | Existing global/channel badge rendering; preserve newer metadata, tier/flair distinctions and unknown badge types rather than dropping them. |
 | TW14 | Initial and changing room restrictions | Next | Fetch initial settings, then reconcile live updates. Composer explains slow/follower/subscriber/emote-only or verification restrictions without erasing drafts. |
 | TW15 | Held, rejected and uncertain messages | Part | Existing drop/uncertainty feedback; add held-message lifecycle and better structured reasons. Never blindly resend an ambiguous POST. |
-| TW16 | New event and fragment types | Next | Preserve unknown identifiers and display a useful fallback. Schema changes must not make messages disappear. |
+| TW16 | New event and fragment types | Part | Preserve unknown identifiers and display a useful fallback. Schema changes must not make messages disappear. |
+
+B1 implementation now covers these basic receive/render paths; native rare-event
+acceptance is pending. Message Effects use semantic accent/label, and notifications
+use typed names plus server fallback text. These do not claim full effect reproduction
+or every notice-specific action/detail. See PLAN.md for concrete limits.
 
 ### Verified contracts and gaps
 
