@@ -4,6 +4,7 @@ use gpui_kit::{*, component::{button::Button, notification::{Notification, Notif
 
 pub struct Command { pub name: &'static str, pub usage: &'static str, pub description: &'static str }
 pub const COMMANDS: &[Command] = &[
+    Command { name: "/commands", usage: "/commands", description: "Edit personal text shortcuts" },
     Command { name: "/help", usage: "/help", description: "Show local commands" },
     Command { name: "/find", usage: "/find query", description: "Search retained messages in this channel" },
     Command { name: "/usercard", usage: "/usercard login", description: "Open a recent chatter's card" },
@@ -36,9 +37,10 @@ impl ChannelPane {
         let name = name.to_ascii_lowercase();
         let name = match name.as_str() { "/usercard" => "/user".to_owned(), "/unreply" => "/cancelreply".to_owned(), _ => name };
         match name.as_str() {
-            "/help" | "/latest" | "/cancelreply" if !args.is_empty() => {
+            "/help" | "/commands" | "/latest" | "/cancelreply" if !args.is_empty() => {
                 self.command_feedback(format!("{name} takes no arguments. Your draft is kept."),window,cx);
             }
+            "/commands" => {self.command_draft("",window,cx);cx.emit(PaneEvent::OpenCommands(self.name.to_string()));}
             "/help" => { self.command_draft("",window,cx); self.open_command_help(window,cx); }
             "/latest" => {
                 self.command_draft("",window,cx); self.close_search(window,cx);
@@ -70,7 +72,15 @@ impl ChannelPane {
                     self.command_feedback("Reply prepared. Review it, then press Send.",window,cx);
                 } else { self.command_draft("",window,cx); self.message_action(&message.id,Action::Inspect,window,cx); }
             }
-            _ => self.command_feedback(format!("{name} isn't supported here yet. Nothing was sent; your draft is kept. Use /help for local commands."),window,cx),
+            _ => {
+                let template=self.custom_commands.borrow().get(name.trim_start_matches('/')).cloned();
+                if let Some(template)=template {
+                    match crate::custom_commands::expand(&template,&self.name,args){
+                        Ok(value)=>{self.command_draft(&value,window,cx);self.command_feedback("Message prepared. Review it, then press Send.",window,cx);}
+                        Err(error)=>self.command_feedback(error,window,cx),
+                    }
+                }else{self.command_feedback(format!("{name} isn't supported here yet. Nothing was sent; your draft is kept. Use /help for local commands."),window,cx);}
+            },
         }
         true
     }

@@ -417,6 +417,7 @@ impl ChannelPane {
             let query=raw.to_ascii_lowercase();
             self.picker.suggestions=crate::commands::COMMANDS.iter().filter(|c|c.name.starts_with(&query))
                 .map(|c|Choice{label:c.name.into(),provider:c.description,key:None}).collect();
+            self.picker.suggestions.extend(self.custom_commands.borrow().keys().filter(|name|format!("/{name}").starts_with(&query)).map(|name|Choice{label:format!("/{name}"),provider:"Custom command · prepares a draft",key:None}));
             if !self.picker.suggestions.is_empty(){self.picker.token=Some((start..range.end,raw.into()));}
             return;
         }

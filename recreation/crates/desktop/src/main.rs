@@ -1,6 +1,7 @@
 use gpui_kit::prelude::FluentBuilder;
 mod auth;
 mod commands;
+mod custom_commands;
 mod owned_emotes;
 mod chat_text;
 mod chat_search;
@@ -96,6 +97,7 @@ enum PaneEvent {
     DraftChanged,
     EmotePreferencesChanged,
     OpenAccount,
+    OpenCommands(String),
     SearchAll(String),
 }
 impl EventEmitter<PaneEvent> for ChannelPane {}
@@ -116,6 +118,7 @@ struct ChannelPane {
     timeline: Rc<RefCell<Timeline>>,
     media: Rc<RefCell<media::MediaCache>>,
     catalog: Rc<RefCell<catalog::Catalog>>,
+    custom_commands: custom_commands::Definitions,
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
     draft: Entity<TextareaState>,
@@ -168,6 +171,7 @@ impl ChannelPane {
             name: name.to_owned().into(),
             media,
             catalog,
+            custom_commands: Default::default(),
             connection: "Sign in to connect".into(),
             connected: false,
             room_settings: None,
