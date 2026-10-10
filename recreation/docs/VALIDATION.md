@@ -293,3 +293,26 @@ Windows behavior and keyboard/no-send acceptance remain pending. The existing
 virtualized list is retained. Its scroll-to-item positions a matching message's
 start and may resume tail following when bottom is reached; exact occurrence
 visibility and restoration to a pre-search pixel offset are not claimed.
+
+### Native acceptance: 75e7725c
+
+Windows locked release build passed with Rust 1.99.0, exit 0, 17.98 seconds.
+Deadlink briefly stopped replying; the uncertain add-channel operation was
+reconciled before more mutations. Access recovered and native checks finished.
+On actual HutchMF traffic, two StreamElements matches visibly highlighted.
+Enter/F3 navigated row 11 to 16, Shift+Enter/Shift+F3 returned to 11. Ctrl+F
+worked from composer, transcript and selected-tab/workspace focus; header Find
+worked. Escape/reopen retained query, no-match search reported 0/null, and an
+unchanged query acquired additional matches from real incoming messages.
+Search state remained independent across two panes. Enter in Find preserved a
+14-character disconnected draft with no send pending. Selection endpoints
+survived query/navigation changes and copying returned clipboard_verified.
+Latest closed Find and resumed following. Browser/URL menu entries were visible;
+browser opening and emote-label highlighting were not separately exercised.
+
+Temporary QA workspace 11 was removed through normal confirmation. Owner layout,
+all preexisting drafts, sidebar and history 10000 matched exactly; original
+1280x820 client geometry at (1072,306) was restored, overlays closed,
+pointer_owner:null and active_drag:false. No sends, auth changes or source edits.
+Running PID 47220, session jj-manual-75e7725c-find2, owned terminal hw-1-3.
+Last successful inspection hw-1-29; isolated-profile screenshots 114–119.
