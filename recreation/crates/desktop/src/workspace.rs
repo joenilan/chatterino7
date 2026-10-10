@@ -1091,7 +1091,8 @@ impl Workbench {
                         .on_mouse_down(MouseButton::Middle,cx.listener({let channel=channel.clone();move|this,_,window,cx|{window.prevent_default();cx.stop_propagation();this.confirm_close_channel(channel.clone(),window,cx);}}))
                         .on_click(cx.listener({let channel=channel.clone();move|this,_,window,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.select(&channel);}this.selected_channel=Some(channel.clone());this.focus.focus(window,cx);this.schedule_save(cx);cx.notify();}}));
                     let owner=cx.entity().downgrade();let menu_channel=channel.clone();let menu_pane=name.clone();
-                    let menu=move |menu:gpui_kit::component::menu::PopupMenu,_:&mut Window,_:&mut Context<gpui_kit::component::menu::PopupMenu>|{
+                    let menu=move |menu:gpui_kit::component::menu::PopupMenu,_:&mut Window,cx:&mut Context<gpui_kit::component::menu::PopupMenu>|{
+                        let live_only=owner.upgrade().is_some_and(|owner|owner.read(cx).live_channels);
                         let add=owner.clone();let add_channel=menu_channel.clone();let close=owner.clone();let close_channel=menu_channel.clone();let filter=owner.clone();let left=owner.clone();let left_channel=menu_channel.clone();let right=owner.clone();let right_channel=menu_channel.clone();let open_url=format!("https://www.twitch.tv/{menu_channel}");let copy_url=open_url.clone();let read=owner.clone();let read_channel=menu_channel.clone();
                         let details=owner.clone();let details_channel=menu_channel.clone();
                         let equal=owner.clone();let equal_channel=menu_channel.clone();let equal_all=owner.clone();let next_pane=owner.clone();let next_origin=menu_pane.clone();
@@ -1100,7 +1101,7 @@ impl Workbench {
                             .item(PopupMenuItem::new("Open stream in browser").on_click(move|_,_,cx|cx.open_url(&open_url)))
                             .item(PopupMenuItem::new("Copy channel URL").on_click(move|_,window,cx|{cx.write_to_clipboard(ClipboardItem::new_string(copy_url.clone()));window.push_notification(Notification::info("Channel URL copied"),cx);}))
                             .separator().item(PopupMenuItem::new("Add channel tab").on_click(move|_,window,cx|{let _=add.update(cx,|this,cx|{this.open_add(false,window,cx);this.add_target=Some(add_channel.clone());});}))
-                            .item(PopupMenuItem::new("Toggle live-only channel tabs").on_click(move|_,_,cx|{let _=filter.update(cx,|this,cx|{this.live_channels=!this.live_channels;this.schedule_save(cx);cx.notify();});}))
+                            .item(PopupMenuItem::new("Only show live channel tabs").checked(live_only).on_click(move|_,_,cx|{let _=filter.update(cx,|this,cx|{this.live_channels=!this.live_channels;this.schedule_save(cx);cx.notify();});}))
                             .separator().item(PopupMenuItem::new("Move tab left").on_click(move|_,_,cx|{let _=left.update(cx,|this,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.shift_tab(&left_channel,false);}this.schedule_save(cx);cx.notify();});}))
                             .item(PopupMenuItem::new("Move tab right").on_click(move|_,_,cx|{let _=right.update(cx,|this,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.shift_tab(&right_channel,true);}this.schedule_save(cx);cx.notify();});}))
                             .separator().item(PopupMenuItem::new("Focus next pane · F6").on_click(move|_,w,cx|{let _=next_pane.update(cx,|this,cx|this.cycle_pane_from(true,Some(next_origin.clone()),w,cx));}))
@@ -1369,11 +1370,11 @@ impl Render for Workbench {
                     .menu("Custom commands",Box::new(EditCustomCommands))
                     .menu("Chatter nicknames & colors",Box::new(EditChatterAppearance))
                     .menu("Appearance & memory",Box::new(ToggleAppearance))
-                    .menu(if live_channels{"Show all channel tabs"}else{"Only show live channel tabs"},Box::new(ToggleLiveChannels))
+                    .menu_with_check("Only show live channel tabs",live_channels,Box::new(ToggleLiveChannels))
                     .separator().menu("New workspace",Box::new(NewTab)).menu("Rename workspace",Box::new(RenameWorkspace))
                     .menu("Close workspace…",Box::new(CloseTab)).menu_with_enable("Reopen workspace",Box::new(ReopenTab),can_reopen)
                     .menu_with_enable("Move workspace up",Box::new(MoveTabLeft),can_left).menu_with_enable("Move workspace down",Box::new(MoveTabRight),can_right)
-                    .menu(if live_workspaces{"Show all workspaces"}else{"Only show live workspaces"},Box::new(ToggleLiveWorkspaces))
+                    .menu_with_check("Only show live workspaces",live_workspaces,Box::new(ToggleLiveWorkspaces))
                     .when(can_discard,|menu|menu.separator().menu("Discard unsaved changes and quit",Box::new(QuitWithoutSaving)))))
                 .child(caption_control("minimize",IconName::WindowMinimize,WindowControlArea::Min,false))
                 .child(caption_control("maximize",if window.is_maximized(){IconName::WindowRestore}else{IconName::WindowMaximize},WindowControlArea::Max,false))
