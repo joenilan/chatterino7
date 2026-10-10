@@ -162,6 +162,8 @@ pub struct Workbench {
     highlight_editor: Option<Entity<crate::highlight_rules::Editor>>,
     chatter_appearance: crate::chatter_appearance::Preferences,
     chatter_editor: Option<Entity<crate::chatter_appearance::Editor>>,
+    chatter_notes:crate::chatter_notes::Notes,
+    notes_editor:Option<Entity<crate::chatter_notes::Editor>>,
     custom_commands: crate::custom_commands::Definitions,
     activity_all: bool,
     zoom_accumulator: f32,
@@ -263,6 +265,7 @@ impl Workbench {
             highlight_editor: None,
             chatter_appearance: crate::chatter_appearance::load(&state["chatter_appearance"]),
             chatter_editor:None,
+            chatter_notes:crate::chatter_notes::load(&state["chatter_notes"]),notes_editor:None,
             highlight_terms: crate::attention::terms(state["highlight_words"].as_str().unwrap_or("")),
             highlight_input, activity_all:false, zoom_accumulator:0.,
             live: crate::live::LiveChat::new(),
@@ -500,6 +503,19 @@ impl Workbench {
             }
         }
     }
+    fn open_chatter_note(&mut self,target:crate::chatter_appearance::Target,window:&mut Window,cx:&mut Context<Self>){
+        self.settings=false;
+        let editor=if let Some(editor)=&self.notes_editor{editor.clone()}else{
+            let editor=cx.new(|cx|crate::chatter_notes::Editor::new(self.chatter_notes.clone(),window,cx));
+            cx.subscribe(&editor,|this,_,_:&crate::chatter_notes::Changed,cx|{this.schedule_save(cx);cx.notify();}).detach();
+            self.notes_editor=Some(editor.clone());editor
+        };
+        editor.update(cx,|editor,cx|editor.open(target,window,cx));
+        let width=(f32::from(window.viewport_size().width)-24.).clamp(180.,500.);
+        let focus_editor=editor.clone();
+        window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Private chatter notes").child(editor.clone()));
+        focus_editor.update(cx,|editor,cx|editor.focus(window,cx));
+    }
     fn open_chatter_appearance(&mut self,target:Option<crate::chatter_appearance::Target>,window:&mut Window,cx:&mut Context<Self>){
         self.settings=false;
         let editor=if let Some(editor)=&self.chatter_editor{editor.clone()}else{
@@ -567,6 +583,7 @@ impl Workbench {
                 }
                 return;
             }
+            if let PaneEvent::EditChatterNote(target)=event {this.open_chatter_note(target.clone(),window,cx);return;}
             if let PaneEvent::EditChatter(target)=event {this.open_chatter_appearance(Some(target.clone()),window,cx);return;}
             if let PaneEvent::OpenCommands(channel)=event {this.open_custom_commands(Some(channel.clone()),window,cx);return;}
             if let PaneEvent::SearchAll(query)=event {
@@ -637,7 +654,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {

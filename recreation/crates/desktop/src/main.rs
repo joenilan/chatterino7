@@ -11,6 +11,7 @@ mod rich_messages;
 mod attention;
 mod highlight_rules;
 mod chatter_appearance;
+mod chatter_notes;
 mod control;
 mod live;
 mod media;
@@ -109,6 +110,7 @@ enum PaneEvent {
     OpenAccount,
     OpenCommands(String),
     EditChatter(chatter_appearance::Target),
+    EditChatterNote(chatter_appearance::Target),
     SearchAll(String),
 }
 impl EventEmitter<PaneEvent> for ChannelPane {}
