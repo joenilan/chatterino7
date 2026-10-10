@@ -5,6 +5,15 @@ personal fork, not an upstream contribution or a released replacement.
 Selected product name: **Jawjack**, by Zombie Digital. Internal crate names
 remain stable while branding is rolled out.
 
+## Master feature coverage (2026-10-10)
+
+[FEATURE_COVERAGE.md](FEATURE_COVERAGE.md) is the current feature-by-feature
+register, covering the audited Chatterino7 source and newer official Twitch
+contracts. Its status definitions and delivery order supersede older phase lists
+below. Current Twitch rich messages (GIFs, Cheers, reward highlights and typed
+notices) follow acceptance of the published attention/font/status batch, reflecting
+the owner's latest priority. Existing unfinished parity remains tracked.
+
 ## Goal and scope
 
 Build a native Rust + GPUI Kit application Joe can use instead of Chatterino7,

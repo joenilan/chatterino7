@@ -1,60 +1,49 @@
 # Jawjack
 
-Jawjack by Zombie Digital is a native Rust + GPUI Kit Twitch workspace, built as Joe's Chatterino7
-replacement. Dark Studio styling, a custom Windows frame, and a channel-first
-layout. The original C++ application remains untouched.
+Jawjack by Zombie Digital is a native Rust + GPUI Kit Twitch client being built as
+Joe's Chatterino7 replacement. It combines dark Studio styling, a custom Windows
+frame and a compact channel-first layout. The original C++ application is untouched.
 
-## Workspace features
+## Chat and workspaces
 
-- Named workspace tabs: create, switch, rename, drag to reorder, close, and reopen the
-  recently closed workspace during the session.
-- Add Twitch channel names or channel URLs. Each workspace supports two
-  independently resizable channel splits. Drag a channel header toward the chat
-  area’s left/right/top/bottom edge to rearrange them, or onto a workspace tab to
-  move it there. Drop previews show placement; full or duplicate targets reject
-  the move without losing the source pane. Nested layouts beyond two panes remain
-  future work. A Windows run verified a top-edge drop and tab reordering while
-  preserving the active workspace and channel draft.
-- Optional workspace sidebar, closed by default, with a hamburger toggle that
-  remembers its state. Opening/closing slides smoothly, including mid-motion
-  reversal, and respects OS reduced-motion preferences. Tabs and channel controls
-  work without it.
-- Soft-wrapping Twitch composers with a 500-character message limit, ordinary
-  cut/copy/paste, undo/redo and retained drafts. Pasted line breaks become spaces.
-- Local saved tabs, active workspace, split sizes/orientation, sidebar, font size
-  and separate drafts for the same channel in different workspaces.
-- New live messages have bounded 260ms slide-and-fade entrances while following
-  the latest chat, starting on first row presentation. History reading, selection
-  and reduced motion suppress effects. Busy chat retains the newest 12 effects
-  rather than disabling all motion; unfocused visible chat can still animate.
-- Twitch username colors with readable dark-theme contrast and stable fallback
-  colors for accounts that have not selected one. Names are semibold while message
-  text retains ordinary selection and copy behavior.
-- Dark-only appearance controls with 12–24px transcript sizing.
-- Custom Workspace and View menus; keyboard shortcuts for frequent operations.
-- Model-backed transcript selection with right-click/Ctrl+C copying and verified
-  clipboard feedback, ready for live chat data.
-- Optional session-only native app control, documented in [APP_CONTROL.md](docs/APP_CONTROL.md).
+- Channel tabs with context menus, drag reordering and middle-click close confirmation.
+- Recursive resizable splits and tab groups: drag to an edge to split or to the
+  center/tab strip to combine. No artificial two-pane limit.
+- Named workspaces managed in a collapsible, animated sidebar. The titlebar
+  hamburger remembers whether it is open; there is no duplicate workspace tab bar.
+- Independent channel drafts and reply targets, including across workspaces.
+- Soft-wrapping composers with Twitch's 500-character message limit, ordinary
+  editing shortcuts and saved drafts. Pasted line breaks become spaces.
+- Live incoming chat with username colors, badges, animated Twitch/7TV emotes,
+  BTTV/FFZ catalogs, a searchable emote picker and keyboard emote completion.
+- Bounded slide-and-fade message entrances, visible-media animation and
+  reduced-motion behavior. Retained chat history is bounded.
+- Transcript selection, right-click copying with feedback, retained-message Find,
+  message actions, local chatter cards, replies and retained conversation views.
+- Live-only channel filtering and compact layouts down to 360×280. Normal startup
+  size is 1280×820; compact support does not force a small window.
+- Latest source adds unread/activity views, mention/word highlighting, font
+  shortcuts and pastel live/offline/unknown indicators. Windows verification of
+  this newest batch remains pending.
 
-## Current connection status
+This is still a development client. Full Chatterino7 parity, modern Twitch rich
+messages, moderation and additional providers are tracked in the
+[master feature plan](docs/FEATURE_COVERAGE.md). A listed plan is not a shipped feature.
 
-Twitch device-code sign-in is implemented using Jawjack’s public Client ID and the
-OS credential vault. It includes saved-account validation, cancellation, expiry,
-refresh-token rotation and local sign-out. Native Windows owner sign-in and
-authenticated channel subscriptions, automatic saved-login restoration after restart,
-and live incoming HutchMF messages were verified on Windows on 2026-10-09. No client secret
-is required or embedded.
+## Twitch connection
 
-Live text transport is implemented. Sending is enabled only for connected channels;
-failed or uncertain sends preserve the draft. Live receiving is verified; delivered
-sends remain unverified. Twitch inline images, wrapping and source-token copying were verified on Windows.
-The next implementation adds 7TV channel/global catalogs, zero-width overlays and
-shared-clock GIF/WebP animation, including when the chat window is unfocused.
-Windows verification confirmed loaded 7TV catalogs and visibly changing Twitch
-and 7TV emote poses. The specific DinoDance report and zero-width overlay
-appearance have not yet been individually verified. No synthetic chat is
-seeded. Emotes, moderation and Chatterino7 parity remain on [the roadmap](docs/PLAN.md). Planned multiplatform
-viewer and broadcaster workflows are in [MULTIPLATFORM.md](docs/MULTIPLATFORM.md).
+Device-code sign-in uses Jawjack's public Client ID and the OS credential vault.
+No client secret is embedded. Native Windows sign-in, saved-login restoration,
+authenticated incoming chat and animated Twitch/7TV media have been observed.
+DinoDance animation has also been observed in the picker.
+
+Sending is implemented with draft-preserving failure/uncertainty handling, but
+actual delivered sends remain unverified. Broader refresh/revocation recovery and
+moderation behavior still need real-use evidence. BTTV/FFZ catalog loading is
+observed; individual provider rendering coverage remains incomplete.
+
+See [account details](docs/TWITCH_ACCOUNT.md) and the dated
+[native evidence record](docs/VALIDATION.md) for precise limits.
 
 ## Build and run
 
@@ -65,13 +54,12 @@ CMake. GPUI Kit is pinned to 0.7.1. From this directory:
 cargo run -p chat-workbench --release --locked
 ```
 
-The built executable is `target/release/chat-workbench.exe` under this directory.
-Use ordinary builds and direct interaction with the real app for development.
-No CI/Actions or separate test-script workflow is required. Commits use `[skip ci]`.
-The native workspace compiles and links on Linux and Windows. Windows inspection
-confirmed the corrected transcript/composer layout and workspace restoration.
-Refresh rotation, interrupted authentication, sending and full daily-client behavior
-remain unverified.
+The Windows executable is `target/release/chat-workbench.exe` under this directory.
+The project has built on Linux and Windows; platform acceptance is recorded per
+revision. Build and directly interact with the actual app for development.
+Commits use `[skip ci]`; no CI/Actions or separate test-script workflow is required.
+Optional session-only native app control is described in
+[APP_CONTROL.md](docs/APP_CONTROL.md).
 
 ## Shortcuts
 
@@ -79,29 +67,33 @@ remain unverified.
 - Ctrl+W: close workspace
 - Ctrl+Shift+T: reopen recently closed workspace
 - Ctrl+Tab / Ctrl+Shift+Tab: next / previous workspace
+- Ctrl+PageDown / Ctrl+PageUp: next / previous channel tab
 - Ctrl+K: add channel
-- Transcript: Ctrl+A selects retained messages, Ctrl+C or Ctrl+Insert copies,
-  Escape clears selection; right-click copies too.
-- Composer: ordinary editing shortcuts; text wraps visually without inserting
-  message line breaks. Shift+Enter does not create a multiline Twitch message.
+- Ctrl+F: find retained messages; F3 / Shift+F3: next / previous match
+- Ctrl+Shift+M: activity; Ctrl+Shift+R: mark all read (latest source)
+- Ctrl+wheel or Ctrl+= / Ctrl+-: transcript font size; Ctrl+0: reset (latest source)
+- Transcript Ctrl+A selects retained messages; Ctrl+C, Ctrl+Insert or right-click
+  copies. Escape clears selection or dismisses the active interaction.
+- Composer uses ordinary editing shortcuts. Text wraps visually; Shift+Enter
+  does not create a multiline Twitch message.
 
 ## Local storage
 
 Windows settings are stored in `%LOCALAPPDATA%\ChatWorkbench\workspace.json`.
-A previous-file backup is kept before replacement. Drafts are plaintext local
-application data, not credentials. Invalid/unsupported settings files are left
-untouched and saving is disabled for that run, with an explanatory status.
-Closing a split preserves its draft for reopening in the same workspace.
-Recently closed workspace reopening is session-local; active tabs restore after
-relaunch. Twitch tokens use a separate OS-vault entry and never enter workspace.json.
+A previous-file backup is kept before replacement. Drafts and reply-target metadata
+are plaintext local application data, not credentials. Invalid or unsupported
+settings files are preserved and saving is disabled for that run with an explanation.
+Twitch tokens use a separate OS-vault entry and never enter workspace.json.
 
-Minimum window size is 1050×640. Automatic selection edge scrolling, full Unicode
-grapheme semantics, accessibility/IME review and full daily-client parity remain
-unfinished. State inspection is not proof of visual correctness or a native run.
+Workspaces, layouts, preferences and drafts restore after relaunch. Recently closed
+workspace reopening and unread counters are session-local. Closing a split preserves
+its draft for reopening in that workspace. Native QA may use an isolated profile.
 
-### In development: authenticated live text chat
+## Roadmap
 
-The Twitch account is wired to shared EventSub receiving and Helix sending.
-Owner authorization and channel readiness are verified; actual received/sent
-messages remain unverified. See [account details](docs/TWITCH_ACCOUNT.md).
-Tab closing now includes middle-click and a confirmation with the channel list.
+- [Complete feature coverage and delivery order](docs/FEATURE_COVERAGE.md)
+- [Architecture and design decisions](docs/PLAN.md)
+- [Multiplatform chat direction](docs/MULTIPLATFORM.md)
+
+Accessibility/IME, full Unicode selection, richer media and provider behavior,
+moderation, multiwindow workflows and daily-client parity remain active work.
