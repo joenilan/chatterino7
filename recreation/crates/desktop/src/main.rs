@@ -14,6 +14,7 @@ mod chatter_appearance;
 mod control;
 mod live;
 mod media;
+mod gif_frames;
 mod media_hover;
 mod catalog;
 mod community;

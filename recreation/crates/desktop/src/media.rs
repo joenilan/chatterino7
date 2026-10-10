@@ -236,6 +236,7 @@ impl MediaCache {
         self.used=self.used.wrapping_add(1);
         if let Some(Entry::Ready{used,..})=self.entries.get_mut(key){*used=self.used;}
     }
+    pub fn failure_label(&self,key:&EmoteKey)->Option<String>{match self.entries.get(key){Some(Entry::Failed(_,reason))=>Some(reason.label()),_=>None}}
     pub fn failed(&self, key: &EmoteKey) -> bool {
         matches!(self.entries.get(key), Some(Entry::Failed(at, _)) if at.elapsed() < Duration::from_secs(60))
     }
@@ -373,7 +374,7 @@ impl MediaCache {
                     // Large visible GIFs must not evict and redownload one another
                     // continuously. Reject excess animation for one cooldown; the
                     // renderer requests the bounded static variant instead.
-                    if key.id.starts_with("gif:") && key.animated && self.bytes + bytes > 48 * 1024 * 1024 {
+                    if key.id.starts_with("gif:") && key.animated && self.bytes + bytes > 40 * 1024 * 1024 {
                         self.entries.insert(key,Entry::Failed(Instant::now(), MediaFailure::CacheBudget));
                         changed=true;
                         continue;
@@ -439,7 +440,7 @@ fn download(
     }
     let rich_gif=key.id.starts_with("gif:");
     let max_wire: usize = if rich_gif { 12 * 1024 * 1024 } else { 2 * 1024 * 1024 };
-    let max_dimension = if rich_gif || key.id.starts_with("avatar:") { 512 } else { 256 };
+    let max_dimension = if rich_gif {1024} else if key.id.starts_with("avatar:") { 512 } else { 256 };
     let max_decoded = if rich_gif { 24 * 1024 * 1024 } else { 8 * 1024 * 1024 };
     if response
         .content_length()
@@ -458,10 +459,15 @@ fn download(
     let format = image::guess_format(&bytes).map_err(|_| MediaFailure::Format)?;
     let mut frames = Vec::new();
     let mut decoded = 0usize;
+    let mut rich_frames=crate::gif_frames::Frames::default();
     let mut push = |mut frame: image::Frame| -> Result<(), MediaFailure> {
         let (w, h) = frame.buffer().dimensions();
         if w == 0 || h == 0 || w > max_dimension || h > max_dimension {
             return Err(MediaFailure::Dimensions);
+        }
+        if rich_gif {
+            rich_frames.push(frame).map_err(|_|MediaFailure::FrameLimit)?;
+            return Ok(());
         }
         if frames.len() >= 120 { return Err(MediaFailure::FrameLimit); }
         decoded = decoded.checked_add(w as usize * h as usize * 4).ok_or(MediaFailure::DecodedLimit)?;
@@ -519,6 +525,11 @@ fn download(
         }
         _ => return Err(MediaFailure::Format),
     }
+    if rich_gif{
+        decoded=rich_frames.bytes;frames=rich_frames.frames;
+        if decoded>max_decoded{return Err(MediaFailure::DecodedLimit);}
+        for frame in &mut frames{for pixel in frame.buffer_mut().chunks_exact_mut(4){pixel.swap(0,2);}}
+    }
     if frames.is_empty() {
         return Err(MediaFailure::Decode);
     }
@@ -528,7 +539,7 @@ fn download(
     for index in 0..image.frame_count() {
         let delay = Duration::from(image.delay(index))
             .as_millis()
-            .clamp(20, 10_000) as u64;
+            .clamp(20, if rich_gif{6_000_000}else{10_000}) as u64;
         cycle_ms += delay;
         ends_ms.push(cycle_ms);
     }

@@ -8,15 +8,17 @@ use crate::{media::DecodedMedia,theme};
 pub enum Content {
     Hint(String),
     Emote {label:String,source:String,images:Vec<Arc<DecodedMedia>>},
+    Gif {label:String,source:String,images:Vec<Arc<DecodedMedia>>},
 }
 pub struct Card(pub Content);
 impl Render for Card {
     fn render(&mut self,window:&mut Window,_cx:&mut Context<Self>)->impl IntoElement{
         match &self.0 {
             Content::Hint(text)=>div().p_2().max_w(px(300.)).font_family("Segoe UI").text_color(rgb(theme::TEXT)).text_size(px(11.)).bg(rgb(theme::ELEVATED)).border_1().border_color(rgb(theme::BORDER)).rounded(px(5.)).child(text.clone()).into_any_element(),
-            Content::Emote{label,source,images}=>{
-                let width=(f32::from(window.viewport_size().width)-24.).clamp(80.,180.);
-                let height=(f32::from(window.viewport_size().height)-100.).clamp(48.,112.);
+            Content::Emote{label,source,images}|Content::Gif{label,source,images}=>{
+                let gif=matches!(&self.0,Content::Gif{..});
+                let width=(f32::from(window.viewport_size().width)-24.).clamp(80.,if gif{336.}else{180.});
+                let height=(f32::from(window.viewport_size().height)-100.).clamp(48.,if gif{224.}else{112.});
                 let layers=images.clone();
                 let preview=canvas(|bounds,_,_|bounds,move|bounds,_,window,cx|{
                     for image in &layers {

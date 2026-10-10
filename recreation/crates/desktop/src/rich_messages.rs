@@ -43,11 +43,18 @@ pub fn attachments(message:&Message,media:&mut MediaCache,cx:&mut App)->Option<A
     let cards=gifs.into_iter().enumerate().map(|(i,(id,url))|{
         let mut key=EmoteKey::gif(id,url,!cx.reduce_motion());
         let mut image=key.as_ref().and_then(|k|media.get(k,cx));
+        let animation_failure=key.as_ref().and_then(|k|media.failure_label(k));
         if key.as_ref().is_some_and(|k|k.animated&&media.failed(k)){
             if let Some(k)=key.as_mut(){k.animated=false;image=media.get(k,cx);}
         }
         let label=if key.is_none(){"GIF unavailable · unsupported source"}else if key.as_ref().is_some_and(|k|media.failed(k)){"GIF unavailable · size or download limit"}else{"Loading GIF…"};
-        div().id(SharedString::from(format!("gif-{}-{i}",message.id))).w(px(160.)).max_w_full().h(px(112.)).flex_shrink_0().overflow_hidden().rounded(px(4.)).border_1().border_color(rgb(theme::BORDER)).bg(rgb(theme::ELEVATED))
+        let status=if key.is_none(){"GIF unavailable · unsupported source".to_owned()}
+            else if cx.reduce_motion(){"Animation paused · reduced motion".to_owned()}
+            else if let Some(reason)=animation_failure{format!("Static fallback · {}",reason.replace('_'," "))}
+            else if image.as_ref().is_some_and(|i|i.image.frame_count()==1){"Source contains one decoded frame".into()}
+            else{"Twitch GIF · GIPHY".into()};
+        let hover=crate::media_hover::Content::Gif{label:"Chat GIF".into(),source:status.clone(),images:image.iter().cloned().collect()};
+        div().id(SharedString::from(format!("gif-{}-{i}",message.id))).tooltip(move|_,cx|cx.new(|_|crate::media_hover::Card(hover.clone())).into()).w(px(160.)).max_w_full().h(px(112.)).flex_shrink_0().overflow_hidden().rounded(px(4.)).border_1().border_color(rgb(theme::BORDER)).bg(rgb(theme::ELEVATED))
             .child(if let Some(image)=image{
                 canvas(|bounds,_,_|bounds,move|bounds,_,window,cx|{
                     let clip=bounds.intersect(&window.content_mask().bounds);
