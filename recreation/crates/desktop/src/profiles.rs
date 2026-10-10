@@ -13,7 +13,7 @@ impl Profiles {
     }
     pub fn get(&self,id:&str)->Option<&Profile>{self.values.get(id)}
     pub fn request(&mut self,id:&str){
-        if id.is_empty()||id.len()>32||!id.bytes().all(|b|b.is_ascii_digit())||self.requested.get(id).is_some_and(|at|at.elapsed()<Duration::from_secs(600)){return;}
+        if id.is_empty()||id.len()>255||id.chars().any(char::is_control)||self.requested.get(id).is_some_and(|at|at.elapsed()<Duration::from_secs(600)){return;}
         let Some(identity)=&self.identity else{return;};
         if self.requested.len()>=128 {if let Some(old)=self.requested.iter().min_by_key(|(_,at)|*at).map(|(id,_)|id.clone()){self.requested.remove(&old);self.values.remove(&old);}}
         if self.tx.try_send(Job{epoch:self.epoch,identity:identity.clone(),id:id.into()}).is_ok(){self.requested.insert(id.into(),Instant::now());}

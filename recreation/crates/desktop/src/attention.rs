@@ -33,7 +33,7 @@ impl Attention {
         let matches=|text:&str|{let folded=text.to_lowercase();self.identity.as_ref().is_some_and(|(_,login)|crate::highlight_rules::normalized_match(&folded,login,true))||self.terms.iter().any(|term|crate::highlight_rules::normalized_match(&folded,term,true))};
         let mut text=String::new();
         for fragment in &message.fragments {
-            match fragment {Fragment::Text(part)=>text.push_str(part),_=>{if matches(&text){return Some(0);}text.clear();}}
+            match fragment {Fragment::Text(part)|Fragment::Mention{label:part,..}=>text.push_str(part),_=>{if matches(&text){return Some(0);}text.clear();}}
         }
         matches(&text).then_some(0)
     }

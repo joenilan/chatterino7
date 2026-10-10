@@ -64,7 +64,7 @@ pub fn normalized_match(text:&str,needle:&str,whole:bool)->bool{
 pub fn first_color(rules:&[Rule],message:&chat_core::Message,channel:&str)->Option<usize>{
     if message.deleted||rules.is_empty(){return None;}
     let mut segments=Vec::new();let mut text=String::new();
-    for fragment in &message.fragments{if let chat_core::Fragment::Text(part)=fragment{text.push_str(part);}else if !text.is_empty(){segments.push(std::mem::take(&mut text));}}
+    for fragment in &message.fragments{if let chat_core::Fragment::Text(part)|chat_core::Fragment::Mention{label:part,..}=fragment{text.push_str(part);}else if !text.is_empty(){segments.push(std::mem::take(&mut text));}}
     if !text.is_empty(){segments.push(text);}
     let folded=if rules.iter().any(|r|r.enabled&&!r.author&&!r.case_sensitive){segments.iter().map(|s|s.to_lowercase()).collect::<Vec<_>>()}else{Vec::new()};
     rules.iter().find(|rule|{

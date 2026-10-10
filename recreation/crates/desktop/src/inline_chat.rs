@@ -376,6 +376,7 @@ impl Element for InlineChat {
                 }else if let (Some(text),Some(interaction))=(&piece.text,&self.interaction){
                     let mut targets=vec![(0..interaction.author_len,"Ctrl+click to inspect this chatter".to_owned())];
                     targets.extend(interaction.links.iter().map(|link|(link.range.clone(),"Ctrl+click to open link · Right-click for actions".into())));
+            targets.extend(interaction.mentions.iter().map(|mention|(mention.range.clone(),"Ctrl+click to inspect mentioned chatter".into())));
                     for (target,(range,hint)) in targets.into_iter().enumerate(){
                         let a=range.start.max(piece.range.start);let b=range.end.min(piece.range.end);if a>=b{continue;}
                         let left=text.x_for_index(a-piece.range.start);let right=text.x_for_index(b-piece.range.start);
@@ -401,10 +402,10 @@ impl Element for InlineChat {
         let hitbox=&mut state.hitbox;
         let selected = self.selection.borrow().range_for(self.row, &self.text);
         if let Some(interaction)=&self.interaction{
-            for piece in &self.layout.borrow().pieces{if let Some(text)=&piece.text{for link in &interaction.links{
-                let a=link.range.start.max(piece.range.start);let b=link.range.end.min(piece.range.end);
+            for piece in &self.layout.borrow().pieces{if let Some(text)=&piece.text{for (range,color) in interaction.links.iter().map(|link|(&link.range,0x91C7E8)).chain(interaction.mentions.iter().map(|mention|(&mention.range,0xB6A9E6))){
+                let a=range.start.max(piece.range.start);let b=range.end.min(piece.range.end);
                 if a<b{let left=text.x_for_index(a-piece.range.start);let right=text.x_for_index(b-piece.range.start);
-                    window.paint_quad(fill(Bounds::new(bounds.origin+piece.bounds.origin+point(left,piece.bounds.size.height-px(3.)),size((right-left).max(px(1.)),px(1.))),rgb(0x91C7E8)));}
+                    window.paint_quad(fill(Bounds::new(bounds.origin+piece.bounds.origin+point(left,piece.bounds.size.height-px(3.)),size((right-left).max(px(1.)),px(1.))),rgb(color)));}
             }}}
             if hitbox.is_hovered(window)&&window.modifiers().control&&self.layout.borrow().exact_text_hit(window.mouse_position()).is_some_and(|b|interaction.target(b).is_some()){window.set_cursor_style(CursorStyle::PointingHand,hitbox);}
         }

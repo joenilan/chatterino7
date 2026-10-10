@@ -39,13 +39,28 @@ pub fn message_links(message:&chat_core::Message)->Vec<Link>{
     result
 }
 #[derive(Clone)]
+pub struct MentionTarget {pub range:Range<usize>,pub user_id:String}
+pub fn message_mentions(message:&chat_core::Message)->Vec<MentionTarget>{
+    if message.deleted{return Vec::new();}
+    let mut offset=message.author_label().len()+2;let mut result=Vec::new();
+    for fragment in &message.fragments{
+        let end=offset+fragment.copy_text().len();
+        if let chat_core::Fragment::Mention{user_id,..}=fragment{
+            if offset<end {result.push(MentionTarget{range:offset..end,user_id:user_id.clone()});}
+        }
+        offset=end;
+    }
+    result
+}
+#[derive(Clone)]
 pub struct Press{pub message:String,pub action:Action,pub position:Point<Pixels>}
 pub type PressState=std::rc::Rc<std::cell::RefCell<Option<Press>>>;
 #[derive(Clone)]
-pub struct Interaction{pub owner:WeakEntity<ChannelPane>,pub message:String,pub author_len:usize,pub links:Vec<Link>,pub pressed:PressState}
+pub struct Interaction{pub owner:WeakEntity<ChannelPane>,pub message:String,pub author_len:usize,pub links:Vec<Link>,pub mentions:Vec<MentionTarget>,pub pressed:PressState}
 impl Interaction{
     pub fn target(&self,byte:usize)->Option<Action>{
         self.links.iter().find(|link|link.range.contains(&byte)).map(|link|Action::OpenLink(link.url.clone()))
+            .or_else(||self.mentions.iter().find(|mention|mention.range.contains(&byte)).map(|mention|Action::InspectMention(mention.user_id.clone())))
             .or_else(||(byte<self.author_len).then_some(Action::Inspect))
     }
     pub fn down(&self,event:&MouseDownEvent,byte:Option<usize>,selection:&chat_core::selection::Selection)->bool{
@@ -62,7 +77,7 @@ impl Interaction{
     }
 }
 #[derive(Clone,PartialEq)]
-pub enum Action{CopyLine,CopyBody,CopyName,CopyId,Inspect,Customize,SearchAuthor,Mention,Reply,Thread,Profile,OpenLink(String),CopyLink(String)}
+pub enum Action{CopyLine,CopyBody,CopyName,CopyId,Inspect,InspectMention(String),Customize,SearchAuthor,Mention,Reply,Thread,Profile,OpenLink(String),CopyLink(String)}
 fn copy(text:String,window:&mut Window,cx:&mut App){
     cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
     let verified=cx.read_from_clipboard().and_then(|item|item.text()).as_deref()==Some(&text);
@@ -78,6 +93,16 @@ pub fn menu(owner:WeakEntity<ChannelPane>,id:String,mut menu:PopupMenu,cx:&mut C
         if matches!(action,Action::Mention|Action::Profile|Action::CopyName)&&message.login.is_none(){continue;}
         let owner=owner.clone();let id=id.clone();
         menu=menu.item(PopupMenuItem::new(label).on_click(move|_,w,cx|{let _=owner.update(cx,|p,cx|p.message_action(&id,action.clone(),w,cx));}));
+    }
+    if !message.deleted{
+        let mut seen=std::collections::HashSet::new();
+        for fragment in message.fragments.iter().filter(|f|matches!(f,chat_core::Fragment::Mention{..})).take(8){
+            if let chat_core::Fragment::Mention{user_id,login,..}=fragment{
+                if !seen.insert(user_id){continue;}
+                let owner=owner.clone();let id=id.clone();let user_id=user_id.clone();
+                menu=menu.item(PopupMenuItem::new(format!("Inspect mentioned @{login}")).on_click(move|_,w,cx|{let _=owner.update(cx,|p,cx|p.message_action(&id,Action::InspectMention(user_id.clone()),w,cx));}));
+            }
+        }
     }
     for link in message_links(&message).into_iter().take(3){
         let host=reqwest::Url::parse(&link.url).ok().and_then(|u|u.host_str().map(str::to_owned)).unwrap_or_default();
@@ -108,10 +133,18 @@ impl ChannelPane{
                 if opening{cx.open_url(&url);}else{copy(url,window,cx);}
             }
             Action::Mention=>if let Some(login)=message.login{self.insert_mention(&login,window,cx)},
-            Action::Inspect=>{
-                if message.user_id.is_empty(){return;}
-                let clicked_name=message.author_label().to_owned();let clicked_login=message.login.clone();
-                let user_id=message.user_id;self.catalog.borrow_mut().profiles.request(&user_id);let owner=cx.entity().downgrade();
+            Action::Inspect=>self.inspect_chatter(message.user_id.clone(),message.author_label().to_owned(),message.login.clone(),window,cx),
+            Action::InspectMention(user_id)=>{
+                if message.deleted{return;}
+                if let Some(chat_core::Fragment::Mention{user_id,login,display_name,..})=message.fragments.iter().find(|f|matches!(f,chat_core::Fragment::Mention{user_id:id,..} if id==&user_id)){
+                    self.inspect_chatter(user_id.clone(),display_name.clone(),Some(login.clone()),window,cx);
+                }
+            }
+        }
+    }
+    fn inspect_chatter(&mut self,user_id:String,clicked_name:String,clicked_login:Option<String>,window:&mut Window,cx:&mut Context<Self>){
+        if user_id.is_empty(){return;}
+        self.catalog.borrow_mut().profiles.request(&user_id);let owner=cx.entity().downgrade();
                 window.open_dialog(cx,move|dialog,window,cx|{
                     let current=owner.upgrade().map(|pane|{
                         let pane=pane.read(cx);let timeline=pane.timeline.borrow();
@@ -166,8 +199,6 @@ impl ChannelPane{
                             .child(Button::new("chatter-search").small().label("Search messages").tooltip("Find this chatter in retained channel history").on_click(move|_,w,cx|{w.close_dialog(cx);let _=search_owner.update(cx,|p,cx|p.search_for_author(&search_id,w,cx));}))
                             .child(Button::new("chatter-copy-id").small().label("Copy ID").on_click(move|_,w,cx|copy(id.clone(),w,cx)))))
                 });
-            }
-        }
     }
     fn insert_mention(&mut self,login:&str,window:&mut Window,cx:&mut Context<Self>){
         let input=self.draft.read(cx);let value=input.value().to_string();let range=input.selected_range();

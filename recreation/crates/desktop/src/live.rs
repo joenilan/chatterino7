@@ -564,7 +564,7 @@ fn deliver(
             login: chat_core::twitch_login(&text("chatter_user_login")),
             replyable: v["payload"]["subscription"]["type"]=="channel.chat.message" && e["source_broadcaster_user_id"].as_str().is_none_or(|source|source==id),
             reply: parse_reply(&e["reply"]),
-            mentions: e["message"]["fragments"].as_array().into_iter().flatten().filter(|f|f["type"]=="mention").filter_map(|f|f["mention"]["user_id"].as_str()).filter(|s|!s.is_empty()&&s.len()<=128).take(64).map(str::to_owned).collect(),
+            mentions: e["message"]["fragments"].as_array().into_iter().flatten().filter(|f|f["type"]=="mention").filter_map(|f|f["mention"]["user_id"].as_str()).filter(|s|!s.is_empty()&&s.len()<=255&&!s.chars().any(char::is_control)).take(64).map(str::to_owned).collect(),
             name_color: e["color"].as_str().and_then(|s| s.strip_prefix('#'))
                 .filter(|s| s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit()))
                 .and_then(|s| u32::from_str_radix(s, 16).ok()),
@@ -620,7 +620,16 @@ fn twitch_fragments(message: &Value) -> Vec<Fragment> {
                 let c=&fragment["cheermote"];
                 return Fragment::Cheer {prefix:c["prefix"].as_str().unwrap_or("").chars().take(64).collect(),bits:c["bits"].as_u64().unwrap_or(0),tier:c["tier"].as_u64().unwrap_or(0),label:if text.is_empty(){format!("{} Bits",c["bits"].as_u64().unwrap_or(0))}else{text},asset:None};
             }
-            "text" | "mention" => return Fragment::Text(text),
+            "mention" => {
+                let mention=&fragment["mention"];
+                let id=mention["user_id"].as_str().filter(|id|!id.is_empty()&&id.len()<=255&&!id.chars().any(char::is_control));
+                let login=mention["user_login"].as_str().and_then(chat_core::twitch_login);
+                let name=mention["user_name"].as_str().filter(|name|!name.is_empty()&&name.len()<=400&&!name.chars().any(char::is_control));
+                if let (Some(id),Some(login),Some(name))=(id,login,name){
+                    return Fragment::Mention{user_id:id.into(),login,display_name:name.into(),label:text};
+                }
+            }
+            "text" => return Fragment::Text(text),
             kind => return Fragment::Unknown {kind:kind.chars().take(64).collect(),label:if text.is_empty(){"[Unsupported content]".into()}else{text}},
         }
         Fragment::Text(text)

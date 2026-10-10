@@ -570,7 +570,7 @@ impl Render for ChannelPane {
                             let rich_heading=rich_messages::heading(message);
                             let rich_attachments=rich_messages::attachments(message,&mut media.borrow_mut(),cx);
                             let reply_line=replies::row_context(message,&messages,menu_owner.clone());
-                            let interaction=message_actions::Interaction{owner:menu_owner.clone(),message:message.id.clone(),author_len:message.author_label().len(),links:message_actions::message_links(message),pressed:link_press.clone()};
+                            let interaction=message_actions::Interaction{owner:menu_owner.clone(),message:message.id.clone(),author_len:message.author_label().len(),links:message_actions::message_links(message),mentions:message_actions::message_mentions(message),pressed:link_press.clone()};
                             let presented=presented_row.clone();let eligible=read_eligible.clone();
                             let matches=search_hits.get(&row).cloned().unwrap_or_default();
                             let progress = entrances.iter().find(|entry| entry.row == row)

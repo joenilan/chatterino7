@@ -27,6 +27,8 @@ impl ChatText {
         let mut highlights=Vec::new();
         if let Some((name,color))=&self.author{highlights.push((0..name.len(),HighlightStyle{color:Some(rgb(color.unwrap_or(crate::theme::MUTED)).into()),font_weight:Some(FontWeight::SEMIBOLD),..Default::default()}));}
         highlights.extend(interaction.links.iter().map(|link|(link.range.clone(),HighlightStyle{color:Some(rgb(0x91C7E8).into()),underline:Some(UnderlineStyle{thickness:px(1.),color:None,wavy:false}),..Default::default()})));
+        highlights.extend(interaction.mentions.iter().map(|mention|(mention.range.clone(),HighlightStyle{underline:Some(UnderlineStyle{thickness:px(1.),color:Some(rgb(0xB6A9E6).into()),wavy:false}),..Default::default()})));
+        highlights.sort_by_key(|(range,_)|range.start);
         self.styled=StyledText::new(self.text.clone()).with_highlights(highlights);self.interaction=Some(interaction);self
     }
     pub fn with_author(mut self, name: &str, color: Option<u32>) -> Self {
@@ -133,6 +135,7 @@ impl Element for ChatText {
         if !self.selection.borrow().dragging {if let Some(interaction)=&self.interaction{
             let mut targets=vec![(0..interaction.author_len,"Ctrl+click to inspect this chatter")];
             targets.extend(interaction.links.iter().map(|link|(link.range.clone(),"Ctrl+click to open link · Right-click for actions")));
+            targets.extend(interaction.mentions.iter().map(|mention|(mention.range.clone(),"Ctrl+click to inspect mentioned chatter")));
             for (target,(range,hint)) in targets.into_iter().enumerate(){
                 let mut boxes:Vec<Bounds<Pixels>>=Vec::new();
                 let Some(target_text)=self.text.get(range.clone()) else{continue;};

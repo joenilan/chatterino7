@@ -13,6 +13,8 @@ pub struct EmoteAsset {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Fragment {
     Text(String),
+    /// Provider-authored identity; label retains the exact source text.
+    Mention { user_id: String, login: String, display_name: String, label: String },
     Gif { id: String, url: String, label: String },
     Cheer { prefix: String, bits: u64, tier: u64, label: String, asset: Option<EmoteAsset> },
     Unknown { kind: String, label: String },
@@ -29,7 +31,7 @@ impl Fragment {
     pub fn copy_text(&self) -> &str {
         match self {
             Self::Text(text) => text,
-            Self::Emote { label, .. } | Self::Gif { label, .. } | Self::Cheer { label, .. } | Self::Unknown { label, .. } => label,
+            Self::Mention { label, .. } | Self::Emote { label, .. } | Self::Gif { label, .. } | Self::Cheer { label, .. } | Self::Unknown { label, .. } => label,
         }
     }
 }
