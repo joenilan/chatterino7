@@ -163,3 +163,14 @@ turns an oversized result into a small identity-matched error response, which th
 client consumes normally. This prevents the old 16 KiB shared limit from leaving
 a successful inspection response unresolved and blocking later calls. Timeouts
 and identity mismatches still require reconciliation; mutations are never replayed.
+
+### Atomic pointer gestures (2026-10-10)
+
+Use `{"method":"drag","from":{"x":100,"y":48},"to":{"x":600,"y":48}}`
+for drag-and-drop. This dispatches down, interpolated moves, and up in one call,
+refreshing hit testing between events. It returns `released:true` and current
+workspace state. Do not leave a synthetic down held while taking screenshots or
+waiting for another tool call; that can overlap the owner's physical mouse.
+Native/control pointer ownership is recorded at down and checked at release.
+A move with no left button, or input from the other source, cancels the active
+layout drag. Hover alone must not commit a layout operation.

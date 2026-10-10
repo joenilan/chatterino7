@@ -88,6 +88,38 @@ impl Dock {
             Self::Split{children,..}=>children.iter_mut().any(|c|c.tabify(target,name.clone())),_=>false,
         }
     }
+    pub fn group(&self, name: &str) -> Option<Vec<String>> {
+        match self {
+            Self::Leaf(n) if n == name => Some(vec![n.clone()]),
+            Self::Deck {channels, ..} if channels.iter().any(|n| n == name) => Some(channels.clone()),
+            Self::Split {children, ..} => children.iter().find_map(|c| c.group(name)),
+            _ => None,
+        }
+    }
+    pub fn shift_tab(&mut self, name: &str, right: bool) -> bool {
+        match self {
+            Self::Deck {channels, ..} if channels.iter().any(|n| n == name) => {
+                let from = channels.iter().position(|n| n == name).unwrap();
+                let to = if right { (from + 1).min(channels.len() - 1) } else { from.saturating_sub(1) };
+                channels.swap(from, to); true
+            }
+            Self::Split {children, ..} => children.iter_mut().any(|c| c.shift_tab(name, right)),
+            _ => false,
+        }
+    }
+    pub fn reorder_before(&mut self, name: &str, before: Option<&str>) -> bool {
+        match self {
+            Self::Deck {channels, ..} if channels.iter().any(|n| n == name) => {
+                if before == Some(name) { return true; }
+                let from = channels.iter().position(|n| n == name).unwrap();
+                let item = channels.remove(from);
+                let to = before.and_then(|b| channels.iter().position(|n| n == b)).unwrap_or(channels.len());
+                channels.insert(to, item); true
+            }
+            Self::Split {children, ..} => children.iter_mut().any(|c| c.reorder_before(name, before)),
+            _ => false,
+        }
+    }
     pub fn minimum(&self)->(f32,f32) {
         match self {
             Self::Leaf(_)|Self::Deck{..}=>(240.,212.),

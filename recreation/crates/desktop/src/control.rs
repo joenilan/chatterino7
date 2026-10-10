@@ -246,6 +246,28 @@ pub fn dispatch(
             }
             Ok(json!({"dispatched_characters":text.chars().count()}))
         }
+        "drag" => {
+            let from = request.get("from").ok_or("Missing from coordinates")?;
+            let to = request.get("to").ok_or("Missing to coordinates")?;
+            let start=point(px(number(from,"x",16384.)?),px(number(from,"y",16384.)?));
+            let end=point(px(number(to,"x",16384.)?),px(number(to,"y",16384.)?));
+            let bounds=Bounds::new(Point::default(),window.viewport_size());
+            if !bounds.contains(&start)||!bounds.contains(&end){return Err("Drag endpoints must be inside the client area".into());}
+            // One synchronous gesture: never leave a button held between tool calls.
+            // Refresh hit testing after each frame without allowing unrelated native events in.
+            view.update(cx,|view,_|view.control_pointer(true));
+            window.dispatch_event(MouseDownEvent{position:start,button:MouseButton::Left,modifiers:Modifiers::default(),click_count:1,first_mouse:false}.to_platform_input(),cx);
+            window.draw(cx).clear(cx);
+            for step in 1..=8 {
+                let position=start+(end-start)*(step as f32/8.);
+                window.dispatch_event(MouseMoveEvent{position,pressed_button:Some(MouseButton::Left),modifiers:Modifiers::default()}.to_platform_input(),cx);
+                window.draw(cx).clear(cx);
+            }
+            window.dispatch_event(MouseUpEvent{position:end,button:MouseButton::Left,modifiers:Modifiers::default(),click_count:1}.to_platform_input(),cx);
+            cx.stop_active_drag(window);
+            view.update(cx,|view,_|view.control_pointer(false));
+            Ok(json!({"dispatched":true,"released":true,"workspace":view.read(cx).inspection(cx)}))
+        }
         "pointer" => {
             let position = point(
                 px(number(request, "x", 16384.)?),
@@ -338,7 +360,7 @@ pub fn dispatch(
             Ok(json!({"requested":true}))
         }
         _ => Err(
-            "Unknown method; supported: inspect, focus, key, text, pointer, scroll, resize".into(),
+            "Unknown method; supported: inspect, focus, key, text, pointer, drag, scroll, resize".into(),
         ),
     }
 }

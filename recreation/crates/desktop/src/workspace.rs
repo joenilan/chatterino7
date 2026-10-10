@@ -23,6 +23,8 @@ gpui_kit::actions!(
         ReopenTab,
         NextTab,
         PreviousTab,
+        NextChannel,
+        PreviousChannel,
         AddChannel,
         RenameWorkspace,
         MoveTabLeft,
@@ -42,6 +44,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-shift-t", ReopenTab, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-tab", NextTab, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-shift-tab", PreviousTab, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-pagedown", NextChannel, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-pageup", PreviousChannel, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-k", AddChannel, Some("ChatWorkspace")),
     ]);
 }
@@ -96,10 +100,13 @@ pub struct Workbench {
     drop_edge: Option<DropEdge>,
     drop_target: Option<String>,
     dock_bounds: std::rc::Rc<std::cell::RefCell<BTreeMap<String,Bounds<Pixels>>>>,
+    strip_bounds: std::rc::Rc<std::cell::RefCell<BTreeMap<String,Bounds<Pixels>>>>,
+    tab_bounds: std::rc::Rc<std::cell::RefCell<BTreeMap<String,Bounds<Pixels>>>>,
     last_drop: Option<Value>,
     release_position: Option<Point<Pixels>>,
     control_pointer_active: bool,
     release_from_control: bool,
+    pointer_owner: Option<bool>,
     control_enabled: bool,
     tabs: Vec<WorkspaceTab>,
     closed_tabs: Vec<WorkspaceTab>,
@@ -110,6 +117,7 @@ pub struct Workbench {
     adding: bool,
     renaming: bool,
     add_target: Option<String>,
+    selected_channel: Option<String>,
     add_error: Option<String>,
     sidebar: bool,
     settings: bool,
@@ -162,7 +170,7 @@ impl Workbench {
     }
     pub fn media_inspection(&self) -> Value { json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()}) }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"last_drop":self.last_drop,"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>()})
+        json!({"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>()})
     }
     pub fn panes(&self) -> Vec<Entity<ChannelPane>> {
         self.tabs
@@ -211,10 +219,13 @@ impl Workbench {
             drop_edge: None,
             drop_target: None,
             dock_bounds: Default::default(),
+            strip_bounds: Default::default(),
+            tab_bounds: Default::default(),
             last_drop: None,
             release_position: None,
             control_pointer_active: false,
             release_from_control: false,
+            pointer_owner: None,
             control_enabled,
             tabs: vec![],
             closed_tabs: vec![],
@@ -228,6 +239,7 @@ impl Workbench {
             adding: false,
             renaming: false,
             add_target: None,
+            selected_channel: None,
             add_error: None,
             sidebar: state["sidebar"].as_bool().unwrap_or(false),
             settings: false,
@@ -750,42 +762,48 @@ impl Workbench {
         self.schedule_save(cx);
         cx.notify();
     }
-    fn drop_at_pointer(&mut self,drag:&DraggedChannel,tab_id:u64,window:&mut Window,cx:&mut Context<Self>){
-        let Some(position)=self.release_position.take() else{return;};
-        let target=self.dock_bounds.borrow().iter().find(|(_,bounds)|bounds.contains(&position)).map(|(name,bounds)|(name.clone(),*bounds));
-        let Some((name,bounds))=target else{return;};
-        let x=f32::from(position.x-bounds.origin.x)/f32::from(bounds.size.width);
-        let y=f32::from(position.y-bounds.origin.y)/f32::from(bounds.size.height);
-        let edge=if x<0.35{DropEdge::Left}else if x>0.65{DropEdge::Right}else if y<0.35{DropEdge::Top}else if y>0.65{DropEdge::Bottom}else{DropEdge::Center};
-        self.last_drop=Some(json!({"input":if self.release_from_control{"local-control"}else{"native-window"},"source":drag.name,"target":name,"edge":edge.label(),"x":f32::from(position.x),"y":f32::from(position.y)}));
-        self.drop_target=Some(name);self.move_pane(drag,tab_id,Some(edge),window,cx);
+    fn drop_location(&self, position: Point<Pixels>) -> Option<(String, DropEdge, Option<String>)> {
+        // Tab strips are dedicated merge/reorder targets, including wrapped rows.
+        // The same resolver drives hover feedback and release behavior.
+        if let Some((name, strip)) = self.strip_bounds.borrow().iter().find(|(_, b)| b.contains(&position)) {
+            let mut tabs = self.tab_bounds.borrow().iter()
+                .filter(|(_, b)| strip.contains(&b.origin))
+                .map(|(n,b)| (n.clone(), *b)).collect::<Vec<_>>();
+            tabs.sort_by(|(_,a),(_,b)| f32::from(a.origin.y).total_cmp(&f32::from(b.origin.y))
+                .then(f32::from(a.origin.x).total_cmp(&f32::from(b.origin.x))));
+            let before = tabs.iter().find(|(_,b)| position.y < b.origin.y
+                || (position.y < b.origin.y + b.size.height && position.x < b.origin.x + b.size.width / 2.))
+                .map(|(n,_)| n.clone());
+            return Some((name.clone(), DropEdge::Center, before));
+        }
+        let (name, bounds) = self.dock_bounds.borrow().iter()
+            .find(|(_, b)| b.contains(&position)).map(|(n,b)| (n.clone(), *b))?;
+        let x = f32::from(position.x - bounds.origin.x) / f32::from(bounds.size.width);
+        let y = f32::from(position.y - bounds.origin.y) / f32::from(bounds.size.height);
+        // Keep generous central space for merging; narrow edges are for splits.
+        let edge = if x < 0.22 { DropEdge::Left } else if x > 0.78 { DropEdge::Right }
+            else if y < 0.22 { DropEdge::Top } else if y > 0.78 { DropEdge::Bottom }
+            else { DropEdge::Center };
+        Some((name, edge, None))
+    }
+    fn drop_at_pointer(&mut self, drag: &DraggedChannel, tab_id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(position) = self.release_position.take() else { return; };
+        let Some((name, edge, before)) = self.drop_location(position) else { return; };
+        if before.as_deref() == Some(drag.name.as_str()) { self.drop_edge = None; self.drop_target = None; cx.notify(); return; }
+        self.last_drop = Some(json!({"input":if self.release_from_control{"local-control"}else{"native-window"},"source":drag.name,"target":name,"edge":edge.label(),"x":f32::from(position.x),"y":f32::from(position.y)}));
+        self.drop_target = Some(name);
+        self.move_pane(drag, tab_id, Some(edge), window, cx);
+        if edge == DropEdge::Center {
+            if let Some(dock) = self.tabs[self.active].dock.as_mut() { dock.reorder_before(&drag.name, before.as_deref()); }
+            self.schedule_save(cx);
+        }
     }
     fn track_drop(&mut self, event: &DragMoveEvent<DraggedChannel>, cx: &mut Context<Self>) {
-        let bounds = event.bounds;
-        let position = event.event.position;
-        let edge = if bounds.contains(&position)
-            && bounds.size.width > px(0.)
-            && bounds.size.height > px(0.)
-        {
-            let x = f32::from(position.x - bounds.origin.x) / f32::from(bounds.size.width);
-            let y = f32::from(position.y - bounds.origin.y) / f32::from(bounds.size.height);
-            if x < 0.35 {
-                Some(DropEdge::Left)
-            } else if x > 0.65 {
-                Some(DropEdge::Right)
-            } else if y < 0.35 {
-                Some(DropEdge::Top)
-            } else if y > 0.65 {
-                Some(DropEdge::Bottom)
-            } else {
-                Some(DropEdge::Center)
-            }
-        } else {
-            None
-        };
-        if self.drop_edge != edge {
-            self.drop_edge = edge;
-            cx.notify();
+        let location = self.drop_location(event.event.position);
+        let target = location.as_ref().map(|(name,_,_)| name.clone());
+        let edge = location.map(|(_,edge,_)| edge);
+        if self.drop_edge != edge || self.drop_target != target {
+            self.drop_edge = edge; self.drop_target = target; cx.notify();
         }
     }
     fn drop_preview(edge: DropEdge) -> AnyElement {
@@ -850,6 +868,28 @@ impl Workbench {
         self.schedule_save(cx);
         cx.notify();
     }
+    fn cycle_channel(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let focused = self.visible_panes(cx).into_iter().find(|p| {
+            let p = p.read(cx);
+            p.focus.contains_focused(window,cx) || p.draft.read(cx).focus_handle(cx).is_focused(window)
+        }).map(|p|p.read(cx).name.to_string());
+        let Some(dock) = &self.tabs[self.active].dock else { return; };
+        let mut active = Vec::new(); dock.active_names(&mut active);
+        let current = focused.or_else(|| self.selected_channel.clone().filter(|n| active.contains(n))).or_else(||active.first().cloned());
+        let Some(current) = current else { return; };
+        let channels = dock.group(&current).unwrap_or_default().into_iter()
+            .filter(|n| !self.live_channels || n == &current || self.streams.get(n) != Some(false)).collect::<Vec<_>>();
+        if channels.len() < 2 { return; }
+        let index = channels.iter().position(|n|n == &current).unwrap_or(0);
+        let index = if forward {(index + 1) % channels.len()} else {(index + channels.len() - 1) % channels.len()};
+        let channel = channels[index].clone();
+        if let Some(dock) = &mut self.tabs[self.active].dock { dock.select(&channel); }
+        self.selected_channel = Some(channel.clone());
+        if let Some(pane) = self.tabs[self.active].panes.iter().find(|p|p.read(cx).name.as_ref()==channel) {
+            pane.read(cx).draft.clone().update(cx,|input,cx|input.focus(window,cx));
+        }
+        self.schedule_save(cx); cx.notify();
+    }
     fn confirm_close_channel(&mut self,name:String,window:&mut Window,cx:&mut Context<Self>){
         if self.close_channel_pending{return;}
         let Some(pane)=self.tabs[self.active].panes.iter().find(|p|p.read(cx).name.as_ref()==name).cloned()else{return;};
@@ -868,29 +908,35 @@ impl Workbench {
             Dock::Leaf(name)|Dock::Deck{active:name,..}=> {
                 let pane=self.tabs[self.active].panes.iter().find(|p|p.read(cx).name.as_ref()==name).cloned();
                 let names=match dock{Dock::Deck{channels,..}=>channels.clone(),_=>vec![name.clone()]};
-                let name=name.clone();let drag_name=name.clone();let bounds_name=name.clone();let dock_bounds=self.dock_bounds.clone();
+                let name=name.clone();let bounds_name=name.clone();let dock_bounds=self.dock_bounds.clone();
+                let strip_name=name.clone();let strip_bounds=self.strip_bounds.clone();
                 let tabs=names.iter().filter(|channel|!self.live_channels||*channel==&name||self.streams.get(channel)!=Some(false)).map(|channel|{let selected=channel==&name;let channel=channel.clone();
                     let drag_pane=self.tabs[self.active].panes.iter().find(|p|p.read(cx).name.as_ref()==channel).cloned();
+                    let tab_name=channel.clone();let tab_bounds=self.tab_bounds.clone();
                     let item=div().id(SharedString::from(format!("channel-tab-{tab_id}-{channel}"))).h(px(28.)).px_2().flex().items_center().cursor_pointer()
                         .bg(rgb(if selected{theme::CONTROL}else{theme::PANEL})).border_b_2().border_color(rgb(if selected{0xA99CF4}else{theme::PANEL}))
+                        .on_prepaint(move|bounds,_,_|{tab_bounds.borrow_mut().insert(tab_name.clone(),bounds);})
                         .hover(|s|s.bg(rgb(theme::HOVER))).child(format!("{} #{channel}",match self.streams.get(&channel){Some(true)=>"●",Some(false)=>"○",None=>"◌"}))
                         .on_mouse_down(MouseButton::Middle,cx.listener({let channel=channel.clone();move|this,_,window,cx|{window.prevent_default();cx.stop_propagation();this.confirm_close_channel(channel.clone(),window,cx);}}))
-                        .on_click(cx.listener({let channel=channel.clone();move|this,_,window,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.select(&channel);}this.focus.focus(window,cx);this.schedule_save(cx);cx.notify();}}));
+                        .on_click(cx.listener({let channel=channel.clone();move|this,_,window,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.select(&channel);}this.selected_channel=Some(channel.clone());this.focus.focus(window,cx);this.schedule_save(cx);cx.notify();}}));
                     let owner=cx.entity().downgrade();let menu_channel=channel.clone();
                     let menu=move |menu:gpui_kit::component::menu::PopupMenu,_:&mut Window,_:&mut Context<gpui_kit::component::menu::PopupMenu>|{
-                        let add=owner.clone();let add_channel=menu_channel.clone();let close=owner.clone();let close_channel=menu_channel.clone();let filter=owner.clone();
+                        let add=owner.clone();let add_channel=menu_channel.clone();let close=owner.clone();let close_channel=menu_channel.clone();let filter=owner.clone();let left=owner.clone();let left_channel=menu_channel.clone();let right=owner.clone();let right_channel=menu_channel.clone();
                         menu.item(PopupMenuItem::new("Add channel tab").on_click(move|_,window,cx|{let _=add.update(cx,|this,cx|{this.open_add(false,window,cx);this.add_target=Some(add_channel.clone());});}))
                             .item(PopupMenuItem::new("Toggle live-only channel tabs").on_click(move|_,_,cx|{let _=filter.update(cx,|this,cx|{this.live_channels=!this.live_channels;this.schedule_save(cx);cx.notify();});}))
+                            .separator().item(PopupMenuItem::new("Move tab left").on_click(move|_,_,cx|{let _=left.update(cx,|this,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.shift_tab(&left_channel,false);}this.schedule_save(cx);cx.notify();});}))
+                            .item(PopupMenuItem::new("Move tab right").on_click(move|_,_,cx|{let _=right.update(cx,|this,cx|{if let Some(d)=&mut this.tabs[this.active].dock{d.shift_tab(&right_channel,true);}this.schedule_save(cx);cx.notify();});}))
                             .separator().item(PopupMenuItem::new("Close channel…").on_click(move|_,window,cx|{let _=close.update(cx,|this,cx|this.confirm_close_channel(close_channel.clone(),window,cx));}))
                     };
                     if let Some(pane)=drag_pane{item.on_drag(DraggedChannel{pane,name:channel.clone()},move|drag,_,_,cx|cx.new(|_|DragPreview(drag.name.clone()))).context_menu(menu).into_any_element()}else{item.context_menu(menu).into_any_element()}
                 }).collect::<Vec<_>>();
                 let preview=if self.drop_target.as_ref()==Some(&name){self.drop_edge}else{None};
                 div().id(SharedString::from(format!("dock-{tab_id}-{name}"))).relative().size_full().min_w_0().min_h_0()
-                    .on_drag_move(cx.listener(move|this,event:&DragMoveEvent<DraggedChannel>,_,cx|{this.drop_target=Some(drag_name.clone());this.track_drop(event,cx);cx.notify();}))
+                    .on_drag_move(cx.listener(move|this,event:&DragMoveEvent<DraggedChannel>,_,cx|{this.track_drop(event,cx);}))
                     .on_prepaint(move|bounds,_,_|{dock_bounds.borrow_mut().insert(bounds_name.clone(),bounds);})
                     .on_drop(cx.listener(move|this,drag:&DraggedChannel,w,cx|{cx.stop_propagation();this.drop_at_pointer(drag,tab_id,w,cx);}))
-                    .v_flex().child(div().id(SharedString::from(format!("channel-strip-{tab_id}-{name}"))).h_flex().flex_wrap().min_h(px(28.)).flex_shrink_0().bg(rgb(theme::PANEL)).children(tabs)
+                    .v_flex().child(div().id(SharedString::from(format!("channel-strip-{tab_id}-{name}"))).h_flex().flex_wrap().min_h(px(28.)).flex_shrink_0().bg(rgb(theme::PANEL))
+                        .on_prepaint(move|bounds,_,_|{strip_bounds.borrow_mut().insert(strip_name.clone(),bounds);}).children(tabs)
                         .child(Button::new(SharedString::from(format!("add-tab-{tab_id}-{name}"))).ghost().xsmall().label("+").tooltip("Add channel tab · Ctrl+K")
                             .on_click(cx.listener({let target=name.clone();move|this,_,window,cx|{this.open_add(false,window,cx);this.add_target=Some(target.clone());}}))))
                     .child(div().flex_1().min_h_0().children(pane)).when(cx.has_active_drag(),|el|el.children(preview.map(Self::drop_preview))).into_any_element()
@@ -1032,6 +1078,7 @@ impl Render for Workbench {
             format!("◐ Live · {connected}/{} connected panes", panes.len())
         } else { "○ Live chat disconnected".to_owned() };
         let view_focus = self.focus.clone();
+        let pointer_guard = cx.entity().downgrade();
         let live_workspaces=self.live_workspaces;let live_channels=self.live_channels;
         let can_reopen = !self.closed_tabs.is_empty();
         let can_discard = self.close_failed;
@@ -1040,6 +1087,8 @@ impl Render for Workbench {
         let tab = &self.tabs[self.active];
         let dock=tab.dock.clone();
         self.dock_bounds.borrow_mut().clear();
+        self.strip_bounds.borrow_mut().clear();
+        self.tab_bounds.borrow_mut().clear();
         let content=if let Some(dock)=dock {
             let min=dock.minimum();
             let available=window.viewport_size();
@@ -1055,12 +1104,36 @@ impl Render for Workbench {
                 .into_any_element()
         };
         div().id("workspace").relative().track_focus(&self.focus).key_context("ChatWorkspace").v_flex().size_full().font_family("Segoe UI").text_size(px(13.)).bg(rgb(theme::SHELL)).text_color(rgb(theme::TEXT))
-            .capture_any_mouse_up(cx.listener(|this,event:&MouseUpEvent,_,_|{if event.button==MouseButton::Left{this.release_position=Some(event.position);this.release_from_control=this.control_pointer_active;}}))
+            .capture_any_mouse_down(cx.listener(|this,event:&MouseDownEvent,window,cx|{if event.button==MouseButton::Left{
+                cx.stop_active_drag(window); this.pointer_owner=Some(this.control_pointer_active); this.release_position=None;
+            }}))
+            .capture_any_mouse_up(cx.listener(|this,event:&MouseUpEvent,window,cx|{if event.button==MouseButton::Left{
+                let valid=this.pointer_owner.take()==Some(this.control_pointer_active);
+                this.release_position=valid.then_some(event.position);this.release_from_control=this.control_pointer_active;
+                if !valid{cx.stop_active_drag(window);this.drop_edge=None;this.drop_target=None;cx.notify();}
+            }}))
+            .child(canvas(|_,_,_|(),move|_,_,window,_|{
+                let owner=pointer_guard.clone();
+                window.on_mouse_event(move|event:&MouseMoveEvent,phase,window,cx|{
+                    if !phase.capture(){return;}
+                    let _=owner.update(cx,|this,cx|{
+                        let crossed=this.pointer_owner.is_some_and(|source|source!=this.control_pointer_active);
+                        if crossed || event.pressed_button!=Some(MouseButton::Left){
+                            this.pointer_owner=None;this.release_position=None;this.drop_edge=None;this.drop_target=None;
+                            if cx.stop_active_drag(window){cx.notify();}
+                            // Also clear a framework drag created later in this event from a stale down.
+                            window.defer(cx,|window,cx|{cx.stop_active_drag(window);});
+                        }
+                    });
+                });
+            }).absolute().size_0())
             .on_action(cx.listener(|this,_:&NewTab,w,cx|this.new_tab(w,cx)))
             .on_action(cx.listener(|this,_:&CloseTab,window,cx|{this.confirm_close_tab(this.tabs[this.active].id,window,cx);}))
             .on_action(cx.listener(|this,_:&ReopenTab,window,cx|{this.reopen_tab(cx);this.focus.focus(window,cx);}))
             .on_action(cx.listener(|this,_:&NextTab,w,cx|{this.cycle_tab(true,cx);this.focus.focus(w,cx);}))
             .on_action(cx.listener(|this,_:&PreviousTab,w,cx|{this.cycle_tab(false,cx);this.focus.focus(w,cx);}))
+            .on_action(cx.listener(|this,_:&NextChannel,w,cx|this.cycle_channel(true,w,cx)))
+            .on_action(cx.listener(|this,_:&PreviousChannel,w,cx|this.cycle_channel(false,w,cx)))
             .on_action(cx.listener(|this,_:&AddChannel,w,cx|this.open_add(false,w,cx)))
             .on_action(cx.listener(|this,_:&RenameWorkspace,w,cx|this.open_add(true,w,cx)))
             .on_action(cx.listener(|this,_:&MoveTabLeft,_,cx|this.move_tab(-1,cx)))

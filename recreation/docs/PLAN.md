@@ -20,8 +20,8 @@ upstream movement separately from acceptance of this rewrite.
 
 ## Current implementation batch: native workspace
 
-The fixed two-pane replay preview has been replaced by actual workspace tabs,
-channel entry, two resizable splits per tab, tab rename/reorder/close/reopen,
+The fixed two-pane replay preview has been replaced by sidebar workspaces,
+channel tab groups, recursive resizable splits, workspace rename/reorder/close/reopen,
 custom Workspace/View menus, a collapsible scrolling sidebar, soft-wrapping single-message drafts,
 font controls and versioned local persistence. Empty channels are honest offline
 states; synthetic sample messages and test-only controls are gone.
@@ -436,3 +436,11 @@ headers and composer/status chrome are denser, without removing copy feedback,
 draft limits, emote access or send status. This is a compact interaction pass,
 not a claim of complete Chatterino menu parity. Native540x470 verification remains
 required before calling the compact layout accepted.
+
+## Channel docking polish (2026-10-10)
+
+Tab strips are dedicated merge/reorder targets, while leaf edges split and the
+large center merges. Drag insertion respects wrapped tab rows. Tab context menus
+include left/right ordering; Ctrl+PageUp/PageDown cycles the focused group and
+retains each channel draft. Native/control drag ownership prevents cross-input
+release from moving a panel. Native acceptance is recorded in VALIDATION.md.

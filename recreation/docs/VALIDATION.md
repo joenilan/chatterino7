@@ -249,3 +249,18 @@ left running with overlays closed. No messages sent or account grants changed.
 Still not claimed: full Chatterino parity, every divider/reset/cancel permutation,
 all provider-specific image variants, and comprehensive live-status transition
 coverage. The old two-pane cap is removed; three-pane nested layouts were observed.
+
+## 2026-10-10: channel regrouping and input ownership repair
+
+Owner reported that panels could not merge, then observed an apparently held tab
+when merely hovering. The Windows reproduction did leave a synthetic drag held
+between a move call and screenshot capture. Release inspection reported a native
+input at a different coordinate, so the prior center-drop result is not valid
+center-merge acceptance. No owner click was observed. The test stopped and the
+owner's workspace and size were restored; temporary QA workspace 10 remains.
+
+Source changes: dedicated tab-strip merge targets, larger center merge area,
+shared hover/release resolver, drag tab ordering, context-menu left/right ordering,
+and Ctrl+PageUp/PageDown cycling within the focused channel group. Added atomic
+control drag and source-matched pointer releases, plus hover cancellation for
+stale drags. Linux build passed; Windows build and manual acceptance pending.
