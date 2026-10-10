@@ -7,7 +7,7 @@ use std::{
     sync::mpsc,
     time::{Duration, Instant},
 };
-#[derive(Clone)]
+#[derive(Clone,PartialEq,Eq)]
 struct Emote {
     id: String,
     asset: EmoteAsset,
@@ -15,8 +15,14 @@ struct Emote {
     animated: bool,
 }
 type Emotes = HashMap<String, Emote>;
+struct Loaded {emotes:Emotes,set:String,owner:String}
 pub struct Catalog {
     global: Emotes,
+    watches:HashMap<String,crate::seven_events::Watch>,
+    events:crate::seven_events::Events,
+    dirty:HashSet<String>,
+    in_flight:HashSet<String>,
+    retry_after:HashMap<String,Instant>,
     pub twitch: crate::twitch_assets::TwitchAssets,
     pub profiles:crate::profiles::Profiles,
     pub community: crate::community::Community,
@@ -24,7 +30,7 @@ pub struct Catalog {
     requested: HashMap<String, (String, Instant)>,
     global_requested: Instant,
     tx: mpsc::SyncSender<(String, String)>,
-    rx: mpsc::Receiver<(String, Option<Emotes>)>,
+    rx: mpsc::Receiver<(String, Option<Loaded>)>,
 }
 impl Catalog {
     pub fn new() -> Self {
@@ -53,6 +59,8 @@ impl Catalog {
         let _ = tx.try_send((String::new(), String::new()));
         Self {
             global: HashMap::new(),
+            watches:HashMap::new(),events:crate::seven_events::Events::new(),dirty:HashSet::new(),
+            in_flight:HashSet::from([String::new()]),retry_after:HashMap::new(),
             twitch: crate::twitch_assets::TwitchAssets::new(),
             profiles:crate::profiles::Profiles::new(),
             community: crate::community::Community::new(),
@@ -64,7 +72,7 @@ impl Catalog {
         }
     }
     pub fn inspection(&self) -> Value {
-        serde_json::json!({"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
+        serde_json::json!({"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
     }
     pub fn channel(&mut self, name: &str, id: &str) {
         if id.is_empty() || id.len() > 32 || !id.bytes().all(|b| b.is_ascii_digit()) {
@@ -77,37 +85,45 @@ impl Catalog {
         {
             return;
         }
-        if self.tx.try_send((name.into(), id.into())).is_ok() {
+        if !self.in_flight.contains(name) && self.tx.try_send((name.into(), id.into())).is_ok() {
+            self.in_flight.insert(name.into());
             self.requested
                 .insert(name.into(), (id.into(), Instant::now()));
         }
     }
     pub fn pump(&mut self, active: HashSet<String>, identity: Option<crate::live::Identity>) -> bool {
         self.channels.retain(|k, _| active.contains(k));
+        self.watches.retain(|k,_|k.is_empty()||active.contains(k));
+        self.dirty.retain(|k|k.is_empty()||active.contains(k));
+        self.retry_after.retain(|k,_|k.is_empty()||active.contains(k));
+        self.dirty.extend(self.events.pump(self.watches.values().cloned().collect()));
         self.requested.retain(|k, _| active.contains(k));
-        if self.global_requested.elapsed() >= Duration::from_secs(300)
+        if (self.global_requested.elapsed() >= Duration::from_secs(300) || (self.dirty.contains("") && self.global_requested.elapsed()>=Duration::from_secs(5)))
+            && !self.in_flight.contains("") && self.retry_after.get("").is_none_or(|at|Instant::now()>=*at)
             && self.tx.try_send((String::new(), String::new())).is_ok()
         {
-            self.global_requested = Instant::now();
+            self.global_requested = Instant::now();self.dirty.remove("");self.in_flight.insert(String::new());
         }
         for (name, (id, at)) in &mut self.requested {
-            if at.elapsed() >= Duration::from_secs(300)
+            if (at.elapsed() >= Duration::from_secs(300) || (self.dirty.contains(name) && at.elapsed()>=Duration::from_secs(5)))
+                && !self.in_flight.contains(name) && self.retry_after.get(name).is_none_or(|at|Instant::now()>=*at)
                 && self.tx.try_send((name.clone(), id.clone())).is_ok()
             {
-                *at = Instant::now();
+                *at = Instant::now();self.dirty.remove(name);self.in_flight.insert(name.clone());
             }
         }
-        let mut changed = self.profiles.pump(identity.clone());
-        changed |= self.twitch.pump(identity, &self.requested);
+        let mut changed = self.twitch.pump(identity, &self.requested);
         changed |= self.community.pump(&self.requested);
         while let Ok((name, result)) = self.rx.try_recv() {
-            if let Some(emotes) = result {
+            self.in_flight.remove(&name);
+            if result.is_none() && (name.is_empty()||active.contains(&name)) {self.retry_after.insert(name.clone(),Instant::now()+Duration::from_secs(60));self.dirty.insert(name.clone());}else{self.retry_after.remove(&name);}
+            if let Some(loaded) = result {
+                if name.is_empty()||active.contains(&name){self.watches.insert(name.clone(),crate::seven_events::Watch{channel:name.clone(),set:loaded.set,owner:loaded.owner});}
+                let emotes=loaded.emotes;
                 if name.is_empty() {
-                    self.global = emotes;
-                    changed = true;
+                    if self.global!=emotes{self.global = emotes;changed = true;}
                 } else if active.contains(&name) {
-                    self.channels.insert(name, emotes);
-                    changed = true;
+                    if self.channels.get(&name)!=Some(&emotes){self.channels.insert(name, emotes);changed = true;}
                 }
             }
         }
@@ -173,10 +189,10 @@ impl Catalog {
         result
     }
 }
-fn load(client: &reqwest::blocking::Client, url: &str, global: bool) -> Option<Emotes> {
+fn load(client: &reqwest::blocking::Client, url: &str, global: bool) -> Option<Loaded> {
     let response = client.get(url).send().ok()?;
     if response.status() == 404 {
-        return Some(HashMap::new());
+        return Some(Loaded{emotes:HashMap::new(),set:String::new(),owner:String::new()});
     }
     if !response.status().is_success()
         || response
@@ -267,7 +283,8 @@ fn load(client: &reqwest::blocking::Client, url: &str, global: bool) -> Option<E
             },
         );
     }
-    Some(emotes)
+    let valid_id=|v:&Value|v.as_str().filter(|s|!s.is_empty()&&s.len()<=128&&s.bytes().all(|b|b.is_ascii_alphanumeric())).unwrap_or("").to_owned();
+    Some(Loaded{emotes,set:valid_id(if global{&json["id"]}else{&json["emote_set"]["id"]}),owner:if global{String::new()}else{valid_id(&json["user"]["id"])}})
 }
 fn valid_file(name: &str) -> bool {
     !name.is_empty()

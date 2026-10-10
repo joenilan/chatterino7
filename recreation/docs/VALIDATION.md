@@ -550,3 +550,12 @@ drafts, reply drafts and preferences restored exactly. Preview PID32936, session
 Composer review also corrected pending-send completion erasing a recalled draft,
 explicitly advanced composer revision on history recall, and cleared histories for
 closed panes on account changes. Final Linux source build passed as above.
+
+### B3 live catalog source checkpoint
+
+Anonymous object subscriptions and REST invalidation compile in the locked Linux
+build. Source review corrected permanent-close retry, duplicate in-flight fetches
+and initial SUBSCRIBE ACK reconciliation. No live EventAPI connection, rename/
+remove event or native refresh acceptance is claimed yet. Windows inspection
+should verify real subscription ACK status and unaffected emote/chat rendering;
+external set changes require real samples rather than editing a streamer's set.

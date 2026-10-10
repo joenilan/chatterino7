@@ -21,6 +21,7 @@ mod dock;
 mod stream_status;
 mod room_settings;
 mod profiles;
+mod seven_events;
 mod input_history;
 use workspace::Workbench;
 

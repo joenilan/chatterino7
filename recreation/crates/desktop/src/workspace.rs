@@ -376,6 +376,7 @@ impl Workbench {
         for pane in panes.iter().chain(self.closed_tabs.iter().flat_map(|tab|tab.panes.iter())) {pane.update(cx,|p,_|p.input_history.account(identity.as_ref().map(|i|i.user_id.as_str())));}
         self.sync_attention(window,cx);
         if self.streams.pump(identity.clone(),panes.iter().map(|p|p.read(cx).name.to_string()).collect()){cx.notify();}
+        if self.catalog.borrow_mut().profiles.pump(identity.clone()){cx.notify();}
         if self.catalog.borrow_mut().pump(panes.iter().map(|p|p.read(cx).name.to_string()).collect(), identity.clone()) {
             for pane in &panes { pane.update(cx, |p,cx| {
                 p.timeline.borrow_mut().enrich(|message| message.fragments = self.catalog.borrow().expand(&p.name, &message.fragments));

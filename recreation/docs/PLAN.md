@@ -645,3 +645,30 @@ Alt+Up / Alt+Down recall up to 100 successful sends for the pane in this session
 restore the unsent draft on returning forward, and reset navigation after edits.
 History clears on account change; delayed old-session results do not populate it.
 No synthetic chat sends are needed or authorized for acceptance.
+
+## B3 first slice: live 7TV catalog refresh (2026-10-10)
+
+Anonymous EventAPI object subscriptions watch actual global/channel emote-set IDs
+and channel-owner user updates. ACKs reconcile the snapshot gap; reconnect always
+resubscribes and reconciles because current EventAPI resume is unsupported.
+Changes invalidate existing bounded REST catalogs, coalesced with one in-flight
+request and one dirty bit per catalog, minimum five-second refresh interval.
+Last-good catalogs remain through failures; failed requests back off 60 seconds
+and ordinary five-minute polling remains available. Unchanged results avoid full
+transcript re-enrichment. Public profile refresh also no longer re-enriches chat.
+
+One bounded socket uses announced heartbeat/limits, deduplicated subscriptions,
+unsubscribe-before-subscribe ordering and bounded reconnect delays. Protocol or
+permission rejection stops automatic EventAPI retries and retains polling fallback;
+maintenance waits over five minutes. Inspection exposes transport/fallback status.
+No account credentials or presence publishing. Personal sender-scoped emotes,
+entitlement badges and username paints remain later B3 slices, not completed here.
+
+Next B3 contract: keep Twitch-user → entitled set identities separate from channel
+catalogs; do not merge personal emotes globally. Public passive channel events may
+miss historical grants, so reconcile appropriately and never claim full coverage
+from owned-set REST alone. Handle revoke, set replacement, alias changes, bounded
+user/set caches and own-account picker clearing. Paints need glyph masks and
+bounded gradients/layers; flat name recoloring is not complete paint support.
+Sources: https://github.com/SevenTV/SevenTV/blob/main/apps/event-api/src/http/v3/mod.rs
+and https://github.com/SevenTV/EventAPI#close-codes

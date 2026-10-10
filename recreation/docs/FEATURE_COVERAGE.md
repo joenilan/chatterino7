@@ -408,3 +408,10 @@ Prioritize fixes to visible lag, scroll anchors, UI-thread decoding or unbounded
 Per-file software and asset licenses still apply. Preserve required notices for any
 copied/adapted implementation; do not assume provider-hosted images or old bundled
 sounds can be redistributed with the application.
+
+### B3 live catalog implementation checkpoint
+
+Source now includes anonymous 7TV global/channel-set and owner-update subscriptions
+with ACK/reconnect reconciliation, coalesced REST refresh and polling fallback.
+Windows acceptance and real remote set changes remain pending. Personal emotes,
+entitlement badges and paints are still separate unfinished features.
