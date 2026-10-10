@@ -205,13 +205,13 @@ impl ChannelPane {
             })
             .cloned()
             .collect();
-        self.picker.items.sort_by(|a, b| {
+        if self.picker.collection!="recent" {self.picker.items.sort_by(|a, b| {
             (a.choice.provider, &a.origin, a.choice.label.to_lowercase()).cmp(&(
                 b.choice.provider,
                 &b.origin,
                 b.choice.label.to_lowercase(),
             ))
-        });
+        });}
         self.picker.row_reveals.clear();
         self.picker.last_visible.clear();
         self.picker.rows.clear();
@@ -221,17 +221,14 @@ impl ChannelPane {
             let first = &self.picker.items[start];
             let mut end = start + 1;
             while end < self.picker.items.len()
-                && self.picker.items[end].choice.provider == first.choice.provider
-                && self.picker.items[end].origin == first.origin
+                && (self.picker.collection=="recent" || (self.picker.items[end].choice.provider == first.choice.provider
+                && self.picker.items[end].origin == first.origin))
             {
                 end += 1;
             }
-            self.picker.rows.push(GridRow::Heading(format!(
-                "{} · {} · {}",
-                first.choice.provider,
-                first.origin,
-                end - start
-            )));
+            self.picker.rows.push(GridRow::Heading(if self.picker.collection=="recent" {format!("Recently sent · newest first · {}",end-start)}else{format!(
+                "{} · {} · {}",first.choice.provider,first.origin,end-start
+            )}));
             for row in (start..end).step_by(columns) {
                 self.picker
                     .rows
@@ -637,7 +634,7 @@ impl ChannelPane {
         let owned_status=self.catalog.borrow().owned.status.clone();
         let provider_status=self.catalog.borrow().browser_status(&self.picker.service);
         let can_retry=self.catalog.borrow().can_retry_public();
-        let empty_message=if self.picker.collection=="favorites" && self.emote_search.read(cx).value().trim().is_empty(){"Right-click an emote to favorite it, or select one and use the star button. Unavailable saved entries can still be removed. Channel availability always applies.".to_owned()}else if !self.emote_search.read(cx).value().trim().is_empty(){"No matching emotes. Try a different search or service.".to_owned()}else{provider_status};
+        let empty_message=if self.picker.collection=="recent" && self.emote_search.read(cx).value().trim().is_empty(){"Emotes from successfully sent messages appear here, newest first. This session only; only emotes available in this channel are shown.".to_owned()}else if self.picker.collection=="favorites" && self.emote_search.read(cx).value().trim().is_empty(){"Right-click an emote to favorite it, or select one and use the star button. Unavailable saved entries can still be removed. Channel availability always applies.".to_owned()}else if !self.emote_search.read(cx).value().trim().is_empty(){"No matching emotes. Try a different search or service.".to_owned()}else{provider_status};
         let height = (f32::from(window.viewport_size().height) - 70.).clamp(180., 390.);
         let width = self
             .viewport
@@ -696,6 +693,7 @@ impl ChannelPane {
                 "global" => "◎".into(),
                 "personal" => "P".into(),
                 "favorites" => "★".into(),
+                "recent" => "↶".into(),
                 _ => collection
                     .title
                     .trim_start_matches('#')
@@ -840,7 +838,7 @@ impl ChannelPane {
             .on_mouse_down(MouseButton::Left,|_,_,cx|cx.stop_propagation())
             .on_scroll_wheel(|_,_,cx|cx.stop_propagation())
             .when(!compact,|el|el.child(div().h(px(18.)).flex_shrink_0().text_size(px(11.)).overflow_hidden().child(format!("{title} · {} emotes",self.picker.items.len()))))
-            .child(div().h_flex().min_w_0().gap_1().flex_shrink_0().child(div().flex_1().min_w_0().child(Textarea::new(&self.emote_search))).when_some(selected_item,|el,item|el.child(Button::new("emote-favorite-selected").xsmall().label(if selected_favorite{"★"}else{"☆"}).tooltip(if selected_favorite{"Remove selected emote from favorites"}else{"Favorite selected emote · right-click also works"}).on_click(cx.listener(move|this,_,w,cx|this.toggle_browser_favorite(&item,w,cx)))))
+            .child(div().h_flex().min_w_0().gap_1().flex_shrink_0().child(div().flex_1().min_w_0().child(Textarea::new(&self.emote_search))).when(self.picker.collection=="recent",|el|el.child(Button::new("clear-recent-emotes").xsmall().label("Clear").tooltip("Clear this session’s recent emotes").on_click(cx.listener(|this,_,_,cx|{this.catalog.borrow_mut().clear_recent_emotes();this.refresh_picker(cx);cx.emit(PaneEvent::EmoteRecentsChanged);cx.notify();})))).when_some(selected_item,|el,item|el.child(Button::new("emote-favorite-selected").xsmall().label(if selected_favorite{"★"}else{"☆"}).tooltip(if selected_favorite{"Remove selected emote from favorites"}else{"Favorite selected emote · right-click also works"}).on_click(cx.listener(move|this,_,w,cx|this.toggle_browser_favorite(&item,w,cx)))))
                 .child(Button::new("emotes-retry-images").xsmall().label("↻").tooltip("Retry failed emote images without restarting or clearing loaded images").on_click(cx.listener(|this,_,_,cx|{
                     let keys=this.picker.items.iter().filter_map(|item|item.choice.key.clone()).collect::<Vec<_>>();
                     this.media.borrow_mut().retry_images(&keys,cx);

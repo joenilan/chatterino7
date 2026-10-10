@@ -19,6 +19,7 @@ struct Loaded {emotes:Emotes,set:String,owner:String}
 pub struct Catalog {
     global: Emotes,
     favorites: Vec<[String; 3]>,
+    recent: Vec<[String; 3]>,
     global_state:crate::community::LoadState,
     last_manual_refresh:Option<Instant>,
     personal:Emotes,
@@ -77,6 +78,7 @@ impl Catalog {
         Self {
             global: HashMap::new(),
             favorites: Vec::new(),
+            recent: Vec::new(),
             global_state:crate::community::LoadState::Loading,last_manual_refresh:None,
             personal:HashMap::new(),personal_user:None,personal_ready:false,personal_epoch:0,
             entitlements:Default::default(),badges:Default::default(),paints:Default::default(),paint_cache:Default::default(),entitled_sets:HashMap::new(),event_versions:HashMap::new(),event_revision:0,
@@ -119,7 +121,7 @@ impl Catalog {
         let old_global_state=self.global_state;
         let user=identity.as_ref().map(|i|i.user_id.clone());
         let account_changed=self.personal_user!=user;
-        if account_changed {self.personal_epoch=self.personal_epoch.wrapping_add(1);self.personal.clear();self.personal_ready=false;self.personal_user=user;}
+        if account_changed {self.recent.clear();self.personal_epoch=self.personal_epoch.wrapping_add(1);self.personal.clear();self.personal_ready=false;self.personal_user=user;}
         let personal_key=self.personal_user.as_ref().map(|id|format!("@{id}"));
         let channels=self.requested.iter().filter(|(name,_)|active.contains(*name)).map(|(_, (id,_))|id.clone()).collect();
         let (dirty,events)=self.events.pump(self.watches.values().cloned().collect(),channels);
@@ -265,6 +267,20 @@ impl Catalog {
         self.favorites.push(key);
         Ok(true)
     }
+    /// Successful sends only. No message bodies or remote media URLs are retained.
+    pub fn record_sent_emotes(&mut self,channel:&str,text:&str){
+        let tokens=text.split_whitespace().collect::<HashSet<_>>();
+        if tokens.is_empty(){return;}
+        let choices=self.choices(channel,"",usize::MAX).into_iter().filter(|choice|tokens.contains(choice.label.as_str())).map(|choice|(choice.label.clone(),choice)).collect::<HashMap<_,_>>();
+        for token in text.split_whitespace(){
+            let Some(choice)=choices.get(token)else{continue;};
+            let Some(mut key)=Self::favorite_key(choice)else{continue;};
+            if key[0]=="7TV Personal"{key[0]="7TV".into();}
+            if key[1].len()>512||key[2].len()>256{continue;}
+            self.recent.retain(|old|old!=&key);self.recent.insert(0,key);self.recent.truncate(48);
+        }
+    }
+    pub fn clear_recent_emotes(&mut self){self.recent.clear();}
     pub fn browser_collections(&mut self,current:&str)->Vec<crate::emote_picker::Collection>{
         use crate::emote_picker::{BrowserChoice,Collection};
         use crate::twitch_assets::Choice;
@@ -318,6 +334,8 @@ impl Catalog {
                     origin:"Unavailable source".into(),available:false,saved_key:Some(key.clone())});
             }
         }
+        let recent=self.recent.iter().filter_map(|key|result.iter().flat_map(|c|c.items.iter()).find(|item|item.available&&Self::favorite_key(&item.choice).as_ref()==Some(key)).cloned()).collect();
+        result.insert(0,Collection{id:"recent".into(),title:"Recently used · this session".into(),user:None,items:recent});
         result.insert(0,Collection{id:"favorites".into(),title:"Favorites".into(),user:None,items:favorites});
         result.insert(0,Collection{id:"all".into(),title:"Available here".into(),user:None,items:all});
         result

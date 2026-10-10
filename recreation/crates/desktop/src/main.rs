@@ -105,6 +105,7 @@ enum PaneEvent {
     RequestClose,
     DraftChanged,
     EmotePreferencesChanged,
+    EmoteRecentsChanged,
     OpenAccount,
     OpenCommands(String),
     EditChatter(chatter_appearance::Target),
@@ -323,7 +324,7 @@ impl ChannelPane {
         if *pending != request {
             return;
         }
-        if result.is_ok() && current_session { self.input_history.record(text); }
+        if result.is_ok() && current_session { self.input_history.record(text); self.catalog.borrow_mut().record_sent_emotes(&self.name,text); }
         let clear_reply=result.is_ok() && current_session && self.compose_revision==*revision && twitch_message_text(&self.draft.read(cx).value()) == *text && self.reply_target.as_ref().map(|r|&r.id)==parent.as_ref();
         if clear_reply {self.reply_target=None;}
         if clear_reply {

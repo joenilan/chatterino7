@@ -493,6 +493,9 @@ impl Workbench {
                     {
                         pane.update(cx, |p, cx| p.sent(request, &result, version == self.live.version(), window, cx));
                     }
+                    if result.is_ok() && version==self.live.version(){
+                        for pane in &panes {pane.update(cx,|p,cx|{if p.picker.open{p.refresh_picker(cx);cx.notify();}});}
+                    }
                 }
             }
         }
@@ -579,12 +582,12 @@ impl Workbench {
                 window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Twitch account").child(account.clone()));
                 return;
             }
-            if matches!(event, PaneEvent::EmotePreferencesChanged) {
+            if matches!(event, PaneEvent::EmotePreferencesChanged|PaneEvent::EmoteRecentsChanged) {
                 for pane in this.panes().iter().chain(this.closed_tabs.iter().flat_map(|tab|tab.panes.iter())) { pane.update(cx, |p, cx| {
                     if p.picker.open { p.refresh_picker(cx); }
                     cx.notify();
                 }); }
-                this.schedule_save(cx);
+                if matches!(event,PaneEvent::EmotePreferencesChanged){this.schedule_save(cx);}
                 return;
             }
             if matches!(event, PaneEvent::DragStarted) {
@@ -781,6 +784,8 @@ impl Workbench {
     }
     fn reopen_tab(&mut self, cx: &mut Context<Self>) {
         if let Some(tab) = self.closed_tabs.pop() {
+            // Closed workspaces can outlive account changes and catalog revocations.
+            for pane in &tab.panes {pane.update(cx,|p,cx|{if p.picker.open{p.refresh_picker(cx);}cx.notify();});}
             self.tabs.push(tab);
             self.select_tab(self.tabs.len() - 1, cx);
         }
