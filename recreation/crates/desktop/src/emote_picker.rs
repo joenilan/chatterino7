@@ -570,6 +570,7 @@ impl ChannelPane {
         let selected_item=self.picker.items.get(self.picker.current).cloned();
         let selected_favorite=selected_item.as_ref().is_some_and(|i|i.saved_key.is_some() || self.catalog.borrow().is_favorite(&i.choice));
         let reduced = cx.reduce_motion();
+        let owned_status=self.catalog.borrow().owned.status.clone();
         let provider_status=self.catalog.borrow().browser_status(&self.picker.service);
         let can_retry=self.catalog.borrow().can_retry_public();
         let empty_message=if self.picker.collection=="favorites" && self.emote_search.read(cx).value().trim().is_empty(){"Right-click an emote to favorite it, or select one and use the star button. Unavailable saved entries can still be removed. Channel availability always applies.".to_owned()}else if !self.emote_search.read(cx).value().trim().is_empty(){"No matching emotes. Try a different search or service.".to_owned()}else{provider_status};
@@ -623,6 +624,7 @@ impl ChannelPane {
                     .to_uppercase(),
             };
             let title = collection.title.clone();
+            let profile_user = collection.user.clone();
             let id = collection.id.clone();
             tabs.push(
                 div()
@@ -657,6 +659,7 @@ impl ChannelPane {
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.picker.collection = id.clone();
+                        if let Some(user)=&profile_user {this.catalog.borrow_mut().profiles.request(user);}
                         this.rebuild_browser(true, cx);
                         cx.notify();
                     })),
@@ -756,6 +759,10 @@ impl ChannelPane {
             .child(div().h_flex().min_w_0().gap_1().flex_shrink_0().child(div().flex_1().min_w_0().child(Textarea::new(&self.emote_search))).when_some(selected_item,|el,item|el.child(Button::new("emote-favorite-selected").xsmall().label(if selected_favorite{"★"}else{"☆"}).tooltip(if selected_favorite{"Remove selected emote from favorites"}else{"Favorite selected emote · right-click also works"}).on_click(cx.listener(move|this,_,w,cx|this.toggle_browser_favorite(&item,w,cx)))))
                 .child(Button::new("emotes-close").xsmall().label("×").tooltip("Close emotes · Esc").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
             .child(div().id("emote-origin-tabs").h_flex().h(px(34.)).flex_shrink_0().gap_1().overflow_x_scroll().track_scroll(&self.picker.tabs_scroll).children(compact_services).children(tabs))
+            .when(self.picker.service.is_empty()||self.picker.service=="Twitch",|el|el.child(div().h_flex().min_w_0().gap_1().flex_shrink_0()
+                .child(div().flex_1().min_w_0().overflow_hidden().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(owned_status))
+                .child(Button::new("emote-account-settings").xsmall().label("Account").tooltip("Manage Twitch account and subscription emote permission")
+                    .on_click(cx.listener(|this,_,_,cx|{this.picker.open=false;cx.emit(PaneEvent::OpenAccount);cx.notify();})))))
             .child(div().flex_1().min_h_0().w_full().overflow_hidden().on_prepaint(move|bounds,_,cx|{
                 let next=((f32::from(bounds.size.width)+4.)/44.).floor().max(1.)as usize;
                 if next!=columns{let owner=owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|this,cx|{if this.picker.columns!=next{this.picker.columns=next;this.rebuild_browser(false,cx);if let Some(row)=this.picker.rows.iter().position(|r|matches!(r,GridRow::Cells(range)if range.contains(&this.picker.current))){this.picker.scroll.scroll_to_item(row,ScrollStrategy::Nearest);}cx.notify();}});});}

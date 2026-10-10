@@ -19,6 +19,7 @@ use tungstenite::{Message as Wire, stream::MaybeTlsStream};
 pub struct Identity {
     pub user_id: String,
     pub access: String,
+    pub can_read_emotes: bool,
 }
 #[derive(Clone, PartialEq, Eq, Default)]
 struct Config {

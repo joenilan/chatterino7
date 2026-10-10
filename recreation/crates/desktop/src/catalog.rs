@@ -36,6 +36,7 @@ pub struct Catalog {
     in_flight:HashSet<String>,
     retry_after:HashMap<String,Instant>,
     pub twitch: crate::twitch_assets::TwitchAssets,
+    pub owned: crate::owned_emotes::Inventory,
     pub profiles:crate::profiles::Profiles,
     pub community: crate::community::Community,
     channels: HashMap<String, Emotes>,
@@ -80,6 +81,7 @@ impl Catalog {
             watches:HashMap::new(),events:crate::seven_events::Events::new(),dirty:HashSet::new(),
             in_flight:HashSet::from([String::new()]),retry_after:HashMap::new(),
             twitch: crate::twitch_assets::TwitchAssets::new(),
+            owned: crate::owned_emotes::Inventory::new(),
             profiles:crate::profiles::Profiles::new(),
             community: crate::community::Community::new(),
             channels: HashMap::new(),
@@ -90,7 +92,7 @@ impl Catalog {
         }
     }
     pub fn inspection(&self) -> Value {
-        serde_json::json!({"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"personal_emotes":self.personal.len(),"personal_catalog_loaded":self.personal_ready,"personal_scope":"owned set plus passive session grants","seventv_badges":self.badges.inspection(),"seventv_entitled_senders":self.entitlements.len(),"seventv_entitled_sets":self.entitled_sets.len(),"seventv_entitled_emotes":self.entitled_sets.values().map(HashMap::len).sum::<usize>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
+        serde_json::json!({"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_owned_emotes":self.owned.items.len(),"twitch_owned_status":self.owned.status,"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"personal_emotes":self.personal.len(),"personal_catalog_loaded":self.personal_ready,"personal_scope":"owned set plus passive session grants","seventv_badges":self.badges.inspection(),"seventv_entitled_senders":self.entitlements.len(),"seventv_entitled_sets":self.entitled_sets.len(),"seventv_entitled_emotes":self.entitled_sets.values().map(HashMap::len).sum::<usize>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
     }
     pub fn channel(&mut self, name: &str, id: &str) {
         if id.is_empty() || id.len() > 32 || !id.bytes().all(|b| b.is_ascii_digit()) {
@@ -111,6 +113,7 @@ impl Catalog {
         }
     }
     pub fn pump(&mut self, active: HashSet<String>, identity: Option<crate::live::Identity>) -> bool {
+        let owned_changed=self.owned.pump(identity.clone());
         let old_global_state=self.global_state;
         let user=identity.as_ref().map(|i|i.user_id.clone());
         let account_changed=self.personal_user!=user;
@@ -170,7 +173,7 @@ impl Catalog {
             }
         }
         let channel_requests=self.requested.iter().filter(|(name,_)|!name.starts_with('@')&&!name.starts_with('#')).map(|(name,value)|(name.clone(),value.clone())).collect();
-        let mut changed = event_changed | account_changed | self.twitch.pump(identity, &channel_requests);
+        let mut changed = owned_changed | event_changed | account_changed | self.twitch.pump(identity, &channel_requests);
         changed |= self.community.pump(&channel_requests);
         while let Ok((name, generation, result)) = self.rx.try_recv() {
             self.in_flight.remove(&name);
@@ -214,6 +217,7 @@ impl Catalog {
         let states=[("7TV",self.global_state),("BTTV",self.community.global_bttv_state),("FFZ",self.community.global_ffz_state)];
         let mut labels=states.into_iter().filter(|(name,_)|service.is_empty()||service==*name).map(|(name,state)|format!("{name}: {}",state.label())).collect::<Vec<_>>();
         if service.is_empty()||service=="Twitch"{labels.push(if self.personal_user.is_none(){"Twitch: sign in to load globals".into()}else if self.twitch.global.emotes.is_empty(){"Twitch: globals not loaded yet".into()}else{"Twitch: globals loaded".into()});}
+        if service.is_empty()||service=="Twitch" {labels.push(self.owned.status.clone());}
         labels.join(" · ")
     }
     pub fn can_retry_public(&self)->bool {
@@ -287,7 +291,20 @@ impl Catalog {
             self.profiles.request(&id);
             result.push(pack(format!("channel:{name}"),format!("#{name}"),Some(id),choices));
         }
-        let all=result.iter().filter(|c|c.id=="global"||c.id=="personal"||c.id==format!("channel:{current}")).flat_map(|c|c.items.iter().filter(|i|i.available).cloned()).collect();
+        let mut owners=std::collections::BTreeMap::<String,Vec<Choice>>::new();
+        for item in &self.owned.items {owners.entry(item.owner.clone()).or_default().push(item.choice.clone());}
+        for (index,(owner,choices)) in owners.into_iter().enumerate() {
+            if !owner.is_empty() && index<64 {self.profiles.request(&owner);}
+            if let Some(existing)=result.iter_mut().find(|c|c.user.as_ref()==Some(&owner)) {
+                existing.items.extend(pack(String::new(),existing.title.clone(),Some(owner),choices).items);
+            } else {
+                let title=if owner.is_empty(){"Twitch account".into()}else{self.profiles.get(&owner).map(|p|p.display_name.clone()).filter(|s|!s.is_empty()).unwrap_or_else(||format!("Twitch channel {owner}"))};
+                result.push(pack(format!("twitch-owner:{owner}"),title,(!owner.is_empty()).then_some(owner),choices));
+            }
+        }
+        let mut all_seen=HashSet::new();
+        let all=result.iter().flat_map(|c|c.items.iter().filter(|i|i.available))
+            .filter(|i|Self::favorite_key(&i.choice).is_some_and(|key|all_seen.insert(key))).cloned().collect();
         let mut seen=HashSet::new();
         let mut favorites:Vec<BrowserChoice>=result.iter().flat_map(|c|c.items.iter()).filter(|item|self.is_favorite(&item.choice))
             .filter(|item|Self::favorite_key(&item.choice).is_some_and(|key|seen.insert(key)))
@@ -319,7 +336,7 @@ impl Catalog {
                 }
             }
         }
-        for emote in &self.twitch.global.emotes {if emote.label.to_lowercase().contains(&query){choices.insert(emote.label.clone(),emote.clone());}}
+        for emote in self.twitch.global.emotes.iter().chain(self.owned.items.iter().map(|i|&i.choice)) {if emote.label.to_lowercase().contains(&query){choices.insert(emote.label.clone(),emote.clone());}}
         let mut choices:Vec<_>=choices.into_values().collect();
         choices.sort_by(|a,b|{let al=a.label.to_lowercase();let bl=b.label.to_lowercase();(!al.starts_with(&query),al,&a.label).cmp(&(!bl.starts_with(&query),bl,&b.label))});
         choices.truncate(limit);choices

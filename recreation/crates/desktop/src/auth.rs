@@ -35,6 +35,7 @@ pub struct TwitchAccount {
     saving: bool,
     validating: bool,
     renewing: bool,
+    upgrading: bool,
     vault_unavailable: bool,
     code: Option<(String, String)>,
     copied_at: Option<Instant>,
@@ -53,6 +54,7 @@ impl TwitchAccount {
         self.account.as_ref().filter(|a| Instant::now() < a.expires_at).map(|a| crate::live::Identity {
             user_id: a.tokens["user_id"].as_str().unwrap_or("").into(),
             access: a.tokens["access_token"].as_str().unwrap_or("").into(),
+            can_read_emotes: a.tokens["scopes"].as_array().is_some_and(|s|s.iter().any(|s|s=="user:read:emotes")),
         })
     }
     pub fn new(cx: &mut Context<Self>) -> Self {
@@ -77,6 +79,7 @@ impl TwitchAccount {
             saving: false,
             validating: false,
             renewing: false,
+            upgrading: false,
             vault_unavailable: false,
             code: None,
             copied_at: None,
@@ -86,6 +89,9 @@ impl TwitchAccount {
         }
     }
     fn start(&mut self, saved: Option<Value>, cx: &mut Context<Self>) {
+        self.start_scoped(saved, SCOPES.to_owned(), false, cx);
+    }
+    fn start_scoped(&mut self, saved: Option<Value>, scopes: String, upgrade: bool, cx: &mut Context<Self>) {
         if self.saving || self.renewing { return; }
         self.cancel.store(true, Ordering::Relaxed);
         self.cancel = Arc::new(AtomicBool::new(false));
@@ -95,8 +101,10 @@ impl TwitchAccount {
         self.saving = false;
         self.code = None;
         self.copied_at = None;
+        self.upgrading = upgrade && self.account.is_some();
+        let expected_user = if self.upgrading {self.account.as_ref().and_then(|a|a.tokens["user_id"].as_str()).map(str::to_owned)}else{None};
         self.validating = saved.is_some() && self.account.is_some();
-        if !self.validating { self.account = None; }
+        if !self.validating && !self.upgrading { self.account = None; }
         self.status = if self.validating {
             "Checking your Twitch session… chat stays connected."
         } else if saved.is_some() {
@@ -107,7 +115,7 @@ impl TwitchAccount {
         .into();
         let cancel = self.cancel.clone();
         let (tx, rx) = mpsc::channel();
-        std::thread::spawn(move || match connect(saved, &cancel, &tx) {
+        std::thread::spawn(move || match connect(saved, &scopes, expected_user.as_deref(), &cancel, &tx) {
             Ok(account) if !cancel.load(Ordering::Relaxed) => {
                 let _ = tx.send(Event::Ready(account));
             }
@@ -129,8 +137,14 @@ impl TwitchAccount {
                             match event {
                                 Event::Code(code, url) => { this.code = Some((code, url)); this.status = "Enter this code on Twitch and approve Jawjack. This code expires shortly.".into(); }
                                 Event::Renewing(ack) => { this.renewing = true; this.status = "Renewing Twitch session securely…".into(); let _ = ack.send(true); }
-                                Event::Invalidated => { this.account = None; this.status = "Renewing expired Twitch authorization…".into(); }
-                                Event::Error(message) => { this.renewing = false; this.validating = false; this.busy = false; this.code = None; this.status = message; this.account = None; }
+                                Event::Invalidated => { if !this.upgrading {this.account = None;} this.status = "Renewing expired Twitch authorization…".into(); }
+                                Event::Error(message) => {
+                                    this.renewing = false; this.validating = false; this.busy = false; this.code = None;
+                                    if this.upgrading && this.account.is_some() {
+                                        this.status = format!("{message} Your existing chat account is unchanged.");
+                                        this.upgrading = false; this.schedule_validation(generation,cx);
+                                    } else {this.status = message; this.account = None; this.upgrading = false;}
+                                }
                                 Event::Ready(account) => this.persist(account, generation, cx),
                                 Event::Rotated(tokens, ack) => this.save_rotation(tokens, ack, generation, cx),
                             }
@@ -174,6 +188,8 @@ impl TwitchAccount {
     }
     fn persist(&mut self, account: Account, generation: u64, cx: &mut Context<Self>) {
         self.renewing = false;
+        let upgrading = self.upgrading;
+        self.upgrading = false;
         // A routine validation of unchanged credentials must not interrupt live chat
         // or rewrite the credential vault every half hour.
         if self.account.as_ref().is_some_and(|old| old.tokens == account.tokens) {
@@ -203,7 +219,13 @@ impl TwitchAccount {
                         this.account = Some(account);
                         this.schedule_validation(generation, cx);
                     }
-                    Err(_) => { this.vault_unavailable = true; this.account = None; this.status = "Could not save tokens securely. Account was not activated; retry sign-in after fixing the OS vault.".into(); }
+                    Err(_) => {
+                        this.vault_unavailable = true;
+                        if upgrading && this.account.is_some() {
+                            this.status = "Could not save the emote upgrade securely. Your existing chat session remains active; retry secure storage before upgrading again.".into();
+                            this.schedule_validation(generation,cx);
+                        } else {this.account = None; this.status = "Could not save tokens securely. Account was not activated; retry sign-in after fixing the OS vault.".into();}
+                    }
                 }
                 cx.notify();
             });
@@ -286,7 +308,11 @@ impl TwitchAccount {
         self.generation += 1;
         self.busy = false;
         self.code = None;
-        self.status = "Sign-in cancelled. No account was connected.".into();
+        self.status = if self.upgrading && self.account.is_some() {
+            self.upgrading = false;
+            self.schedule_validation(self.generation,cx);
+            "Emote permission setup cancelled. Your existing chat account is unchanged."
+        } else {"Sign-in cancelled. No account was connected."}.into();
         cx.notify();
     }
     fn sign_out(&mut self, cx: &mut Context<Self>) {
@@ -351,6 +377,13 @@ impl Render for TwitchAccount {
                                 .label("Sign in with Twitch")
                                 .on_click(cx.listener(|this, _, _, cx| this.start(None, cx))),
                         )
+                    })
+                    .when(!self.busy && !self.saving && !self.vault_unavailable && self.account.is_some()
+                        && !self.identity().is_some_and(|i|i.can_read_emotes), |el| {
+                        el.child(Button::new("enable-twitch-owned-emotes").small()
+                            .label("Enable subscription emotes")
+                            .tooltip("Requests Twitch permission to read emotes available to your account. Existing chat stays connected during setup.")
+                            .on_click(cx.listener(|this,_,_,cx| this.start_scoped(None,format!("{SCOPES} user:read:emotes"),true,cx))))
                     })
                     .when(!self.busy && !self.saving && self.vault_unavailable, |el| {
                         el.child(Button::new("retry-twitch-vault").small()
@@ -441,6 +474,8 @@ fn validate(client: &reqwest::blocking::Client, tokens: &Value) -> Result<(u16, 
 }
 fn connect(
     saved: Option<Value>,
+    requested_scopes: &str,
+    expected_user: Option<&str>,
     cancel: &AtomicBool,
     events: &mpsc::Sender<Event>,
 ) -> Result<Account, String> {
@@ -455,7 +490,7 @@ fn connect(
         let (status, value) = response(
             client
                 .post("https://id.twitch.tv/oauth2/device")
-                .form(&[("client_id", CLIENT_ID), ("scopes", SCOPES)])
+                .form(&[("client_id", CLIENT_ID), ("scopes", requested_scopes)])
                 .send()
                 .map_err(|_| "Could not reach Twitch. Check your connection and retry.")?,
         )?;
@@ -501,7 +536,7 @@ fn connect(
                     .post("https://id.twitch.tv/oauth2/token")
                     .form(&[
                         ("client_id", CLIENT_ID),
-                        ("scopes", SCOPES),
+                        ("scopes", requested_scopes),
                         ("device_code", device.as_str()),
                         ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
                     ])
@@ -532,6 +567,11 @@ fn connect(
         return Err("Cancelled".into());
     }
     let (mut status, mut identity) = validate(&client, &tokens)?;
+    if let Some(expected)=expected_user {
+        if status!=200 || identity["user_id"].as_str()!=Some(expected) || identity["client_id"].as_str()!=Some(CLIENT_ID) {
+            return Err("Authorize the same Twitch account already signed into Jawjack. The emote upgrade was not applied.".into());
+        }
+    }
     if status == 401 {
         // Stop exposing a token Twitch has explicitly rejected before refreshing it.
         let _ = events.send(Event::Invalidated);
@@ -573,7 +613,7 @@ fn connect(
     if identity["client_id"].as_str() != Some(CLIENT_ID) {
         return Err("Saved authorization belongs to a different app. Sign in again.".into());
     }
-    for scope in SCOPES.split_whitespace() {
+    for scope in requested_scopes.split_whitespace() {
         if !identity["scopes"]
             .as_array()
             .is_some_and(|s| s.iter().any(|v| v.as_str() == Some(scope)))

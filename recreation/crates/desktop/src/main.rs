@@ -1,5 +1,6 @@
 use gpui_kit::prelude::FluentBuilder;
 mod auth;
+mod owned_emotes;
 mod chat_text;
 mod chat_search;
 mod message_actions;
@@ -92,6 +93,7 @@ enum PaneEvent {
     Close,
     DraftChanged,
     EmotePreferencesChanged,
+    OpenAccount,
 }
 impl EventEmitter<PaneEvent> for ChannelPane {}
 

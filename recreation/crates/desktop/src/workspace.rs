@@ -382,7 +382,8 @@ impl Workbench {
         for pane in panes.iter().chain(self.closed_tabs.iter().flat_map(|tab|tab.panes.iter())) {pane.update(cx,|p,_|p.input_history.account(identity.as_ref().map(|i|i.user_id.as_str())));}
         self.sync_attention(window,cx);
         if self.streams.pump(identity.clone(),panes.iter().map(|p|p.read(cx).name.to_string()).collect()){cx.notify();}
-        if self.catalog.borrow_mut().profiles.pump(identity.clone()){cx.notify();}
+        let profiles_changed=self.catalog.borrow_mut().profiles.pump(identity.clone());
+        if profiles_changed {for pane in &panes {pane.update(cx,|p,cx|{if p.picker.open {p.refresh_picker(cx);}cx.notify();});}cx.notify();}
         if self.catalog.borrow_mut().pump(panes.iter().map(|p|p.read(cx).name.to_string()).collect(), identity.clone()) {
             for pane in &panes { pane.update(cx, |p,cx| {
                 p.timeline.borrow_mut().enrich(|message| message.fragments = self.catalog.borrow().expand(&p.name, &message.user_id, &message.fragments));
@@ -480,6 +481,12 @@ impl Workbench {
                         cx.notify();
                     });
                 }
+                return;
+            }
+            if matches!(event, PaneEvent::OpenAccount) {
+                let account=this.account.clone();
+                let width=(f32::from(window.viewport_size().width)-24.).min(380.);
+                window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Twitch account").child(account.clone()));
                 return;
             }
             if matches!(event, PaneEvent::EmotePreferencesChanged) {

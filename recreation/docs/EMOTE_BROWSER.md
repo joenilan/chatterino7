@@ -64,3 +64,33 @@ picker entities refresh together after changes.
 Source builds successfully on Linux. Populated-catalog add/remove and restart
 persistence still require native acceptance; empty-state UI inspection alone does not
 prove those behaviors.
+
+## Twitch account inventory
+
+The optional account inventory uses Twitch's authenticated
+[Get User Emotes](https://dev.twitch.tv/docs/api/reference/#get-user-emotes) endpoint
+with `user:read:emotes`. It follows pagination independently of open channel tabs.
+Returned emotes are grouped by owning broadcaster, using profile names/avatars
+where loaded, and merge into an existing source tab for that broadcaster. Account
+emotes participate in completion, favorites and current-channel insertion checks.
+The base request has no broadcaster context; subscriber-unlocked follower emotes
+returned by Twitch are retained. Additional follower-only channel-context queries
+remain future work and must not grant global availability.
+
+Existing chat login requests are unchanged. **Enable subscription emotes** in the
+account popup starts an explicit same-account permission upgrade. The existing
+session remains available during the device flow; cancellation or an unsuccessful
+upgrade preserves it subject to its original expiry. Authorizing a different account
+is rejected before replacing stored credentials. The picker has an Account shortcut
+and always shows inventory status in All/Twitch views, including when other catalogs
+already contain emotes. The agent must not approve a grant on the owner's behalf.
+
+Inventory work is isolated from chat, cancels stale account generations, and is
+bounded to 32 pages, 20,000 entries, 90 seconds and 4 MiB per response. Cursor loops
+are rejected. Reaching a budget is visibly **partial**, never reported as complete.
+The inventory refreshes periodically; failed retrieval clears uncertain availability.
+Profiles are fetched through the existing bounded metadata owner. No account token
+or inventory is written into ordinary workspace settings.
+
+Linux compilation is verified. Real subscription loading, owner permission approval,
+and populated owner-tab behavior still require authenticated native verification.
