@@ -7,6 +7,9 @@ use std::{
     sync::mpsc,
     time::{Duration, Instant},
 };
+#[derive(Clone,Copy,PartialEq,Eq,Default)]
+pub enum LoadState { #[default] Loading, Ready, Failed }
+impl LoadState { pub fn label(self)->&'static str {match self {Self::Loading=>"loading",Self::Ready=>"loaded",Self::Failed=>"unavailable"}} }
 pub type Emotes = HashMap<String, Fragment>;
 #[derive(Default)]
 pub struct Set {
@@ -15,6 +18,8 @@ pub struct Set {
 }
 pub struct Community {
     pub global: Set,
+    pub global_bttv_state: LoadState,
+    pub global_ffz_state: LoadState,
     pub channels: HashMap<String, Set>,
     requested: HashMap<String, Instant>,
     tx: mpsc::SyncSender<(String, String)>,
@@ -59,6 +64,7 @@ impl Community {
         });
         Self {
             global: Set::default(),
+            global_bttv_state:LoadState::Loading,global_ffz_state:LoadState::Loading,
             channels: HashMap::new(),
             requested: HashMap::new(),
             tx,
@@ -90,6 +96,12 @@ impl Community {
             if !channel.is_empty() && !channels.contains_key(&channel) {
                 continue;
             }
+            if channel.is_empty(){
+                let bs=if bttv.is_some(){LoadState::Ready}else{LoadState::Failed};
+                let fs=if ffz.is_some(){LoadState::Ready}else{LoadState::Failed};
+                changed|=self.global_bttv_state!=bs||self.global_ffz_state!=fs;
+                self.global_bttv_state=bs;self.global_ffz_state=fs;
+            }
             let set = if channel.is_empty() {
                 &mut self.global
             } else {
@@ -105,6 +117,11 @@ impl Community {
             }
         }
         changed
+    }
+    pub fn retry_global(&mut self){
+        if self.global_bttv_state!=LoadState::Loading && self.global_ffz_state!=LoadState::Loading {
+            self.requested.remove("");self.global_bttv_state=LoadState::Loading;self.global_ffz_state=LoadState::Loading;
+        }
     }
     pub fn inspection(&self) -> Value {
         serde_json::json!({"global_bttv":self.global.bttv.len(),"global_ffz":self.global.ffz.len(),"channels":self.channels.iter().map(|(name,set)|(name.clone(),serde_json::json!({"bttv":set.bttv.len(),"ffz":set.ffz.len()}))).collect::<HashMap<_,_>>()})

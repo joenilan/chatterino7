@@ -234,6 +234,8 @@ impl Render for TwitchAccount {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .v_flex()
+            .w_full()
+            .min_w_0()
             .flex_shrink_0()
             .px_3()
             .py_2()
@@ -243,15 +245,16 @@ impl Render for TwitchAccount {
             .border_color(rgb(theme::BORDER))
             .child(
                 div()
-                    .h_flex().flex_wrap()
+                    .v_flex().w_full().min_w_0()
                     .gap_3()
                     .child(
                         div()
-                            .flex_1()
+                            .w_full()
                             .min_w_0()
                             .text_size(px(12.))
                             .child(self.status.clone()),
                     )
+                    .child(div().h_flex().w_full().flex_wrap().gap_2()
                     .when(!self.busy && self.account.is_none(), |el| {
                         el.child(
                             Button::new("twitch-sign-in")
@@ -279,12 +282,12 @@ impl Render for TwitchAccount {
                                 .label("Cancel")
                                 .on_click(cx.listener(|this, _, _, cx| this.cancel(cx))),
                         )
-                    }),
+                    })),
             )
             .when_some(self.code.clone(), |el, (code, url)| {
                 el.child(
                     div()
-                        .h_flex().flex_wrap()
+                        .v_flex().w_full().min_w_0()
                         .gap_3()
                         .child(
                             div()

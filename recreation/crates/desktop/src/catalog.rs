@@ -18,6 +18,8 @@ type Emotes = HashMap<String, Emote>;
 struct Loaded {emotes:Emotes,set:String,owner:String}
 pub struct Catalog {
     global: Emotes,
+    global_state:crate::community::LoadState,
+    last_manual_refresh:Option<Instant>,
     personal:Emotes,
     personal_user:Option<String>,
     personal_ready:bool,
@@ -70,6 +72,7 @@ impl Catalog {
         let _ = tx.try_send((String::new(), String::new(), 0));
         Self {
             global: HashMap::new(),
+            global_state:crate::community::LoadState::Loading,last_manual_refresh:None,
             personal:HashMap::new(),personal_user:None,personal_ready:false,personal_epoch:0,
             entitlements:Default::default(),badges:Default::default(),entitled_sets:HashMap::new(),event_versions:HashMap::new(),event_revision:0,
             watches:HashMap::new(),events:crate::seven_events::Events::new(),dirty:HashSet::new(),
@@ -106,6 +109,7 @@ impl Catalog {
         }
     }
     pub fn pump(&mut self, active: HashSet<String>, identity: Option<crate::live::Identity>) -> bool {
+        let old_global_state=self.global_state;
         let user=identity.as_ref().map(|i|i.user_id.clone());
         let account_changed=self.personal_user!=user;
         if account_changed {self.personal_epoch=self.personal_epoch.wrapping_add(1);self.personal.clear();self.personal_ready=false;self.personal_user=user;}
@@ -152,6 +156,7 @@ impl Catalog {
             && !self.in_flight.contains("") && self.retry_after.get("").is_none_or(|at|Instant::now()>=*at)
             && self.tx.try_send((String::new(), String::new(), 0)).is_ok()
         {
+            self.global_state=crate::community::LoadState::Loading;
             self.global_requested = Instant::now();self.dirty.remove("");self.in_flight.insert(String::new());
         }
         for (name, (id, at)) in &mut self.requested {
@@ -167,6 +172,7 @@ impl Catalog {
         changed |= self.community.pump(&channel_requests);
         while let Ok((name, generation, result)) = self.rx.try_recv() {
             self.in_flight.remove(&name);
+            if name.is_empty(){self.global_state=if result.is_some(){crate::community::LoadState::Ready}else{crate::community::LoadState::Failed};}
             if name.starts_with('@')&&generation!=self.personal_epoch{continue;}
             if let Some(id)=name.strip_prefix('#'){if self.event_versions.get(id)!=Some(&generation){if wanted(&name){self.dirty.insert(name.clone());}continue;}}
             if result.is_none() && wanted(&name) {self.retry_after.insert(name.clone(),Instant::now()+Duration::from_secs(60));self.dirty.insert(name.clone());}else{self.retry_after.remove(&name);}
@@ -190,7 +196,7 @@ impl Catalog {
                 }
             }
         }
-        changed
+        changed || old_global_state!=self.global_state
     }
     fn lookup(&self, channel:&str, token:&str, sender:Option<&str>)->Option<Fragment> {
         let make_seven=|e:&Emote|Fragment::Emote{provider:"7tv".into(),id:e.id.clone(),label:token.into(),overlay:e.overlay,animated:e.animated,asset:Some(e.asset.clone())};
@@ -201,6 +207,23 @@ impl Catalog {
             .or_else(||self.channels.get(channel).and_then(|s|s.get(token)).map(make_seven))
             .or_else(||self.community.global.ffz.get(token).or_else(||self.community.global.bttv.get(token)).cloned())
             .or_else(||self.global.get(token).map(make_seven))
+    }
+    pub fn browser_status(&self,service:&str)->String {
+        let states=[("7TV",self.global_state),("BTTV",self.community.global_bttv_state),("FFZ",self.community.global_ffz_state)];
+        let mut labels=states.into_iter().filter(|(name,_)|service.is_empty()||service==*name).map(|(name,state)|format!("{name}: {}",state.label())).collect::<Vec<_>>();
+        if service.is_empty()||service=="Twitch"{labels.push(if self.personal_user.is_none(){"Twitch: sign in to load globals".into()}else if self.twitch.global.emotes.is_empty(){"Twitch: globals not loaded yet".into()}else{"Twitch: globals loaded".into()});}
+        labels.join(" · ")
+    }
+    pub fn can_retry_public(&self)->bool {
+        use crate::community::LoadState;
+        self.last_manual_refresh.is_none_or(|at|at.elapsed()>=Duration::from_secs(10)) &&
+        [self.global_state,self.community.global_bttv_state,self.community.global_ffz_state].contains(&LoadState::Failed)
+    }
+    pub fn retry_public(&mut self)->bool {
+        if !self.can_retry_public(){return false;}
+        self.last_manual_refresh=Some(Instant::now());
+        if !self.in_flight.contains(""){self.dirty.insert(String::new());self.retry_after.remove("");self.global_requested=Instant::now()-Duration::from_secs(6);self.global_state=crate::community::LoadState::Loading;}
+        self.community.retry_global();true
     }
     pub fn browser_collections(&mut self,current:&str)->Vec<crate::emote_picker::Collection>{
         use crate::emote_picker::{BrowserChoice,Collection};

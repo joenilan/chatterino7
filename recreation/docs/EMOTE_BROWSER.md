@@ -31,3 +31,17 @@ window remained black. This is a preview-environment failure, not visual accepta
 Manual review still required: avatars and fallback tiles, service/search composition,
 scrolling, normal/short-window placement, repeated insertion without sending,
 keyboard navigation, resizing, and interaction with channel tabs and composer.
+
+## Empty-state and account dialog follow-up
+
+The browser distinguishes public provider loading/failure from an empty search,
+and offers a bounded manual retry for failed public catalogs. Twitch's signed-out
+state is explicit. Network failure does not imply an empty account inventory.
+
+The account dialog now gives status text a full-width row above wrapping actions;
+device authorization code/actions also stack to fit narrow dialogs. This fixes the
+observed vertical text squeeze. Secure-storage errors remain visible; the app does
+not fall back to plaintext credentials. The currently viewed preview was not replaced.
+
+Final locked/offline Linux build passed (exit 0, 3.79s). Updated native dialog
+appearance and retry interaction still require manual verification.

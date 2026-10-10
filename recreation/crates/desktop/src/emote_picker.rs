@@ -548,6 +548,9 @@ impl ChannelPane {
     }
     pub fn render_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let reduced = cx.reduce_motion();
+        let provider_status=self.catalog.borrow().browser_status(&self.picker.service);
+        let can_retry=self.catalog.borrow().can_retry_public();
+        let empty_message=if !self.emote_search.read(cx).value().trim().is_empty(){"No matching emotes. Try a different search or service.".to_owned()}else{provider_status};
         let height = (f32::from(window.viewport_size().height) - 70.).clamp(180., 390.);
         let width = self
             .viewport
@@ -732,7 +735,7 @@ impl ChannelPane {
             .child(div().flex_1().min_h_0().w_full().overflow_hidden().on_prepaint(move|bounds,_,cx|{
                 let next=((f32::from(bounds.size.width)+4.)/44.).floor().max(1.)as usize;
                 if next!=columns{let owner=owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|this,cx|{if this.picker.columns!=next{this.picker.columns=next;this.rebuild_browser(false,cx);if let Some(row)=this.picker.rows.iter().position(|r|matches!(r,GridRow::Cells(range)if range.contains(&this.picker.current))){this.picker.scroll.scroll_to_item(row,ScrollStrategy::Nearest);}cx.notify();}});});}
-            }).when(self.picker.items.is_empty(),|el|el.child(div().p_2().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("No emotes in this collection/filter yet.")))
+            }).when(self.picker.items.is_empty(),|el|el.child(div().p_2().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(empty_message).when(can_retry,|el|el.child(Button::new("retry-public-emotes").xsmall().label("Retry public emotes").on_click(cx.listener(|this,_,_,cx|{if this.catalog.borrow_mut().retry_public(){this.refresh_picker(cx);cx.notify();}}))))))
             .when(!self.picker.items.is_empty(),|el|el.child(uniform_list("emote-browser-grid",self.picker.rows.len(),cx.processor(|this,range:Range<usize>,_,cx|{
                 range.map(|row|{
                     match this.picker.rows[row].clone(){
