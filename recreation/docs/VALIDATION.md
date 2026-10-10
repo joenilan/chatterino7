@@ -559,3 +559,13 @@ and initial SUBSCRIBE ACK reconciliation. No live EventAPI connection, rename/
 remove event or native refresh acceptance is claimed yet. Windows inspection
 should verify real subscription ACK status and unaffected emote/chat rendering;
 external set changes require real samples rather than editing a streamer's set.
+
+### Compact switcher source checkpoint
+
+Ctrl+P switcher source builds on Linux. Native acceptance pending for keyboard
+selection, filtered/empty results, different workspaces, hidden offline channels,
+compact-height paging, correct composer focus and preserved drafts.
+
+Switcher source review corrected Enter to one synchronous capture handler, avoiding
+dialog confirmation also consuming it. Final locked offline Linux build passed
+(exit 0, 3.63 seconds). Native focus/compact acceptance remains pending.

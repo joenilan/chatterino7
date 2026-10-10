@@ -103,7 +103,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | WS04 | Sidebar and live-only filters | Part | Existing user workflow; hidden unread discovery in new activity batch awaits native acceptance. | widgets/splits/SplitHeader.cpp |
 | WS05 | Broadcast status | Part | Native live/offline pastel markers observed; unknown/stale edges remain. Broadcast state must remain distinct from chat connection. | widgets/splits/SplitHeader.cpp |
 | WS06 | Stream title/game/viewers/uptime | Part | Ctrl+I/context-menu details, title/category/viewers/language/start timestamp implemented; native pending. Live elapsed-uptime formatting remains. | widgets/splits/SplitHeader.cpp |
-| WS07 | Quick switcher and visit history | Backlog | Keyboard-first workspace/channel switching, recent navigation and neighbor-pane focus. | widgets/dialogs/switcher; Notebook |
+| WS07 | Quick switcher and visit history | Part | Ctrl+P searches open channels/workspace names, including offline-hidden tabs; keyboard/click activates correct dock and composer. Native pending; visit history/neighbor focus remain. | widgets/dialogs/switcher; Notebook |
 | WS08 | Multiple windows and popouts | Backlog | Independent windows, split/workspace popout, cross-window drag and persisted geometry. | widgets/Window.cpp; common/WindowDescriptors |
 | WS09 | Overlay and attached windows | Backlog | Always-on-top, transparency/click-through and deliberate interaction modes; browser attachment later. | widgets/OverlayWindow; AttachedWindow; FramelessEmbedWindow |
 | WS10 | Special channels | Part | New local activity dialog only; mentions, whispers, watching/live and AutoMod feeds need explicit models. | widgets/dialogs/SelectChannelDialog.cpp |

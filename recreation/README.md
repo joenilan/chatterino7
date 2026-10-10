@@ -68,6 +68,7 @@ Optional session-only native app control is described in
 - Ctrl+Shift+T: reopen recently closed workspace
 - Ctrl+Tab / Ctrl+Shift+Tab: next / previous workspace
 - Ctrl+PageDown / Ctrl+PageUp: next / previous channel tab
+- Ctrl+P: search and switch existing channels across workspaces
 - Ctrl+K: add channel
 - Ctrl+I: details for the focused channel
 - Composer @name: recent-speaker suggestions; :emote or Tab: emote completion

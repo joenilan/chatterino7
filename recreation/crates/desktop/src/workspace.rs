@@ -2,6 +2,8 @@
 mod activity;
 #[path="channel_details.rs"]
 mod channel_details;
+#[path="channel_switcher.rs"]
+mod channel_switcher;
 use gpui_kit::base::ElementExt;
 use crate::dock::Dock;
 use crate::{ChannelPane, DragPreview, DraggedChannel, PaneEvent, caption_control, storage, theme};
@@ -39,11 +41,12 @@ gpui_kit::actions!(
         ToggleLiveWorkspaces,
         ToggleLiveChannels,
         QuitWithoutSaving,
-        OpenActivity, MarkAllRead, FontLarger, FontSmaller, ResetFont, ChannelDetails
+        OpenActivity, MarkAllRead, FontLarger, FontSmaller, ResetFont, ChannelDetails, SwitchChannel
     ]
 );
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
+        KeyBinding::new("ctrl-p", SwitchChannel, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-i", ChannelDetails, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-shift-m", OpenActivity, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-shift-r", MarkAllRead, Some("ChatWorkspace")),
@@ -1198,6 +1201,7 @@ impl Render for Workbench {
                 });
             }).absolute().size_0())
             .on_action(cx.listener(|this,_:&crate::FindChat,w,cx|{let panes=this.visible_panes(cx);let selected=this.selected_channel.as_ref();if let Some(pane)=panes.iter().find(|p|Some(&p.read(cx).name.to_string())==selected).or(panes.first()){pane.update(cx,|p,cx|p.open_search(w,cx));}cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&SwitchChannel,w,cx|this.open_switcher(w,cx)))
             .on_action(cx.listener(|this,_:&ChannelDetails,w,cx|this.open_focused_channel_details(w,cx)))
             .on_action(cx.listener(|this,_:&OpenActivity,w,cx|this.open_activity(w,cx)))
             .on_action(cx.listener(|this,_:&MarkAllRead,_,cx|this.mark_all_read(cx)))
@@ -1230,6 +1234,7 @@ impl Render for Workbench {
                 .child(Button::new("account-menu").ghost().xsmall().label(self.account.read(cx).label()).tooltip("Twitch account")
                     .on_click(cx.listener(|this,_,window,cx|{let account=this.account.clone();let width=(f32::from(window.viewport_size().width)-24.).min(380.);window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Twitch account").child(account.clone()));})))
                 .child(Button::new("settings-menu").ghost().small().label("⚙").tooltip("Settings and workspace actions").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
+                    .menu("Switch channel · Ctrl+P",Box::new(SwitchChannel))
                     .menu("Highlights & unread",Box::new(OpenActivity))
                     .menu("Mark all read",Box::new(MarkAllRead))
                     .menu("Appearance & memory",Box::new(ToggleAppearance))

@@ -672,3 +672,14 @@ user/set caches and own-account picker clearing. Paints need glyph masks and
 bounded gradients/layers; flat name recoloring is not complete paint support.
 Sources: https://github.com/SevenTV/SevenTV/blob/main/apps/event-api/src/http/v3/mod.rs
 and https://github.com/SevenTV/EventAPI#close-codes
+
+## B6 convenience slice: compact channel switcher (2026-10-10)
+
+Ctrl+P and the settings menu open a keyboard-first switcher across existing channels
+and workspaces, including channels hidden by the live-only filter. Token matching
+uses channel and workspace names; prefix/current-workspace matches rank first.
+Rows show pastel broadcast markers, workspace context and unread counts. Keyboard
+selection pages according to available height so the selected result stays visible
+in the compact window. Enter/click activates the existing dock and focuses its
+composer without changing the draft; Escape dismisses. No new channels, permanent
+toolbar, network lookup or duplicate workspace tabs.
