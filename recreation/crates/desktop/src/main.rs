@@ -529,6 +529,7 @@ impl Render for ChannelPane {
         let first_order = (self.next_id - retained) as u64;
         // Only unread rows actually below the view are "new below"; rows that
         // arrived while the window was inactive may already be on screen or above.
+        let routine_status = matches!(self.send_status.as_str(), "Sent" | "Sending…");
         let unread_below = {
             let scroller = self.scroller.read(cx);
             self.attention
@@ -612,8 +613,13 @@ impl Render for ChannelPane {
                     .border_b_1()
                     .border_color(rgb(theme::BORDER))
                     .child(
+                        // Name and status truncate first so the pane controls stay reachable.
                         div()
                             .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_size(px(13.))
                             .id("channel-drag-title")
@@ -627,6 +633,10 @@ impl Render for ChannelPane {
                     )
                     .child(
                         div()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
                             .text_size(px(12.))
                             .text_color(rgb(theme::MUTED))
                             .child(if self.connected { if paused { "Paused".to_owned() } else if following { "Latest".to_owned() } else { format!("{retained}/{} · History", self.timeline.borrow().capacity()) } } else { self.connection.clone() }),
@@ -759,7 +769,7 @@ impl Render for ChannelPane {
                                 .min_w_0()
                                 .cursor_text()
                                 .context_menu(move|menu,_,cx|message_actions::menu(row_owner.clone(),row_id.clone(),menu,cx))
-                                .when(read_boundary==Some(row),|el|el.child(div().h_flex().items_center().gap_2().h(px(18.)).text_size(px(10.)).text_color(rgb(0x9DBFCE)).child(div().h(px(1.)).flex_1().bg(rgb(0x40535E))).child("Last read position").child(div().h(px(1.)).flex_1().bg(rgb(0x40535E)))))
+                                .when(read_boundary==Some(row)&&index>0,|el|el.child(div().h_flex().items_center().gap_2().h(px(18.)).text_size(px(10.)).text_color(rgb(0x9DBFCE)).child(div().h(px(1.)).flex_1().bg(rgb(0x40535E))).child("Last read position").child(div().h(px(1.)).flex_1().bg(rgb(0x40535E)))))
                                 .children(rich_heading)
                                 .children(reply_line)
                                 .child(div().h_flex().items_start().min_w_0().gap_1()
@@ -848,10 +858,14 @@ impl Render for ChannelPane {
                 .children(picker)
                 .children(suggestions)
                 .child(Textarea::new(&self.draft))
-                .when(!self.send_status.is_empty(), |el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(self.send_status.clone())))
-                .child(div().h_flex().justify_between().text_size(px(11.)).text_color(rgb(theme::MUTED))
-                    .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500", self.draft.read(cx).value().chars().count())))
-                    .when_some(self.room_settings.as_ref().filter(|r|!r.labels().is_empty()).map(|r|r.summary()),|el,summary|el.child(div().id("room-modes-hint").max_w(px(120.)).overflow_hidden().text_ellipsis().text_color(rgb(0xC5B8E6)).tooltip({let summary=summary.clone();move|w,cx|gpui_kit::component::tooltip::Tooltip::new(format!("{summary}. Your role may grant exemptions; Twitch validates sending. Ctrl+I for channel details.")).build(w,cx)}).child(summary)))
+                // Routine progress sits inline so side-by-side composers keep equal height;
+                // failures keep a full-width row so their explanation is never truncated.
+                .when(!routine_status && !self.send_status.is_empty(), |el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(self.send_status.clone())))
+                .child(div().h_flex().justify_between().gap_2().text_size(px(11.)).text_color(rgb(theme::MUTED))
+                    .child(div().h_flex().gap_2().flex_shrink_0()
+                        .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500", self.draft.read(cx).value().chars().count())))
+                        .when(routine_status && !self.send_status.is_empty(), |el|el.child(self.send_status.clone())))
+                    .when_some(self.room_settings.as_ref().filter(|r|!r.labels().is_empty()).map(|r|r.summary()),|el,summary|el.child(div().id("room-modes-hint").max_w(px(120.)).min_w_0().flex_shrink(1.).overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(rgb(0xC5B8E6)).tooltip({let summary=summary.clone();move|w,cx|gpui_kit::component::tooltip::Tooltip::new(format!("{summary}. Your role may grant exemptions; Twitch validates sending. Ctrl+I for channel details.")).build(w,cx)}).child(summary)))
                     .child(div().h_flex().gap_2().child(Button::new("sent-history").small().label("↶").tooltip("Sent message history · Ctrl+Shift+H").on_click(cx.listener(|this,_,w,cx|this.open_input_history(w,cx)))).child(div().id("emote-button-area").on_prepaint(move|bounds,_,cx|{if emote_button_bounds.replace(Some(bounds))!=Some(bounds)&&emote_picker_open{let owner=emote_button_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}}).on_hover(cx.listener(|this,over,_,cx|{if *over{this.prepare_picker_media(cx);}})).child(Button::new("emotes-toggle").small().label(":)").tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
                     .child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else if commands::is_command(&self.draft.read(cx).value()) { "Run" } else { "Send" }).disabled(self.pending.is_some() || (!self.connected && !commands::is_command(&self.draft.read(cx).value()))).tooltip("Send a message or run a local /command").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx)))))))
             .child(

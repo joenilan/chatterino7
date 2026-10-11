@@ -361,7 +361,9 @@ impl Dock {
     }
     pub fn minimum(&self) -> (f32, f32) {
         match self {
-            Self::Leaf(_) | Self::Deck { .. } => (240., 212.),
+            // A pane's header and composer controls fit in 200px, so two
+            // splits still fit side by side in a compact 420px window.
+            Self::Leaf(_) | Self::Deck { .. } => (200., 212.),
             Self::Split {
                 vertical, children, ..
             } => children
