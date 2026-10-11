@@ -1,4 +1,5 @@
-//! One shared Twitch EventSub connection per account. No credentials in logs/state.
+//! Twitch EventSub chat for one account, sharded over up to three WebSockets.
+//! No credentials in logs/state.
 use crate::auth::CLIENT_ID;
 use chat_core::{Event as ChatEvent, Fragment, Message};
 use serde_json::{Value, json};
@@ -71,16 +72,25 @@ impl LiveChat {
     pub fn version(&self) -> u64 {
         self.epoch.load(Ordering::Relaxed)
     }
-    pub fn configure(&self, identity: Option<Identity>, mut channels: Vec<String>) -> bool {
-        channels.sort();
-        channels.dedup();
+    /// Set the account and the channels to connect, highest priority first.
+    /// Channel changes are applied incrementally; returns true only when the
+    /// account changed and every channel restarts.
+    pub fn configure(&self, identity: Option<Identity>, channels: Vec<String>) -> bool {
+        let mut seen = HashSet::new();
+        let channels = channels
+            .into_iter()
+            .filter(|c| seen.insert(c.clone()))
+            .collect();
         let next = Config { identity, channels };
         if let Ok(mut c) = self.config.lock()
             && *c != next
         {
+            let account_changed = c.identity != next.identity;
             *c = next;
-            self.epoch.fetch_add(1, Ordering::Relaxed);
-            return true;
+            if account_changed {
+                self.epoch.fetch_add(1, Ordering::Relaxed);
+            }
+            return account_changed;
         }
         false
     }
@@ -321,125 +331,88 @@ fn room_snapshot_worker(
     });
     sender
 }
-fn subscribe(
-    c: Config,
-    session: String,
-    tx: mpsc::SyncSender<(u64, Event)>,
-    epoch: Arc<std::sync::atomic::AtomicU64>,
-    version: u64,
-    map: Arc<Mutex<HashMap<String, String>>>,
-    snapshots: mpsc::SyncSender<RoomSnapshot>,
-) {
-    std::thread::spawn(move || {
-        let Some(identity) = c.identity else { return };
-        let Ok(client) = client() else { return };
-        for (index, channel) in c.channels.into_iter().enumerate() {
-            if index > 0 {
-                std::thread::sleep(Duration::from_millis(550));
-            }
-            if epoch.load(Ordering::Relaxed) != version {
-                break;
-            }
-            let mut notices_unavailable = false;
-            let result: Result<(), String> = (|| {
-                let id = resolve(&client, &identity, &channel)?;
-                if let Ok(mut names) = map.lock() {
-                    names.insert(id.clone(), channel.clone());
-                }
-                let _ = tx.send((version, Event::Resolved(channel.clone(), id.clone())));
-                for kind in [
-                    "channel.chat.message",
-                    "channel.chat.message_delete",
-                    "channel.chat.clear_user_messages",
-                    "channel.chat.clear",
-                    "channel.chat.notification",
-                    "channel.chat_settings.update",
-                ] {
-                    if epoch.load(Ordering::Relaxed) != version {
-                        return Err("Channel subscription cancelled".into());
-                    }
-                    let body = json!({"type":kind,"version":"1","condition":{"broadcaster_user_id":id,"user_id":identity.user_id},"transport":{"method":"websocket","session_id":session}});
-                    let subscription = (|| {
-                        response_json(
-                            client
-                                .post("https://api.twitch.tv/helix/eventsub/subscriptions")
-                                .header("Client-Id", CLIENT_ID)
-                                .bearer_auth(&identity.access)
-                                .header("Content-Type", "application/json")
-                                .body(body.to_string())
-                                .send()
-                                .map_err(|_| "Twitch subscription request interrupted")?,
-                        )
-                    })();
-                    let (status, response) = match subscription {
-                        Ok(value) => value,
-                        Err(_)
-                            if matches!(
-                                kind,
-                                "channel.chat.notification" | "channel.chat_settings.update"
-                            ) =>
-                        {
-                            notices_unavailable = true;
-                            continue;
-                        }
-                        Err(error) => return Err(error),
-                    };
-                    if status != 202 || response["data"][0]["status"].as_str() != Some("enabled") {
-                        if matches!(
-                            kind,
-                            "channel.chat.notification" | "channel.chat_settings.update"
-                        ) {
-                            notices_unavailable = true;
-                            continue;
-                        }
-                        return Err(format!("Chat subscription failed (HTTP {status})"));
-                    }
-                }
-                // Bounded independent worker: metadata cannot delay chat readiness.
-                let _ = snapshots.try_send(RoomSnapshot {
-                    version,
-                    identity: identity.clone(),
-                    channel: channel.clone(),
-                    id,
-                });
-                Ok(())
-            })();
-            if epoch.load(Ordering::Relaxed) != version {
-                break;
-            }
-            let (message, ready) = match result {
-                Ok(()) => (
-                    if notices_unavailable {
-                        "Connected · Some room events unavailable until reconnect".into()
-                    } else {
-                        "Connected".into()
-                    },
-                    true,
-                ),
-                Err(e) => (e, false),
-            };
-            if tx
-                .send((version, Event::State(channel, message, ready)))
-                .is_err()
-            {
-                break;
-            }
-        }
-    });
+/// Every connected channel uses one subscription per kind.
+const CHANNEL_KINDS: [&str; 6] = [
+    "channel.chat.message",
+    "channel.chat.message_delete",
+    "channel.chat.clear_user_messages",
+    "channel.chat.clear",
+    "channel.chat.notification",
+    "channel.chat_settings.update",
+];
+/// Notices and room settings are useful but not required for chat to work.
+fn optional_kind(kind: &str) -> bool {
+    matches!(kind, "channel.chat.notification" | "channel.chat_settings.update")
 }
-fn all(tx: &mpsc::SyncSender<(u64, Event)>, c: &Config, version: u64, message: &str) {
-    for channel in &c.channels {
-        if tx
-            .send((
-                version,
-                Event::State(channel.clone(), message.into(), false),
-            ))
-            .is_err()
-        {
-            break;
+/// EventSub allows 300 enabled subscriptions per WebSocket and three WebSockets
+/// per user token.
+const CHANNELS_PER_SOCKET: usize = 300 / CHANNEL_KINDS.len();
+const MAX_SOCKETS: usize = 3;
+pub const MAX_CHANNELS: usize = CHANNELS_PER_SOCKET * MAX_SOCKETS;
+/// Subscription requests stay well inside Helix's 800 points/minute budget,
+/// leaving room for profiles, emotes and room settings.
+const REQUEST_INTERVAL: Duration = Duration::from_millis(110);
+/// A channel whose required subscription failed is retried after this delay.
+const FAILURE_RETRY: Duration = Duration::from_secs(60);
+
+#[derive(Default)]
+struct Dedup {
+    seen: HashSet<String>,
+    order: VecDeque<String>,
+}
+/// What one socket thread reports to the manager.
+#[derive(Default)]
+struct ShardStatus {
+    session: Option<String>,
+    /// Bumped on every fresh connection; reconnect handoffs keep subscriptions.
+    generation: u64,
+    /// Broadcaster IDs (and reasons) whose subscriptions Twitch revoked.
+    revoked: Vec<(String, String)>,
+}
+struct Shard {
+    status: Arc<Mutex<ShardStatus>>,
+    stop: Arc<AtomicBool>,
+    /// Session state the manager last reported to the UI.
+    seen_generation: u64,
+    online: bool,
+}
+/// Per-channel subscription progress on its shard.
+struct Assignment {
+    shard: usize,
+    generation: u64,
+    broadcaster: Option<String>,
+    ids: Vec<String>,
+    step: usize,
+    notices_unavailable: bool,
+    ready: bool,
+    failed_until: Option<Instant>,
+}
+impl Assignment {
+    fn new(shard: usize) -> Self {
+        Self {
+            shard,
+            generation: 0,
+            broadcaster: None,
+            ids: Vec::new(),
+            step: 0,
+            notices_unavailable: false,
+            ready: false,
+            failed_until: None,
         }
     }
+    fn restart(&mut self, generation: u64) {
+        self.generation = generation;
+        self.ids.clear();
+        self.step = 0;
+        self.notices_unavailable = false;
+        self.ready = false;
+    }
 }
+fn state(tx: &mpsc::SyncSender<(u64, Event)>, version: u64, channel: &str, text: &str, ready: bool) {
+    let _ = tx.send((version, Event::State(channel.into(), text.into(), ready)));
+}
+/// Owns channel-to-socket assignment and all subscription requests. Only an
+/// account change resets everything; channel changes are incremental.
 fn run(
     config: Arc<Mutex<Config>>,
     stop: Arc<AtomicBool>,
@@ -447,28 +420,382 @@ fn run(
     epoch: Arc<std::sync::atomic::AtomicU64>,
 ) {
     let snapshots = room_snapshot_worker(tx.clone(), epoch.clone());
-    let mut dedup = HashSet::new();
-    let mut order = VecDeque::new();
-    let mut retry = 1;
+    let names: Arc<Mutex<HashMap<String, String>>> = Default::default();
+    let dedup: Arc<Mutex<Dedup>> = Default::default();
+    let Ok(client) = client() else { return };
+    let mut identity: Option<Identity> = None;
+    let mut shards: Vec<Option<Shard>> = (0..MAX_SOCKETS).map(|_| None).collect();
+    let mut assigned: HashMap<String, Assignment> = HashMap::new();
+    let mut deletions: VecDeque<String> = VecDeque::new();
+    let mut over_cap: HashSet<String> = HashSet::new();
+    let mut next_request = Instant::now();
+    let mut turn = 0usize;
     while !stop.load(Ordering::Relaxed) {
-        let (c, version) = config
-            .lock()
-            .map(|c| (c.clone(), epoch.load(Ordering::Relaxed)))
-            .unwrap_or_default();
-        if c.identity.is_none() || c.channels.is_empty() {
+        let c = config.lock().map(|c| c.clone()).unwrap_or_default();
+        let version = epoch.load(Ordering::Relaxed);
+        if c.identity != identity {
+            // Account change: tear everything down; the UI already reset its panes.
+            for shard in shards.iter_mut().filter_map(Option::take) {
+                shard.stop.store(true, Ordering::Relaxed);
+            }
+            assigned.clear();
+            deletions.clear();
+            over_cap.clear();
+            if let Ok(mut names) = names.lock() {
+                names.clear();
+            }
+            identity = c.identity.clone();
+        }
+        let Some(id) = identity.clone() else {
             std::thread::sleep(Duration::from_millis(200));
             continue;
+        };
+        // Desired channels in priority order, capped by what EventSub allows.
+        let wanted: Vec<&String> = c.channels.iter().take(MAX_CHANNELS).collect();
+        for channel in c.channels.iter().skip(MAX_CHANNELS) {
+            if over_cap.insert(channel.clone()) {
+                state(
+                    &tx,
+                    version,
+                    channel,
+                    &format!("Not connected · Jawjack connects at most {MAX_CHANNELS} channels at once. Close others to connect this one."),
+                    false,
+                );
+            }
         }
-        all(&tx, &c, version, "Connecting…");
-        let mut revoked = false;
+        over_cap.retain(|ch| c.channels.iter().skip(MAX_CHANNELS).any(|c| c == ch));
+        // Removed channels release their subscriptions.
+        let removed: Vec<String> = assigned
+            .keys()
+            .filter(|ch| !wanted.contains(ch))
+            .cloned()
+            .collect();
+        for channel in removed {
+            if let Some(a) = assigned.remove(&channel) {
+                deletions.extend(a.ids);
+                if let (Some(b), Ok(mut names)) = (a.broadcaster, names.lock()) {
+                    names.remove(&b);
+                }
+            }
+        }
+        // New channels go to the least-loaded shard with room, opening up to three sockets.
+        for channel in &wanted {
+            if assigned.contains_key(*channel) {
+                continue;
+            }
+            let load = |i: usize| assigned.values().filter(|a| a.shard == i).count();
+            let Some(index) = (0..MAX_SOCKETS)
+                .filter(|i| load(*i) < CHANNELS_PER_SOCKET)
+                .min_by_key(|i| (shards[*i].is_none(), load(*i)))
+            else {
+                break;
+            };
+            if shards[index].is_none() {
+                let status: Arc<Mutex<ShardStatus>> = Default::default();
+                let shard_stop = Arc::new(AtomicBool::new(false));
+                let (s, st, t, e, n, d) = (
+                    status.clone(),
+                    shard_stop.clone(),
+                    tx.clone(),
+                    epoch.clone(),
+                    names.clone(),
+                    dedup.clone(),
+                );
+                std::thread::spawn(move || socket_loop(s, st, t, e, version, n, d));
+                shards[index] = Some(Shard {
+                    status,
+                    stop: shard_stop,
+                    seen_generation: 0,
+                    online: false,
+                });
+            }
+            let mut assignment = Assignment::new(index);
+            // On an already-online shard, start against its current session.
+            if let Some(shard) = &shards[index]
+                && shard.online
+            {
+                assignment.generation = shard.seen_generation;
+            }
+            assigned.insert((*channel).clone(), assignment);
+            state(&tx, version, channel, "Connecting…", false);
+        }
+        // Idle sockets close; Twitch would drop an empty session anyway.
+        for (index, slot) in shards.iter_mut().enumerate() {
+            if slot.is_some()
+                && !assigned.values().any(|a| a.shard == index)
+                && let Some(shard) = slot.take()
+            {
+                shard.stop.store(true, Ordering::Relaxed);
+            }
+        }
+        // Reflect socket sessions: a fresh connection resubscribes its channels.
+        for (index, slot) in shards.iter_mut().enumerate() {
+            let Some(shard) = slot else { continue };
+            let (session, generation, revoked) = shard
+                .status
+                .lock()
+                .map(|mut s| (s.session.clone(), s.generation, std::mem::take(&mut s.revoked)))
+                .unwrap_or_default();
+            for (broadcaster, reason) in revoked {
+                if let Some((channel, a)) = assigned
+                    .iter_mut()
+                    .find(|(_, a)| a.broadcaster.as_deref() == Some(broadcaster.as_str()))
+                {
+                    a.restart(a.generation);
+                    a.failed_until = Some(Instant::now() + FAILURE_RETRY);
+                    state(
+                        &tx,
+                        version,
+                        channel,
+                        &format!("Twitch revoked this chat subscription ({reason}). Retrying in a minute."),
+                        false,
+                    );
+                }
+            }
+            let online = session.is_some();
+            if online != shard.online || generation != shard.seen_generation {
+                for (channel, a) in assigned.iter_mut().filter(|(_, a)| a.shard == index) {
+                    if online {
+                        if a.generation != generation {
+                            a.restart(generation);
+                            state(&tx, version, channel, "Connecting…", false);
+                        }
+                    } else {
+                        a.ready = false;
+                        state(
+                            &tx,
+                            version,
+                            channel,
+                            "Reconnecting; messages during the gap are unavailable.",
+                            false,
+                        );
+                    }
+                }
+                shard.online = online;
+                shard.seen_generation = generation;
+            }
+        }
+        if Instant::now() < next_request {
+            std::thread::sleep(Duration::from_millis(20));
+            continue;
+        }
+        // One paced request. A fresh session with no subscription goes first
+        // (Twitch closes it after ten seconds); otherwise shards take turns, each
+        // serving its highest-priority waiting channel.
+        let sessions: Vec<Option<(String, u64)>> = shards
+            .iter()
+            .map(|s| {
+                s.as_ref().and_then(|s| {
+                    s.status
+                        .lock()
+                        .ok()
+                        .and_then(|st| st.session.clone().map(|id| (id, st.generation)))
+                })
+            })
+            .collect();
+        let now = Instant::now();
+        let pending = |index: usize, a: &Assignment| {
+            a.shard == index
+                && !a.ready
+                && a.failed_until.is_none_or(|t| now >= t)
+                && sessions[index].as_ref().is_some_and(|(_, g)| *g == a.generation)
+        };
+        let starving = (0..MAX_SOCKETS).find(|i| {
+            sessions[*i].is_some()
+                && !assigned.values().any(|a| a.shard == *i && !a.ids.is_empty())
+                && assigned.values().any(|a| pending(*i, a))
+        });
+        let mut job = None;
+        for index in starving
+            .into_iter()
+            .chain((0..MAX_SOCKETS).map(|k| (turn + k) % MAX_SOCKETS))
+        {
+            if let Some(channel) = wanted
+                .iter()
+                .find(|ch| assigned.get(**ch).is_some_and(|a| pending(index, a)))
+            {
+                job = Some(((*channel).clone(), index));
+                break;
+            }
+        }
+        turn = (turn + 1) % MAX_SOCKETS;
+        if let Some((channel, index)) = job {
+            let session = sessions[index]
+                .as_ref()
+                .map(|(s, _)| s.clone())
+                .unwrap_or_default();
+            if let Some(a) = assigned.get_mut(&channel) {
+                next_request = Instant::now() + REQUEST_INTERVAL;
+                let step = Step {
+                    client: &client,
+                    identity: &id,
+                    session: &session,
+                    names: &names,
+                    tx: &tx,
+                    version,
+                    snapshots: &snapshots,
+                };
+                step.run(&channel, a, &mut next_request);
+            }
+        } else if let Some(sub) = deletions.pop_front() {
+            next_request = Instant::now() + REQUEST_INTERVAL;
+            // Best effort: an ended session removes its subscriptions anyway.
+            let _ = client
+                .delete("https://api.twitch.tv/helix/eventsub/subscriptions")
+                .query(&[("id", sub.as_str())])
+                .header("Client-Id", CLIENT_ID)
+                .bearer_auth(&id.access)
+                .send();
+        } else {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+    for shard in shards.iter_mut().filter_map(Option::take) {
+        shard.stop.store(true, Ordering::Relaxed);
+    }
+}
+/// Context for one subscription request on one shard session.
+struct Step<'a> {
+    client: &'a reqwest::blocking::Client,
+    identity: &'a Identity,
+    session: &'a str,
+    names: &'a Arc<Mutex<HashMap<String, String>>>,
+    tx: &'a mpsc::SyncSender<(u64, Event)>,
+    version: u64,
+    snapshots: &'a mpsc::SyncSender<RoomSnapshot>,
+}
+impl Step<'_> {
+    /// Perform the channel's next request: resolve its ID, then one subscription.
+    fn run(&self, channel: &str, a: &mut Assignment, next_request: &mut Instant) {
+        let (tx, version) = (self.tx, self.version);
+        let Some(broadcaster) = a.broadcaster.clone() else {
+            match resolve(self.client, self.identity, channel) {
+                Ok(id) => {
+                    if let Ok(mut names) = self.names.lock() {
+                        names.insert(id.clone(), channel.to_owned());
+                    }
+                    let _ = tx.send((version, Event::Resolved(channel.into(), id.clone())));
+                    a.broadcaster = Some(id);
+                }
+                Err(error) => {
+                    a.failed_until = Some(Instant::now() + FAILURE_RETRY);
+                    state(tx, version, channel, &error, false);
+                }
+            }
+            return;
+        };
+        let kind = CHANNEL_KINDS[a.step];
+        let body = json!({"type":kind,"version":"1","condition":{"broadcaster_user_id":broadcaster,"user_id":self.identity.user_id},"transport":{"method":"websocket","session_id":self.session}});
+        let response = match self
+            .client
+            .post("https://api.twitch.tv/helix/eventsub/subscriptions")
+            .header("Client-Id", CLIENT_ID)
+            .bearer_auth(&self.identity.access)
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
+            .send()
+        {
+            Ok(response) => response,
+            // Transient network failure: retry the same step shortly.
+            Err(_) => {
+                *next_request = Instant::now() + Duration::from_secs(2);
+                return;
+            }
+        };
+        let header = |name: &str| {
+            response
+                .headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok())
+        };
+        let (reset, remaining) = (header("ratelimit-reset"), header("ratelimit-remaining"));
+        let until_reset = || {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            Duration::from_secs(reset.map_or(5, |r| r.saturating_sub(now).clamp(1, 60)))
+        };
+        // Leave headroom for the rest of the app when the shared budget runs low.
+        if remaining.is_some_and(|r| r < 80) {
+            *next_request = Instant::now() + until_reset();
+        }
+        let Ok((status, value)) = response_json(response) else {
+            *next_request = Instant::now() + Duration::from_secs(2);
+            return;
+        };
+        if status == 429 {
+            *next_request = Instant::now() + until_reset();
+            return;
+        }
+        if status == 202 && value["data"][0]["status"].as_str() == Some("enabled") {
+            if let Some(id) = value["data"][0]["id"].as_str() {
+                a.ids.push(id.to_owned());
+            }
+        } else if optional_kind(kind) {
+            a.notices_unavailable = true;
+        } else {
+            a.restart(a.generation);
+            a.failed_until = Some(Instant::now() + FAILURE_RETRY);
+            state(
+                tx,
+                version,
+                channel,
+                &format!("Chat subscription failed (HTTP {status}). Retrying in a minute."),
+                false,
+            );
+            return;
+        }
+        a.step += 1;
+        if a.step == CHANNEL_KINDS.len() {
+            a.ready = true;
+            a.failed_until = None;
+            let _ = self.snapshots.try_send(RoomSnapshot {
+                version,
+                identity: self.identity.clone(),
+                channel: channel.into(),
+                id: broadcaster,
+            });
+            state(
+                tx,
+                version,
+                channel,
+                if a.notices_unavailable {
+                    "Connected · Some room events unavailable until reconnect"
+                } else {
+                    "Connected"
+                },
+                true,
+            );
+        }
+    }
+}
+/// One EventSub WebSocket. Reports its session to the manager and delivers events.
+fn socket_loop(
+    status: Arc<Mutex<ShardStatus>>,
+    stop: Arc<AtomicBool>,
+    tx: mpsc::SyncSender<(u64, Event)>,
+    epoch: Arc<std::sync::atomic::AtomicU64>,
+    version: u64,
+    names: Arc<Mutex<HashMap<String, String>>>,
+    dedup: Arc<Mutex<Dedup>>,
+) {
+    let live = || !stop.load(Ordering::Relaxed) && epoch.load(Ordering::Relaxed) == version;
+    let deliver_one = |v: &Value| {
+        if let Ok(mut d) = dedup.lock() {
+            let d = &mut *d;
+            deliver(v, &names, &tx, &mut d.seen, &mut d.order, version);
+        }
+    };
+    let mut retry = 1;
+    while live() {
         let connected_at = Instant::now();
         let result: Result<(), String> = (|| {
             let mut socket = open("wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=60")?;
-            let map = Arc::new(Mutex::new(HashMap::new()));
-            let mut welcome = false;
             let mut last = Instant::now();
             let mut timeout = Duration::from_secs(10);
-            while !stop.load(Ordering::Relaxed) && epoch.load(Ordering::Relaxed) == version {
+            while live() {
                 if last.elapsed() > timeout {
                     return Err("Twitch keepalive expired".into());
                 }
@@ -479,111 +806,82 @@ fn run(
                 if connected_at.elapsed() > Duration::from_secs(60) {
                     retry = 1;
                 }
-                let kind = v["metadata"]["message_type"].as_str().unwrap_or("");
-                if kind == "session_welcome" {
-                    timeout = Duration::from_secs(
-                        v["payload"]["session"]["keepalive_timeout_seconds"]
-                            .as_u64()
-                            .unwrap_or(60)
-                            + 5,
-                    );
-                    if !welcome {
+                match v["metadata"]["message_type"].as_str().unwrap_or("") {
+                    "session_welcome" => {
+                        timeout = Duration::from_secs(
+                            v["payload"]["session"]["keepalive_timeout_seconds"]
+                                .as_u64()
+                                .unwrap_or(60)
+                                + 5,
+                        );
                         let id = v["payload"]["session"]["id"]
                             .as_str()
                             .ok_or("Missing Twitch session")?;
-                        subscribe(
-                            c.clone(),
-                            id.into(),
-                            tx.clone(),
-                            epoch.clone(),
-                            version,
-                            map.clone(),
-                            snapshots.clone(),
-                        );
-                        welcome = true;
-                    }
-                    continue;
-                }
-                if kind == "session_reconnect" {
-                    let url = v["payload"]["session"]["reconnect_url"]
-                        .as_str()
-                        .ok_or("Missing reconnect URL")?;
-                    let mut replacement = open(url)?;
-                    let deadline = Instant::now() + Duration::from_secs(10);
-                    loop {
-                        if stop.load(Ordering::Relaxed) || epoch.load(Ordering::Relaxed) != version
-                        {
-                            return Ok(());
-                        }
-                        if Instant::now() > deadline {
-                            return Err("Twitch reconnect welcome timed out".into());
-                        }
-                        if let Some(old) = frame(&mut socket)? {
-                            deliver(&old, &map, &tx, &mut dedup, &mut order, version);
-                        }
-                        if let Some(next) = frame(&mut replacement)?
-                            && next["metadata"]["message_type"] == "session_welcome"
-                        {
-                            break;
+                        if let Ok(mut s) = status.lock() {
+                            s.session = Some(id.into());
+                            s.generation += 1;
                         }
                     }
-                    // Read queued old-socket events before closing after the replacement welcome.
-                    for _ in 0..1024 {
-                        match frame(&mut socket) {
-                            Ok(Some(old)) => {
-                                deliver(&old, &map, &tx, &mut dedup, &mut order, version)
+                    "session_reconnect" => {
+                        let url = v["payload"]["session"]["reconnect_url"]
+                            .as_str()
+                            .ok_or("Missing reconnect URL")?;
+                        let mut replacement = open(url)?;
+                        let deadline = Instant::now() + Duration::from_secs(10);
+                        let session = loop {
+                            if !live() {
+                                return Ok(());
                             }
-                            _ => break,
+                            if Instant::now() > deadline {
+                                return Err("Twitch reconnect welcome timed out".into());
+                            }
+                            if let Some(old) = frame(&mut socket)? {
+                                deliver_one(&old);
+                            }
+                            if let Some(next) = frame(&mut replacement)?
+                                && next["metadata"]["message_type"] == "session_welcome"
+                            {
+                                break next["payload"]["session"]["id"]
+                                    .as_str()
+                                    .map(str::to_owned);
+                            }
+                        };
+                        // Subscriptions carry over: keep the generation, update the session.
+                        if let (Some(session), Ok(mut s)) = (session, status.lock()) {
+                            s.session = Some(session);
+                        }
+                        // Read queued old-socket events before closing after the replacement welcome.
+                        for _ in 0..1024 {
+                            match frame(&mut socket) {
+                                Ok(Some(old)) => deliver_one(&old),
+                                _ => break,
+                            }
+                        }
+                        let _ = socket.close(None);
+                        socket = replacement;
+                        last = Instant::now();
+                    }
+                    "revocation" => {
+                        let sub = &v["payload"]["subscription"];
+                        if let (Some(b), Ok(mut s)) =
+                            (sub["condition"]["broadcaster_user_id"].as_str(), status.lock())
+                        {
+                            let reason = sub["status"].as_str().unwrap_or("revoked");
+                            s.revoked.push((b.into(), reason.chars().take(40).collect()));
                         }
                     }
-                    let _ = socket.close(None);
-                    socket = replacement;
-                    last = Instant::now();
-                    continue;
+                    _ => deliver_one(&v),
                 }
-                if kind == "revocation" {
-                    revoked = true;
-                    return Err(
-                        "Twitch revoked a chat subscription. Reconnect or sign in again.".into(),
-                    );
-                }
-                deliver(&v, &map, &tx, &mut dedup, &mut order, version);
             }
             let _ = socket.close(None);
             Ok(())
         })();
-        // A newer UI configuration owns the next status; do not overwrite it.
-        if epoch.load(Ordering::Relaxed) != version {
-            continue;
+        if let Ok(mut s) = status.lock() {
+            s.session = None;
         }
-        // Stop subscription workers from reporting stale connection success.
-        if epoch.load(Ordering::Relaxed) == version {
-            epoch.fetch_add(1, Ordering::Relaxed);
-        }
-        if let Err(error) = result {
-            all(
-                &tx,
-                &c,
-                epoch.load(Ordering::Relaxed),
-                &if revoked {
-                    error.clone()
-                } else {
-                    format!("{error}. Reconnecting; messages during the gap are unavailable.")
-                },
-            );
-            if revoked {
-                let expected = epoch.load(Ordering::Relaxed);
-                while !stop.load(Ordering::Relaxed) && epoch.load(Ordering::Relaxed) == expected {
-                    std::thread::sleep(Duration::from_millis(200));
-                }
-                continue;
-            }
+        if result.is_err() {
             let deadline = Instant::now() + Duration::from_secs(retry);
-            let expected = epoch.load(Ordering::Relaxed);
-            while Instant::now() < deadline
-                && !stop.load(Ordering::Relaxed)
-                && epoch.load(Ordering::Relaxed) == expected
-            {
+            while Instant::now() < deadline && live() {
                 std::thread::sleep(Duration::from_millis(100));
             }
             retry = (retry * 2).min(30);

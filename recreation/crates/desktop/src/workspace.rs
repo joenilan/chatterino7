@@ -168,6 +168,8 @@ pub struct Workbench {
     renaming: bool,
     add_target: Option<String>,
     selected_channel: Option<String>,
+    /// Workspace IDs, most recently activated first; orders live connections.
+    recent_workspaces: Vec<u64>,
     add_error: Option<String>,
     sidebar: bool,
     settings: bool,
@@ -256,6 +258,31 @@ impl Workbench {
     }
     pub fn inspection(&self, cx: &App) -> Value {
         json!({"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>()})
+    }
+    /// Channels to connect, highest priority first: visible panes, the rest of the
+    /// active workspace, then other workspaces by most recent use. Beyond the
+    /// EventSub cap, the lowest-priority channels wait until room frees up.
+    fn connection_priority(&self, cx: &App) -> Vec<String> {
+        let name = |p: &Entity<ChannelPane>| p.read(cx).name.to_string();
+        let mut order: Vec<String> = self.visible_panes(cx).iter().map(name).collect();
+        let active = self.tabs.get(self.active);
+        order.extend(active.into_iter().flat_map(|t| t.panes.iter().map(name)));
+        let rank = |id: u64| {
+            self.recent_workspaces
+                .iter()
+                .position(|r| *r == id)
+                .unwrap_or(usize::MAX)
+        };
+        let mut others: Vec<&WorkspaceTab> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != self.active)
+            .map(|(_, t)| t)
+            .collect();
+        others.sort_by_key(|t| rank(t.id));
+        order.extend(others.iter().flat_map(|t| t.panes.iter().map(name)));
+        order
     }
     pub fn panes(&self) -> Vec<Entity<ChannelPane>> {
         self.tabs
@@ -358,6 +385,7 @@ impl Workbench {
             renaming: false,
             add_target: None,
             selected_channel: None,
+            recent_workspaces: Vec::new(),
             add_error: None,
             sidebar: state["sidebar"].as_bool().unwrap_or(false),
             settings: false,
@@ -570,10 +598,7 @@ impl Workbench {
                 });
             }
         }
-        if self.live.configure(
-            identity.clone(),
-            panes.iter().map(|p| p.read(cx).name.to_string()).collect(),
-        ) {
+        if self.live.configure(identity.clone(), self.connection_priority(cx)) {
             for pane in &panes {
                 pane.update(cx, |p, cx| {
                     p.connected = false;
@@ -1083,6 +1108,9 @@ impl Workbench {
     fn select_tab(&mut self, ix: usize, cx: &mut Context<Self>) {
         if ix < self.tabs.len() {
             self.active = ix;
+            let id = self.tabs[ix].id;
+            self.recent_workspaces.retain(|t| *t != id);
+            self.recent_workspaces.insert(0, id);
             self.adding = false;
             self.renaming = false;
             self.schedule_save(cx);
