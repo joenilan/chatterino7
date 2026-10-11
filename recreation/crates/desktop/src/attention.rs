@@ -264,6 +264,10 @@ impl Attention {
         self.read_boundary = None;
         changed
     }
+    /// The signed-in user's ID, if known.
+    pub fn own_user(&self) -> Option<&str> {
+        self.identity.as_ref().map(|(user, _)| user.as_str())
+    }
     pub fn counts(&self) -> (usize, usize) {
         (
             self.unread.len(),

@@ -195,6 +195,7 @@ pub struct Workbench {
     blocks: crate::blocks::Blocks,
     hide_blocked: bool,
     similar_mode: crate::similarity::Mode,
+    mod_buttons: bool,
     /// Optional chat logs (off by default).
     logs: crate::chat_logs::Logs,
     logs_enabled: bool,
@@ -550,6 +551,7 @@ impl Workbench {
             popouts: Vec::new(),
             blocks: crate::blocks::Blocks::new(),
             hide_blocked: state["hide_blocked"].as_bool().unwrap_or(true),
+            mod_buttons: state["mod_buttons"].as_bool().unwrap_or(false),
             similar_mode: crate::similarity::Mode::from_key(
                 state["similar_messages"].as_str().unwrap_or(""),
             ),
@@ -806,6 +808,13 @@ impl Workbench {
         // Keep each composer's "send as" picker in step with the signed-in accounts.
         let options = std::rc::Rc::new(self.send_as_options(cx));
         for pane in &panes {
+            if pane.read(cx).mod_buttons != self.mod_buttons {
+                let on = self.mod_buttons;
+                pane.update(cx, |p, cx| {
+                    p.mod_buttons = on;
+                    cx.notify();
+                });
+            }
             if pane.read(cx).similar_mode != self.similar_mode {
                 let mode = self.similar_mode;
                 pane.update(cx, |p, _| p.similar_mode = mode);
@@ -1659,6 +1668,12 @@ impl Workbench {
                 this.run_bot_action(action.clone(), args.clone(), cx);
                 return;
             }
+            if matches!(event, PaneEvent::ToggleModButtons) {
+                this.mod_buttons = !this.mod_buttons;
+                this.schedule_save(cx);
+                cx.notify();
+                return;
+            }
             if let PaneEvent::Ping(ping, id) = event {
                 this.ping(*ping, id, window);
                 return;
@@ -2014,6 +2029,7 @@ impl Workbench {
         value["popouts"] = json!(self.popout_channels(cx));
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
+        value["mod_buttons"] = json!(self.mod_buttons);
         value["logs"] =
             json!({"enabled": self.logs_enabled, "folder": self.logs_folder.display().to_string()});
         value["streamer_mode"] =

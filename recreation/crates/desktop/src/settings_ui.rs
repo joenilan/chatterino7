@@ -139,6 +139,15 @@ impl Workbench {
                     open_button("settings-accounts", "Manage").on_click(cx.listener(|this, _, w, cx| this.open_accounts(w, cx))),
                 ))
                 .child(row(
+                    "Moderator buttons on messages",
+                    "Delete, 10-minute timeout and ban on each message in channels you moderate (the crossed-swords button in a channel header toggles this too).",
+                    Switch::new("settings-mod-buttons").checked(self.mod_buttons).on_click(cx.listener(|this, on: &bool, _, cx| {
+                        this.mod_buttons = *on;
+                        this.schedule_save(cx);
+                        cx.notify();
+                    })),
+                ))
+                .child(row(
                     "Import from Chatterino",
                     "Brings in your Chatterino tabs, channels and highlights alongside what's here.",
                     open_button("settings-import", "Import").on_click(cx.listener(|this, _, w, cx| this.open_chatterino_import(w, cx))),

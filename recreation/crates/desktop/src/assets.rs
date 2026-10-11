@@ -31,7 +31,11 @@ gpui_kit::assets::icon_assets!(
         Keyboard,
         Download,
         Palette,
-        Users
+        Users,
+        Swords,
+        Trash,
+        Clock,
+        Ban
     ]
 );
 

@@ -164,6 +164,8 @@ enum PaneEvent {
     OpenAccount,
     OpenStreamInfo,
     OpenModTools,
+    /// Show or hide the inline moderator buttons (all channels).
+    ToggleModButtons,
     /// Choose which signed-in account sends from this pane (vault entry).
     SendAs(SharedString),
     /// A new mention or highlight arrived (message id, for de-duplication across panes).
@@ -208,6 +210,8 @@ struct ChannelPane {
     streamer_mode: bool,
     /// What to do with a chatter's near-repeats of their recent messages.
     similar_mode: similarity::Mode,
+    /// Inline delete/timeout/ban buttons (moderator mode), where you moderate.
+    mod_buttons: bool,
     /// Suspicious labels for messages that haven't arrived yet (by message ID).
     suspicious_pending: std::collections::HashMap<String, String>,
     send_as: Option<SharedString>,
@@ -304,6 +308,7 @@ impl ChannelPane {
             quiet_pings: false,
             streamer_mode: false,
             similar_mode: Default::default(),
+            mod_buttons: false,
             suspicious_pending: Default::default(),
             send_as: None,
             media,
@@ -658,6 +663,12 @@ impl Render for ChannelPane {
         let jump_pulse = self.jump_pulse;
         let highlight_rows = self.attention.highlights.clone();
         let highlight_colors = self.attention.colors.clone();
+        let moderating = matches!(
+            self.role,
+            Some(capabilities::Role::Moderator | capabilities::Role::Broadcaster)
+        );
+        let mod_buttons = self.mod_buttons && moderating;
+        let own_user = self.attention.own_user().map(str::to_owned);
         // Scrollbar ticks: highlights in their colour, search hits in lilac.
         let markers = {
             let count = self.timeline.borrow().messages().len().max(1);
@@ -785,6 +796,7 @@ impl Render for ChannelPane {
                             .child(if self.connected { if paused { "Paused".to_owned() } else if following { "Latest".to_owned() } else { format!("{retained}/{} · History", self.timeline.borrow().capacity()) } } else { self.connection.clone() }),
                     )
                     .child(Button::new("chatter-list").ghost().xsmall().icon(Icon::new(gpui_kit::assets::IconName::Users)).tooltip("Chatters").on_click(cx.listener(|this,_,window,cx|this.open_chatter_list(window,cx))))
+                    .when(moderating, |el| el.child(Button::new("mod-buttons").ghost().xsmall().icon(Icon::new(gpui_kit::assets::IconName::Swords)).when(self.mod_buttons, |b| gpui_kit::component::Selectable::selected(b, true)).tooltip(if self.mod_buttons { "Hide moderator buttons on messages" } else { "Show moderator buttons on messages: delete, 10-minute timeout, ban" }).on_click(cx.listener(|_,_,_,cx|cx.emit(PaneEvent::ToggleModButtons)))))
                     .when(self.mod_tools && matches!(self.role, Some(capabilities::Role::Moderator | capabilities::Role::Broadcaster)), |el| el.child(Button::new("mod-tools").ghost().xsmall().icon(Icon::new(gpui_kit::assets::IconName::Shield)).tooltip("Moderation: chat modes, clear chat").on_click(cx.listener(|_,_,_,cx|cx.emit(PaneEvent::OpenModTools)))))
                     .when(self.role == Some(capabilities::Role::Broadcaster), |el| el.child(Button::new("stream-info").ghost().xsmall().icon(Icon::new(gpui_kit::assets::IconName::Pencil)).tooltip("Edit stream title and category").on_click(cx.listener(|_,_,_,cx|cx.emit(PaneEvent::OpenStreamInfo)))))
                     .child(Button::new("pause-chat").ghost().xsmall().icon(if paused{IconName::Play}else{IconName::Pause}).tooltip(if paused{"Resume live chat · Ctrl+End"}else{"Pause scrolling · Ctrl+Space"}).on_click(cx.listener(|this,_,_,cx|{this.scroller.update(cx,|s,cx|{if s.paused(){s.scroll_to_end(cx);}else{s.toggle_pause(cx);}});})))
@@ -927,6 +939,25 @@ impl Render for ChannelPane {
                                 .children(reply_line)
                                 .child(div().h_flex().items_start().min_w_0().gap_1()
                                 .when_some(timestamp,|el,(label,full)|el.child(div().id(SharedString::from(format!("timestamp-{}",message.id))).w(px(if timestamps==2{55.}else{37.})).h(first_line_height).flex_shrink_0().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(w,cx)).child(label)))
+                                .when(mod_buttons && !message.deleted && message.login.is_some() && own_user.as_deref() != Some(message.user_id.as_str()), |el| {
+                                    let tool = |id: &'static str, icon: gpui_kit::assets::IconName, tip: &'static str, hover: u32, action: message_actions::Action| {
+                                        let (owner, message_id) = (menu_owner.clone(), message.id.clone());
+                                        div().id(SharedString::from(format!("{id}-{}", message.id))).size(px(16.)).h(first_line_height).flex_shrink_0().flex().items_center().justify_center()
+                                            .text_color(rgb(theme::MUTED)).cursor_pointer().hover(move |s| s.text_color(rgb(hover)))
+                                            .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(tip).build(w, cx))
+                                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                            .on_click(move |_, window, cx| {
+                                                cx.stop_propagation();
+                                                let action = action.clone();
+                                                let _ = owner.update(cx, |p, cx| p.message_action(&message_id, action, window, cx));
+                                            })
+                                            .child(Icon::new(icon).xsmall())
+                                    };
+                                    el.child(div().h_flex().flex_shrink_0().gap(px(1.))
+                                        .child(tool("mod-delete", gpui_kit::assets::IconName::Trash, "Delete message", 0xF29D9D, message_actions::Action::ModDelete))
+                                        .child(tool("mod-timeout", gpui_kit::assets::IconName::Clock, "Timeout 10 minutes", 0xE8C468, message_actions::Action::ModTimeout(600)))
+                                        .child(tool("mod-ban", gpui_kit::assets::IconName::Ban, "Ban…", 0xF07A7A, message_actions::Action::ModBan)))
+                                })
                                 .children(badge_images.into_iter().map(|(badge,image,background)|{
                                     div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(div().size(px(18.)).when_some(background,|el,color|el.bg(rgb(color))).child(emote_picker::icon(image,String::new(),18.,18.)))
                                 }).collect::<Vec<_>>())
