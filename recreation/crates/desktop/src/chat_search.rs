@@ -83,6 +83,8 @@ fn token_spans(value: &str) -> Vec<Range<usize>> {
 /// A bounded AND query. Plain unstructured text retains the original phrase behavior.
 pub(crate) struct Query {
     terms: Vec<(bool, String)>,
+    /// `regex:` terms (case-insensitive, size-bounded).
+    patterns: Vec<(bool, regex::Regex)>,
     filters: Vec<(bool, String, String)>,
     error: Option<String>,
 }
@@ -100,18 +102,23 @@ impl Query {
             || tokens.iter().any(|t| {
                 t.starts_with('-')
                     || t.split_once(':').is_some_and(|(k, _)| {
-                        matches!(k, "from" | "from-id" | "badge" | "has" | "is")
+                        matches!(
+                            k,
+                            "from" | "from-id" | "badge" | "has" | "is" | "subtier" | "regex"
+                        )
                     })
             });
         if !structured {
             return Self {
                 terms: vec![(false, value.trim().to_lowercase())],
+                patterns: vec![],
                 filters: vec![],
                 error: None,
             };
         }
         let mut result = Self {
             terms: vec![],
+            patterns: vec![],
             filters: vec![],
             error: None,
         };
@@ -129,14 +136,30 @@ impl Query {
             let literal = token.starts_with('"');
             let cleaned = token.replace('"', "");
             let token = cleaned.as_str();
+            if let Some(pattern) = token.strip_prefix("regex:").filter(|_| !literal) {
+                match regex::RegexBuilder::new(pattern)
+                    .case_insensitive(true)
+                    .size_limit(1 << 20)
+                    .build()
+                {
+                    Ok(regex) if !pattern.is_empty() => result.patterns.push((negative, regex)),
+                    _ => result.error = Some("That regex: pattern isn't valid".into()),
+                }
+                continue;
+            }
             if let Some((key, value)) = token.split_once(':').filter(|_| !literal)
-                && matches!(key, "from" | "from-id" | "badge" | "has" | "is")
+                && matches!(key, "from" | "from-id" | "badge" | "has" | "is" | "subtier")
             {
                 let value = value.to_lowercase();
                 if value.is_empty()
                     || (key == "has"
                         && !matches!(value.as_str(), "link" | "emote" | "gif" | "bits" | "reply"))
-                    || (key == "is" && !matches!(value.as_str(), "deleted" | "notice"))
+                    || (key == "is"
+                        && !matches!(
+                            value.as_str(),
+                            "deleted" | "notice" | "mod" | "vip" | "sub" | "broadcaster" | "first"
+                        ))
+                    || (key == "subtier" && !matches!(value.as_str(), "1" | "2" | "3"))
                 {
                     result.error = Some(format!("Unknown or empty {key}: filter"));
                 }
@@ -150,7 +173,9 @@ impl Query {
     pub(crate) fn matches(&self, message: &chat_core::Message) -> Option<Vec<Range<usize>>> {
         use chat_core::Fragment;
         if self.error.is_some()
-            || (self.terms.iter().all(|(_, t)| t.is_empty()) && self.filters.is_empty())
+            || (self.terms.iter().all(|(_, t)| t.is_empty())
+                && self.filters.is_empty()
+                && self.patterns.is_empty())
         {
             return None;
         }
@@ -195,11 +220,33 @@ impl Query {
                     "reply" => !message.deleted && message.reply.is_some(),
                     _ => false,
                 },
-                "is" => match value.as_str() {
-                    "deleted" => message.deleted,
-                    "notice" => !message.deleted && message.presentation.notice_type.is_some(),
-                    _ => false,
-                },
+                "is" => {
+                    let badge = |sets: &[&str]| {
+                        message
+                            .badges
+                            .iter()
+                            .any(|b| sets.contains(&b.set_id.as_str()))
+                    };
+                    match value.as_str() {
+                        "deleted" => message.deleted,
+                        "notice" => !message.deleted && message.presentation.notice_type.is_some(),
+                        "mod" => badge(&["moderator", "lead_moderator"]),
+                        "vip" => badge(&["vip"]),
+                        "sub" => badge(&["subscriber", "founder"]),
+                        "broadcaster" => badge(&["broadcaster"]),
+                        "first" => message.presentation.kind == "user_intro",
+                        _ => false,
+                    }
+                }
+                // Subscriber badge IDs carry the tier: 2xxx is tier 2, 3xxx tier 3.
+                "subtier" => message.badges.iter().any(|b| {
+                    b.set_id == "subscriber"
+                        && match b.id.parse::<u32>().map(|n| n / 1000) {
+                            Ok(2) => value == "2",
+                            Ok(3) => value == "3",
+                            _ => value == "1",
+                        }
+                }),
                 _ => false,
             };
             if matched == *negative {
@@ -218,6 +265,20 @@ impl Query {
             }
             if !negative {
                 ranges.extend(matches);
+            }
+        }
+        for (negative, regex) in &self.patterns {
+            let found: Vec<Range<usize>> = regex
+                .find_iter(&text)
+                .take(64)
+                .map(|m| m.range())
+                .filter(|r| !r.is_empty())
+                .collect();
+            if found.is_empty() != *negative {
+                return None;
+            }
+            if !negative {
+                ranges.extend(found);
             }
         }
         ranges.sort_by_key(|r| (r.start, r.end));
@@ -373,6 +434,9 @@ impl ChannelPane {
             ("Emotes", "has:emote"),
             ("Replies", "has:reply"),
             ("Bits", "has:bits"),
+            ("Mods", "is:mod"),
+            ("Subs", "is:sub"),
+            ("First", "is:first"),
         ]
         .into_iter()
         .map(|(label, token)| {
@@ -434,5 +498,52 @@ pub fn create(window: &mut Window, cx: &mut Context<ChannelPane>) -> Search {
         dirty: true,
         hits: Rc::default(),
         current: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Query;
+    fn message(text: &str, badges: &[(&str, &str)]) -> chat_core::Message {
+        chat_core::Message {
+            sent_at: Some(0),
+            id: "m".into(),
+            channel_id: "c".into(),
+            user_id: "u".into(),
+            display_name: "Bob".into(),
+            login: Some("bob".into()),
+            reply: None,
+            mentions: vec![],
+            replyable: true,
+            name_color: None,
+            badges: badges
+                .iter()
+                .map(|(set, id)| chat_core::Badge {
+                    set_id: (*set).into(),
+                    id: (*id).into(),
+                })
+                .collect(),
+            fragments: vec![chat_core::Fragment::Text(text.into())],
+            presentation: Default::default(),
+            deleted: false,
+        }
+    }
+    #[test]
+    fn roles_tiers_and_regex() {
+        let sub3 = message("hello 123", &[("subscriber", "3012"), ("moderator", "1")]);
+        assert!(Query::parse("is:mod").matches(&sub3).is_some());
+        assert!(Query::parse("is:vip").matches(&sub3).is_none());
+        assert!(Query::parse("subtier:3").matches(&sub3).is_some());
+        assert!(Query::parse("subtier:1").matches(&sub3).is_none());
+        assert!(
+            Query::parse("subtier:1")
+                .matches(&message("x", &[("subscriber", "6")]))
+                .is_some()
+        );
+        let ranges = Query::parse(r"regex:\d+").matches(&sub3).unwrap();
+        assert_eq!(&sub3.copy_line()[ranges[0].clone()], "123");
+        assert!(Query::parse("-regex:hello").matches(&sub3).is_none());
+        assert!(Query::parse("regex:(").error().is_some());
+        assert!(Query::parse("is:martian").error().is_some());
     }
 }
