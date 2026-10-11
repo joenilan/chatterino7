@@ -134,3 +134,22 @@ image paints. Jawjack now draws all three parts:
 Evidence: the owner's "North Star" paint (repeating gold stripes plus two orange glows, radius
 0.1 and 4) renders with a visible orange halo. Unit tests cover the North Star definition and image-layer sampling.
 No image paint has been observed live in chat yet.
+
+## Paints on first sight (2026-10-11)
+
+7TV only broadcasts someone's cosmetics after their own client reports presence.
+Chatterino7 relies on that alone, so names start plain and get painted later. Jawjack adds two things:
+
+- **Passive channel presence:** for open channels (visible first, up to 40), it sends
+  `{kind:1, passive:true, session_id, data:{platform:TWITCH, ctx:channel, id}}` for the EventAPI session,
+  at most every 5 minutes per channel and session. This brings in the signed-in user's own paint at
+  startup without chatting first.
+- **Direct lookups** (`seven_lookup.rs`): every chatter seen (live or in recent history) is
+  queued once per 30 minutes. Each second, up to 25 are resolved with one batched GQL query
+  (`userByConnection` aliases → `style.paint_id`/`badge_id`), plus one `cosmetics(list)` query for
+  definitions not seen yet. The results go through the same paint/badge changes as the event stream
+  and are reset when the stream resets.
+
+Evidence: 30 s after a restart, 38 paint and 32 badge grants (before: about 5 in two minutes).
+The owner's paint and badge showed at startup without typing.
+The "Share 7TV activity" setting gates both presence kinds.

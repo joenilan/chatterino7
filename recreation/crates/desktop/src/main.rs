@@ -42,6 +42,7 @@ mod room_settings;
 mod seven_badges;
 mod seven_entitlements;
 mod seven_events;
+mod seven_lookup;
 mod seven_paints;
 mod seven_presence;
 mod storage;
@@ -376,6 +377,7 @@ impl ChannelPane {
         let historical =
             matches!(&event, chat_core::Event::Message(m) if m.presentation.historical);
         if let chat_core::Event::Message(message) = &mut event {
+            self.catalog.borrow_mut().want_cosmetics(&message.user_id);
             message.fragments =
                 self.catalog
                     .borrow()

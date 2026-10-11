@@ -13,10 +13,14 @@ const INTERVAL: Duration = Duration::from_secs(60);
 struct Job {
     user: String,
     channel: String,
+    /// With a session: a passive presence that asks 7TV to send this session the
+    /// cosmetics of people present in the channel, without announcing the user.
+    session: Option<String>,
 }
 pub struct Presence {
     pub enabled: bool,
     next: HashMap<String, Instant>,
+    joined: HashMap<(String, String), Instant>,
     tx: mpsc::Sender<Job>,
     /// Outcome of the latest request, for control inspection.
     pub last: Arc<Mutex<String>>,
@@ -42,8 +46,11 @@ impl Presence {
                         .post(format!("https://7tv.io/v3/users/{id}/presences"))
                         .header("Content-Type", "application/json")
                         .body(
-                            json!({"kind": 1, "data": {"id": job.channel, "platform": "TWITCH"}})
-                                .to_string(),
+                            match &job.session {
+                                Some(session) => json!({"kind": 1, "passive": true, "session_id": session, "data": {"id": job.channel, "platform": "TWITCH", "ctx": "channel"}}),
+                                None => json!({"kind": 1, "data": {"id": job.channel, "platform": "TWITCH"}}),
+                            }
+                            .to_string(),
                         )
                         .send()
                         .map(|r| {
@@ -61,6 +68,7 @@ impl Presence {
         Self {
             enabled,
             next: HashMap::new(),
+            joined: HashMap::new(),
             tx,
             last,
         }
@@ -80,6 +88,33 @@ impl Presence {
         let _ = self.tx.send(Job {
             user: user.to_owned(),
             channel: channel.to_owned(),
+            session: None,
+        });
+    }
+    /// On opening a channel (and every 5 minutes while open): passive presence for
+    /// this 7TV session, so paints and badges of people already chatting show at once.
+    pub fn join(&mut self, user: &str, channel: &str, session: &str) {
+        let valid =
+            |id: &str| !id.is_empty() && id.len() <= 32 && id.bytes().all(|b| b.is_ascii_digit());
+        if !self.enabled || !valid(user) || !valid(channel) {
+            return;
+        }
+        let key = (session.to_owned(), channel.to_owned());
+        if self
+            .joined
+            .get(&key)
+            .is_some_and(|at| at.elapsed() < Duration::from_secs(300))
+        {
+            return;
+        }
+        if self.joined.len() > 512 {
+            self.joined.retain(|(s, _), _| s == session);
+        }
+        self.joined.insert(key, Instant::now());
+        let _ = self.tx.send(Job {
+            user: user.to_owned(),
+            channel: channel.to_owned(),
+            session: Some(session.to_owned()),
         });
     }
 }

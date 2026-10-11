@@ -740,6 +740,16 @@ impl Workbench {
             cx.notify();
         }
         let priority = self.connection_priority(cx);
+        // Ask 7TV for the cosmetics of people in open channels (visible first).
+        if let (Some(identity), Some(session)) =
+            (&identity, self.catalog.borrow().seventv_session())
+        {
+            for channel in priority.iter().take(40) {
+                if let Some(id) = self.catalog.borrow().channel_id(channel) {
+                    self.presence.join(&identity.user_id, &id, &session);
+                }
+            }
+        }
         if self.catalog.borrow_mut().pump(priority, identity.clone()) {
             for pane in &panes {
                 pane.update(cx, |p, cx| {

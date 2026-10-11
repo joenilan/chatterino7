@@ -24,6 +24,8 @@ pub struct Events {
     dirty: Arc<Mutex<HashSet<String>>>,
     stop: Arc<AtomicBool>,
     connected: Arc<AtomicBool>,
+    /// EventAPI session ID from the latest hello, for presence "bridging".
+    session: Arc<Mutex<Option<String>>>,
 }
 impl Events {
     pub fn new() -> Self {
@@ -34,14 +36,17 @@ impl Events {
         let channels = Arc::new(Mutex::new(Vec::new()));
         let changes = Arc::new(Mutex::new(Vec::new()));
         let (ch, out) = (channels.clone(), changes.clone());
+        let session = Arc::new(Mutex::new(None));
+        let sess = session.clone();
         let (w, d, s, c) = (
             wanted.clone(),
             dirty.clone(),
             stop.clone(),
             connected.clone(),
         );
-        std::thread::spawn(move || run(w, d, s, c, ch, out));
+        std::thread::spawn(move || run(w, d, s, c, ch, out, sess));
         Self {
+            session,
             channels,
             changes,
             wanted,
@@ -90,6 +95,9 @@ impl Events {
     }
     pub fn connected(&self) -> bool {
         self.connected.load(Ordering::Relaxed)
+    }
+    pub fn session(&self) -> Option<String> {
+        self.session.lock().ok().and_then(|s| s.clone())
     }
 }
 impl Drop for Events {
@@ -298,6 +306,7 @@ fn run(
     connected: Arc<AtomicBool>,
     channels: Arc<Mutex<Vec<String>>>,
     changes: Arc<Mutex<Vec<Change>>>,
+    session: Arc<Mutex<Option<String>>>,
 ) {
     let mut delay = 1u64;
     while !stop.load(Ordering::Relaxed) {
@@ -355,6 +364,15 @@ fn run(
                         match event["op"].as_u64() {
                             Some(1) => {
                                 hello = true;
+                                if let Ok(mut current) = session.lock() {
+                                    *current = event["d"]["session_id"]
+                                        .as_str()
+                                        .filter(|s| {
+                                            s.len() <= 128
+                                                && s.bytes().all(|b| b.is_ascii_alphanumeric())
+                                        })
+                                        .map(str::to_owned);
+                                }
                                 limit = match event["d"]["subscription_limit"].as_i64() {
                                     Some(-1) => 256,
                                     Some(n) => n.clamp(0, 256) as usize,
