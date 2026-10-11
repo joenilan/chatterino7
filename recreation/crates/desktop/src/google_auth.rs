@@ -254,7 +254,11 @@ pub fn send(access: &str, live_chat: &str, text: &str) -> Result<(), String> {
     }
     let text = response.text().unwrap_or_default();
     Err(if text.contains("quota") {
-        "YouTube quota used up for today. Draft kept.".into()
+        let reset = crate::youtube::next_quota_reset(chrono::Utc::now());
+        format!(
+            "YouTube's daily API limit is used up (back at {}). Draft kept.",
+            reset.with_timezone(&chrono::Local).format("%-I:%M %p")
+        )
     } else if text.contains("forbidden") || status == 403 {
         "YouTube didn't allow that message (slow mode, members-only or you're timed out). Draft kept.".into()
     } else {

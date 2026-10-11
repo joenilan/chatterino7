@@ -1,11 +1,15 @@
-//! YouTube live chat, read-only, through the official YouTube Data API v3 with
-//! a user-supplied API key: videos.list resolves a live video's chat, then
-//! liveChatMessages.list is polled at the interval YouTube asks for (never
-//! faster than every 3 s, to spare the key's daily quota). Pane names are
-//! "yt:<videoId>"; they never reach Twitch code paths.
+//! YouTube live chat through the official YouTube Data API v3, signed in with
+//! Google (or a user-supplied API key): videos.list resolves a live video's
+//! chat, then liveChatMessages.streamList holds one connection open and YouTube
+//! pushes messages down it. That costs 5 quota units per connection instead of
+//! 5 per poll, which is what keeps one shared daily quota (10,000 units,
+//! reset at midnight Pacific) usable by everyone. If streaming is unavailable
+//! it falls back to polling liveChatMessages.list, slowing down while chat is
+//! quiet. Pane names are "yt:<videoId>"; they never reach Twitch code paths.
 use serde_json::Value;
 use std::{
     collections::HashMap,
+    io::Read,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -16,6 +20,10 @@ use std::{
 
 const API: &str = "https://www.googleapis.com/youtube/v3";
 const MIN_POLL: Duration = Duration::from_secs(3);
+/// Polling slows to this while chat is quiet.
+const IDLE_POLL: Duration = Duration::from_secs(12);
+const QUOTA: &str = "YouTube's daily API limit is used up";
+const ENDED: &str = "Live chat not found (ended or private)";
 
 pub fn is_youtube(name: &str) -> bool {
     name.starts_with("yt:")
@@ -159,57 +167,193 @@ impl Auth {
     }
 }
 
+/// Turns an error response into a short, user-facing reason.
+fn refusal(status: u16, value: &Value) -> String {
+    let text = value.to_string();
+    match status {
+        403 if text.contains("quotaExceeded")
+            || text.contains("dailyLimitExceeded")
+            || text.contains("quota") =>
+        {
+            QUOTA.into()
+        }
+        404 => ENDED.into(),
+        403 if text.contains("liveChatEnded") || text.contains("liveChatDisabled") => ENDED.into(),
+        400 | 401 | 403 => format!(
+            "YouTube refused: {}",
+            value["error"]["message"]
+                .as_str()
+                .unwrap_or("check the YouTube connection")
+                .chars()
+                .take(120)
+                .collect::<String>()
+        ),
+        code => format!("YouTube error {code}"),
+    }
+}
+
+/// The next daily quota reset: midnight in America/Los_Angeles.
+pub fn next_quota_reset(now: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
+    use chrono::{Datelike, Duration as Span, NaiveDate, Weekday};
+    // US daylight time: from the second Sunday in March to the first Sunday in
+    // November; at local midnight the switch (2 AM) hasn't happened yet.
+    let nth_sunday =
+        |year, month, n: u8| NaiveDate::from_weekday_of_month_opt(year, month, Weekday::Sun, n);
+    let daylight_at_midnight = |date: NaiveDate| match (
+        nth_sunday(date.year(), 3, 2),
+        nth_sunday(date.year(), 11, 1),
+    ) {
+        (Some(start), Some(end)) => date > start && date <= end,
+        _ => false,
+    };
+    [-7i64, -8]
+        .into_iter()
+        .filter_map(|offset| {
+            let local = (now + Span::hours(offset)).date_naive().succ_opt()?;
+            (daylight_at_midnight(local) == (offset == -7))
+                .then(|| local.and_hms_opt(0, 0, 0))
+                .flatten()
+                .map(|m| m.and_utc() - Span::hours(offset))
+        })
+        .filter(|t| *t > now)
+        .min()
+        .unwrap_or(now + Span::hours(24))
+}
+
+/// Pulls complete JSON objects out of a growing JSON array, the shape Google's
+/// REST server-streaming responses arrive in ("[{...},\r\n{...}" and so on).
+#[derive(Default)]
+struct JsonObjects {
+    buf: Vec<u8>,
+    scanned: usize,
+    depth: usize,
+    start: Option<(usize, usize)>,
+    in_string: bool,
+    escaped: bool,
+}
+impl JsonObjects {
+    fn push(&mut self, bytes: &[u8]) -> Vec<Value> {
+        self.buf.extend_from_slice(bytes);
+        let mut out = Vec::new();
+        let mut i = self.scanned;
+        while i < self.buf.len() {
+            let b = self.buf[i];
+            if self.in_string {
+                if self.escaped {
+                    self.escaped = false;
+                } else if b == b'\\' {
+                    self.escaped = true;
+                } else if b == b'"' {
+                    self.in_string = false;
+                }
+            } else {
+                match b {
+                    b'"' => self.in_string = true,
+                    b'{' => {
+                        if self.start.is_none() {
+                            self.start = Some((i, self.depth));
+                        }
+                        self.depth += 1;
+                    }
+                    b'[' => self.depth += 1,
+                    b'}' | b']' => {
+                        self.depth = self.depth.saturating_sub(1);
+                        if b == b'}'
+                            && let Some((from, depth)) = self.start
+                            && depth == self.depth
+                        {
+                            if let Ok(v) = serde_json::from_slice(&self.buf[from..=i]) {
+                                out.push(v);
+                            }
+                            self.start = None;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            i += 1;
+        }
+        // Keep only the unfinished object; drop everything already parsed.
+        let keep = self.start.map_or(self.buf.len(), |(from, _)| from);
+        self.buf.drain(..keep);
+        if let Some((from, _)) = self.start.as_mut() {
+            *from -= keep;
+        }
+        self.scanned = self.buf.len();
+        out
+    }
+}
+
 fn watch(
     name: String,
     auth: Arc<Mutex<Auth>>,
     stop: Arc<AtomicBool>,
     tx: mpsc::Sender<(String, Update)>,
 ) {
-    let send = |u: Update| tx.send((name.clone(), u)).is_ok();
+    // A stopped watcher (pane closed, or restarted after a sign-in change) can
+    // still be blocked on a stream read; it must never post into the new one.
+    let send = |u: Update| !stop.load(Ordering::Relaxed) && tx.send((name.clone(), u)).is_ok();
+    let status = |connected: bool, text: String| send(Update::Status { connected, text });
     let Ok(client) = crate::live::client() else {
         return;
     };
+    let Ok(streamer) = reqwest::blocking::Client::builder()
+        .timeout(None)
+        .connect_timeout(Duration::from_secs(10))
+        .tcp_keepalive(Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+    else {
+        return;
+    };
     let video = name.trim_start_matches("yt:").to_owned();
-    let get = |path: &str, query: &[(&str, &str)]| -> Result<Value, String> {
-        let mut request = client.get(format!("{API}/{path}")).query(query);
-        {
-            let mut auth = auth
-                .lock()
-                .map_err(|_| "YouTube sign-in unavailable".to_owned())?;
-            if let Some((oauth, tokens)) = auth.google.as_mut() {
-                request = request.bearer_auth(crate::google_auth::access(oauth, tokens)?);
-            } else if let Some(key) = &auth.key {
-                request = request.query(&[("key", key.as_str())]);
-            } else {
-                return Err("Connect YouTube to read chat".into());
-            }
+    let authorize = |request: reqwest::blocking::RequestBuilder| -> Result<reqwest::blocking::RequestBuilder, String> {
+        let mut auth = auth
+            .lock()
+            .map_err(|_| "YouTube sign-in unavailable".to_owned())?;
+        if let Some((oauth, tokens)) = auth.google.as_mut() {
+            Ok(request.bearer_auth(crate::google_auth::access(oauth, tokens)?))
+        } else if let Some(key) = &auth.key {
+            Ok(request.query(&[("key", key.as_str())]))
+        } else {
+            Err("Connect YouTube to read chat".into())
         }
-        let response = request
+    };
+    let get = |path: &str, query: &[(&str, &str)]| -> Result<Value, String> {
+        let response = authorize(client.get(format!("{API}/{path}")).query(query))?
             .send()
             .map_err(|_| "YouTube didn't answer".to_owned())?;
-        let status = response.status().as_u16();
+        let code = response.status().as_u16();
         let value: Value = response
             .text()
             .ok()
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_default();
-        match status {
-            200 => Ok(value),
-            403 if value.to_string().contains("quota") => {
-                Err("YouTube API quota used up for today".into())
-            }
-            400 | 403 => Err(format!(
-                "YouTube refused: {}",
-                value["error"]["message"]
-                    .as_str()
-                    .unwrap_or("check the API key")
-                    .chars()
-                    .take(120)
-                    .collect::<String>()
-            )),
-            404 => Err("Live chat not found (ended or private)".into()),
-            code => Err(format!("YouTube error {code}")),
+        if code == 200 {
+            Ok(value)
+        } else {
+            Err(refusal(code, &value))
         }
+    };
+    // Sleeps in short steps so a closed pane stops promptly; false once stopped.
+    let pause = |total: Duration| {
+        let until = std::time::Instant::now() + total;
+        while std::time::Instant::now() < until {
+            if stop.load(Ordering::Relaxed) {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        !stop.load(Ordering::Relaxed)
+    };
+    // Out of quota: say when it comes back, then wait for the reset instead of
+    // spending more requests on refusals.
+    let wait_for_quota = || {
+        let reset = next_quota_reset(chrono::Utc::now());
+        let at = reset.with_timezone(&chrono::Local).format("%-I:%M %p");
+        status(false, format!("{QUOTA} · back at {at}"));
+        let wait = (reset - chrono::Utc::now()).to_std().unwrap_or_default();
+        pause(wait + Duration::from_secs(30))
     };
     // Resolve the video's live chat.
     let chat = loop {
@@ -233,30 +377,131 @@ fn watch(
                 match item["liveStreamingDetails"]["activeLiveChatId"].as_str() {
                     Some(chat) => break chat.to_owned(),
                     None => {
-                        send(Update::Status {
-                            connected: false,
-                            text: "Not live, or live chat is off · checking again in a minute"
-                                .into(),
-                        });
-                        std::thread::sleep(Duration::from_secs(60));
+                        status(
+                            false,
+                            "Not live, or live chat is off · checking again in a minute".into(),
+                        );
+                        if !pause(Duration::from_secs(60)) {
+                            return;
+                        }
                     }
                 }
             }
+            Err(e) if e == QUOTA => {
+                if !wait_for_quota() {
+                    return;
+                }
+            }
             Err(e) => {
-                send(Update::Status {
-                    connected: false,
-                    text: format!("{e} · retrying in a minute"),
-                });
-                std::thread::sleep(Duration::from_secs(60));
+                status(false, format!("{e} · retrying in a minute"));
+                if !pause(Duration::from_secs(60)) {
+                    return;
+                }
             }
         }
     };
     send(Update::ChatId(chat.clone()));
-    send(Update::Status {
-        connected: true,
-        text: "Connected (YouTube)".into(),
-    });
+    status(true, "Connected (YouTube)".into());
+    let deliver = |v: &Value| {
+        for item in v["items"].as_array().into_iter().flatten() {
+            if let Some(message) = message(&name, item)
+                && !send(Update::Message(message))
+            {
+                return false;
+            }
+        }
+        true
+    };
+    // One streaming connection; Ok when YouTube closes it normally.
+    let stream = |page: &mut Option<String>| -> Result<(), String> {
+        let mut query = vec![
+            ("liveChatId", chat.as_str()),
+            ("part", "snippet,authorDetails"),
+        ];
+        if let Some(token) = page.as_deref() {
+            query.push(("pageToken", token));
+        }
+        let mut response = authorize(
+            streamer
+                .get(format!("{API}/liveChat/messages/stream"))
+                .query(&query),
+        )?
+        .send()
+        .map_err(|_| "YouTube didn't answer".to_owned())?;
+        let code = response.status().as_u16();
+        if code != 200 {
+            let value = response
+                .text()
+                .ok()
+                .and_then(|t| serde_json::from_str(&t).ok())
+                .unwrap_or_default();
+            return Err(refusal(code, &value));
+        }
+        let mut objects = JsonObjects::default();
+        let mut chunk = [0u8; 16384];
+        loop {
+            let n = response
+                .read(&mut chunk)
+                .map_err(|_| "YouTube chat connection dropped".to_owned())?;
+            if n == 0 || stop.load(Ordering::Relaxed) {
+                return Ok(());
+            }
+            for v in objects.push(&chunk[..n]) {
+                if v["error"].is_object() {
+                    let code = v["error"]["code"].as_u64().unwrap_or(500) as u16;
+                    return Err(refusal(code, &v));
+                }
+                if let Some(token) = v["nextPageToken"].as_str() {
+                    *page = Some(token.to_owned());
+                }
+                if !deliver(&v) {
+                    return Ok(());
+                }
+                if v["offlineAt"].is_string() {
+                    return Err(ENDED.into());
+                }
+            }
+        }
+    };
     let mut page: Option<String> = None;
+    let mut streamed = false;
+    let mut failures = 0;
+    while !stop.load(Ordering::Relaxed) && failures < 3 {
+        let opened = std::time::Instant::now();
+        match stream(&mut page) {
+            Ok(()) => {
+                streamed = true;
+                failures = 0;
+                // Each reconnect costs 5 units; never reconnect in a tight loop.
+                let lived = opened.elapsed();
+                if !pause(Duration::from_secs(2).max(Duration::from_secs(30).saturating_sub(lived)))
+                {
+                    return;
+                }
+            }
+            Err(e) if e == QUOTA => {
+                if !wait_for_quota() {
+                    return;
+                }
+            }
+            Err(e) if e == ENDED => {
+                status(false, "Live chat ended".into());
+                return;
+            }
+            Err(e) => {
+                // A refusal before any stream worked means streaming isn't
+                // available here: fall back to polling.
+                failures += if streamed { 1 } else { 3 };
+                status(false, format!("{e} · reconnecting"));
+                if !pause(Duration::from_secs(15)) {
+                    return;
+                }
+                status(true, "Connected (YouTube)".into());
+            }
+        }
+    }
+    // Polling fallback, slowing down while chat is quiet.
+    let mut quiet = MIN_POLL;
     while !stop.load(Ordering::Relaxed) {
         let mut query = vec![
             ("liveChatId", chat.as_str()),
@@ -268,35 +513,38 @@ fn watch(
         }
         match get("liveChat/messages", &query) {
             Ok(v) => {
-                for item in v["items"].as_array().into_iter().flatten() {
-                    if let Some(message) = message(&name, item)
-                        && !send(Update::Message(message))
-                    {
-                        return;
-                    }
+                if !deliver(&v) {
+                    return;
                 }
                 page = v["nextPageToken"].as_str().map(str::to_owned);
-                let wait = v["pollingIntervalMillis"]
+                let asked = v["pollingIntervalMillis"]
                     .as_u64()
                     .map(Duration::from_millis)
                     .unwrap_or(MIN_POLL)
                     .max(MIN_POLL);
-                std::thread::sleep(wait);
-            }
-            Err(e) => {
-                let ended = e.contains("not found");
-                send(Update::Status {
-                    connected: false,
-                    text: if ended {
-                        "Live chat ended".into()
-                    } else {
-                        format!("{e} · retrying")
-                    },
-                });
-                if ended {
+                quiet = if v["items"].as_array().is_some_and(|i| !i.is_empty()) {
+                    asked
+                } else {
+                    (quiet + quiet / 2).clamp(asked, IDLE_POLL.max(asked))
+                };
+                if !pause(quiet) {
                     return;
                 }
-                std::thread::sleep(Duration::from_secs(30));
+            }
+            Err(e) if e == QUOTA => {
+                if !wait_for_quota() {
+                    return;
+                }
+            }
+            Err(e) if e == ENDED => {
+                status(false, "Live chat ended".into());
+                return;
+            }
+            Err(e) => {
+                status(false, format!("{e} · retrying"));
+                if !pause(Duration::from_secs(30)) {
+                    return;
+                }
             }
         }
     }
@@ -419,6 +667,53 @@ mod tests {
         assert_eq!(
             message("yt:x", &paid).unwrap().body(),
             "[Super Chat $5.00] gg"
+        );
+    }
+    #[test]
+    fn stream_objects_split_across_reads() {
+        let body = br#"[{"nextPageToken":"a","items":[{"id":"1","s":"br}ace\"q"}]},
+{"nextPageToken":"b","items":[]}
+,{"error":{"code":403}}]"#;
+        let mut parser = JsonObjects::default();
+        let mut got = Vec::new();
+        for piece in body.chunks(7) {
+            got.extend(parser.push(piece));
+        }
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[0]["items"][0]["s"], "br}ace\"q");
+        assert_eq!(got[1]["nextPageToken"], "b");
+        assert!(got[2]["error"].is_object());
+        // A plain (non-streamed) object works too.
+        assert_eq!(JsonObjects::default().push(br#"{"items":[]}"#).len(), 1);
+    }
+    #[test]
+    fn quota_resets_at_pacific_midnight() {
+        use chrono::TimeZone;
+        // Summer (PDT, UTC-7): 20:00 UTC on 11 Oct -> 07:00 UTC on 12 Oct.
+        let now = chrono::Utc
+            .with_ymd_and_hms(2026, 10, 11, 20, 0, 0)
+            .unwrap();
+        assert_eq!(
+            next_quota_reset(now),
+            chrono::Utc.with_ymd_and_hms(2026, 10, 12, 7, 0, 0).unwrap()
+        );
+        // Winter (PST, UTC-8).
+        let now = chrono::Utc.with_ymd_and_hms(2026, 12, 1, 12, 0, 0).unwrap();
+        assert_eq!(
+            next_quota_reset(now),
+            chrono::Utc.with_ymd_and_hms(2026, 12, 2, 8, 0, 0).unwrap()
+        );
+        // Just after midnight PT: the next reset is a day later, not now.
+        let now = chrono::Utc.with_ymd_and_hms(2026, 10, 12, 7, 0, 1).unwrap();
+        assert_eq!(
+            next_quota_reset(now),
+            chrono::Utc.with_ymd_and_hms(2026, 10, 13, 7, 0, 0).unwrap()
+        );
+        // DST ends 1 Nov 2026: midnight 1 Nov is still PDT; midnight 2 Nov is PST.
+        let now = chrono::Utc.with_ymd_and_hms(2026, 11, 1, 12, 0, 0).unwrap();
+        assert_eq!(
+            next_quota_reset(now),
+            chrono::Utc.with_ymd_and_hms(2026, 11, 2, 8, 0, 0).unwrap()
         );
     }
 }
