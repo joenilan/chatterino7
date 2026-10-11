@@ -195,6 +195,8 @@ struct ChannelPane {
     send_as_options: std::rc::Rc<Vec<(SharedString, String)>>,
     /// Messages AutoMod is holding in this channel for you to review.
     automod: std::rc::Rc<Vec<automod::Held>>,
+    /// While copying existing chat into a new popout: no pings for old messages.
+    quiet_pings: bool,
     send_as: Option<SharedString>,
     connection: String,
     connected: bool,
@@ -286,6 +288,7 @@ impl ChannelPane {
             bot_actions: Default::default(),
             send_as_options: Default::default(),
             automod: Default::default(),
+            quiet_pings: false,
             send_as: None,
             media,
             catalog,
@@ -438,7 +441,7 @@ impl ChannelPane {
                             .map(|ping| (ping, message.id.clone()))
                     })
                 };
-                if let Some((ping, id)) = ping {
+                if let Some((ping, id)) = ping.filter(|_| !self.quiet_pings) {
                     cx.emit(PaneEvent::Ping(ping, id));
                 }
 

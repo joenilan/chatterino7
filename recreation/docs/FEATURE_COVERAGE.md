@@ -87,10 +87,10 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | RD03 | Message actions | Part | Copy/name/ID/mention/card/reply actions accepted in named cases; configurable clicks and richer menus remain. | widgets/helper/ChannelView.cpp |
 | RD04 | Safe links | Part | Source-byte targeting and copy/open implemented; browser opens not exercised in QA. Previews/unshortening/custom browser remain. | providers/links |
 | RD05 | Retained Find | V | Native per-pane search, matches/navigation/live arrivals observed; exact occurrence visibility and prior pixel restoration still separate gaps. | messages/search; widgets/helper/SearchPopup.cpp |
-| RD06 | Advanced and global search | Backlog | Cross-channel queries, regex, author/channel/badge/subtier/link/flag predicates. | messages/search |
+| RD06 | Advanced and global search | Part | Cross-channel search over open channels and per-channel search; regex and author/badge/link predicates pending. | messages/search |
 | RD07 | Replies and retained conversations | Part | Native target/cancel/persistence/dialog/jump accepted; actual send and retained-root/deletion edge acceptance remain. | messages/MessageThread; widgets/dialogs/ReplyThreadPopup.cpp |
-| RD08 | Followed or detached threads | Backlog | Subscribe/unsubscribe policies, thread notifications, persistent/pinned thread views. | messages/MessageThread; ReplyThreadPopup.cpp |
-| RD09 | Read markers and scrollbar annotations | Backlog | Last-read line, mention/search markers and clear unread history navigation. | widgets/Scrollbar.cpp; ChannelView.cpp |
+| RD08 | Followed or detached threads | Part | Retained reply conversations with Jump; follow/notify and pinned thread views pending. | messages/MessageThread; ReplyThreadPopup.cpp |
+| RD09 | Read markers and scrollbar annotations | Part | Last-read divider and Highlights & unread navigation; scrollbar markers pending. | widgets/Scrollbar.cpp; ChannelView.cpp |
 | RD10 | Moderated content policy | Part | Existing views resolve current data; future logs/previews/alerts must not resurrect deleted/private content. | messages/MessageFlag.hpp; ChannelView.cpp |
 
 ### Workspaces and windows
@@ -104,7 +104,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | WS05 | Broadcast status | Part | Native live/offline pastel markers observed; unknown/stale edges remain. Broadcast state must remain distinct from chat connection. | widgets/splits/SplitHeader.cpp |
 | WS06 | Stream title/game/viewers/uptime | Part | Ctrl+I/context-menu details, title/category/viewers/language/start timestamp implemented and native accepted. Own-channel title/category editor with conflict check and readback ([details](STREAMER_TOOLS.md)); live save unverified. | widgets/splits/SplitHeader.cpp |
 | WS07 | Quick switcher and visit history | Part | Ctrl+P searches open channels/workspace names, including offline-hidden tabs; keyboard/click activates correct dock and composer; native keyboard/click/compact accepted. visit history/neighbor focus remain. | widgets/dialogs/switcher; Notebook |
-| WS08 | Multiple windows and popouts | Backlog | Independent windows, split/workspace popout, cross-window drag and persisted geometry. | widgets/Window.cpp; common/WindowDescriptors |
+| WS08 | Multiple windows and popouts | Part | Channel popout windows (tab menu), same live connection, seeded history, restored on launch ([details](POPOUTS.md)); always-on-top, geometry, cross-window drag and workspace popouts pending. | widgets/Window.cpp; common/WindowDescriptors |
 | WS09 | Overlay and attached windows | Backlog | Always-on-top, transparency/click-through and deliberate interaction modes; browser attachment later. | widgets/OverlayWindow; AttachedWindow; FramelessEmbedWindow |
 | WS10 | Special channels | Part | New local activity dialog only; mentions, whispers, watching/live and AutoMod feeds need explicit models. | widgets/dialogs/SelectChannelDialog.cpp |
 | WS11 | Combined feeds | Backlog | Preserve per-message origin and an explicit destination composer; never broadcast by accident. | util/MultiChannel; SelectChannelDialog.cpp |
@@ -119,7 +119,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | IN03 | Username completion | Part | @ recent-speaker completion (eight, canonical login, retained channel history), Enter/Tab insert and Escape dismiss; native Enter/Tab/Escape accepted; full roster/broadcaster ranking remains. | controllers/completion/sources; widgets/ChatterListWidget |
 | IN04 | Sent-message input history | P | Alt+Up/Down bounded session-local successful sends with draft restoration and account clearing; native pending, persistence/search remains. | widgets/splits/SplitInput.cpp |
 | IN05 | Command routing | Next | Prevent unsupported slash commands being mistaken for working moderator commands; deliberate literal-text behavior. | controllers/commands/CommandController.cpp |
-| IN06 | Custom command editor | Backlog | Aliases, parameters/context variables, multiword expansion and validation. | controllers/commands/CommandModel.cpp; settingspages/CommandPage.cpp |
+| IN06 | Custom command editor | Done | Custom command editor with validation and {channel}/{args}/{1}-{9} placeholders. | controllers/commands/CommandModel.cpp; settingspages/CommandPage.cpp |
 | IN07 | Command completion | Part | @ shows recent chatters plus Twitch's chatter list in moderated/own channels, with display-name and substring matching; Tab completes names without @. Command hints remain. | controllers/completion; controllers/commands |
 | IN08 | Utility commands | Part | Twitch utility commands (/w, /color, /block) via Helix ([details](STREAMER_TOOLS.md)); /me, chatters/mods/VIP lists, popout remain. | controllers/commands/builtin/Misc.cpp; builtin/twitch |
 | IN09 | Broadcaster commands | Part | /settitle, /setgame, /marker, /commercial, /raid, /announce, /shoutout via Helix with capability checks; /clip and live acceptance remain. | controllers/commands/builtin/twitch |
@@ -132,7 +132,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | ID | Feature | State | Remaining work and evidence boundary | Reference |
 | --- | --- | --- | --- | --- |
 | EM01 | Twitch static/animated inline emotes | Part | Native Twitch and animation observed; newer rich fragments and every format/scale still separate. | providers/twitch/TwitchEmotes.cpp |
-| EM02 | Available account emote inventory | Backlog | Subscriber/follower/Bits/reward/temporary entitlements; catalog presence alone is insufficient. | providers/twitch/TwitchEmotes.cpp |
+| EM02 | Available account emote inventory | Done | Paginated Helix user emotes (owned_emotes.rs) feed the picker and completion; follower emotes lack channel context. | providers/twitch/TwitchEmotes.cpp |
 | EM03 | Twitch badges | Part | Native global/channel badge media observed; category settings and all metadata/flair variants remain. | providers/twitch/TwitchBadges.cpp |
 | EM04 | 7TV channel/global aliases | Part | Public catalogs and basic zero-width support exist; special/unlisted sets and provider controls remain. | providers/seventv/SeventvEmotes.cpp |
 | EM05 | 7TV personal emotes | Part | Source supports own bootstrap plus passive sender-scoped Personal/Commercial grants and own picker; native acceptance pending. Passive feed is not a historical roster. | providers/seventv/SeventvPersonalEmotes |
@@ -141,7 +141,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | EM08 | 7TV badges | Part | Passive sender grants, updated definitions, bounded animated media/reduced motion in source; native acceptance and visibility controls remain. | providers/seventv/SeventvBadges |
 | EM09 | Twitch and 7TV avatars | Part | On-demand Twitch avatar with allowlisted bounded JPEG/PNG/WebP; real native avatar accepted; 7TV identity remains. | widgets/dialogs/UserInfoPopup.cpp |
 | EM10 | BTTV and FFZ core | Part | Catalog counts observed; source media support exists, provider-specific visual/picker checks remain. | providers/bttv; providers/ffz |
-| EM11 | BTTV live updates and FFZ badges | Backlog | Activity/update lifecycle, custom mod/VIP/supporter badges and provider options. | providers/bttv; providers/ffz |
+| EM11 | BTTV live updates and FFZ badges | Part | FFZ badges and role badges; BTTV live updates pending. | providers/bttv; providers/ffz |
 | EM12 | Provider modifiers and overlays | Part | 7TV overlay foundation exists; BTTV/FFZ modifiers currently skipped; multiple-overlay geometry/copy/wrap still needs coverage. | messages/layouts; providers/bttv; providers/ffz |
 | EM13 | Emoji | Part | Unicode text only; shortcodes, picker styles, favorites and boundary correctness remain. | providers/emoji |
 | EM14 | Picker and favorites | Part | Native searchable animated picker/paging; source/creator details, tabs, tags, favorites and rich menus remain. | widgets/dialogs/EmotePopup.cpp |
@@ -158,7 +158,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | AT04 | Special-event highlight policies | Part | Event highlight colours for mentions, raids (and the raider for 30 min), subs/gifts, Bits, rewards, announcements and first-time chatters ([details](EVENT_HIGHLIGHTS.md)); whisper/AutoMod/thread rules remain. | singletons/Settings.hpp |
 | AT05 | Sounds, taskbar and attention preferences | Part | Mention/highlight ping with Chime/Soft/custom WAV, volume and focused-window policy ([details](SOUNDS.md)); per-rule/per-channel sounds and taskbar flash pending. | controllers/pings; sound; highlights |
 | AT06 | Local ignores and replacements | Part | Chatter and phrase/regex hide/replace implemented ([details](IGNORES.md)); exclusions and show-hidden display remain. | controllers/ignores; settingspages/IgnoresPage.cpp |
-| AT07 | Twitch blocks | Backlog | Approved account-backed block sync/actions, local visibility policy and clear distinction from local ignore. | controllers/ignores |
+| AT07 | Twitch blocks | Part | /block and /unblock via Helix; block-list sync and local hide policy pending. | controllers/ignores |
 | AT08 | Message filter language | Backlog | Named typed expressions, validation, per-view selection and regex limits. Live-only tab filtering is unrelated. | controllers/filters/lang; FilterSet.cpp |
 | AT09 | Similarity suppression | Backlog | Bounded threshold/window/user rules, dim/hide and highlight interaction. | messages/MessageBuilder.cpp; Settings.hpp |
 | AT10 | Local nicknames and colors | Part | Local nicknames and per-user colours (Settings → Appearance), applied at render while the canonical login stays intact. | controllers/nicknames; userdata |
@@ -171,10 +171,10 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | MD01 | Local chatter cards | V | Native retained-message card/copy/mention accepted; richer account data remains below. | widgets/dialogs/UserInfoPopup.cpp |
 | MD02 | Full profile context | Part | Public Twitch created-at/avatar/bio/broadcaster role in compact card; avatar/date/bio/compact native accepted, role display untested. Follow/subscription data and moderation remain. | UserInfoPopup.cpp |
 | MD03 | Persistent notes | Part | Private per-chatter notes editor stored locally; streamer-mode redaction pending. | controllers/userdata; EditUserNotesDialog.cpp |
-| MD04 | Chatter list and roles | Backlog | Filtering/fetch limits, actual account permissions, distinguish chatters from viewers. | widgets/ChatterListWidget.cpp |
+| MD04 | Chatter list and roles | Part | Chatters fetched (1000, 2-min refresh) for @-completion; visible list with roles pending. | widgets/ChatterListWidget.cpp |
 | MD05 | Delete, timeout, ban and undo-family actions | Part | /ban, /timeout, /unban, /delete, /clear commands and message right-click actions (ban confirmation) with role/scope checks. Delete was accepted live; timeout and ban are unverified live. | controllers/moderationactions; builtin/twitch/Ban.cpp; Unban.cpp; DeleteMessages.cpp |
 | MD06 | Warnings and blocks | Part | /warn and /block, /unblock commands; block list sync and display remain. | builtin/twitch/Warn.cpp; Block.cpp |
-| MD07 | Moderator mode and custom buttons | Backlog | Compact optional actions, editable presets, keyboard equivalents and clear unavailable reasons. | settingspages/ModerationPage.cpp |
+| MD07 | Moderator mode and custom buttons | Part | Moderator layout with chat modes, clear chat and mod actions; editable custom buttons pending. | settingspages/ModerationPage.cpp |
 | MD08 | Room mode management | Part | Room mode commands (/slow, /followers, /subscribers, /emoteonly, /uniquechat); header controls remain. | builtin/twitch/ChatSettings.cpp |
 | MD09 | AutoMod and blocked terms | Part | Own-channel AutoMod queue strip with Allow/Deny via EventSub hold/update v2 and Helix ([details](AUTOMOD.md)); moderated channels and inline rows pending; no live hold observed yet. | providers/twitch/eventsub; messages/MessageBuilder.cpp |
 | MD10 | Suspicious users | Backlog | Monitored/restricted state, annotations and capability-gated management. | builtin/twitch/LowTrust.cpp |

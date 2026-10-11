@@ -12,6 +12,8 @@ mod channel_switcher;
 mod engagement_ui;
 #[path = "pane_navigation.rs"]
 mod pane_navigation;
+#[path = "popout.rs"]
+mod popout;
 #[path = "roles.rs"]
 mod roles;
 #[path = "settings_ui.rs"]
@@ -185,6 +187,9 @@ pub struct Workbench {
     sound_volume: f32,
     /// Message ids already pinged (the same channel can be open in several panes).
     pinged: std::collections::VecDeque<String>,
+    /// Channels in their own windows; reopened on the next launch.
+    popouts: Vec<popout::Popout>,
+    restore_popouts: Vec<String>,
     live: crate::live::LiveChat,
     streams: crate::stream_status::Streams,
     capabilities: crate::capabilities::Capabilities,
@@ -351,7 +356,9 @@ impl Workbench {
     /// EventSub cap, the lowest-priority channels wait until room frees up.
     fn connection_priority(&self, cx: &App) -> Vec<String> {
         let name = |p: &Entity<ChannelPane>| p.read(cx).name.to_string();
-        let mut order: Vec<String> = self.visible_panes(cx).iter().map(name).collect();
+        // Popouts are on screen too.
+        let mut order: Vec<String> = self.popouts.iter().map(|p| name(&p.pane)).collect();
+        order.extend(self.visible_panes(cx).iter().map(name));
         let active = self.tabs.get(self.active);
         order.extend(active.into_iter().flat_map(|t| t.panes.iter().map(name)));
         let rank = |id: u64| {
@@ -371,7 +378,14 @@ impl Workbench {
         order.extend(others.iter().flat_map(|t| t.panes.iter().map(name)));
         order
     }
+    /// Every pane fed by the live connection: workspace tabs and popouts.
     pub fn panes(&self) -> Vec<Entity<ChannelPane>> {
+        self.tab_panes()
+            .into_iter()
+            .chain(self.popouts.iter().map(|p| p.pane.clone()))
+            .collect()
+    }
+    pub fn tab_panes(&self) -> Vec<Entity<ChannelPane>> {
         self.tabs
             .iter()
             .flat_map(|t| t.panes.iter().cloned())
@@ -516,6 +530,15 @@ impl Workbench {
                 .filter(|v| (0.05..=1.).contains(v))
                 .unwrap_or(0.6),
             pinged: Default::default(),
+            popouts: Vec::new(),
+            restore_popouts: state["popouts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str())
+                .filter_map(chat_core::twitch_login)
+                .take(8)
+                .collect(),
             send_as: state["send_as"]
                 .as_object()
                 .into_iter()
@@ -1536,6 +1559,10 @@ impl Workbench {
                 this.open_workspace_search(Some(query.clone()), window, cx);
                 return;
             }
+            if matches!(event, PaneEvent::RequestClose) && this.is_popout(pane) {
+                this.close_popout(pane, cx);
+                return;
+            }
             if matches!(event, PaneEvent::RequestClose) {
                 this.confirm_close_channel(channel.clone(), window, cx);
                 return;
@@ -1698,9 +1725,8 @@ impl Workbench {
     /// fill panes that have not received anything yet.
     fn pump_recent_messages(&mut self, cx: &mut Context<Self>) {
         let open: Vec<String> = self
-            .tabs
+            .panes()
             .iter()
-            .flat_map(|t| t.panes.iter())
             .map(|p| p.read(cx).name.to_string())
             .collect();
         self.recent_requested.retain(|c| open.contains(c));
@@ -1713,7 +1739,7 @@ impl Workbench {
         }
         while let Some((channel, result)) = self.recent.poll() {
             let Ok(messages) = result else { continue };
-            for pane in self.tabs.iter().flat_map(|t| t.panes.iter()) {
+            for pane in &self.panes() {
                 if pane.read(cx).name.as_ref() != channel
                     || !pane.read(cx).timeline.borrow().messages().is_empty()
                 {
@@ -1904,6 +1930,7 @@ impl Workbench {
         value["accounts"] = accounts["accounts"].clone();
         value["active_account"] = accounts["active_account"].clone();
         value["send_as"] = json!(self.send_as);
+        value["popouts"] = json!(self.popout_channels(cx));
         value["sound"] = json!({
             "mentions": self.sound_mentions,
             "highlights": self.sound_highlights,
@@ -1945,7 +1972,13 @@ impl Workbench {
             Err(self.save_status.clone())
         };
         match result {
-            Ok(()) => true,
+            Ok(()) => {
+                // The main window is the app: popouts (already saved for next launch) close with it.
+                if !self.popouts.is_empty() {
+                    cx.defer(|cx| cx.quit());
+                }
+                true
+            }
             Err(error) => {
                 self.close_failed = true;
                 self.save_status = format!("Save failed: {error}");
@@ -2951,6 +2984,15 @@ impl Workbench {
                                     },
                                 ))
                                 .separator()
+                                .item(PopupMenuItem::new("Pop out to its own window").on_click({
+                                    let owner = owner.clone();
+                                    let channel = menu_channel.clone();
+                                    move |_, _, cx| {
+                                        let _ = owner.update(cx, |this, cx| {
+                                            this.open_popout(channel.clone(), cx)
+                                        });
+                                    }
+                                }))
                                 .item(PopupMenuItem::new("Focus next pane · F6").on_click(
                                     move |_, w, cx| {
                                         let _ = next_pane.update(cx, |this, cx| {
@@ -3495,6 +3537,9 @@ fn valid_channel(value: &str) -> Option<String> {
 }
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        for channel in std::mem::take(&mut self.restore_popouts) {
+            self.open_popout(channel, cx);
+        }
         let reading_available = window.is_window_active() && !window.has_active_dialog(cx);
         // Retarget from the current sampled width so rapid reversals stay smooth.
         // GPUI's motion primitive honors the OS reduced-motion preference.
