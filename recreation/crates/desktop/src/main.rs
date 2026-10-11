@@ -16,7 +16,7 @@ mod dock;
 mod emote_picker;
 mod ffz_badges;
 mod ffz_role_badges;
-mod gif_frames;
+mod frame_sampler;
 mod highlight_rules;
 mod inline_chat;
 mod input_history;
@@ -696,6 +696,9 @@ impl Render for ChannelPane {
                                 for definition in catalog.ffz_badges.for_user(&message.user_id,room){let image=media.borrow_mut().get(&definition.badge.key,cx);badge_images.push((definition.badge,image,definition.background));}
                             }
                             if let Some(badge)=catalog.borrow().badges.for_user(&message.user_id).cloned(){let image=media.borrow_mut().get(&badge.key,cx);badge_images.push((badge,image,None));}
+                            // A definitively failed badge drops its slot instead of leaving a blank gap;
+                            // pending art keeps its slot so loading does not reflow the row.
+                            badge_images.retain(|(badge,image,_)|image.is_some()||!media.borrow().failed(&badge.key));
                             let row_owner=menu_owner.clone();let row_id=message.id.clone();
                             let timestamp=if timestamps>0{message.sent_at.and_then(|time|chrono::DateTime::from_timestamp(time,0)).map(|time|{
                                 let local=time.with_timezone(&chrono::Local);(local.format(if timestamps==2{"%H:%M:%S"}else{"%H:%M"}).to_string(),local.format("%Y-%m-%d %H:%M:%S %:z").to_string())

@@ -638,10 +638,13 @@ fn deliver(
             user_id: text("chatter_user_id"),
             display_name: if e["chatter_is_anonymous"].as_bool() == Some(true) {
                 "Anonymous".into()
-            } else if text("chatter_user_name").is_empty() {
-                "Twitch".into()
             } else {
-                text("chatter_user_name")
+                // Twitch can send display names with stray whitespace; Chatterino trims too.
+                let name = text("chatter_user_name");
+                match name.trim() {
+                    "" => "Twitch".into(),
+                    trimmed => trimmed.to_owned(),
+                }
             },
             login: chat_core::twitch_login(&text("chatter_user_login")),
             replyable: v["payload"]["subscription"]["type"] == "channel.chat.message"
@@ -705,6 +708,7 @@ fn deliver(
                     .map(|_| {
                         e["source_broadcaster_user_name"]
                             .as_str()
+                            .map(str::trim)
                             .filter(|s| !s.is_empty())
                             .unwrap_or("Shared Chat")
                             .chars()
@@ -810,7 +814,7 @@ fn twitch_fragments(message: &Value) -> Vec<Fragment> {
                     let login = mention["user_login"]
                         .as_str()
                         .and_then(chat_core::twitch_login);
-                    let name = mention["user_name"].as_str().filter(|name| {
+                    let name = mention["user_name"].as_str().map(str::trim).filter(|name| {
                         !name.is_empty() && name.len() <= 400 && !name.chars().any(char::is_control)
                     });
                     if let (Some(id), Some(login), Some(name)) = (id, login, name) {
@@ -868,6 +872,8 @@ fn parse_reply(value: &Value) -> Option<chat_core::Reply> {
             .collect(),
         parent_name: value["parent_user_name"]
             .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
             .unwrap_or("Chatter")
             .chars()
             .take(100)

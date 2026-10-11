@@ -392,7 +392,6 @@ enum MediaFailure {
     Format,
     Decode,
     Dimensions,
-    FrameLimit,
     DecodedLimit,
     CacheBudget,
 }
@@ -406,7 +405,6 @@ impl MediaFailure {
             Self::Format => "unsupported_format".into(),
             Self::Decode => "decode".into(),
             Self::Dimensions => "dimensions".into(),
-            Self::FrameLimit => "frame_limit".into(),
             Self::DecodedLimit => "decoded_limit".into(),
             Self::CacheBudget => "cache_budget".into(),
         }
@@ -871,34 +869,22 @@ fn download(
         return Err(MediaFailure::WireLimit);
     }
     let format = image::guess_format(&bytes).map_err(|_| MediaFailure::Format)?;
-    let mut frames = Vec::new();
-    let mut decoded = 0usize;
-    let mut rich_frames = crate::gif_frames::Frames::default();
-    let mut push = |mut frame: image::Frame| -> Result<(), MediaFailure> {
+    // Rich GIF cards are downscaled; inline media keeps native size. Both thin
+    // long animations instead of failing at a frame ceiling.
+    let mut sampler = crate::frame_sampler::Frames::new(crate::frame_sampler::Limits {
+        source_frames: if rich_gif { 600 } else { 1000 },
+        kept_frames: if rich_gif { 240 } else { 120 },
+        bytes: max_decoded,
+        fit: rich_gif.then_some((192, 128)),
+    });
+    let mut decoded_any = false;
+    let mut push = |frame: image::Frame| -> Result<bool, MediaFailure> {
+        decoded_any = true;
         let (w, h) = frame.buffer().dimensions();
         if w == 0 || h == 0 || w > max_dimension || h > max_dimension {
             return Err(MediaFailure::Dimensions);
         }
-        if rich_gif {
-            rich_frames
-                .push(frame)
-                .map_err(|_| MediaFailure::FrameLimit)?;
-            return Ok(());
-        }
-        if frames.len() >= 120 {
-            return Err(MediaFailure::FrameLimit);
-        }
-        decoded = decoded
-            .checked_add(w as usize * h as usize * 4)
-            .ok_or(MediaFailure::DecodedLimit)?;
-        if decoded > max_decoded {
-            return Err(MediaFailure::DecodedLimit);
-        }
-        for pixel in frame.buffer_mut().as_chunks_mut::<4>().0 {
-            pixel.swap(0, 2);
-        }
-        frames.push(frame);
-        Ok(())
+        Ok(matches!(sampler.push(frame), crate::frame_sampler::Push::Continue))
     };
     match format {
         ImageFormat::Gif => {
@@ -914,8 +900,7 @@ fn download(
                 .set_limits(limits)
                 .map_err(|_| MediaFailure::Decode)?;
             for frame in decoder.into_frames() {
-                push(frame.map_err(|_| MediaFailure::Decode)?)?;
-                if !key.animated {
+                if !push(frame.map_err(|_| MediaFailure::Decode)?)? || !key.animated {
                     break;
                 }
             }
@@ -933,7 +918,9 @@ fn download(
                 .set_limits(limits)
                 .map_err(|_| MediaFailure::Decode)?;
             for frame in decoder.into_frames() {
-                push(frame.map_err(|_| MediaFailure::Decode)?)?;
+                if !push(frame.map_err(|_| MediaFailure::Decode)?)? {
+                    break;
+                }
             }
         }
         ImageFormat::Png | ImageFormat::WebP | ImageFormat::Jpeg => {
@@ -952,20 +939,19 @@ fn download(
         }
         _ => return Err(MediaFailure::Format),
     }
-    if rich_gif {
-        decoded = rich_frames.bytes;
-        frames = rich_frames.frames;
-        if decoded > max_decoded {
-            return Err(MediaFailure::DecodedLimit);
-        }
-        for frame in &mut frames {
-            for pixel in frame.buffer_mut().as_chunks_mut::<4>().0 {
-                pixel.swap(0, 2);
-            }
+    let (mut frames, decoded) = sampler.finish();
+    for frame in &mut frames {
+        for pixel in frame.buffer_mut().as_chunks_mut::<4>().0 {
+            pixel.swap(0, 2);
         }
     }
     if frames.is_empty() {
-        return Err(MediaFailure::Decode);
+        // Only a single frame larger than the whole budget can leave nothing kept.
+        return Err(if decoded_any {
+            MediaFailure::DecodedLimit
+        } else {
+            MediaFailure::Decode
+        });
     }
     let image = Arc::new(RenderImage::new(frames));
     let mut cycle_ms = 0;
@@ -973,7 +959,7 @@ fn download(
     for index in 0..image.frame_count() {
         let delay = Duration::from(image.delay(index))
             .as_millis()
-            .clamp(20, if rich_gif { 6_000_000 } else { 10_000 }) as u64;
+            .clamp(20, 6_000_000) as u64;
         cycle_ms += delay;
         ends_ms.push(cycle_ms);
     }

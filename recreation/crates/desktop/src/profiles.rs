@@ -143,6 +143,7 @@ fn load(client: &reqwest::blocking::Client, identity: &Identity, id: &str) -> Op
         display_name: user["display_name"]
             .as_str()
             .unwrap_or("")
+            .trim()
             .chars()
             .take(80)
             .collect(),
