@@ -763,7 +763,11 @@ impl Render for ChannelPane {
                             };
                             let row = first_order + index as u64;
                             let paint=if appearance.borrow().get(&message.user_id).is_some_and(|a|a.color.is_some()){None}else{
-                                let catalog=catalog.borrow();catalog.paints.for_user(&message.user_id).filter(|p|p.limitation.is_none()).cloned().map(|paint|crate::name_paint::Request{paint,cache:catalog.paint_cache.clone()})
+                                let catalog=catalog.borrow();catalog.paints.for_user(&message.user_id).filter(|p|p.limitation.is_none()).cloned().map(|paint|{
+                                    // Image paints load (and animate) through the media cache.
+                                    let image=paint.image().and_then(media::EmoteKey::paint_image).and_then(|key|media.borrow_mut().get(&key,cx));
+                                    crate::name_paint::Request{paint,cache:catalog.paint_cache.clone(),image}
+                                })
                             };
                             let inline = inline_chat::InlineChat::new(message, paint.clone(), row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx);
                             let first_line_height = if inline.is_some() { inline_chat::InlineChat::line_height(window,message) } else { window.line_height() };

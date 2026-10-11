@@ -12,6 +12,8 @@ use std::{
 pub struct Request {
     pub paint: Paint,
     pub cache: Rc<RefCell<Cache>>,
+    /// Decoded image for image paints; animated paints advance with its frames.
+    pub image: Option<Arc<crate::media::DecodedMedia>>,
 }
 struct Drawing {
     image: Arc<RenderImage>,
@@ -74,8 +76,20 @@ impl Request {
             return false;
         }
         let phase = (ox - ax as f32, oy - ay as f32);
+        // Image paints draw the current animation frame; reduced motion pins frame 0.
+        let frame = match (&self.paint.image(), &self.image) {
+            (None, _) => None,
+            (Some(_), None) => return false,
+            (Some(_), Some(media)) => {
+                let index = media.frame(cx.reduce_motion());
+                if media.image.frame_count() > 1 && !cx.reduce_motion() {
+                    window.request_animation_frame();
+                }
+                Some(index)
+            }
+        };
         let key = format!(
-            "{:?}|{base}|{}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
+            "{:?}|{frame:?}|{base}|{}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
             self.paint,
             scale.to_bits(),
             f32::from(height).to_bits(),
@@ -94,12 +108,31 @@ impl Request {
                 cache.epoch = Instant::now();
                 cache.created = 0;
             }
-            if cache.created >= 2 {
+            // Animated paints may build one frame per name each tick.
+            if cache.created >= 2 + 6 * usize::from(frame.is_some()) {
                 window.request_animation_frame();
                 return false;
             }
             cache.created += 1;
-            let drawing = compose(&self.paint, line, origin, height, base, window);
+            let pixels = frame.and_then(|index| {
+                let media = self.image.as_ref()?;
+                let size = media.image.size(index);
+                Some((media.image.as_bytes(index)?, size))
+            });
+            let image_frame = pixels.map(|(bytes, size)| crate::seven_paints::Frame {
+                bytes,
+                width: size.width.0.max(0) as u32,
+                height: size.height.0.max(0) as u32,
+            });
+            let drawing = compose(
+                &self.paint,
+                line,
+                origin,
+                height,
+                base,
+                image_frame.as_ref(),
+                window,
+            );
             let bytes = drawing
                 .as_ref()
                 .map(|d| d.width as usize * d.height as usize * 4)
@@ -187,6 +220,7 @@ fn compose(
     origin: Point<Pixels>,
     height: Pixels,
     base: u32,
+    frame: Option<&crate::seven_paints::Frame>,
     window: &Window,
 ) -> Option<Drawing> {
     let scale = window.scale_factor();
@@ -236,8 +270,17 @@ fn compose(
     if masks.is_empty() {
         return None;
     }
+    // Room around the text for the glow: offset plus about three blur deviations.
+    let margin = paint
+        .shadows
+        .iter()
+        .map(|s| ((s.x.abs().max(s.y.abs()) + s.radius * 1.5) * scale as f64).ceil() as i32)
+        .max()
+        .unwrap_or(0)
+        .clamp(0, 32);
+    let (left, top, right, bottom) = (left - margin, top - margin, right + margin, bottom + margin);
     let (width, height_px) = ((right - left) as usize, (bottom - top) as usize);
-    if width.checked_mul(height_px)? > 512 * 1024 {
+    if width.checked_mul(height_px)? > 1024 * 1024 {
         return None;
     }
     let mut coverage = vec![0u8; width * height_px];
@@ -251,9 +294,14 @@ fn compose(
             }
         }
     }
-    let mut pixels = Vec::with_capacity(width * height_px * 4);
+    // Premultiplied RGBA in 0..1.
+    let mut pixels = vec![[0f32; 4]; width * height_px];
     for y in 0..height_px {
         for x in 0..width {
+            let cover = coverage[y * width + x];
+            if cover == 0 {
+                continue;
+            }
             let local_x = (ax + left + x as i32) as f64 + 0.5 - ox as f64;
             let local_y = (ay + top + y as i32) as f64 + 0.5 - oy as f64;
             let rgb = paint.sample(
@@ -262,20 +310,131 @@ fn compose(
                 f32::from(line.width()) as f64,
                 f32::from(height) as f64,
                 base,
+                frame,
             )?;
-            pixels.extend_from_slice(&[
-                (rgb & 255) as u8,
-                ((rgb >> 8) & 255) as u8,
-                ((rgb >> 16) & 255) as u8,
-                coverage[y * width + x],
-            ]);
+            let a = cover as f32 / 255.;
+            pixels[y * width + x] = [
+                ((rgb >> 16) & 255) as f32 / 255. * a,
+                ((rgb >> 8) & 255) as f32 / 255. * a,
+                (rgb & 255) as f32 / 255. * a,
+                a,
+            ];
         }
     }
-    let image = image::RgbaImage::from_raw(width as u32, height_px as u32, pixels)?;
+    // CSS chains `drop-shadow` filters: each shadow is cast by everything drawn so far.
+    for shadow in &paint.shadows {
+        let mut alpha: Vec<f32> = pixels.iter().map(|p| p[3]).collect();
+        blur(
+            &mut alpha,
+            width,
+            height_px,
+            shadow.radius as f32 / 2. * scale,
+        );
+        let (dx, dy) = (
+            (shadow.x as f32 * scale).round() as i32,
+            (shadow.y as f32 * scale).round() as i32,
+        );
+        let color = [
+            ((shadow.rgba >> 24) & 255) as f32 / 255.,
+            ((shadow.rgba >> 16) & 255) as f32 / 255.,
+            ((shadow.rgba >> 8) & 255) as f32 / 255.,
+            (shadow.rgba & 255) as f32 / 255.,
+        ];
+        for y in 0..height_px as i32 {
+            for x in 0..width as i32 {
+                let (sx, sy) = (x - dx, y - dy);
+                if sx < 0 || sy < 0 || sx >= width as i32 || sy >= height_px as i32 {
+                    continue;
+                }
+                let cast = alpha[sy as usize * width + sx as usize] * color[3];
+                if cast <= 0. {
+                    continue;
+                }
+                let p = &mut pixels[y as usize * width + x as usize];
+                let keep = 1. - p[3];
+                p[0] += color[0] * cast * keep;
+                p[1] += color[1] * cast * keep;
+                p[2] += color[2] * cast * keep;
+                p[3] += cast * keep;
+            }
+        }
+    }
+    let mut bytes = Vec::with_capacity(width * height_px * 4);
+    for [r, g, b, a] in pixels {
+        let (r, g, b) = if a > 0. {
+            (r / a, g / a, b / a)
+        } else {
+            (0., 0., 0.)
+        };
+        let byte = |v: f32| (v.clamp(0., 1.) * 255.).round() as u8;
+        bytes.extend_from_slice(&[byte(b), byte(g), byte(r), byte(a)]);
+    }
+    let image = image::RgbaImage::from_raw(width as u32, height_px as u32, bytes)?;
     Some(Drawing {
         image: Arc::new(RenderImage::new(vec![image::Frame::new(image)])),
         offset: (left, top),
         width: width as u32,
         height: height_px as u32,
     })
+}
+
+/// Approximate Gaussian blur (three box passes) of a single channel in place.
+fn blur(values: &mut [f32], width: usize, height: usize, sigma: f32) {
+    if sigma < 0.5 || width == 0 || height == 0 {
+        return;
+    }
+    // Box widths whose three passes approximate the requested deviation.
+    let ideal = (12. * sigma * sigma / 3. + 1.).sqrt();
+    let mut lower = ideal.floor() as usize;
+    if lower.is_multiple_of(2) {
+        lower = lower.saturating_sub(1).max(1);
+    }
+    let upper = lower + 2;
+    let m = ((12. * sigma * sigma - 3. * (lower * lower) as f32 - 12. * lower as f32 - 9.)
+        / (-4. * lower as f32 - 4.))
+        .round()
+        .max(0.) as usize;
+    let mut scratch = vec![0f32; values.len()];
+    for pass in 0..3 {
+        let radius = (if pass < m { lower } else { upper }) / 2;
+        box_pass(values, &mut scratch, width, height, radius, true);
+        box_pass(&scratch, values, width, height, radius, false);
+    }
+}
+fn box_pass(
+    src: &[f32],
+    dst: &mut [f32],
+    width: usize,
+    height: usize,
+    radius: usize,
+    horizontal: bool,
+) {
+    let (lines, length) = if horizontal {
+        (height, width)
+    } else {
+        (width, height)
+    };
+    let at = |line: usize, i: usize| {
+        if horizontal {
+            line * width + i
+        } else {
+            i * width + line
+        }
+    };
+    let span = (2 * radius + 1) as f32;
+    for line in 0..lines {
+        let mut sum = 0f32;
+        for i in 0..=radius.min(length - 1) {
+            sum += src[at(line, i)];
+        }
+        for i in 0..length {
+            dst[at(line, i)] = sum / span;
+            if i + radius + 1 < length {
+                sum += src[at(line, i + radius + 1)];
+            }
+            if i >= radius {
+                sum -= src[at(line, i - radius)];
+            }
+        }
+    }
 }

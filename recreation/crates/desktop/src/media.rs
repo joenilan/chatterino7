@@ -210,6 +210,29 @@ impl EmoteKey {
             }),
         })
     }
+    /// Image layer of a 7TV paint (static or animated WebP on cdn.7tv.app/paint/).
+    pub fn paint_image(url: &str) -> Option<Self> {
+        let parsed = reqwest::Url::parse(url).ok()?;
+        if parsed.scheme() != "https"
+            || parsed.host_str() != Some("cdn.7tv.app")
+            || !parsed.path().starts_with("/paint/")
+            || parsed.path().contains("..")
+            || parsed.query().is_some()
+            || url.len() > 512
+        {
+            return None;
+        }
+        Some(Self {
+            id: format!("7tv-paint:{}", parsed.path()),
+            animated: true,
+            external: Some(chat_core::EmoteAsset {
+                url: url.into(),
+                static_url: url.into(),
+                width: 128,
+                height: 32,
+            }),
+        })
+    }
     /// Live thumbnail; the id changes every five minutes so previews stay fresh.
     pub fn stream_preview(login: &str) -> Option<Self> {
         let login = chat_core::twitch_login(login)?;
@@ -306,6 +329,9 @@ impl EmoteKey {
         }
         if self.id.starts_with("preview:") {
             return "twitch_preview";
+        }
+        if self.id.starts_with("7tv-paint:") {
+            return "7tv_paint";
         }
         if self.id.starts_with("gif:") {
             return "twitch_gif";

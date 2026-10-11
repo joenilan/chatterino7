@@ -114,3 +114,23 @@ exceed 1 MB, so it is read with a 4 MB cap. Control inspection reports `seventv_
 
 Evidence (Windows, 2026-10-11): after a send in #dreadedzombie, the result was "HTTP 200 for
 channel 32612328". After a fresh restart, the owner's own messages showed the 7TV badge and gold paint.
+
+## Full paint rendering (2026-10-11)
+
+Of 7TV's 1,043 paints (catalog query, 2026-10-11), 929 have shadows and 132 are
+image paints. Jawjack now draws all three parts:
+
+- **Layers:** the top-level brush and every `gradients` layer, composited first-on-top over the
+  name colour (linear/radial, repeating, per-stop alpha).
+- **Shadows:** CSS `drop-shadow` semantics. They are chained in order, and each shadow is cast by
+  everything drawn so far, using a three-pass box blur that approximates a Gaussian with σ = radius/2 and the
+  given offset and colour. The canvas grows up to 32 px around the name to fit the glow.
+- **Image paints:** URL layers from `cdn.7tv.app/paint/` load through the media cache.
+  They are sized like `background-size: cover`. Animated WebP paints advance frame by frame
+  (reduced motion shows frame 0), and each frame is a cached composite.
+- Still approximate: `text` styling (stroke, weight, transform). Its paints are labelled
+  "Approximate" on the user card.
+
+Evidence: the owner's "North Star" paint (repeating gold stripes plus two orange glows, radius
+0.1 and 4) renders with a visible orange halo. Unit tests cover the North Star definition and image-layer sampling.
+No image paint has been observed live in chat yet.
