@@ -216,6 +216,9 @@ pub struct Workbench {
     /// When the own channel was last seen going live (for the 10-minute window).
     went_live_at: Option<std::time::Instant>,
     was_live: bool,
+    /// Latest incoming raid on your channel: (login, display name, viewers, when).
+    last_raid: Option<(String, String, u64, std::time::Instant)>,
+    shouted: std::collections::BTreeSet<String>,
     /// "Find OBS": None = not searched, Some(None) = searching, Some(Some(ips)) = done.
     obs_found: Option<Option<Vec<crate::obs::Found>>>,
     /// Optional chat logs (off by default).
@@ -596,6 +599,8 @@ impl Workbench {
             checklist_input: None,
             went_live_at: None,
             was_live: false,
+            last_raid: None,
+            shouted: Default::default(),
             obs_found: None,
             similar_mode: crate::similarity::Mode::from_key(
                 state["similar_messages"].as_str().unwrap_or(""),
@@ -1175,6 +1180,29 @@ impl Workbench {
                 }
                 crate::live::Event::Chat(channel, event) => {
                     cx.notify();
+                    // An incoming raid on your channel offers a shoutout card in Studio.
+                    if let chat_core::Event::Message(message) = &event
+                        && self.account.read(cx).login().as_deref() == Some(channel.as_str())
+                        && message.presentation.notice_type.as_deref() == Some("raid")
+                        && !message.presentation.historical
+                        && let Some(login) = message.login.clone()
+                    {
+                        let viewers = message
+                            .presentation
+                            .notice
+                            .as_deref()
+                            .and_then(|n| {
+                                n.split_whitespace()
+                                    .find_map(|w| w.replace(',', "").parse::<u64>().ok())
+                            })
+                            .unwrap_or(0);
+                        self.last_raid = Some((
+                            login,
+                            message.display_name.clone(),
+                            viewers,
+                            std::time::Instant::now(),
+                        ));
+                    }
                     // Subs, gifts, raids and Bits in the own channel also go to the feed.
                     if let chat_core::Event::Message(message) = &event
                         && self.account.read(cx).login().as_deref() == Some(channel.as_str())

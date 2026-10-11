@@ -407,6 +407,16 @@ impl Workbench {
         })
         .detach();
     }
+    pub(super) fn studio_run_public(
+        owner: WeakEntity<Workbench>,
+        pane: Option<Entity<ChannelPane>>,
+        own: String,
+        request: Request,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        Self::studio_run(owner, pane, own, request, window, cx)
+    }
     fn studio_run(
         owner: WeakEntity<Workbench>,
         pane: Option<Entity<ChannelPane>>,
@@ -1097,6 +1107,7 @@ impl Workbench {
                             ),
                     ),
             )
+            .children(self.render_raid_card(own.clone(), pane.clone(), cx))
             .when(!self.hype.is_empty(), |el| {
                 el.child(self.render_hype_strip())
             })

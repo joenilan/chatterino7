@@ -484,8 +484,8 @@ impl Workbench {
         } else {
             "Ad break coming up. Stretch, grab a drink, I'll be right here!".to_owned()
         };
-        self.reveal_channel(&own, cx);
-        pane.update(cx, |p, cx| p.command_draft(&text, window, cx));
+        self.draft_in_own(&text, window, cx);
+        let _ = (pane, own);
     }
 }
 
@@ -829,5 +829,130 @@ impl Workbench {
             card = card.child(div().pt_1().child(Input::new(input).xsmall()));
         }
         Some(card)
+    }
+}
+
+impl Workbench {
+    /// Five minutes after a raid on your channel: shout them out or thank them.
+    pub(super) fn render_raid_card(
+        &self,
+        own: String,
+        pane: Option<Entity<ChannelPane>>,
+        cx: &mut Context<Self>,
+    ) -> Option<Div> {
+        let (login, name, viewers, at) = self.last_raid.clone()?;
+        if at.elapsed() > Duration::from_secs(300) {
+            return None;
+        }
+        let shouted = self.shouted.contains(&login);
+        let owner = cx.entity().downgrade();
+        let shout = {
+            let (owner, pane, own, login) =
+                (owner.clone(), pane.clone(), own.clone(), login.clone());
+            move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                let _ = owner.update(cx, |this, _| {
+                    this.shouted.insert(login.clone());
+                });
+                Self::studio_run_public(
+                    owner.clone(),
+                    pane.clone(),
+                    own.clone(),
+                    crate::twitch_actions::Request::Shoutout {
+                        login: login.clone(),
+                    },
+                    window,
+                    cx,
+                );
+            }
+        };
+        let thank = {
+            let (owner, name) = (owner.clone(), name.clone());
+            move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                let text = format!("Thank you for the raid @{name}! Welcome in, raiders!");
+                let _ = owner.update(cx, |this, cx| this.draft_in_own(&text, window, cx));
+            }
+        };
+        Some(
+            div()
+                .v_flex()
+                .gap_2()
+                .mx_3()
+                .mb_2()
+                .p_2()
+                .rounded(px(8.))
+                .bg(rgb(0x192D27))
+                .border_1()
+                .border_color(rgb(0x91D7BA))
+                .child(
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_color(rgb(0x91D7BA))
+                                .child(Icon::new(gpui_kit::assets::IconName::Rocket).xsmall()),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .text_size(px(12.))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(if viewers > 0 {
+                                    format!("{name} raided with {viewers} viewers")
+                                } else {
+                                    format!("{name} raided you")
+                                }),
+                        )
+                        .child(
+                            Button::new("raid-dismiss")
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::Close)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.last_raid = None;
+                                    cx.notify();
+                                })),
+                        ),
+                )
+                .child(
+                    div()
+                        .h_flex()
+                        .gap_2()
+                        .child(
+                            Button::new("raid-shoutout")
+                                .small()
+                                .primary()
+                                .label(if shouted { "Shouted out" } else { "Shout out" })
+                                .disabled(shouted)
+                                .tooltip("Twitch /shoutout (has a cooldown)")
+                                .on_click(shout),
+                        )
+                        .child(
+                            Button::new("raid-thank")
+                                .small()
+                                .ghost()
+                                .label("Thank in chat…")
+                                .tooltip("Puts a thank-you in your message box to edit and send")
+                                .on_click(thank),
+                        ),
+                ),
+        )
+    }
+    /// Put text in your own channel's message box (you send it).
+    pub(super) fn draft_in_own(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(own) = self.account.read(cx).login() else {
+            return;
+        };
+        let Some(pane) = self
+            .tab_panes()
+            .into_iter()
+            .find(|p| p.read(cx).name.as_ref() == own)
+        else {
+            return;
+        };
+        self.reveal_channel(&own, cx);
+        pane.update(cx, |p, cx| p.command_draft(text, window, cx));
     }
 }
