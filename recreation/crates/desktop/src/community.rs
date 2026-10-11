@@ -182,6 +182,10 @@ impl Community {
         }
         changed
     }
+    /// Refetch a channel's sets on the next pump (its BTTV emotes changed).
+    pub fn invalidate(&mut self, channel: &str) {
+        self.requested.remove(channel);
+    }
     pub fn retry_global(&mut self) {
         if self.global_bttv_state != LoadState::Loading
             && self.global_ffz_state != LoadState::Loading

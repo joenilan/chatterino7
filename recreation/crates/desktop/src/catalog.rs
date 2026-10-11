@@ -40,6 +40,7 @@ pub struct Catalog {
     event_revision: u64,
     watches: HashMap<String, crate::seven_events::Watch>,
     events: crate::seven_events::Events,
+    bttv_events: crate::bttv_events::BttvEvents,
     dirty: HashSet<String>,
     in_flight: HashSet<String>,
     retry_after: HashMap<String, Instant>,
@@ -106,6 +107,7 @@ impl Catalog {
             event_revision: 0,
             watches: HashMap::new(),
             events: crate::seven_events::Events::new(),
+            bttv_events: crate::bttv_events::BttvEvents::new(),
             dirty: HashSet::new(),
             in_flight: HashSet::from([String::new()]),
             retry_after: HashMap::new(),
@@ -123,7 +125,7 @@ impl Catalog {
         }
     }
     pub fn inspection(&self) -> Value {
-        serde_json::json!({"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_owned_emotes":self.owned.items.len(),"twitch_owned_status":self.owned.status,"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"personal_emotes":self.personal.len(),"personal_catalog_loaded":self.personal_ready,"personal_scope":"owned set plus passive session grants","ffz_badges":self.ffz_badges.inspection(),"seventv_badges":self.badges.inspection(),"seventv_paints":self.paints.inspection(),"seventv_entitled_senders":self.entitlements.len(),"seventv_entitled_sets":self.entitled_sets.len(),"seventv_entitled_emotes":self.entitled_sets.values().map(HashMap::len).sum::<usize>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
+        serde_json::json!({"bttv_live_updates":self.bttv_events.connected(),"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_owned_emotes":self.owned.items.len(),"twitch_owned_status":self.owned.status,"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"personal_emotes":self.personal.len(),"personal_catalog_loaded":self.personal_ready,"personal_scope":"owned set plus passive session grants","ffz_badges":self.ffz_badges.inspection(),"seventv_badges":self.badges.inspection(),"seventv_paints":self.paints.inspection(),"seventv_entitled_senders":self.entitlements.len(),"seventv_entitled_sets":self.entitled_sets.len(),"seventv_entitled_emotes":self.entitled_sets.values().map(HashMap::len).sum::<usize>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
     }
     /// Look up a chatter's 7TV paint and badge if not checked recently.
     pub fn want_cosmetics(&mut self, user: &str) {
@@ -343,6 +345,18 @@ impl Catalog {
             | event_changed
             | account_changed
             | self.twitch.pump(identity, &channel_requests);
+        // BTTV says which channels' emotes changed; refetch just those.
+        let bttv_changed = self.bttv_events.pump(
+            channel_requests
+                .values()
+                .map(|(id, _)| id.clone())
+                .collect(),
+        );
+        for (name, (id, _)) in &channel_requests {
+            if bttv_changed.contains(id) {
+                self.community.invalidate(name);
+            }
+        }
         changed |= self.community.pump(&channel_requests);
         changed |= self.ffz_badges.pump();
         while let Ok((name, requested_id, generation, result)) = self.rx.try_recv() {

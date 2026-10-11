@@ -141,7 +141,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | EM08 | 7TV badges | Part | Passive sender grants, updated definitions, bounded animated media/reduced motion in source; native acceptance and visibility controls remain. | providers/seventv/SeventvBadges |
 | EM09 | Twitch and 7TV avatars | Part | On-demand Twitch avatar with allowlisted bounded JPEG/PNG/WebP; real native avatar accepted; 7TV identity remains. | widgets/dialogs/UserInfoPopup.cpp |
 | EM10 | BTTV and FFZ core | Part | Catalog counts observed; source media support exists, provider-specific visual/picker checks remain. | providers/bttv; providers/ffz |
-| EM11 | BTTV live updates and FFZ badges | Part | FFZ badges and role badges; BTTV live updates pending. | providers/bttv; providers/ffz |
+| EM11 | BTTV live updates and FFZ badges | Part | FFZ badges and role badges; BTTV live updates via sockets.betterttv.net (join_channel per open channel, emote_create/update/delete refetch that channel; stayed connected 75 s with all channels joined). Provider options pending. | providers/bttv; providers/ffz |
 | EM12 | Provider modifiers and overlays | Part | 7TV overlay foundation exists; BTTV/FFZ modifiers currently skipped; multiple-overlay geometry/copy/wrap still needs coverage. | messages/layouts; providers/bttv; providers/ffz |
 | EM13 | Emoji | Part | Unicode text only; shortcodes, picker styles, favorites and boundary correctness remain. | providers/emoji |
 | EM14 | Picker and favorites | Part | Native searchable animated picker/paging; source/creator details, tabs, tags, favorites and rich menus remain. | widgets/dialogs/EmotePopup.cpp |
