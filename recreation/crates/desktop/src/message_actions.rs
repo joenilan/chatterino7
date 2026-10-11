@@ -102,13 +102,13 @@ pub fn message_mentions(message: &chat_core::Message) -> Vec<MentionTarget> {
     let mut result = Vec::new();
     for fragment in &message.fragments {
         let end = offset + fragment.copy_text().len();
-        if let chat_core::Fragment::Mention { user_id, .. } = fragment {
-            if offset < end {
-                result.push(MentionTarget {
-                    range: offset..end,
-                    user_id: user_id.clone(),
-                });
-            }
+        if let chat_core::Fragment::Mention { user_id, .. } = fragment
+            && offset < end
+        {
+            result.push(MentionTarget {
+                range: offset..end,
+                user_id: user_id.clone(),
+            });
         }
         offset = end;
     }
@@ -480,14 +480,14 @@ impl ChannelPane {
                     let Some((channel,count,name,login,recent,badges))=current else{return dialog.title("Channel closed");};
                     if let Some(pane)=owner.upgrade(){pane.read(cx).catalog.borrow_mut().profiles.request(&user_id);}
                     let profile=owner.upgrade().and_then(|pane|pane.read(cx).catalog.borrow().profiles.get(&user_id).cloned());
-                    let avatar=profile.as_ref().and_then(|p|p.avatar.as_ref()).and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();let image=media.borrow_mut().get(key,cx);image}));
+                    let avatar=profile.as_ref().and_then(|p|p.avatar.as_ref()).and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(key,cx)}));
                     let cosmetics=owner.upgrade().map(|pane|{
                         let pane=pane.read(cx);let catalog=pane.catalog.borrow();
                         (catalog.paints.for_user(&user_id).cloned(),catalog.paints.preview_for_user(&user_id),catalog.paints.pending_for_user(&user_id),catalog.badges.for_user(&user_id).cloned())
                     });
                     let cosmetic_panel=cosmetics.and_then(|(paint,preview,pending,badge)|{
                         if paint.is_none()&&!pending&&badge.is_none(){return None;}
-                        let badge_image=badge.as_ref().and_then(|b|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();let image=media.borrow_mut().get(&b.key,cx);image}));
+                        let badge_image=badge.as_ref().and_then(|b|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(&b.key,cx)}));
                         Some(div().v_flex().gap_1().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL))
                             .child(div().text_size(px(11.)).text_color(rgb(0xB6A9E6)).child("7TV cosmetics · observed active grants"))
                             .when_some(badge,|el,b|el.child(div().h_flex().gap_2()
@@ -501,7 +501,7 @@ impl ChannelPane {
                             .when(pending,|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Paint grant received; waiting for its definition")))
                             .into_any_element())
                     });
-                    let width=(f32::from(window.viewport_size().width)-24.).min(420.).max(180.);
+                    let width=(f32::from(window.viewport_size().width)-24.).clamp(180., 420.);
                     let body_height=(f32::from(window.viewport_size().height)-160.).clamp(60.,480.);
                     let mention_owner=owner.clone();let mention_login=login.clone();let profile_login=login.clone();let id=user_id.clone();let search_id=user_id.clone();let search_owner=owner.clone();let note_owner=owner.clone();let note_target=crate::chatter_appearance::Target{id:user_id.clone(),login:login.clone().unwrap_or_default(),name:name.clone()};
                     dialog.w(px(width)).title(name).child(div().id("chatter-body").v_flex().gap_2().min_w_0().max_h(px(body_height)).overflow_y_scroll()

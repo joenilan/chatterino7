@@ -36,10 +36,10 @@ impl Attention {
         if message.deleted {
             return None;
         }
-        if let Some((user, _)) = &self.identity {
-            if &message.user_id == user {
-                return None;
-            }
+        if let Some((user, _)) = &self.identity
+            && &message.user_id == user
+        {
+            return None;
         }
         if let Some(color) =
             crate::highlight_rules::first_color(&self.rules, message, &self.channel)
@@ -111,11 +111,11 @@ impl Attention {
     pub fn appended(&mut self, message: &Message, row: u64, first: u64) {
         self.unread.insert(row);
         self.arrivals.insert(row, Instant::now());
-        if row >= self.since {
-            if let Some(color) = self.color(message) {
-                Rc::make_mut(&mut self.highlights).insert(row);
-                Rc::make_mut(&mut self.colors).insert(row, color);
-            }
+        if row >= self.since
+            && let Some(color) = self.color(message)
+        {
+            Rc::make_mut(&mut self.highlights).insert(row);
+            Rc::make_mut(&mut self.colors).insert(row, color);
         }
         self.prune(first);
     }
@@ -153,11 +153,11 @@ impl Attention {
             let row = first + index as u64;
             if message.deleted {
                 self.unread.remove(&row);
-            } else if row >= self.since {
-                if let Some(color) = self.color(message) {
-                    highlights.insert(row);
-                    colors.insert(row, color);
-                }
+            } else if row >= self.since
+                && let Some(color) = self.color(message)
+            {
+                highlights.insert(row);
+                colors.insert(row, color);
             }
         }
         self.highlights = Rc::new(highlights);

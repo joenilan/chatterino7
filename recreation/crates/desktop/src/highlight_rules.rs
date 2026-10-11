@@ -413,11 +413,11 @@ impl Render for Editor {
             .child(div().h_flex().flex_wrap().gap_1()
                 .child(Button::new("rule-text").small().label("Message text").disabled(!self.draft.author).on_click(cx.listener(|this,_,_,cx|{this.draft.author=false;this.edited(cx);})))
                 .child(Button::new("rule-author").small().label("Sender login").disabled(self.draft.author).on_click(cx.listener(|this,_,_,cx|{this.draft.author=true;this.edited(cx);})))
-                .child(Button::new("rule-enabled").small().label(if self.draft.enabled{"Enabled"}else{"Disabled"}).on_click(cx.listener(|this,_,_,cx|{this.draft.enabled=!this.draft.enabled;this.edited(cx);}))))
+                .child(Button::new("rule-enabled").small().label(if self.draft.enabled{"Enabled"}else{"Disabled"}).on_click(cx.listener(|this,_,_,cx|{this.draft.enabled = !this.draft.enabled;this.edited(cx);}))))
             .child(Input::new(&self.pattern).small()).child(Input::new(&self.channel).small())
             .when(!self.draft.author,|el|el.child(div().h_flex().flex_wrap().gap_1()
-                .child(Button::new("rule-case").small().label(if self.draft.case_sensitive{"Match case"}else{"Ignore case"}).on_click(cx.listener(|this,_,_,cx|{this.draft.case_sensitive=!this.draft.case_sensitive;this.edited(cx);})))
-                .child(Button::new("rule-word").small().label(if self.draft.whole_word{"Whole words"}else{"Anywhere in text"}).on_click(cx.listener(|this,_,_,cx|{this.draft.whole_word=!this.draft.whole_word;this.edited(cx);})))))
+                .child(Button::new("rule-case").small().label(if self.draft.case_sensitive{"Match case"}else{"Ignore case"}).on_click(cx.listener(|this,_,_,cx|{this.draft.case_sensitive = !this.draft.case_sensitive;this.edited(cx);})))
+                .child(Button::new("rule-word").small().label(if self.draft.whole_word{"Whole words"}else{"Anywhere in text"}).on_click(cx.listener(|this,_,_,cx|{this.draft.whole_word = !this.draft.whole_word;this.edited(cx);})))))
             .child(div().h_flex().flex_wrap().gap_1().children(COLORS.iter().enumerate().map(|(index,(name,color,_))|
                 Button::new(("rule-color",index)).small().label(*name).text_color(rgb(*color)).disabled(self.draft.color==index).on_click(cx.listener(move|this,_,_,cx|{this.draft.color=index;this.edited(cx);})))))
             .child(div().border_l_2().border_color(rgb(accent)).bg(rgb(background)).rounded(px(4.)).p_2().v_flex().gap_1()
@@ -431,7 +431,7 @@ impl Render for Editor {
                     .child(Button::new("rule-down").small().label("Move down").disabled(self.selected==rules.len().checked_sub(1)).on_click(cx.listener(|this,_,_,cx|this.moved(false,cx))))
                     .child(Button::new("delete-highlight-rule").small().label(if self.delete_armed{"Confirm delete"}else{"Delete…"}).on_click(cx.listener(|this,_,w,cx|{
                         if !this.delete_armed{this.delete_armed=true;this.status=format!("Confirm deletion of {}.",this.draft.pattern);cx.notify();return;}
-                        if let Some(index)=this.selected.take(){if index<this.rules.borrow().len(){this.rules.borrow_mut().remove(index);cx.emit(Changed);}}
+                        if let Some(index)=this.selected.take()&& index<this.rules.borrow().len(){this.rules.borrow_mut().remove(index);cx.emit(Changed);}
                         this.switch_pending=Some(None);this.select(None,w,cx);this.status="Rule removed.".into();
                     })))))
             .when(!self.status.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xE9C99C)).child(self.status.clone())))

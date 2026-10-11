@@ -136,18 +136,18 @@ fn smooth_icon(
         let image_id = media.image.id.0;
         let element = canvas(
             move |bounds, window, cx| {
-                if bounds.intersects(&window.content_mask().bounds) {
-                    if let Some(first) = &first_paint {
-                        if first.get().is_none() {
-                            first.set(Some(Instant::now()));
-                        }
-                        if !cx.reduce_motion()
-                            && first
-                                .get()
-                                .is_some_and(|at| at.elapsed() < Duration::from_millis(240))
-                        {
-                            window.request_animation_frame();
-                        }
+                if bounds.intersects(&window.content_mask().bounds)
+                    && let Some(first) = &first_paint
+                {
+                    if first.get().is_none() {
+                        first.set(Some(Instant::now()));
+                    }
+                    if !cx.reduce_motion()
+                        && first
+                            .get()
+                            .is_some_and(|at| at.elapsed() < Duration::from_millis(240))
+                    {
+                        window.request_animation_frame();
                     }
                 }
                 bounds
@@ -916,19 +916,19 @@ impl ChannelPane {
                         gpui_kit::component::tooltip::Tooltip::new(title.clone()).build(w, cx)
                     })
                     .on_prepaint(move |bounds, window, cx| {
-                        if bounds.intersects(&window.content_mask().bounds) {
-                            if let Some(key) = avatar.clone() {
-                                let owner = avatar_owner.clone();
-                                cx.defer(move |cx| {
-                                    let _ = owner.update(cx, |p, cx| {
-                                        if p.picker.open {
-                                            let mut media = p.media.borrow_mut();
-                                            media.touch(&key);
-                                            media.prefetch(&key, cx);
-                                        }
-                                    });
+                        if bounds.intersects(&window.content_mask().bounds)
+                            && let Some(key) = avatar.clone()
+                        {
+                            let owner = avatar_owner.clone();
+                            cx.defer(move |cx| {
+                                let _ = owner.update(cx, |p, cx| {
+                                    if p.picker.open {
+                                        let mut media = p.media.borrow_mut();
+                                        media.touch(&key);
+                                        media.prefetch(&key, cx);
+                                    }
                                 });
-                            }
+                            });
                         }
                     })
                     .child(icon(image, fallback, 30., 30.))
@@ -1103,7 +1103,7 @@ impl ChannelPane {
                                 let image=if wait {None}else{image};let loading=loading||wait;
                                 let unavailable=image.is_none()&&!loading;
                                 let shown=image.as_ref().map(|image|{
-                                    if !this.picker.reveals.contains_key(&image.image.id.0) && this.picker.reveals.len()>=1024 {if let Some(old)=this.picker.reveals.iter().min_by_key(|(_,at)|at.get()).map(|(id,_)|*id){this.picker.reveals.remove(&old);}}
+                                    if !this.picker.reveals.contains_key(&image.image.id.0) && this.picker.reveals.len()>=1024&& let Some(old)=this.picker.reveals.iter().min_by_key(|(_,at)|at.get()).map(|(id,_)|*id){this.picker.reveals.remove(&old);}
                                     this.picker.reveals.entry(image.image.id.0).or_default().clone()
                                 });let clicked=item.clone();let favorited=item.saved_key.is_some() || this.catalog.borrow().is_favorite(&item.choice);let favorite_item=item.clone();
                                 let tooltip=format!("{} · {} · {}{}",item.choice.label,item.choice.provider,item.origin,if item.available{""}else{" · Not available with this alias in the current channel"});let tooltip=if unavailable {format!("{tooltip} · Image unavailable{}",if item.available{"; emote text can still be inserted"}else{""})} else {tooltip};let tooltip=format!("{tooltip} · {}",if favorited{"Favorite · right-click to remove"}else{"Right-click to favorite"});let hover=tooltip.clone();

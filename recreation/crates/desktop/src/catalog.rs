@@ -221,9 +221,9 @@ impl Catalog {
                     self.requested.retain(|k, _| !k.starts_with('#'));
                     self.retry_after.retain(|k, _| !k.starts_with('#'));
                 }
-                crate::seven_entitlements::Change::Set { id, removed } => {
+                crate::seven_entitlements::Change::Set { id, removed }
                     // Refetch complete authoritative sets instead of guessing sparse patch semantics.
-                    if self.event_versions.contains_key(&id) {
+                    if self.event_versions.contains_key(&id) => {
                         self.event_revision = self.event_revision.wrapping_add(1);
                         self.event_versions.insert(id.clone(), self.event_revision);
                         event_changed |= self.entitled_sets.remove(&id).is_some();
@@ -231,7 +231,6 @@ impl Catalog {
                             self.dirty.insert(format!("#{id}"));
                         }
                     }
-                }
                 _ => {}
             }
         }
@@ -349,13 +348,13 @@ impl Catalog {
             if name.starts_with('@') && generation != self.personal_epoch {
                 continue;
             }
-            if let Some(id) = name.strip_prefix('#') {
-                if self.event_versions.get(id) != Some(&generation) {
-                    if wanted(&name) {
-                        self.dirty.insert(name.clone());
-                    }
-                    continue;
+            if let Some(id) = name.strip_prefix('#')
+                && self.event_versions.get(id) != Some(&generation)
+            {
+                if wanted(&name) {
+                    self.dirty.insert(name.clone());
                 }
+                continue;
             }
             if result.is_none() && wanted(&name) {
                 self.retry_after
@@ -405,11 +404,9 @@ impl Catalog {
                         self.global = emotes;
                         changed = true;
                     }
-                } else if active.contains(&name) {
-                    if self.channels.get(&name) != Some(&emotes) {
-                        self.channels.insert(name, emotes);
-                        changed = true;
-                    }
+                } else if active.contains(&name) && self.channels.get(&name) != Some(&emotes) {
+                    self.channels.insert(name, emotes);
+                    changed = true;
                 }
             }
         }
@@ -521,16 +518,15 @@ impl Catalog {
     pub fn restore_favorites(&mut self, value: &Value) {
         self.favorites.clear();
         for value in value.as_array().into_iter().flatten().take(256) {
-            if let Ok(key) = serde_json::from_value::<[String; 3]>(value.clone()) {
-                if matches!(key[0].as_str(), "Twitch" | "7TV" | "BTTV" | "FFZ")
-                    && !key[1].is_empty()
-                    && key[1].len() <= 512
-                    && !key[2].is_empty()
-                    && key[2].len() <= 256
-                    && !self.favorites.contains(&key)
-                {
-                    self.favorites.push(key);
-                }
+            if let Ok(key) = serde_json::from_value::<[String; 3]>(value.clone())
+                && matches!(key[0].as_str(), "Twitch" | "7TV" | "BTTV" | "FFZ")
+                && !key[1].is_empty()
+                && key[1].len() <= 512
+                && !key[2].is_empty()
+                && key[2].len() <= 256
+                && !self.favorites.contains(&key)
+            {
+                self.favorites.push(key);
             }
         }
     }
@@ -857,35 +853,33 @@ impl Catalog {
                 asset: Some(asset),
                 ..
             }) = self.lookup(channel, &name, self.personal_user.as_deref())
-            {
-                if let Some(key) =
+                && let Some(key) =
                     crate::media::EmoteKey::community(&provider, &id, animated, &asset)
-                {
-                    let provider = match provider.as_str() {
-                        "bttv" => "BTTV",
-                        "ffz" => "FFZ",
-                        _ if self.personal.contains_key(&name)
-                            || self.personal_user.as_deref().is_some_and(|u| {
-                                self.entitlements.for_user(u).any(|id| {
-                                    self.entitled_sets
-                                        .get(id)
-                                        .is_some_and(|set| set.contains_key(&name))
-                                })
-                            }) =>
-                        {
-                            "7TV Personal"
-                        }
-                        _ => "7TV",
-                    };
-                    choices.insert(
-                        name.clone(),
-                        crate::twitch_assets::Choice {
-                            label: name,
-                            provider,
-                            key: Some(key),
-                        },
-                    );
-                }
+            {
+                let provider = match provider.as_str() {
+                    "bttv" => "BTTV",
+                    "ffz" => "FFZ",
+                    _ if self.personal.contains_key(&name)
+                        || self.personal_user.as_deref().is_some_and(|u| {
+                            self.entitlements.for_user(u).any(|id| {
+                                self.entitled_sets
+                                    .get(id)
+                                    .is_some_and(|set| set.contains_key(&name))
+                            })
+                        }) =>
+                    {
+                        "7TV Personal"
+                    }
+                    _ => "7TV",
+                };
+                choices.insert(
+                    name.clone(),
+                    crate::twitch_assets::Choice {
+                        label: name,
+                        provider,
+                        key: Some(key),
+                    },
+                );
             }
         }
         for emote in self

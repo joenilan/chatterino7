@@ -200,13 +200,10 @@ impl ChannelPane {
             input
         });
         cx.subscribe_in(&draft, window, |this: &mut Self, _, event, _window, cx| {
-            match event {
-                InputEvent::Change => {
-                    this.compose_revision = this.compose_revision.wrapping_add(1);
-                    this.complete_query(false, cx);
-                    cx.emit(PaneEvent::DraftChanged);
-                }
-                _ => {}
+            if let InputEvent::Change = event {
+                this.compose_revision = this.compose_revision.wrapping_add(1);
+                this.complete_query(false, cx);
+                cx.emit(PaneEvent::DraftChanged);
             }
             cx.notify();
         })
@@ -442,13 +439,13 @@ impl ChannelPane {
             .iter()
             .map(|message| message.copy_line())
             .collect();
-        let text = self.selection.borrow().copy(
+
+        self.selection.borrow().copy(
             lines
                 .iter()
                 .enumerate()
                 .map(|(index, text)| ((first + index) as u64, text.as_str())),
-        );
-        text
+        )
     }
     fn copy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let text = self.selected_text();
@@ -777,15 +774,14 @@ impl Render for ChannelPane {
                     if event.keystroke.key == "enter" && event.keystroke.modifiers.shift {
                         window.prevent_default();
                         cx.stop_propagation();
-                    } else if !event.keystroke.modifiers.control && !event.keystroke.modifiers.platform {
-                        if let Some(text) = &event.keystroke.key_char {
+                    } else if !event.keystroke.modifiers.control && !event.keystroke.modifiers.platform
+                        && let Some(text) = &event.keystroke.key_char {
                             let input = this.draft.read(cx);
                             let current = input.value().to_string();
                             let selected = input.selected_range();
                             let count = current[..selected.start].chars().count() + text.chars().count() + current[selected.end..].chars().count();
                             if count > 500 { window.prevent_default(); cx.stop_propagation(); }
                         }
-                    }
                 }))
                 .capture_action(cx.listener(|this, action: &gpui_kit::base::input::Enter, window, cx| {
                     // Enter has exactly one semantic owner. Never also submit from

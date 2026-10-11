@@ -68,8 +68,8 @@ pub fn readable_name_color(user_id: &str, color: Option<u32>) -> u32 {
         }
         channels = channels.map(|v| v + (1. - v) * 0.08);
     }
-    let visible = ((channels[0] * 255.).round() as u32) << 16
+
+    ((channels[0] * 255.).round() as u32) << 16
         | ((channels[1] * 255.).round() as u32) << 8
-        | (channels[2] * 255.).round() as u32;
-    visible
+        | (channels[2] * 255.).round() as u32
 }

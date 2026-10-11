@@ -75,12 +75,12 @@ impl LiveChat {
         channels.sort();
         channels.dedup();
         let next = Config { identity, channels };
-        if let Ok(mut c) = self.config.lock() {
-            if *c != next {
-                *c = next;
-                self.epoch.fetch_add(1, Ordering::Relaxed);
-                return true;
-            }
+        if let Ok(mut c) = self.config.lock()
+            && *c != next
+        {
+            *c = next;
+            self.epoch.fetch_add(1, Ordering::Relaxed);
+            return true;
         }
         false
     }
@@ -307,15 +307,14 @@ fn room_snapshot_worker(
                 if epoch.load(Ordering::Relaxed) != job.version {
                     continue;
                 }
-                if let Ok((200, value)) = response_json(response) {
-                    if let Some(settings) =
+                if let Ok((200, value)) = response_json(response)
+                    && let Some(settings) =
                         crate::room_settings::RoomSettings::parse(&value["data"][0])
-                    {
-                        let _ = tx.send((
-                            job.version,
-                            Event::RoomSettings(job.channel, settings, true),
-                        ));
-                    }
+                {
+                    let _ = tx.send((
+                        job.version,
+                        Event::RoomSettings(job.channel, settings, true),
+                    ));
                 }
             }
         }
@@ -522,10 +521,10 @@ fn run(
                         if let Some(old) = frame(&mut socket)? {
                             deliver(&old, &map, &tx, &mut dedup, &mut order, version);
                         }
-                        if let Some(next) = frame(&mut replacement)? {
-                            if next["metadata"]["message_type"] == "session_welcome" {
-                                break;
-                            }
+                        if let Some(next) = frame(&mut replacement)?
+                            && next["metadata"]["message_type"] == "session_welcome"
+                        {
+                            break;
                         }
                     }
                     // Read queued old-socket events before closing after the replacement welcome.
@@ -607,10 +606,10 @@ fn deliver(
         return;
     }
     order.push_back(envelope.to_owned());
-    if order.len() > 8192 {
-        if let Some(id) = order.pop_front() {
-            seen.remove(&id);
-        }
+    if order.len() > 8192
+        && let Some(id) = order.pop_front()
+    {
+        seen.remove(&id);
     }
     let e = &v["payload"]["event"];
     let id = e["broadcaster_user_id"].as_str().unwrap_or("");

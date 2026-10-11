@@ -269,7 +269,7 @@ impl Render for WorkspaceSearch {
             .capture_action(cx.listener(|s,_:&gpui_kit::base::input::Enter,w,cx|{
                 if s.running {w.prevent_default();cx.stop_propagation();return;}
                 if s.dirty || s.hits.is_empty() {s.begin(cx);}
-                else if !s.running {if let Some(hit)=s.hits.values().rev().nth(s.selected).cloned(){s.choose(hit,w,cx);}}
+                else if !s.running&& let Some(hit)=s.hits.values().rev().nth(s.selected).cloned(){s.choose(hit,w,cx);}
                 w.prevent_default();cx.stop_propagation();
             }))
             .capture_action(cx.listener(|s,_:&gpui_kit::base::input::MoveDown,_,cx|{s.step(true,cx);cx.stop_propagation();}))

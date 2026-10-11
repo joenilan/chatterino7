@@ -155,18 +155,18 @@ impl Dock {
                 weights,
                 children,
             } => {
-                if *axis == vertical {
-                    if let Some(ix) = children.iter().position(|c| c.contains_direct(target)) {
-                        let at = ix + usize::from(!first);
-                        while weights.len() < children.len() {
-                            weights.push(1.);
-                        }
-                        let share = weights[ix] / 2.;
-                        weights[ix] = share;
-                        children.insert(at, Self::Leaf(name));
-                        weights.insert(at, share);
-                        return true;
+                if *axis == vertical
+                    && let Some(ix) = children.iter().position(|c| c.contains_direct(target))
+                {
+                    let at = ix + usize::from(!first);
+                    while weights.len() < children.len() {
+                        weights.push(1.);
                     }
+                    let share = weights[ix] / 2.;
+                    weights[ix] = share;
+                    children.insert(at, Self::Leaf(name));
+                    weights.insert(at, share);
+                    return true;
                 }
                 children
                     .iter_mut()

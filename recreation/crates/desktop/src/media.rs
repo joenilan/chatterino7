@@ -894,7 +894,7 @@ fn download(
         if decoded > max_decoded {
             return Err(MediaFailure::DecodedLimit);
         }
-        for pixel in frame.buffer_mut().chunks_exact_mut(4) {
+        for pixel in frame.buffer_mut().as_chunks_mut::<4>().0 {
             pixel.swap(0, 2);
         }
         frames.push(frame);
@@ -959,7 +959,7 @@ fn download(
             return Err(MediaFailure::DecodedLimit);
         }
         for frame in &mut frames {
-            for pixel in frame.buffer_mut().chunks_exact_mut(4) {
+            for pixel in frame.buffer_mut().as_chunks_mut::<4>().0 {
                 pixel.swap(0, 2);
             }
         }

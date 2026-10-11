@@ -234,7 +234,7 @@ impl Workbench {
             }
             let count = rows.len();
             let mut rows = rows.into_values().collect::<Vec<_>>();
-            rows.sort_by(|a, b| b.0.cmp(&a.0));
+            rows.sort_by_key(|row| std::cmp::Reverse(row.0));
             rows.truncate(200);
             let width = (f32::from(window.viewport_size().width) - 24.).clamp(180., 600.);
             let height = (f32::from(window.viewport_size().height) - 210.).clamp(50., 520.);

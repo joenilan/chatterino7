@@ -116,10 +116,10 @@ impl Message {
         if self.deleted {
             return "[message deleted]".into();
         }
-        if self.fragments.is_empty() {
-            if let Some(notice) = &self.presentation.notice {
-                return notice.clone();
-            }
+        if self.fragments.is_empty()
+            && let Some(notice) = &self.presentation.notice
+        {
+            return notice.clone();
         }
         self.fragments.iter().map(Fragment::copy_text).collect()
     }
@@ -249,11 +249,12 @@ impl Timeline {
         }
         let mut changed = false;
         for message in &mut self.messages {
-            if let Some(reply) = &mut message.reply {
-                if matches(reply) && !reply.parent_deleted {
-                    reply.parent_deleted = true;
-                    changed = true;
-                }
+            if let Some(reply) = &mut message.reply
+                && matches(reply)
+                && !reply.parent_deleted
+            {
+                reply.parent_deleted = true;
+                changed = true;
             }
         }
         changed

@@ -127,20 +127,19 @@ impl Inventory {
             self.next = Instant::now();
             changed = true;
         }
-        if !self.inflight && Instant::now() >= self.next {
-            if let Some(identity) = self.identity.as_ref().filter(|i| i.can_read_emotes) {
-                if self
-                    .tx
-                    .try_send(Job {
-                        epoch: self.epoch.load(Ordering::Relaxed),
-                        identity: identity.clone(),
-                        continuation: self.continuation.clone().unwrap_or_default(),
-                    })
-                    .is_ok()
-                {
-                    self.inflight = true;
-                }
-            }
+        if !self.inflight
+            && Instant::now() >= self.next
+            && let Some(identity) = self.identity.as_ref().filter(|i| i.can_read_emotes)
+            && self
+                .tx
+                .try_send(Job {
+                    epoch: self.epoch.load(Ordering::Relaxed),
+                    identity: identity.clone(),
+                    continuation: self.continuation.clone().unwrap_or_default(),
+                })
+                .is_ok()
+        {
+            self.inflight = true;
         }
         while let Ok((epoch, result)) = self.rx.try_recv() {
             if epoch != self.epoch.load(Ordering::Relaxed) {

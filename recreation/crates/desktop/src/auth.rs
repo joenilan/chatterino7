@@ -244,10 +244,11 @@ impl TwitchAccount {
         cx.spawn(async move |view, cx| {
             cx.background_executor().timer(delay).await;
             let _ = view.update(cx, |this, cx| {
-                if this.generation == generation && !this.busy {
-                    if let Some(account) = &this.account {
-                        this.start(Some(account.tokens.clone()), cx);
-                    }
+                if this.generation == generation
+                    && !this.busy
+                    && let Some(account) = &this.account
+                {
+                    this.start(Some(account.tokens.clone()), cx);
                 }
             });
         })

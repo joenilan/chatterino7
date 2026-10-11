@@ -333,7 +333,7 @@ impl Workbench {
             live_channels: state["live_channels"].as_bool().unwrap_or(false),
             catalog: std::rc::Rc::new(std::cell::RefCell::new(crate::catalog::Catalog::new())),
             media: std::rc::Rc::new(std::cell::RefCell::new(crate::media::MediaCache::new())),
-            account: cx.new(|cx| crate::auth::TwitchAccount::new(cx)),
+            account: cx.new(crate::auth::TwitchAccount::new),
             drop_edge: None,
             drop_target: None,
             dock_bounds: Default::default(),
@@ -405,12 +405,12 @@ impl Workbench {
                 let mut panes = Vec::new();
                 if let Some(channels) = item["channels"].as_array() {
                     for channel in channels.iter() {
-                        if let Some(name) = channel.as_str().and_then(valid_channel) {
-                            if !panes.iter().any(|p: &Entity<ChannelPane>| {
+                        if let Some(name) = channel.as_str().and_then(valid_channel)
+                            && !panes.iter().any(|p: &Entity<ChannelPane>| {
                                 p.read(cx).name.as_ref() == name.as_str()
-                            }) {
-                                panes.push(this.make_pane(id, &name, window, cx));
-                            }
+                            })
+                        {
+                            panes.push(this.make_pane(id, &name, window, cx));
                         }
                     }
                 }
@@ -978,12 +978,12 @@ impl Workbench {
             }
             if matches!(event, PaneEvent::Close) {
                 this.focus.focus(window, cx);
-                if let Some(tab) = this.tabs.iter_mut().find(|t| t.id == owner) {
-                    if let Some(ix) = tab.panes.iter().position(|p| p == pane) {
-                        tab.panes.remove(ix);
-                        tab.dock = tab.dock.take().and_then(|d| d.remove(&channel));
-                        tab.dock_states.clear();
-                    }
+                if let Some(tab) = this.tabs.iter_mut().find(|t| t.id == owner)
+                    && let Some(ix) = tab.panes.iter().position(|p| p == pane)
+                {
+                    tab.panes.remove(ix);
+                    tab.dock = tab.dock.take().and_then(|d| d.remove(&channel));
+                    tab.dock_states.clear();
                 }
             }
             this.schedule_save(cx);
@@ -1303,11 +1303,7 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) {
         self.drop_edge = None;
-        let Some(source) = self
-            .tabs
-            .iter()
-            .position(|t| t.panes.iter().any(|p| *p == drag.pane))
-        else {
+        let Some(source) = self.tabs.iter().position(|t| t.panes.contains(&drag.pane)) else {
             return;
         };
         let Some(destination) = self.tabs.iter().position(|t| t.id == target) else {
@@ -1717,102 +1713,101 @@ impl Workbench {
                 let dock_bounds = self.dock_bounds.clone();
                 let strip_name = name.clone();
                 let strip_bounds = self.strip_bounds.clone();
-                let tabs =
-                    names
-                        .iter()
-                        .filter(|channel| {
-                            !self.live_channels
-                                || *channel == &name
-                                || self.streams.get(channel) != Some(false)
-                        })
-                        .map(|channel| {
-                            let selected = channel == &name;
-                            let channel = channel.clone();
-                            let drag_pane = self.tabs[self.active]
-                                .panes
-                                .iter()
-                                .find(|p| p.read(cx).name.as_ref() == channel)
-                                .cloned();
-                            let counts = drag_pane
-                                .as_ref()
-                                .map(|p| self.displayed_attention(p, reading_available, cx))
-                                .unwrap_or_default();
-                            let tab_name = channel.clone();
-                            let tab_bounds = self.tab_bounds.clone();
-                            let stream_tip = self.streams.summary(&channel);
-                            let item = div()
-                                .id(SharedString::from(format!(
-                                    "channel-tab-{tab_id}-{channel}"
-                                )))
-                                .h(px(28.))
-                                .px_2()
-                                .flex()
-                                .items_center()
-                                .cursor_pointer()
-                                .bg(rgb(if selected {
-                                    theme::CONTROL
-                                } else {
-                                    theme::PANEL
-                                }))
-                                .border_b_2()
-                                .border_color(rgb(if selected { 0xA99CF4 } else { theme::PANEL }))
-                                .on_prepaint(move |bounds, _, _| {
-                                    tab_bounds.borrow_mut().insert(tab_name.clone(), bounds);
-                                })
-                                .hover(|s| s.bg(rgb(theme::HOVER)))
-                                .tooltip(move |w, cx| {
-                                    gpui_kit::component::tooltip::Tooltip::new(stream_tip.clone())
-                                        .build(w, cx)
-                                })
-                                .child(stream_marker(&channel, self.streams.get(&channel)))
-                                .child(format!("#{channel}"))
-                                .when(counts.0 > 0, |el| {
-                                    el.child(
-                                        div()
-                                            .ml_1()
-                                            .px_1()
-                                            .rounded(px(3.))
-                                            .text_size(px(10.))
-                                            .bg(rgb(if counts.1 > 0 { 0x403250 } else { 0x2B3038 }))
-                                            .text_color(rgb(if counts.1 > 0 {
-                                                0xE4BCFA
-                                            } else {
-                                                theme::TEXT
-                                            }))
-                                            .child(if counts.1 > 0 {
-                                                format!("@{}", crate::attention::count(counts.1))
-                                            } else {
-                                                crate::attention::count(counts.0)
-                                            }),
-                                    )
-                                })
-                                .on_mouse_down(
-                                    MouseButton::Middle,
-                                    cx.listener({
-                                        let channel = channel.clone();
-                                        move |this, _, window, cx| {
-                                            window.prevent_default();
-                                            cx.stop_propagation();
-                                            this.confirm_close_channel(channel.clone(), window, cx);
-                                        }
-                                    }),
+                let tabs = names
+                    .iter()
+                    .filter(|channel| {
+                        !self.live_channels
+                            || *channel == &name
+                            || self.streams.get(channel) != Some(false)
+                    })
+                    .map(|channel| {
+                        let selected = channel == &name;
+                        let channel = channel.clone();
+                        let drag_pane = self.tabs[self.active]
+                            .panes
+                            .iter()
+                            .find(|p| p.read(cx).name.as_ref() == channel)
+                            .cloned();
+                        let counts = drag_pane
+                            .as_ref()
+                            .map(|p| self.displayed_attention(p, reading_available, cx))
+                            .unwrap_or_default();
+                        let tab_name = channel.clone();
+                        let tab_bounds = self.tab_bounds.clone();
+                        let stream_tip = self.streams.summary(&channel);
+                        let item = div()
+                            .id(SharedString::from(format!(
+                                "channel-tab-{tab_id}-{channel}"
+                            )))
+                            .h(px(28.))
+                            .px_2()
+                            .flex()
+                            .items_center()
+                            .cursor_pointer()
+                            .bg(rgb(if selected {
+                                theme::CONTROL
+                            } else {
+                                theme::PANEL
+                            }))
+                            .border_b_2()
+                            .border_color(rgb(if selected { 0xA99CF4 } else { theme::PANEL }))
+                            .on_prepaint(move |bounds, _, _| {
+                                tab_bounds.borrow_mut().insert(tab_name.clone(), bounds);
+                            })
+                            .hover(|s| s.bg(rgb(theme::HOVER)))
+                            .tooltip(move |w, cx| {
+                                gpui_kit::component::tooltip::Tooltip::new(stream_tip.clone())
+                                    .build(w, cx)
+                            })
+                            .child(stream_marker(&channel, self.streams.get(&channel)))
+                            .child(format!("#{channel}"))
+                            .when(counts.0 > 0, |el| {
+                                el.child(
+                                    div()
+                                        .ml_1()
+                                        .px_1()
+                                        .rounded(px(3.))
+                                        .text_size(px(10.))
+                                        .bg(rgb(if counts.1 > 0 { 0x403250 } else { 0x2B3038 }))
+                                        .text_color(rgb(if counts.1 > 0 {
+                                            0xE4BCFA
+                                        } else {
+                                            theme::TEXT
+                                        }))
+                                        .child(if counts.1 > 0 {
+                                            format!("@{}", crate::attention::count(counts.1))
+                                        } else {
+                                            crate::attention::count(counts.0)
+                                        }),
                                 )
-                                .on_click(cx.listener({
+                            })
+                            .on_mouse_down(
+                                MouseButton::Middle,
+                                cx.listener({
                                     let channel = channel.clone();
                                     move |this, _, window, cx| {
-                                        if let Some(d) = &mut this.tabs[this.active].dock {
-                                            d.select(&channel);
-                                        }
-                                        this.selected_channel = Some(channel.clone());
-                                        this.focus.focus(window, cx);
-                                        this.schedule_save(cx);
-                                        cx.notify();
+                                        window.prevent_default();
+                                        cx.stop_propagation();
+                                        this.confirm_close_channel(channel.clone(), window, cx);
                                     }
-                                }));
-                            let owner = cx.entity().downgrade();
-                            let menu_channel = channel.clone();
-                            let menu_pane = name.clone();
-                            let menu = move |menu: gpui_kit::component::menu::PopupMenu,
+                                }),
+                            )
+                            .on_click(cx.listener({
+                                let channel = channel.clone();
+                                move |this, _, window, cx| {
+                                    if let Some(d) = &mut this.tabs[this.active].dock {
+                                        d.select(&channel);
+                                    }
+                                    this.selected_channel = Some(channel.clone());
+                                    this.focus.focus(window, cx);
+                                    this.schedule_save(cx);
+                                    cx.notify();
+                                }
+                            }));
+                        let owner = cx.entity().downgrade();
+                        let menu_channel = channel.clone();
+                        let menu_pane = name.clone();
+                        let menu = move |menu: gpui_kit::component::menu::PopupMenu,
                                              window: &mut Window,
                                              cx: &mut Context<
                                 gpui_kit::component::menu::PopupMenu,
@@ -2027,23 +2022,21 @@ impl Workbench {
                                     ),
                                 )
                             };
-                            if let Some(pane) = drag_pane {
-                                item.on_drag(
-                                    DraggedChannel {
-                                        pane,
-                                        name: channel.clone(),
-                                    },
-                                    move |drag, _, _, cx| {
-                                        cx.new(|_| DragPreview(drag.name.clone()))
-                                    },
-                                )
-                                .context_menu(menu)
-                                .into_any_element()
-                            } else {
-                                item.context_menu(menu).into_any_element()
-                            }
-                        })
-                        .collect::<Vec<_>>();
+                        if let Some(pane) = drag_pane {
+                            item.on_drag(
+                                DraggedChannel {
+                                    pane,
+                                    name: channel.clone(),
+                                },
+                                move |drag, _, _, cx| cx.new(|_| DragPreview(drag.name.clone())),
+                            )
+                            .context_menu(menu)
+                            .into_any_element()
+                        } else {
+                            item.context_menu(menu).into_any_element()
+                        }
+                    })
+                    .collect::<Vec<_>>();
                 let preview = if self.drop_target.as_ref() == Some(&name) {
                     self.drop_edge
                 } else {
@@ -2146,18 +2139,18 @@ impl Workbench {
                     .children(panels)
                     .on_resize(
                         cx.listener(move |this, state: &Entity<ResizableState>, _, cx| {
-                            if let Some(tab) = this.tabs.iter_mut().find(|t| t.id == tab_id) {
-                                if let Some(dock) = &mut tab.dock {
-                                    dock.resize(
-                                        &path,
-                                        state
-                                            .read(cx)
-                                            .sizes()
-                                            .iter()
-                                            .map(|p| f32::from(*p))
-                                            .collect(),
-                                    );
-                                }
+                            if let Some(tab) = this.tabs.iter_mut().find(|t| t.id == tab_id)
+                                && let Some(dock) = &mut tab.dock
+                            {
+                                dock.resize(
+                                    &path,
+                                    state
+                                        .read(cx)
+                                        .sizes()
+                                        .iter()
+                                        .map(|p| f32::from(*p))
+                                        .collect(),
+                                );
                             }
                             this.schedule_save(cx);
                         }),
@@ -2492,14 +2485,14 @@ impl Render for Workbench {
             .on_action(cx.listener(|this,_:&RenameWorkspace,w,cx|this.open_add(true,w,cx)))
             .on_action(cx.listener(|this,_:&MoveTabLeft,_,cx|this.move_tab(-1,cx)))
             .on_action(cx.listener(|this,_:&MoveTabRight,_,cx|this.move_tab(1,cx)))
-            .on_action(cx.listener(|this,_:&ToggleSidebar,_,cx|{this.sidebar=!this.sidebar;this.schedule_save(cx);cx.notify();}))
-            .on_action(cx.listener(|this,_:&ToggleAppearance,_,cx|{this.settings=!this.settings;cx.notify();}))
+            .on_action(cx.listener(|this,_:&ToggleSidebar,_,cx|{this.sidebar = !this.sidebar;this.schedule_save(cx);cx.notify();}))
+            .on_action(cx.listener(|this,_:&ToggleAppearance,_,cx|{this.settings = !this.settings;cx.notify();}))
             .on_action(cx.listener(|this,_:&ToggleOrientation,_,cx|this.flip_split(cx)))
-            .on_action(cx.listener(|this,_:&ToggleLiveWorkspaces,_,cx|{this.live_workspaces=!this.live_workspaces;this.schedule_save(cx);cx.notify();}))
-            .on_action(cx.listener(|this,_:&ToggleLiveChannels,_,cx|{this.live_channels=!this.live_channels;this.schedule_save(cx);cx.notify();}))
+            .on_action(cx.listener(|this,_:&ToggleLiveWorkspaces,_,cx|{this.live_workspaces = !this.live_workspaces;this.schedule_save(cx);cx.notify();}))
+            .on_action(cx.listener(|this,_:&ToggleLiveChannels,_,cx|{this.live_channels = !this.live_channels;this.schedule_save(cx);cx.notify();}))
             .on_action(cx.listener(|this,_:&QuitWithoutSaving,_,cx|{if this.close_failed {cx.quit();}}))
             .child(div().h_flex().h(px(32.)).flex_shrink_0().border_b_1().border_color(rgb(theme::BORDER))
-                .child(Button::new("sidebar").ghost().small().label("☰").tooltip("Workspaces").on_click(cx.listener(|this,_,_,cx|{this.sidebar=!this.sidebar;this.schedule_save(cx);cx.notify();})))
+                .child(Button::new("sidebar").ghost().small().label("☰").tooltip("Workspaces").on_click(cx.listener(|this,_,_,cx|{this.sidebar = !this.sidebar;this.schedule_save(cx);cx.notify();})))
                 .child(div().h_flex().px_2().gap_1().window_control_area(WindowControlArea::Drag).child(div().text_color(rgb(0xA99CF4)).font_weight(FontWeight::BOLD).child("//"))
                     .child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(11.)).child("JAWJACK")))
                 .child(div().flex_1().min_w(px(8.)).h_full().window_control_area(WindowControlArea::Drag))

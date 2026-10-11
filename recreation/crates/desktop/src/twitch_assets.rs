@@ -271,28 +271,29 @@ fn load(client: &reqwest::blocking::Client, identity: &Identity, id: &str) -> Op
     }
     // Only Twitch global emotes are universally available. Channel subscriber emotes
     // need ownership information before inclusion; never imply an entitlement.
-    if id.is_empty() {
-        if let Some(emotes) = get(client, identity, "chat/emotes/global") {
-            result.loaded |= 4;
-            for v in emotes["data"].as_array().into_iter().flatten().take(2000) {
-                let Some(label) = v["name"].as_str().filter(|s| {
-                    !s.is_empty() && s.len() <= 128 && !s.chars().any(char::is_whitespace)
-                }) else {
-                    continue;
-                };
-                let animated = v["format"]
-                    .as_array()
-                    .is_some_and(|a| a.iter().any(|v| v == "animated"));
-                if let Some(key) = v["id"]
-                    .as_str()
-                    .and_then(|id| EmoteKey::twitch(id, animated))
-                {
-                    result.emotes.push(Choice {
-                        label: label.into(),
-                        provider: "Twitch",
-                        key: Some(key),
-                    });
-                }
+    if id.is_empty()
+        && let Some(emotes) = get(client, identity, "chat/emotes/global")
+    {
+        result.loaded |= 4;
+        for v in emotes["data"].as_array().into_iter().flatten().take(2000) {
+            let Some(label) = v["name"]
+                .as_str()
+                .filter(|s| !s.is_empty() && s.len() <= 128 && !s.chars().any(char::is_whitespace))
+            else {
+                continue;
+            };
+            let animated = v["format"]
+                .as_array()
+                .is_some_and(|a| a.iter().any(|v| v == "animated"));
+            if let Some(key) = v["id"]
+                .as_str()
+                .and_then(|id| EmoteKey::twitch(id, animated))
+            {
+                result.emotes.push(Choice {
+                    label: label.into(),
+                    provider: "Twitch",
+                    key: Some(key),
+                });
             }
         }
     }

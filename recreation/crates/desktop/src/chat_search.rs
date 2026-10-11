@@ -126,22 +126,19 @@ impl Query {
             let literal = token.starts_with('"');
             let cleaned = token.replace('"', "");
             let token = cleaned.as_str();
-            if let Some((key, value)) = token.split_once(':').filter(|_| !literal) {
-                if matches!(key, "from" | "from-id" | "badge" | "has" | "is") {
-                    let value = value.to_lowercase();
-                    if value.is_empty()
-                        || (key == "has"
-                            && !matches!(
-                                value.as_str(),
-                                "link" | "emote" | "gif" | "bits" | "reply"
-                            ))
-                        || (key == "is" && !matches!(value.as_str(), "deleted" | "notice"))
-                    {
-                        result.error = Some(format!("Unknown or empty {key}: filter"));
-                    }
-                    result.filters.push((negative, key.into(), value));
-                    continue;
+            if let Some((key, value)) = token.split_once(':').filter(|_| !literal)
+                && matches!(key, "from" | "from-id" | "badge" | "has" | "is")
+            {
+                let value = value.to_lowercase();
+                if value.is_empty()
+                    || (key == "has"
+                        && !matches!(value.as_str(), "link" | "emote" | "gif" | "bits" | "reply"))
+                    || (key == "is" && !matches!(value.as_str(), "deleted" | "notice"))
+                {
+                    result.error = Some(format!("Unknown or empty {key}: filter"));
                 }
+                result.filters.push((negative, key.into(), value));
+                continue;
             }
             result.terms.push((negative, token.to_lowercase()));
         }

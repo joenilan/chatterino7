@@ -154,21 +154,18 @@ impl Streams {
         if !self.pending
             && !self.channels.is_empty()
             && self.last.elapsed() >= Duration::from_secs(60)
+            && let Some(identity) = &self.identity
+            && self
+                .tx
+                .try_send(Job {
+                    epoch: self.epoch,
+                    identity: identity.clone(),
+                    channels: self.channels.clone(),
+                })
+                .is_ok()
         {
-            if let Some(identity) = &self.identity {
-                if self
-                    .tx
-                    .try_send(Job {
-                        epoch: self.epoch,
-                        identity: identity.clone(),
-                        channels: self.channels.clone(),
-                    })
-                    .is_ok()
-                {
-                    self.pending = true;
-                    self.last = Instant::now();
-                }
-            }
+            self.pending = true;
+            self.last = Instant::now();
         }
         changed
     }

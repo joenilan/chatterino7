@@ -72,16 +72,15 @@ impl Profiles {
         let Some(identity) = &self.identity else {
             return;
         };
-        if self.requested.len() >= 128 {
-            if let Some(old) = self
+        if self.requested.len() >= 128
+            && let Some(old) = self
                 .requested
                 .iter()
                 .min_by_key(|(_, at)| *at)
                 .map(|(id, _)| id.clone())
-            {
-                self.requested.remove(&old);
-                self.values.remove(&old);
-            }
+        {
+            self.requested.remove(&old);
+            self.values.remove(&old);
         }
         if self
             .tx

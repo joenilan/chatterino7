@@ -201,17 +201,12 @@ impl Workbench {
         let view = cx.new(|cx| {
             let input =
                 cx.new(|cx| InputState::new(window, cx).placeholder("Find channel or workspace…"));
-            cx.subscribe_in(
-                &input,
-                window,
-                |s: &mut Switcher, _, event, _, cx| match event {
-                    InputEvent::Change => {
-                        s.selected = 0;
-                        cx.notify();
-                    }
-                    _ => {}
-                },
-            )
+            cx.subscribe_in(&input, window, |s: &mut Switcher, _, event, _, cx| {
+                if let InputEvent::Change = event {
+                    s.selected = 0;
+                    cx.notify();
+                }
+            })
             .detach();
             Switcher {
                 owner,

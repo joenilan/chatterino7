@@ -201,15 +201,15 @@ fn dispatch(changes: &Mutex<Vec<Change>>, kind: &str, body: &Value) {
         return;
     }
     if kind == "cosmetic.create" {
-        if body["object"]["kind"].as_str() == Some("BADGE") {
-            if let Some((id, badge)) = crate::seven_badges::definition(&body["object"]["data"]) {
-                push(changes, Change::BadgeDefinition { id, badge });
-            }
+        if body["object"]["kind"].as_str() == Some("BADGE")
+            && let Some((id, badge)) = crate::seven_badges::definition(&body["object"]["data"])
+        {
+            push(changes, Change::BadgeDefinition { id, badge });
         }
-        if body["object"]["kind"].as_str() == Some("PAINT") {
-            if let Some(paint) = crate::seven_paints::definition(&body["object"]["data"]) {
-                push(changes, Change::PaintDefinition(paint));
-            }
+        if body["object"]["kind"].as_str() == Some("PAINT")
+            && let Some(paint) = crate::seven_paints::definition(&body["object"]["data"])
+        {
+            push(changes, Change::PaintDefinition(paint));
         }
         return;
     }
@@ -261,20 +261,18 @@ fn dispatch(changes: &Mutex<Vec<Change>>, kind: &str, body: &Value) {
     } else if matches!(
         kind,
         "emote_set.create" | "emote_set.update" | "emote_set.delete"
-    ) {
-        if let Some(id) = body["id"]
-            .as_str()
-            .filter(|s| valid_id(s))
-            .or_else(|| body["object"]["id"].as_str().filter(|s| valid_id(s)))
-        {
-            push(
-                changes,
-                Change::Set {
-                    id: id.into(),
-                    removed: kind == "emote_set.delete",
-                },
-            );
-        }
+    ) && let Some(id) = body["id"]
+        .as_str()
+        .filter(|s| valid_id(s))
+        .or_else(|| body["object"]["id"].as_str().filter(|s| valid_id(s)))
+    {
+        push(
+            changes,
+            Change::Set {
+                id: id.into(),
+                removed: kind == "emote_set.delete",
+            },
+        );
     }
 }
 fn invalidate(dirty: &Mutex<HashSet<String>>, names: impl Iterator<Item = String>) {
@@ -310,7 +308,6 @@ fn run(
         }
         if let Some(mut socket) = open() {
             reset(&changes);
-            let channel_routes = channel_routes;
             let mut maintenance = false;
             let started = Instant::now();
             let mut last = Instant::now();

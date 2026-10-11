@@ -102,11 +102,11 @@ pub fn attachments(message: &Message, media: &mut MediaCache, cx: &mut App) -> O
             let mut key = EmoteKey::gif(id, url, !cx.reduce_motion());
             let mut image = key.as_ref().and_then(|k| media.get(k, cx));
             let animation_failure = key.as_ref().and_then(|k| media.failure_label(k));
-            if key.as_ref().is_some_and(|k| k.animated && media.failed(k)) {
-                if let Some(k) = key.as_mut() {
-                    k.animated = false;
-                    image = media.get(k, cx);
-                }
+            if key.as_ref().is_some_and(|k| k.animated && media.failed(k))
+                && let Some(k) = key.as_mut()
+            {
+                k.animated = false;
+                image = media.get(k, cx);
             }
             let label = if key.is_none() {
                 "GIF unavailable · unsupported source"

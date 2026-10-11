@@ -25,10 +25,10 @@ impl History {
                 // Keep the item currently being recalled stable while an async send finishes.
                 let remove = if self.cursor == Some(0) { 1 } else { 0 };
                 self.items.remove(remove);
-                if let Some(index) = self.cursor {
-                    if index > remove {
-                        self.cursor = Some(index - 1);
-                    }
+                if let Some(index) = self.cursor
+                    && index > remove
+                {
+                    self.cursor = Some(index - 1);
                 }
             }
         }

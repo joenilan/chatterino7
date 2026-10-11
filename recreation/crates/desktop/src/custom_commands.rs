@@ -182,10 +182,10 @@ pub fn load(value: &serde_json::Value) -> Definitions {
     let mut entries = BTreeMap::new();
     if let Some(map) = value.as_object() {
         for (name, value) in map.iter().take(32) {
-            if let Some(template) = value.as_str() {
-                if let Ok(name) = validate(name, template) {
-                    entries.insert(name, template.into());
-                }
+            if let Some(template) = value.as_str()
+                && let Ok(name) = validate(name, template)
+            {
+                entries.insert(name, template.into());
             }
         }
     }
@@ -288,10 +288,10 @@ impl Editor {
         } else if self.selected.is_none() && definitions.len() >= 32 {
             self.status = "This profile already has 32 commands. Edit or remove one first.".into();
         } else {
-            if let Some(old) = &self.selected {
-                if old != &name {
-                    definitions.remove(old);
-                }
+            if let Some(old) = &self.selected
+                && old != &name
+            {
+                definitions.remove(old);
             }
             definitions.insert(name.clone(), template);
             self.selected = Some(name.clone());

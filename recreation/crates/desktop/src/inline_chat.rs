@@ -276,7 +276,7 @@ impl Element for InlineChat {
             move |known, available, window, cx| {
                 let width = known
                     .width
-                    .or_else(|| {
+                    .or({
                         if let AvailableSpace::Definite(w) = available.width {
                             Some(w)
                         } else {

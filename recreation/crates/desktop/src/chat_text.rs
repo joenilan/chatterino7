@@ -181,67 +181,67 @@ impl Element for ChatText {
         });
         let hitbox = window.insert_hitbox(hit_bounds, HitboxBehavior::Normal);
         let mut regions = Vec::new();
-        if !self.selection.borrow().dragging {
-            if let Some(interaction) = &self.interaction {
-                let mut targets = vec![(
-                    0..interaction.author_len,
-                    "Ctrl+click to inspect this chatter",
-                )];
-                targets.extend(interaction.links.iter().map(|link| {
-                    (
-                        link.range.clone(),
-                        "Ctrl+click to open link · Right-click for actions",
-                    )
-                }));
-                targets.extend(interaction.mentions.iter().map(|mention| {
-                    (
-                        mention.range.clone(),
-                        "Ctrl+click to inspect mentioned chatter",
-                    )
-                }));
-                for (target, (range, hint)) in targets.into_iter().enumerate() {
-                    let mut boxes: Vec<Bounds<Pixels>> = Vec::new();
-                    let Some(target_text) = self.text.get(range.clone()) else {
+        if !self.selection.borrow().dragging
+            && let Some(interaction) = &self.interaction
+        {
+            let mut targets = vec![(
+                0..interaction.author_len,
+                "Ctrl+click to inspect this chatter",
+            )];
+            targets.extend(interaction.links.iter().map(|link| {
+                (
+                    link.range.clone(),
+                    "Ctrl+click to open link · Right-click for actions",
+                )
+            }));
+            targets.extend(interaction.mentions.iter().map(|mention| {
+                (
+                    mention.range.clone(),
+                    "Ctrl+click to inspect mentioned chatter",
+                )
+            }));
+            for (target, (range, hint)) in targets.into_iter().enumerate() {
+                let mut boxes: Vec<Bounds<Pixels>> = Vec::new();
+                let Some(target_text) = self.text.get(range.clone()) else {
+                    continue;
+                };
+                for (relative, ch) in target_text.char_indices() {
+                    let offset = range.start + relative;
+                    let Some(start) = layout.position_for_index(offset) else {
                         continue;
                     };
-                    for (relative, ch) in target_text.char_indices() {
-                        let offset = range.start + relative;
-                        let Some(start) = layout.position_for_index(offset) else {
-                            continue;
-                        };
-                        let Some(end) = layout.position_for_index(offset + ch.len_utf8()) else {
-                            continue;
-                        };
-                        // At an exact wrap boundary GPUI reports the previous line's
-                        // end for start. The character itself belongs to end's line.
-                        let origin = if end.y == start.y {
-                            start
-                        } else {
-                            point(bounds.left(), end.y)
-                        };
-                        let width = end.x - origin.x;
-                        let slot = Bounds::new(origin, size(width, layout.line_height()))
-                            .intersect(&hit_bounds);
-                        if slot.size.width <= px(0.) || slot.size.height <= px(0.) {
-                            continue;
-                        }
-                        if let Some(last) = boxes.last_mut().filter(|last| {
-                            last.top() == slot.top() && (last.right() - slot.left()).abs() < px(1.)
-                        }) {
-                            last.size.width = slot.right() - last.left();
-                        } else {
-                            boxes.push(slot);
-                        }
+                    let Some(end) = layout.position_for_index(offset + ch.len_utf8()) else {
+                        continue;
+                    };
+                    // At an exact wrap boundary GPUI reports the previous line's
+                    // end for start. The character itself belongs to end's line.
+                    let origin = if end.y == start.y {
+                        start
+                    } else {
+                        point(bounds.left(), end.y)
+                    };
+                    let width = end.x - origin.x;
+                    let slot = Bounds::new(origin, size(width, layout.line_height()))
+                        .intersect(&hit_bounds);
+                    if slot.size.width <= px(0.) || slot.size.height <= px(0.) {
+                        continue;
                     }
-                    for (part, slot) in boxes.into_iter().enumerate() {
-                        regions.push(crate::media_hover::region(
-                            format!("plain-hover-{}-{target}-{part}", self.row),
-                            slot,
-                            crate::media_hover::Content::Hint(hint.into()),
-                            window,
-                            cx,
-                        ));
+                    if let Some(last) = boxes.last_mut().filter(|last| {
+                        last.top() == slot.top() && (last.right() - slot.left()).abs() < px(1.)
+                    }) {
+                        last.size.width = slot.right() - last.left();
+                    } else {
+                        boxes.push(slot);
                     }
+                }
+                for (part, slot) in boxes.into_iter().enumerate() {
+                    regions.push(crate::media_hover::region(
+                        format!("plain-hover-{}-{target}-{part}", self.row),
+                        slot,
+                        crate::media_hover::Content::Hint(hint.into()),
+                        window,
+                        cx,
+                    ));
                 }
             }
         }

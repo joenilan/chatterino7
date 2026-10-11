@@ -43,7 +43,7 @@ impl Frames {
         let source_index = self.seen;
         self.seen += 1;
         let delay = milliseconds(&frame);
-        if source_index % self.stride != 0 {
+        if !source_index.is_multiple_of(self.stride) {
             if let Some(last) = self.frames.last_mut() {
                 merge_delay(last, delay);
             }
@@ -62,7 +62,7 @@ impl Frames {
             self.frames = compact;
             self.stride *= 2;
             self.bytes = self.frames.iter().map(|f| f.buffer().len()).sum();
-            if source_index % self.stride != 0 {
+            if !source_index.is_multiple_of(self.stride) {
                 if let Some(last) = self.frames.last_mut() {
                     merge_delay(last, delay);
                 }
