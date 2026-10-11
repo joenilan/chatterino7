@@ -1,5 +1,6 @@
 use gpui_kit::prelude::FluentBuilder;
 mod activity_feed;
+mod ads;
 mod assets;
 mod attention;
 mod attention_navigation;

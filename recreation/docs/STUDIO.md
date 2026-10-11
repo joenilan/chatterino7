@@ -62,3 +62,15 @@ Activity feed: "Mod: banned Bob: spam", "timed out Ann for 10m", "turned on slow
 "deleted X's message: …", VIP/mod changes, raids, blocked terms, unban requests, and shared-chat
 variants. The moderator who acted is the entry's name. No live moderation has been observed in the feed yet.
 
+## Ad manager (2026-10-11)
+
+While your channel is live (Twitch says so, or OBS is streaming), Helix Get Ad Schedule is polled every
+60 s. The Ad break row in Tools shows "Next ad in 12:34 (90s) · 2 snoozes left", ticking each second, and has
+a **Snooze** button (Helix Snooze Next Ad, +5 min, disabled with no snoozes left) beside the existing
+30s/60s/90s run buttons. About a minute before an ad, a notification ("Ad break in under a minute") offers a heads-up
+for chat. Clicking it puts the text into your channel's message box, and you choose whether to send it. Jawjack never
+posts on its own. Times are accepted as RFC 3339 or Unix seconds.
+
+Evidence: offline state renders ("Available while live"); parsing unit tested. Not yet observed live
+(needs a live stream with ads).
+

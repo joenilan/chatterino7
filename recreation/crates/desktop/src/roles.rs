@@ -816,9 +816,55 @@ impl Workbench {
                     );
                 })
         };
+        let schedule = self.ads.schedule.clone().filter(|_| live);
+        let snoozes = schedule.as_ref().map_or(0, |s| s.snoozes);
+        let ad_line = match &schedule {
+            Some(s) => match s.next_ad_at.and_then(crate::ads::countdown) {
+                Some(left) => format!(
+                    "Next ad in {left}{} · {snoozes} snooze{} left",
+                    if s.duration > 0 {
+                        format!(" ({}s)", s.duration)
+                    } else {
+                        String::new()
+                    },
+                    if snoozes == 1 { "" } else { "s" }
+                ),
+                None => format!(
+                    "No ad scheduled · {snoozes} snooze{} left",
+                    if snoozes == 1 { "" } else { "s" }
+                ),
+            },
+            None if live => "Run an ad now".into(),
+            None => "Available while live".into(),
+        };
         let ads = div()
             .h_flex()
             .gap_1()
+            .when(
+                schedule.as_ref().is_some_and(|s| s.next_ad_at.is_some()),
+                |el| {
+                    el.child(
+                        Button::new("studio-ad-snooze")
+                            .xsmall()
+                            .ghost()
+                            .label("Snooze")
+                            .tooltip("Push the next ad back 5 minutes")
+                            .disabled(snoozes == 0)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                if let Some(identity) = this.account.read(cx).identity() {
+                                    if identity.has("channel:manage:ads") {
+                                        this.ads.snooze(&identity);
+                                    } else {
+                                        this.ads.notice = Some(
+                                            "Snoozing ads needs updated Twitch permissions.".into(),
+                                        );
+                                    }
+                                }
+                                cx.notify();
+                            })),
+                    )
+                },
+            )
             .children([30u32, 60, 90].into_iter().map(|seconds| {
                 let (owner, pane, own) = (owner.clone(), pane.clone(), own.clone());
                 Button::new(("studio-ad", seconds as usize))
@@ -903,18 +949,7 @@ impl Workbench {
                 )
                 .child(marker),
             )
-            .child(
-                row(
-                    gpui_kit::assets::IconName::Tv,
-                    "Ad break",
-                    if live {
-                        "Run an ad now"
-                    } else {
-                        "Available while live"
-                    },
-                )
-                .child(ads),
-            )
+            .child(Self::tool_row(gpui_kit::assets::IconName::Tv, "Ad break", ad_line).child(ads))
             .child(row(
                 gpui_kit::assets::IconName::Rocket,
                 "Raid",

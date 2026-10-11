@@ -302,7 +302,8 @@ impl Workbench {
         };
         section.child(prediction_card)
     }
-    pub(super) fn tool_row(icon: Kit, title: &'static str, detail: &'static str) -> Div {
+    pub(super) fn tool_row(icon: Kit, title: &'static str, detail: impl Into<SharedString>) -> Div {
+        let detail: SharedString = detail.into();
         div()
             .h_flex()
             .items_center()

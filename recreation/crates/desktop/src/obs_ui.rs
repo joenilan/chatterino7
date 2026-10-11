@@ -409,3 +409,82 @@ impl Workbench {
             )
     }
 }
+
+impl Workbench {
+    /// Whether the signed-in account's own channel is live.
+    pub(super) fn own_live(&self, cx: &App) -> bool {
+        self.account
+            .read(cx)
+            .login()
+            .and_then(|own| self.streams.detail(&own).map(|(info, _)| info.live))
+            .unwrap_or(false)
+            || self.obs.state.streaming
+    }
+    /// Ad schedule while live, plus a one-minute heads-up per ad.
+    pub(super) fn pump_ads(
+        &mut self,
+        identity: Option<&crate::live::Identity>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let live = self.own_live(cx);
+        if self.ads.pump(identity, live) {
+            cx.notify();
+        }
+        if let Some(notice) = self.ads.notice.take() {
+            window.push_notification(Notification::info(notice), cx);
+        }
+        let Some(at) = self.ads.schedule.as_ref().and_then(|s| s.next_ad_at) else {
+            return;
+        };
+        let left = (at - chrono::Utc::now()).num_seconds();
+        if live && (1..=60).contains(&left) && self.ads.warned != Some(at) {
+            self.ads.warned = Some(at);
+            let owner = cx.entity().downgrade();
+            let length = self.ads.schedule.as_ref().map_or(0, |s| s.duration);
+            window.push_notification(
+                Notification::new()
+                    .title("Ad break in under a minute")
+                    .message(format!("{length}s ad. Click to put a heads-up for chat in your message box (you send it)."))
+                    .in_app_and_system()
+                    .on_click(move |_, window, cx| {
+                        let _ = owner.update(cx, |this, cx| this.draft_ad_heads_up(length, window, cx));
+                    }),
+                cx,
+            );
+        }
+        // Keep the countdown ticking while Studio shows it.
+        if live && self.studio_open && left > 0 {
+            let second = left as u64;
+            if self.obs_tick != second {
+                self.obs_tick = second;
+                cx.notify();
+            }
+        }
+    }
+    /// Put an ad heads-up in the own channel's message box; never sends by itself.
+    pub(super) fn draft_ad_heads_up(
+        &mut self,
+        seconds: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(own) = self.account.read(cx).login() else {
+            return;
+        };
+        let Some(pane) = self
+            .tab_panes()
+            .into_iter()
+            .find(|p| p.read(cx).name.as_ref() == own)
+        else {
+            return;
+        };
+        let text = if seconds > 0 {
+            format!("Ad break coming up ({seconds}s). Stretch, grab a drink, I'll be right here!")
+        } else {
+            "Ad break coming up. Stretch, grab a drink, I'll be right here!".to_owned()
+        };
+        self.reveal_channel(&own, cx);
+        pane.update(cx, |p, cx| p.command_draft(&text, window, cx));
+    }
+}

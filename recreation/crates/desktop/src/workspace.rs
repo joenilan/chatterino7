@@ -205,6 +205,7 @@ pub struct Workbench {
     obs_settings: crate::streamer_bot::Settings,
     obs_started: bool,
     obs_tick: u64,
+    ads: crate::ads::Ads,
     /// "Find OBS": None = not searched, Some(None) = searching, Some(Some(ips)) = done.
     obs_found: Option<Option<Vec<crate::obs::Found>>>,
     /// Optional chat logs (off by default).
@@ -570,6 +571,7 @@ impl Workbench {
             obs_settings: obs_ui::load_obs_settings(&state["obs"]),
             obs_started: false,
             obs_tick: 0,
+            ads: crate::ads::Ads::new(),
             obs_found: None,
             similar_mode: crate::similarity::Mode::from_key(
                 state["similar_messages"].as_str().unwrap_or(""),
@@ -819,6 +821,7 @@ impl Workbench {
             self.start_obs(cx);
         }
         self.pump_obs(cx);
+        self.pump_ads(identity.as_ref(), window, cx);
         self.pump_engagement(window, cx);
         if !self.setup_offered && identity.is_some() {
             self.setup_offered = true;
