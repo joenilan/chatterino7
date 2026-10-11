@@ -7,7 +7,7 @@ use std::{
     sync::mpsc,
     time::{Duration, Instant},
 };
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct StreamInfo {
     pub live: bool,
     pub title: String,

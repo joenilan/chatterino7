@@ -11,12 +11,13 @@ use gpui_kit::*;
 use std::{cell::RefCell, rc::Rc};
 use unicode_segmentation::UnicodeSegmentation;
 
-pub const COLORS: [(&str, u32, u32); 5] = [
+pub const COLORS: [(&str, u32, u32); 6] = [
     ("Lilac", 0xA99CF4, 0x272237),
     ("Mint", 0x91D7BA, 0x192D27),
     ("Sky", 0x91C7E8, 0x1B2934),
     ("Rose", 0xE69DCD, 0x332333),
     ("Peach", 0xE8C68A, 0x30291D),
+    ("Red", 0xF07A7A, 0x3A1D20),
 ];
 pub type Rules = Rc<RefCell<Vec<Rule>>>;
 /// Regular expressions stay small so a pasted pattern cannot exhaust memory.

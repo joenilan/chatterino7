@@ -210,6 +210,27 @@ impl EmoteKey {
             }),
         })
     }
+    /// Live thumbnail; the id changes every five minutes so previews stay fresh.
+    pub fn stream_preview(login: &str) -> Option<Self> {
+        let login = chat_core::twitch_login(login)?;
+        let bucket = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_secs()
+            / 300;
+        let url =
+            format!("https://static-cdn.jtvnw.net/previews-ttv/live_user_{login}-320x180.jpg");
+        Some(Self {
+            id: format!("preview:{login}:{bucket}"),
+            animated: false,
+            external: Some(chat_core::EmoteAsset {
+                url: url.clone(),
+                static_url: url,
+                width: 320,
+                height: 180,
+            }),
+        })
+    }
     pub fn gif(id: &str, value: &str, animated: bool) -> Option<Self> {
         let url = reqwest::Url::parse(value).ok()?;
         // Known GIPHY delivery hosts from Twitch's documented integration. Unknown
@@ -282,6 +303,9 @@ impl EmoteKey {
         }
         if self.id.starts_with("avatar:") {
             return "twitch_avatar";
+        }
+        if self.id.starts_with("preview:") {
+            return "twitch_preview";
         }
         if self.id.starts_with("gif:") {
             return "twitch_gif";
@@ -844,7 +868,7 @@ fn download(
     };
     let max_dimension = if rich_gif {
         1024
-    } else if key.id.starts_with("avatar:") {
+    } else if key.id.starts_with("avatar:") || key.id.starts_with("preview:") {
         512
     } else {
         256

@@ -70,10 +70,10 @@ pub struct EventHighlights {
 }
 impl Default for EventHighlights {
     fn default() -> Self {
-        // Mint (green) for what needs a reply: mentions and raids.
+        // As on Twitch: mentions red, raids green.
         Self {
             colors: [
-                Some(1),
+                Some(5),
                 Some(1),
                 Some(0),
                 Some(4),
@@ -166,16 +166,23 @@ pub fn load(value: &serde_json::Value) -> Shared {
             }
         }
     }
+    // Version 1 saved the old green mention default; follow Twitch's red instead.
+    if value.is_object()
+        && value["version"].as_u64().is_none()
+        && events.get(Kind::Mention) == Some(1)
+    {
+        events.set(Kind::Mention, Some(5));
+    }
     Rc::new(RefCell::new(events))
 }
 pub fn json(events: &Shared) -> serde_json::Value {
     let events = events.borrow();
-    serde_json::Value::Object(
-        KINDS
-            .iter()
-            .map(|(kind, key, ..)| ((*key).to_owned(), serde_json::json!(events.get(*kind))))
-            .collect(),
-    )
+    let mut map: serde_json::Map<String, serde_json::Value> = KINDS
+        .iter()
+        .map(|(kind, key, ..)| ((*key).to_owned(), serde_json::json!(events.get(*kind))))
+        .collect();
+    map.insert("version".into(), serde_json::json!(2));
+    serde_json::Value::Object(map)
 }
 
 pub struct Changed;

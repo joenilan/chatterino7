@@ -41,6 +41,7 @@ mod seven_entitlements;
 mod seven_events;
 mod seven_paints;
 mod storage;
+mod stream_preview;
 mod stream_status;
 mod studio;
 mod theme;
@@ -161,6 +162,8 @@ struct ChannelPane {
     role: Option<capabilities::Role>,
     /// Twitch's chatter list for @-completion (moderated or own channels only).
     chatter_list: std::rc::Rc<Vec<String>>,
+    /// Latest stream snapshot, for the header hover card.
+    stream: Option<stream_status::StreamInfo>,
     connection: String,
     connected: bool,
     room_settings: Option<room_settings::RoomSettings>,
@@ -246,6 +249,7 @@ impl ChannelPane {
             name: name.to_owned().into(),
             role: None,
             chatter_list: Default::default(),
+            stream: None,
             media,
             catalog,
             custom_commands: Default::default(),
@@ -653,6 +657,17 @@ impl Render for ChannelPane {
                                 drag.pane.update(cx, |_,cx|cx.emit(PaneEvent::DragStarted));
                                 cx.stop_propagation();
                                 cx.new(|_| DragPreview(format!("# {}", drag.name)))
+                            })
+                            .on_mouse_up(MouseButton::Middle, cx.listener(|this, _, _, cx| {
+                                cx.open_url(&format!("https://www.twitch.tv/{}", this.name));
+                                cx.stop_propagation();
+                            }))
+                            .tooltip({
+                                let (channel, info, media) = (self.name.to_string(), self.stream.clone(), self.media.clone());
+                                move |_, cx| {
+                                    let (channel, info, media) = (channel.clone(), info.clone(), media.clone());
+                                    cx.new(|cx| stream_preview::StreamPreview::new(channel, info, media, cx)).into()
+                                }
                             })
                             .child(format!("# {}", self.name)),
                     )

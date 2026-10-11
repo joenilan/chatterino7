@@ -562,6 +562,24 @@ impl Workbench {
             identity.clone(),
             panes.iter().map(|p| p.read(cx).name.to_string()).collect(),
         ) {
+            let visible = self.visible_panes(cx);
+            for pane in &panes {
+                let info = self
+                    .streams
+                    .detail(&pane.read(cx).name)
+                    .map(|(i, _)| i.clone());
+                if pane.read(cx).stream != info {
+                    // Warm the hover preview for visible live channels.
+                    if visible.contains(pane)
+                        && info.as_ref().is_some_and(|i| i.live)
+                        && let Some(key) =
+                            crate::media::EmoteKey::stream_preview(&pane.read(cx).name)
+                    {
+                        self.media.borrow_mut().get(&key, cx);
+                    }
+                    pane.update(cx, |p, _| p.stream = info);
+                }
+            }
             cx.notify();
         }
         self.pump_imported_nicknames(cx);
