@@ -53,29 +53,37 @@ fn steps(guide: Guide) -> Vec<Step> {
         ],
         Guide::YouTubeChat => vec![
             Step {
-                title: "Use the same Google Cloud project",
-                detail: "The one from the YouTube key. Sending needs Google sign-in, which apps can only do with their own OAuth client.",
+                title: "Same Google Cloud project as your YouTube key",
+                detail: "Make sure that project is selected at the top of the Google Cloud page. Google requires every app that signs you in to be registered there; this is that registration.",
                 link: None,
             },
             Step {
-                title: "Set up the sign-in screen and add yourself as a test user",
-                detail: "Google Auth Platform → Get started: app name \"Jawjack\", your email, Audience: External. Then Audience → Test users → add the Google account you stream with.",
+                title: "Tell Google about the app (one-time form)",
+                detail: "Press \"Get started\". App name: Jawjack. Support email: yours. Audience: External. Contact email: yours. Agree, then Create.",
                 link: Some((
-                    "Open Audience (test users)",
+                    "Open the sign-in setup",
+                    "https://console.cloud.google.com/auth/overview",
+                )),
+            },
+            Step {
+                title: "Allow your own Google account",
+                detail: "Until an app is verified by Google, only accounts on its approved list can sign in. Under \"Test users\" press Add users, enter the Google account you use on YouTube, and Save.",
+                link: Some((
+                    "Open the approved-accounts list",
                     "https://console.cloud.google.com/auth/audience",
                 )),
             },
             Step {
-                title: "Create an OAuth client: type \"Desktop app\"",
-                detail: "Clients → Create client → Application type: Desktop app → Create. Copy the Client ID and Client secret (or download the JSON).",
+                title: "Create the sign-in key for Jawjack",
+                detail: "Application type: Desktop app. Name: Jawjack. Create. Then copy the Client ID and Client secret it shows (or press Download JSON).",
                 link: Some((
-                    "Create OAuth client",
+                    "Open Create client",
                     "https://console.cloud.google.com/auth/clients/create",
                 )),
             },
             Step {
-                title: "Paste them below and sign in",
-                detail: "Your browser opens Google's consent page; approve YouTube access. While the project is in Testing, Google signs you out after 7 days (just sign in again). Each message uses 50 quota units.",
+                title: "Paste them below and press Sign in with Google",
+                detail: "Your browser opens Google's own page. Pick your account and allow YouTube access. Google signs testing apps out after 7 days; just press Sign in again. Each message uses 50 of your 10,000 daily units.",
                 link: None,
             },
         ],
