@@ -196,6 +196,8 @@ pub struct Workbench {
     hide_blocked: bool,
     similar_mode: crate::similarity::Mode,
     mod_buttons: bool,
+    follows_live: crate::follows_live::FollowsLive,
+    follows_open: bool,
     /// Optional chat logs (off by default).
     logs: crate::chat_logs::Logs,
     logs_enabled: bool,
@@ -552,6 +554,8 @@ impl Workbench {
             blocks: crate::blocks::Blocks::new(),
             hide_blocked: state["hide_blocked"].as_bool().unwrap_or(true),
             mod_buttons: state["mod_buttons"].as_bool().unwrap_or(false),
+            follows_live: crate::follows_live::FollowsLive::new(),
+            follows_open: state["follows_open"].as_bool().unwrap_or(true),
             similar_mode: crate::similarity::Mode::from_key(
                 state["similar_messages"].as_str().unwrap_or(""),
             ),
@@ -928,6 +932,9 @@ impl Workbench {
                     cx.notify();
                 });
             }
+            cx.notify();
+        }
+        if self.follows_live.pump(identity.as_ref()) {
             cx.notify();
         }
         if self.blocks.pump(identity.as_ref()) {
@@ -2030,6 +2037,7 @@ impl Workbench {
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
         value["mod_buttons"] = json!(self.mod_buttons);
+        value["follows_open"] = json!(self.follows_open);
         value["logs"] =
             json!({"enabled": self.logs_enabled, "folder": self.logs_folder.display().to_string()});
         value["streamer_mode"] =
@@ -2262,6 +2270,56 @@ impl Workbench {
         });
         cx.notify();
     }
+    /// Add a channel as a tab in the active workspace (Add channel, live follows).
+    fn add_channel_to_active(
+        &mut self,
+        channel: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let id = self.tabs[self.active].id;
+        let pane = self.make_pane(id, &channel, window, cx);
+        let tab = &mut self.tabs[self.active];
+        tab.panes.push(pane);
+        tab.dock = Some(match tab.dock.take() {
+            Some(mut d) => {
+                let mut active = Vec::new();
+                d.active_names(&mut active);
+                if let Some(target) = self.add_target.as_ref().or(active.first()) {
+                    d.tabify(target, channel.clone());
+                }
+                d
+            }
+            None => Dock::Leaf(channel.clone()),
+        });
+        tab.dock_states.clear();
+        tab.sizes.clear();
+        tab.split = cx.new(|_| ResizableState::default());
+        if tab.name.starts_with("Workspace") && tab.panes.len() == 1 {
+            tab.name = channel;
+        }
+    }
+    /// Jump to an open channel, or add it to the active workspace.
+    pub(super) fn open_channel(
+        &mut self,
+        channel: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .tab_panes()
+            .iter()
+            .any(|p| p.read(cx).name.as_ref() == channel)
+        {
+            self.reveal_channel(&channel, cx);
+        } else {
+            self.add_channel_to_active(channel.clone(), window, cx);
+            self.reveal_channel(&channel, cx);
+        }
+        self.focus.focus(window, cx);
+        self.schedule_save(cx);
+        cx.notify();
+    }
     fn accept_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let value = self.channel_input.read(cx).value().trim().to_owned();
         if self.renaming {
@@ -2287,27 +2345,7 @@ impl Workbench {
                 cx.notify();
                 return;
             }
-            let id = self.tabs[self.active].id;
-            let pane = self.make_pane(id, &channel, window, cx);
-            let tab = &mut self.tabs[self.active];
-            tab.panes.push(pane);
-            tab.dock = Some(match tab.dock.take() {
-                Some(mut d) => {
-                    let mut active = Vec::new();
-                    d.active_names(&mut active);
-                    if let Some(target) = self.add_target.as_ref().or(active.first()) {
-                        d.tabify(target, channel.clone());
-                    }
-                    d
-                }
-                None => Dock::Leaf(channel.clone()),
-            });
-            tab.dock_states.clear();
-            tab.sizes.clear();
-            tab.split = cx.new(|_| ResizableState::default());
-            if tab.name.starts_with("Workspace") && tab.panes.len() == 1 {
-                tab.name = channel;
-            }
+            self.add_channel_to_active(channel, window, cx);
         }
         self.adding = false;
         self.focus.focus(window, cx);
@@ -3607,6 +3645,7 @@ impl Workbench {
                             })
                     })),
             )
+            .children(self.render_live_follows(cx))
             .child(
                 div()
                     .v_flex()
@@ -3619,6 +3658,130 @@ impl Workbench {
                     .child(self.render_updates(cx)),
             )
             .into_any_element()
+    }
+    /// Sidebar: followed channels that are live, most viewers first.
+    fn render_live_follows(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let list = self.follows_live.list.as_ref()?;
+        let open: std::collections::HashSet<String> = self
+            .tab_panes()
+            .iter()
+            .map(|p| p.read(cx).name.to_string())
+            .collect();
+        Some(
+            div()
+                .v_flex()
+                .flex_shrink_0()
+                .max_h(px(280.))
+                .gap_1()
+                .child(
+                    div()
+                        .id("live-follows-header")
+                        .h_flex()
+                        .items_center()
+                        .gap_1()
+                        .cursor_pointer()
+                        .text_size(px(10.))
+                        .text_color(rgb(theme::MUTED))
+                        .child(
+                            Icon::new(if self.follows_open {
+                                IconName::ChevronDown
+                            } else {
+                                IconName::ChevronRight
+                            })
+                            .xsmall(),
+                        )
+                        .child(format!("LIVE NOW · {}", list.len()))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.follows_open = !this.follows_open;
+                            this.schedule_save(cx);
+                            cx.notify();
+                        })),
+                )
+                .when(self.follows_open && list.is_empty(), |el| {
+                    el.child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(theme::MUTED))
+                            .child("Nobody you follow is live."),
+                    )
+                })
+                .when(self.follows_open && !list.is_empty(), |el| {
+                    el.child(
+                        div()
+                            .id("live-follows")
+                            .v_flex()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .children(list.iter().enumerate().map(|(index, live)| {
+                                let login = live.login.clone();
+                                let title = live.title.clone();
+                                let is_open = open.contains(&live.login);
+                                div()
+                                    .id(("live-follow", index))
+                                    .h_flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .px_1()
+                                    .py(px(3.))
+                                    .rounded(px(5.))
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(rgb(theme::HOVER)))
+                                    .tooltip(move |w, cx| {
+                                        gpui_kit::component::tooltip::Tooltip::new(title.clone())
+                                            .build(w, cx)
+                                    })
+                                    .child(
+                                        div()
+                                            .size(px(6.))
+                                            .flex_shrink_0()
+                                            .rounded_full()
+                                            .bg(rgb(theme::STREAM_LIVE)),
+                                    )
+                                    .child(
+                                        div()
+                                            .v_flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .child(
+                                                div()
+                                                    .overflow_hidden()
+                                                    .whitespace_nowrap()
+                                                    .text_ellipsis()
+                                                    .text_size(px(12.))
+                                                    .when(is_open, |el| {
+                                                        el.text_color(rgb(theme::ACCENT))
+                                                    })
+                                                    .child(if live.name.is_empty() {
+                                                        live.login.clone()
+                                                    } else {
+                                                        live.name.clone()
+                                                    }),
+                                            )
+                                            .child(
+                                                div()
+                                                    .overflow_hidden()
+                                                    .whitespace_nowrap()
+                                                    .text_ellipsis()
+                                                    .text_size(px(10.))
+                                                    .text_color(rgb(theme::MUTED))
+                                                    .child(live.game.clone()),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex_shrink_0()
+                                            .text_size(px(10.))
+                                            .text_color(rgb(theme::MUTED))
+                                            .child(crate::follows_live::viewers(live.viewers)),
+                                    )
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.open_channel(login.clone(), window, cx)
+                                    }))
+                            })),
+                    )
+                })
+                .into_any_element(),
+        )
     }
 }
 fn valid_channel(value: &str) -> Option<String> {

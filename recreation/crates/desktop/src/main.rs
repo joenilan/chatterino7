@@ -29,6 +29,7 @@ mod engagement;
 mod event_highlights;
 mod ffz_badges;
 mod ffz_role_badges;
+mod follows_live;
 mod frame_sampler;
 mod highlight_rules;
 mod ignores;
