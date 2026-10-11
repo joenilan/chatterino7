@@ -17,6 +17,7 @@ Ported from Haiwire's app-side updater (`crates/desktop/src/updates.rs`).
   deny-write. Install launches `Jawjack-<v>-setup.exe --app-pid <pid>`, saves the
   workspace and closes Jawjack. The installer must wait for that process to exit,
   replace files without touching `%LOCALAPPDATA%\ChatWorkbench`, and relaunch.
+- **Release channels:** see [RELEASING.md](RELEASING.md).
 - **UI:** version, status and ⟳ at the bottom of the workspaces sidebar (as in
   Haiwire); full controls in Appearance & memory. A status-bar notice announces a
   new version once.

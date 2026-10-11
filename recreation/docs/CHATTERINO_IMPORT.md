@@ -38,9 +38,8 @@ longer exist on Twitch stay in the layout with an explanatory status.
 Owner install: 75 tabs → preview of 73 channels (2 duplicate tabs merged), 1
 highlight rule, timestamps on, blocked-users note. Import created the workspace;
 all 78 existing accounts of the 86 total channels connected (~80 s cold start);
-8 logins no longer exist on Twitch. Chatterino keeps only names, so renames are
-traced from the owner's own tab titles: stephsteinx3 → yospacebabe (tab title
-"YoSpaceBabe"), comraderisloo → comraderuskii (tab title), sircheetogg → likely
-sircheet0; all three new names were already imported and connect. Unresolved, for
-the owner to look up: **justfocuszk, kaylowrl, lydless, schizzzrl, thedreamlizard**. Nickname lookup and multi-split tabs were not
+8 logins no longer exist on Twitch. Chatterino keeps only names, so the owner identified the renames: stephsteinx3 →
+yospacebabe, sircheetogg → sircheet0, comraderisloo → comraderuskii, justfocuszk →
+flyzk, kaylowrl → kaylow_rl, schizzzrl → schizzlit and lydless → valyd__. Only
+**thedreamlizard** is unresolved. Nickname lookup and multi-split tabs were not
 present in this install and remain unexercised natively.
