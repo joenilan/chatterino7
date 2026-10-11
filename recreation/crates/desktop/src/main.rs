@@ -20,6 +20,7 @@ mod media_hover;
 mod catalog;
 mod community;
 mod ffz_role_badges;
+mod ffz_badges;
 mod twitch_assets;
 mod emote_picker;
 mod inline_chat;
@@ -574,6 +575,11 @@ impl Render for ChannelPane {
                                 }
                                 catalog.borrow().twitch.badge(&message.channel_id,&badge.set_id,&badge.id).cloned().map(|badge|{let image=media.borrow_mut().get(&badge.key,cx);(badge,image,None)})
                             }).collect::<Vec<_>>();
+                            {
+                                let catalog=catalog.borrow();
+                                let room=if message.presentation.source.is_none(){catalog.community.channels.get(channel_name.as_ref()).filter(|set|set.ffz_room_id==message.channel_id).map(|set|&set.roles.grants)}else{None};
+                                for definition in catalog.ffz_badges.for_user(&message.user_id,room){let image=media.borrow_mut().get(&definition.badge.key,cx);badge_images.push((definition.badge,image,definition.background));}
+                            }
                             if let Some(badge)=catalog.borrow().badges.for_user(&message.user_id).cloned(){let image=media.borrow_mut().get(&badge.key,cx);badge_images.push((badge,image,None));}
                             let row_owner=menu_owner.clone();let row_id=message.id.clone();
                             let timestamp=if timestamps>0{message.sent_at.and_then(|time|chrono::DateTime::from_timestamp(time,0)).map(|time|{

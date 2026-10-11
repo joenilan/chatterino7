@@ -1,7 +1,7 @@
 //! Room cosmetics only. Twitch message badges remain the authority for roles.
 use crate::{media::EmoteKey,twitch_assets::Badge};
 #[derive(Clone,Default)]
-pub struct Roles {pub moderator:Option<Badge>,pub vip:Option<Badge>}
+pub struct Roles {pub moderator:Option<Badge>,pub vip:Option<Badge>,pub grants:crate::ffz_badges::Grants,pub grants_loaded:Option<std::time::Instant>}
 impl Roles{
     pub fn get(&self,role:&str)->Option<&Badge>{match role{"moderator"=>self.moderator.as_ref(),"vip"=>self.vip.as_ref(),_=>None}}
     pub fn parse(value:&serde_json::Value)->Self{
@@ -13,6 +13,6 @@ impl Roles{
                 Some(Badge{title:format!("{title} · FFZ channel badge"),key:EmoteKey::ffz_role_badge(role,&url)?})
             })
         };
-        Self{moderator:badge("mod_urls","mod","Moderator"),vip:badge("vip_badge","vip","VIP")}
+        Self{moderator:badge("mod_urls","mod","Moderator"),vip:badge("vip_badge","vip","VIP"),grants:crate::ffz_badges::grants(&value["room"]["user_badge_ids"]).unwrap_or_default(),grants_loaded:Some(std::time::Instant::now())}
     }
 }

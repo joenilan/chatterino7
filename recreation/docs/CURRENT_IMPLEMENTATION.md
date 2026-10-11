@@ -1,6 +1,6 @@
 # Jawjack recent implementation progress
 
-Updated 2026-10-10. This is a concise source-and-build progress supplement to
+Updated 2026-10-11. This is a concise source-and-build progress supplement to
 FEATURE_COVERAGE.md. Older coverage-table states predate these batches; preserve
 those feature IDs and outstanding parity rather than treating their old status
 cells as proof that the newer code is absent. Native acceptance remains separate.
@@ -22,7 +22,9 @@ cells as proof that the newer code is absent. Native acceptance remains separate
   glyphs, preserving text geometry and explicit local color priority. Unsupported
   image/shadow/layered paint behavior still falls back. [Paints](SEVENTV_PAINTS.md)
 - **EM11:** FFZ custom moderator/VIP room badge replacement with Twitch fallback.
-  Global supporter and channel-grant badges remain open. [Role badges](FFZ_ROLE_BADGES.md)
+  Global supporter and channel-grant badge snapshots are also implemented, with
+  bounded ID-based membership and expiry. [Role badges](FFZ_ROLE_BADGES.md),
+  [supporter badges](FFZ_SUPPORTER_BADGES.md)
 - **AT03:** Local bounded literal/sender/channel highlight-rule editor and colors.
   Regex and full provider event policies remain open. [Rules](HIGHLIGHT_RULES.md)
 - **AT10:** Local nicknames and color overrides preserve canonical Twitch identity.
@@ -43,7 +45,7 @@ blanket “all tests passed” or “complete” label.
 
 1. Native acceptance of the combined reading, painted-name, mention, recent-emote,
    notes and custom-badge batch, fixing observed issues without changing user layout.
-2. FFZ supporter/channel grants and remaining 7TV rendering/visibility parity.
+2. Live acceptance of FFZ supporter/channel grants and remaining 7TV rendering/visibility parity.
 3. Account and channel capability model before moderator write actions; permission
    changes must be deliberate, and viewer chat must keep working when declined.
 4. Streamer/Moderator/Viewer experiences, including the account-level own-chat

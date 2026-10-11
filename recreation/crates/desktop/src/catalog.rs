@@ -28,6 +28,7 @@ pub struct Catalog {
     personal_epoch:u64,
     entitlements:crate::seven_entitlements::Entitlements,
     pub badges:crate::seven_badges::Badges,
+    pub ffz_badges:crate::ffz_badges::Badges,
     pub paints:crate::seven_paints::Paints,
     pub paint_cache:std::rc::Rc<std::cell::RefCell<crate::name_paint::Cache>>,
     entitled_sets:HashMap<String,Emotes>,
@@ -88,6 +89,7 @@ impl Catalog {
             owned: crate::owned_emotes::Inventory::new(),
             profiles:crate::profiles::Profiles::new(),
             community: crate::community::Community::new(),
+            ffz_badges:crate::ffz_badges::Badges::new(),
             channels: HashMap::new(),
             requested: HashMap::new(),
             global_requested: Instant::now(),
@@ -96,7 +98,7 @@ impl Catalog {
         }
     }
     pub fn inspection(&self) -> Value {
-        serde_json::json!({"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_owned_emotes":self.owned.items.len(),"twitch_owned_status":self.owned.status,"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"personal_emotes":self.personal.len(),"personal_catalog_loaded":self.personal_ready,"personal_scope":"owned set plus passive session grants","seventv_badges":self.badges.inspection(),"seventv_paints":self.paints.inspection(),"seventv_entitled_senders":self.entitlements.len(),"seventv_entitled_sets":self.entitled_sets.len(),"seventv_entitled_emotes":self.entitled_sets.values().map(HashMap::len).sum::<usize>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
+        serde_json::json!({"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_owned_emotes":self.owned.items.len(),"twitch_owned_status":self.owned.status,"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"personal_emotes":self.personal.len(),"personal_catalog_loaded":self.personal_ready,"personal_scope":"owned set plus passive session grants","ffz_badges":self.ffz_badges.inspection(),"seventv_badges":self.badges.inspection(),"seventv_paints":self.paints.inspection(),"seventv_entitled_senders":self.entitlements.len(),"seventv_entitled_sets":self.entitled_sets.len(),"seventv_entitled_emotes":self.entitled_sets.values().map(HashMap::len).sum::<usize>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
     }
     pub fn channel(&mut self, name: &str, id: &str) {
         if id.is_empty() || id.len() > 32 || !id.bytes().all(|b| b.is_ascii_digit()) {
@@ -188,6 +190,7 @@ impl Catalog {
         let channel_requests=self.requested.iter().filter(|(name,_)|!name.starts_with('@')&&!name.starts_with('#')).map(|(name,value)|(name.clone(),value.clone())).collect();
         let mut changed = owned_changed | event_changed | account_changed | self.twitch.pump(identity, &channel_requests);
         changed |= self.community.pump(&channel_requests);
+        changed |= self.ffz_badges.pump();
         while let Ok((name, requested_id, generation, result)) = self.rx.try_recv() {
             self.in_flight.remove(&name);
             if !name.is_empty()&&!name.starts_with(['@','#'])&&!self.requested.get(&name).is_some_and(|(id,_)|id==&requested_id){
@@ -246,7 +249,7 @@ impl Catalog {
         if !self.can_retry_public(){return false;}
         self.last_manual_refresh=Some(Instant::now());
         if !self.in_flight.contains(""){self.dirty.insert(String::new());self.retry_after.remove("");self.global_requested=Instant::now()-Duration::from_secs(6);self.global_state=crate::community::LoadState::Loading;}
-        self.community.retry_global();true
+        self.community.retry_global();self.ffz_badges.retry();true
     }
     fn favorite_key(choice: &crate::twitch_assets::Choice) -> Option<[String; 3]> {
         Some([choice.provider.into(), choice.key.as_ref()?.id.clone(), choice.label.clone()])

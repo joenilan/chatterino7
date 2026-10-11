@@ -10,7 +10,9 @@ Image delivery accepts HTTPS `cdn.frankerfacez.com` role-specific `/room-badge/m
 
 Channel-login identity changes invalidate the parent catalog binding immediately. Old queued results are rejected, and mismatched cached FFZ replacements are suppressed while the new channel catalog loads.
 
-This slice does not implement global FFZ supporter badges, channel-specific badge grants, arbitrary CSS or browser-extension slot replacement rules.
+Supplemental global supporter and channel-grant badges are described in
+[FFZ supporter badges](FFZ_SUPPORTER_BADGES.md). Arbitrary CSS and browser-extension
+slot replacement rules remain unsupported.
 
 References:
 - https://api.frankerfacez.com/v1/swagger.json

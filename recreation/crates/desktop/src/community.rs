@@ -100,6 +100,11 @@ impl Community {
             }
         }
         let mut changed = false;
+        for set in self.channels.values_mut(){
+            if set.roles.grants_loaded.is_some_and(|at|at.elapsed()>=Duration::from_secs(1800)){
+                changed|=!set.roles.grants.is_empty();set.roles.grants.clear();set.roles.grants_loaded=None;
+            }
+        }
         while let Ok((channel, id, bttv, ffz)) = self.rx.try_recv() {
             if !channel.is_empty() && !channels.get(&channel).is_some_and(|(current,_)|current==&id) {
                 continue;

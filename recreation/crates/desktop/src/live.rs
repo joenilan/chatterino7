@@ -577,7 +577,9 @@ fn deliver(
                 reward_id: e["channel_points_custom_reward_id"].as_str().map(|s|s.chars().take(128).collect()),
                 notice_type: e["notice_type"].as_str().map(|s|s.chars().take(80).collect()),
                 notice: e["system_message"].as_str().filter(|s|!s.is_empty()).map(|s|s.chars().take(1200).collect()),
-                source: e["source_broadcaster_user_name"].as_str().filter(|_|e["source_broadcaster_user_id"].as_str().is_some_and(|source|source!=id)).map(|s|s.chars().take(80).collect()),
+                // Provenance follows the source ID even when its optional display
+                // name is unavailable, so destination-room cosmetics stay suppressed.
+                source: e["source_broadcaster_user_id"].as_str().filter(|source|!source.is_empty()&&*source!=id).map(|_|e["source_broadcaster_user_name"].as_str().filter(|s|!s.is_empty()).unwrap_or("Shared Chat").chars().take(80).collect()),
             },
             deleted: false,
         }),
