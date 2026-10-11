@@ -14,20 +14,24 @@ const SECTIONS: [(&str, Kit); 8] = [
     ("Shortcuts", Kit::Keyboard),
     ("Updates", Kit::Download),
 ];
-const SHORTCUTS: [(&str, &str); 14] = [
+const SHORTCUTS: [(&str, &str); 18] = [
     ("Ctrl+P", "Switch channel"),
+    ("Ctrl+K", "Add a channel"),
+    ("Ctrl+Tab", "Next workspace"),
+    ("Ctrl+PageDown / PageUp", "Next / previous channel"),
+    ("Ctrl+I", "Channel details"),
+    ("Ctrl+F", "Search this channel"),
     ("Ctrl+Shift+F", "Search open channels"),
     ("Ctrl+Shift+M", "Highlights & unread"),
     ("Ctrl+Shift+R", "Mark all read"),
     ("Ctrl+Shift+S", "Show or hide the Studio panel"),
+    ("Ctrl+Shift+H", "Sent message history"),
+    ("Alt+Up / Down", "Previous / next sent message"),
     ("Ctrl+T", "New workspace"),
     ("Ctrl+W", "Close workspace"),
     ("Ctrl+Shift+T", "Reopen workspace"),
-    ("Ctrl+F", "Search this channel"),
     ("Ctrl+Space", "Pause or resume scrolling"),
     ("Ctrl+plus / minus", "Text size (Ctrl+0 resets)"),
-    ("Tab", "Complete @names, emotes and commands"),
-    ("Up / Down", "Sent message history"),
     ("Double-click a divider", "Make the splits equal"),
 ];
 
