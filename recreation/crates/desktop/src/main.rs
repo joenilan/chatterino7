@@ -61,6 +61,7 @@ mod seven_paints;
 mod seven_presence;
 mod similarity;
 mod sound;
+mod spell;
 mod storage;
 mod stream_preview;
 mod stream_status;
@@ -227,6 +228,9 @@ struct ChannelPane {
     custom_mod_buttons: std::rc::Rc<Vec<mod_buttons::ModButton>>,
     /// Combined feed: where messages typed here are sent (one of the sources).
     send_to: Option<String>,
+    /// Spellcheck the message box, and what it found in the current draft.
+    spellcheck: bool,
+    spelling: Vec<(String, Vec<String>)>,
     /// Suspicious labels for messages that haven't arrived yet (by message ID).
     suspicious_pending: std::collections::HashMap<String, String>,
     send_as: Option<SharedString>,
@@ -294,6 +298,7 @@ impl ChannelPane {
             if let InputEvent::Change = event {
                 this.compose_revision = this.compose_revision.wrapping_add(1);
                 this.complete_query(false, cx);
+                this.check_spelling(cx);
                 cx.emit(PaneEvent::DraftChanged);
             }
             cx.notify();
@@ -329,6 +334,8 @@ impl ChannelPane {
             mod_buttons: false,
             custom_mod_buttons: Default::default(),
             send_to: combined::is_combined(name).then(|| combined::sources(name)[0].clone()),
+            spellcheck: false,
+            spelling: Vec::new(),
             suspicious_pending: Default::default(),
             send_as: None,
             media,
@@ -1088,6 +1095,7 @@ impl Render for ChannelPane {
                     }
                 }))
                 .children(self.render_automod(cx))
+                .children(self.render_spelling(cx))
                 .children(self.render_reply_target(cx))
                 .children(picker)
                 .children(suggestions)

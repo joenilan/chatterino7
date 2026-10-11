@@ -258,6 +258,15 @@ impl Workbench {
                     open_button("settings-commands", "Edit").on_click(cx.listener(|this, _, w, cx| this.open_custom_commands(None, w, cx))),
                 ))
                 .child(row(
+                    "Spellcheck",
+                    "English. Misspellings show above the message box with fixes; emotes, names and chat words like lol or pog are skipped.",
+                    Switch::new("settings-spellcheck").checked(self.spellcheck).on_click(cx.listener(|this, on: &bool, _, cx| {
+                        this.spellcheck = *on;
+                        this.schedule_save(cx);
+                        cx.notify();
+                    })),
+                ))
+                .child(row(
                     "Repeated messages",
                     "When someone posts nearly the same thing again within a minute (90% alike), like Chatterino's similar-message filter.",
                     gpui_kit::component::tab::TabBar::new("settings-similar")

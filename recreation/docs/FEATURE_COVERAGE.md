@@ -124,7 +124,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | IN08 | Utility commands | Part | Twitch utility commands (/w, /color, /block) via Helix ([details](STREAMER_TOOLS.md)); /me, chatters/mods/VIP lists, popout remain. | controllers/commands/builtin/Misc.cpp; builtin/twitch |
 | IN09 | Broadcaster commands | Part | /settitle, /setgame, /marker, /commercial, /raid, /announce, /shoutout via Helix with capability checks; /clip and live acceptance remain. | controllers/commands/builtin/twitch |
 | IN10 | Configurable hotkeys | Part | Fixed shortcuts exist; action registry/editor, conflicts, contexts, arguments and import/export remain. | controllers/hotkeys; settingspages/KeyboardSettingsPage.cpp |
-| IN11 | Spellcheck | Backlog | Optional dictionaries/languages/suggestions with editable-input integration. | controllers/spellcheck |
+| IN11 | Spellcheck | Part | English spellcheck (spellbook + bundled SCOWL en_US) with a suggestion bar above the composer; emotes, names and chat slang skipped ([details](SPELLCHECK.md)). Other languages and a personal dictionary pending. | controllers/spellcheck |
 | IN12 | Font and input QoL | Part | Native font controls/reset and saved-setting persistence observed. Continue feedback/focus/cancellation polish. | widgets/splits/SplitInput.cpp; Jawjack workspace.rs |
 
 ### Emotes and Chatterino7 identity

@@ -152,3 +152,95 @@ impl ChannelPane {
         }
     }
 }
+
+impl ChannelPane {
+    /// Re-check the draft; emotes, chatter names and slash commands are skipped.
+    pub fn check_spelling(&mut self, cx: &mut Context<Self>) {
+        if !self.spellcheck {
+            if !self.spelling.is_empty() {
+                self.spelling.clear();
+            }
+            return;
+        }
+        let text = self.draft.read(cx).value().to_string();
+        if text.trim_start().starts_with('/') {
+            self.spelling.clear();
+            return;
+        }
+        let channel = self.name.to_string();
+        let catalog = self.catalog.clone();
+        let timeline = self.timeline.clone();
+        let known = move |word: &str| {
+            let lower = word.to_lowercase();
+            timeline
+                .borrow()
+                .messages()
+                .iter()
+                .rev()
+                .take(300)
+                .any(|m| {
+                    m.login.as_deref() == Some(lower.as_str())
+                        || m.display_name.eq_ignore_ascii_case(word)
+                })
+                || catalog
+                    .borrow()
+                    .expand(&channel, "", &[chat_core::Fragment::Text(word.to_owned())])
+                    .iter()
+                    .any(|f| matches!(f, chat_core::Fragment::Emote { .. }))
+        };
+        self.spelling = crate::spell::check(&text, &known, 3);
+    }
+    /// "Spelling: teh → the" above the message box; click a suggestion to fix it.
+    pub fn render_spelling(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if self.spelling.is_empty() {
+            return None;
+        }
+        Some(
+            div()
+                .h_flex()
+                .flex_wrap()
+                .items_center()
+                .gap_1()
+                .mb_1()
+                .text_size(px(11.))
+                .text_color(rgb(theme::MUTED))
+                .child("Spelling:")
+                .children(self.spelling.iter().enumerate().flat_map(
+                    |(index, (word, suggestions))| {
+                        let mut items: Vec<AnyElement> = vec![
+                            div()
+                                .text_color(rgb(0xF29D9D))
+                                .child(word.clone())
+                                .into_any_element(),
+                        ];
+                        if suggestions.is_empty() {
+                            items.push(div().child("(no suggestions)").into_any_element());
+                        }
+                        for (n, suggestion) in suggestions.iter().enumerate() {
+                            let (word, suggestion) = (word.clone(), suggestion.clone());
+                            items.push(
+                                Button::new(("spell-fix", index * 10 + n))
+                                    .xsmall()
+                                    .ghost()
+                                    .label(format!("→ {suggestion}"))
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        let text = this.draft.read(cx).value().to_string();
+                                        let fixed =
+                                            crate::spell::replace_word(&text, &word, &suggestion);
+                                        this.draft.update(cx, |input, cx| {
+                                            input.set_value(fixed, window, cx)
+                                        });
+                                        this.check_spelling(cx);
+                                        cx.emit(PaneEvent::DraftChanged);
+                                        cx.notify();
+                                    }))
+                                    .into_any_element(),
+                            );
+                        }
+                        items
+                    },
+                ))
+                .into_any_element(),
+        )
+    }
+}

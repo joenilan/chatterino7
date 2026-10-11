@@ -210,6 +210,7 @@ pub struct Workbench {
     blocks: crate::blocks::Blocks,
     hide_blocked: bool,
     similar_mode: crate::similarity::Mode,
+    spellcheck: bool,
     mod_buttons: bool,
     custom_mod_buttons: std::rc::Rc<Vec<crate::mod_buttons::ModButton>>,
     mod_button_inputs: Option<(Entity<InputState>, Entity<InputState>)>,
@@ -645,6 +646,7 @@ impl Workbench {
             last_raid: None,
             shouted: Default::default(),
             obs_found: None,
+            spellcheck: state["spellcheck"].as_bool().unwrap_or(false),
             similar_mode: crate::similarity::Mode::from_key(
                 state["similar_messages"].as_str().unwrap_or(""),
             ),
@@ -942,6 +944,14 @@ impl Workbench {
                 let on = self.mod_buttons;
                 pane.update(cx, |p, cx| {
                     p.mod_buttons = on;
+                    cx.notify();
+                });
+            }
+            if pane.read(cx).spellcheck != self.spellcheck {
+                let on = self.spellcheck;
+                pane.update(cx, |p, cx| {
+                    p.spellcheck = on;
+                    p.check_spelling(cx);
                     cx.notify();
                 });
             }
@@ -2277,6 +2287,7 @@ impl Workbench {
         value["popouts"] = json!(self.popout_channels(cx));
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
+        value["spellcheck"] = json!(self.spellcheck);
         value["mod_buttons"] = json!(self.mod_buttons);
         value["custom_mod_buttons"] = crate::mod_buttons::json(&self.custom_mod_buttons);
         value["follows_open"] = json!(self.follows_open);
