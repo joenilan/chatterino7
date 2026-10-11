@@ -189,6 +189,12 @@ pub struct Workbench {
     pinged: std::collections::VecDeque<String>,
     /// Channels in their own windows; reopened on the next launch.
     popouts: Vec<popout::Popout>,
+    streamer_mode: crate::streamer_mode::Mode,
+    streamer_detector: crate::streamer_mode::Detector,
+    /// Mute ping sounds while streamer mode is active.
+    streamer_mute: bool,
+    /// Streamer mode is active right now (On, or Automatic with broadcasting software).
+    streamer_live: bool,
     restore_popouts: Vec<String>,
     live: crate::live::LiveChat,
     streams: crate::stream_status::Streams,
@@ -531,6 +537,12 @@ impl Workbench {
                 .unwrap_or(0.6),
             pinged: Default::default(),
             popouts: Vec::new(),
+            streamer_mode: crate::streamer_mode::Mode::from_key(
+                state["streamer_mode"]["mode"].as_str().unwrap_or(""),
+            ),
+            streamer_detector: crate::streamer_mode::Detector::new(),
+            streamer_mute: state["streamer_mode"]["mute"].as_bool().unwrap_or(false),
+            streamer_live: false,
             restore_popouts: state["popouts"]
                 .as_array()
                 .into_iter()
@@ -771,6 +783,10 @@ impl Workbench {
         // Keep each composer's "send as" picker in step with the signed-in accounts.
         let options = std::rc::Rc::new(self.send_as_options(cx));
         for pane in &panes {
+            if pane.read(cx).streamer_mode != self.streamer_live {
+                let live = self.streamer_live;
+                pane.update(cx, |p, _| p.streamer_mode = live);
+            }
             let held = self
                 .automod
                 .get(pane.read(cx).name.as_ref())
@@ -1091,6 +1107,13 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) {
         self.settings = false;
+        if self.streamer_live {
+            window.push_notification(
+                Notification::info("Private notes stay hidden while streamer mode is on (Settings → Streamer mode)."),
+                cx,
+            );
+            return;
+        }
         let editor = if let Some(editor) = &self.notes_editor {
             editor.clone()
         } else {
@@ -1931,6 +1954,8 @@ impl Workbench {
         value["active_account"] = accounts["active_account"].clone();
         value["send_as"] = json!(self.send_as);
         value["popouts"] = json!(self.popout_channels(cx));
+        value["streamer_mode"] =
+            json!({"mode": self.streamer_mode.key(), "mute": self.streamer_mute});
         value["sound"] = json!({
             "mentions": self.sound_mentions,
             "highlights": self.sound_highlights,
@@ -3537,6 +3562,11 @@ fn valid_channel(value: &str) -> Option<String> {
 }
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.streamer_live = match self.streamer_mode {
+            crate::streamer_mode::Mode::On => true,
+            crate::streamer_mode::Mode::Off => false,
+            crate::streamer_mode::Mode::Automatic => self.streamer_detector.detected(),
+        };
         for channel in std::mem::take(&mut self.restore_popouts) {
             self.open_popout(channel, cx);
         }
@@ -3891,6 +3921,24 @@ impl Render for Workbench {
                             .h_full()
                             .window_control_area(WindowControlArea::Drag),
                     )
+                    .when(self.streamer_live, |el| {
+                        el.child(
+                            Button::new("streamer-mode-pill")
+                                .ghost()
+                                .xsmall()
+                                .icon(Icon::new(gpui_kit::assets::IconName::Tv))
+                                .label("Streamer mode")
+                                .tooltip(
+                                    "Private notes, whisper text and stream thumbnails are hidden",
+                                )
+                                .on_click(cx.listener(|this, _, w, cx| {
+                                    this.settings_section = 5;
+                                    if !this.settings {
+                                        this.toggle_settings(w, cx);
+                                    }
+                                })),
+                        )
+                    })
                     .child({
                         let unread = self.whispers.unread();
                         Button::new("whispers-menu")

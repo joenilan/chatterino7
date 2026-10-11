@@ -53,6 +53,7 @@ mod storage;
 mod stream_preview;
 mod stream_status;
 mod streamer_bot;
+mod streamer_mode;
 mod studio;
 mod theme;
 mod twitch_actions;
@@ -197,6 +198,8 @@ struct ChannelPane {
     automod: std::rc::Rc<Vec<automod::Held>>,
     /// While copying existing chat into a new popout: no pings for old messages.
     quiet_pings: bool,
+    /// Streamer mode is active: no stream thumbnails in the header card.
+    streamer_mode: bool,
     send_as: Option<SharedString>,
     connection: String,
     connected: bool,
@@ -289,6 +292,7 @@ impl ChannelPane {
             send_as_options: Default::default(),
             automod: Default::default(),
             quiet_pings: false,
+            streamer_mode: false,
             send_as: None,
             media,
             catalog,
@@ -711,10 +715,10 @@ impl Render for ChannelPane {
                                 cx.stop_propagation();
                             }))
                             .tooltip({
-                                let (channel, info, media) = (self.name.to_string(), self.stream.clone(), self.media.clone());
+                                let (channel, info, media, hide) = (self.name.to_string(), self.stream.clone(), self.media.clone(), self.streamer_mode);
                                 move |_, cx| {
                                     let (channel, info, media) = (channel.clone(), info.clone(), media.clone());
-                                    cx.new(|cx| stream_preview::StreamPreview::new(channel, info, media, cx)).into()
+                                    cx.new(|cx| stream_preview::StreamPreview::new(channel, info, media, hide, cx)).into()
                                 }
                             })
                             .child(format!("# {}", self.name)),

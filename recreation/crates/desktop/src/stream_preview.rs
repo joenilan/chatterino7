@@ -22,11 +22,13 @@ impl StreamPreview {
         channel: String,
         info: Option<StreamInfo>,
         media: Rc<RefCell<MediaCache>>,
+        // Streamer mode: no thumbnail (it could put another stream on yours).
+        hide_image: bool,
         cx: &mut Context<Self>,
     ) -> Self {
         let key = info
             .as_ref()
-            .filter(|i| i.live)
+            .filter(|i| i.live && !hide_image)
             .and_then(|_| EmoteKey::stream_preview(&channel));
         // The thumbnail may still be downloading; repaint until it arrives.
         if key.is_some() {

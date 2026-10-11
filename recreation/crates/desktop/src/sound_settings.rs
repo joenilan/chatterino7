@@ -19,7 +19,8 @@ impl Workbench {
             crate::attention::Ping::Mention => self.sound_mentions,
             crate::attention::Ping::Highlight => self.sound_highlights,
         };
-        if wanted && (self.sound_focused || !window.is_window_active()) {
+        let muted = self.streamer_live && self.streamer_mute;
+        if wanted && !muted && (self.sound_focused || !window.is_window_active()) {
             crate::sound::play(&self.sound_tone, self.sound_volume);
         }
     }
@@ -135,5 +136,75 @@ impl Workbench {
                     }))
                     .children(["Quiet", "Normal", "Loud"].map(|l| Tab::new().label(l))),
             ))
+    }
+}
+
+impl Workbench {
+    pub(super) fn streamer_rows(&mut self, page: Div, cx: &mut Context<Self>) -> Div {
+        let mode = self.streamer_mode;
+        let status = match (mode, self.streamer_live) {
+            (crate::streamer_mode::Mode::Automatic, true) => {
+                "On now: broadcasting software is running."
+            }
+            (crate::streamer_mode::Mode::Automatic, false) => {
+                "Turns on while OBS, Streamlabs, XSplit, vMix, Twitch Studio, PRISM or Meld is running."
+            }
+            (_, true) => "On now.",
+            (_, false) => "Off.",
+        };
+        page.child(row(
+            "Streamer mode",
+            status,
+            TabBar::new("settings-streamer-mode")
+                .segmented()
+                .selected_index(
+                    crate::streamer_mode::Mode::ALL
+                        .iter()
+                        .position(|m| *m == mode)
+                        .unwrap_or(2),
+                )
+                .on_click(cx.listener(|this, index: &usize, _, cx| {
+                    this.streamer_mode = crate::streamer_mode::Mode::ALL[*index];
+                    this.schedule_save(cx);
+                    cx.notify();
+                }))
+                .children(crate::streamer_mode::Mode::ALL.map(|m| Tab::new().label(m.label()))),
+        ))
+        .child(row(
+            "Mute ping sounds",
+            "Keeps mention pings off your stream's desktop audio.",
+            Switch::new("settings-streamer-mute")
+                .checked(self.streamer_mute)
+                .on_click(cx.listener(|this, on: &bool, _, cx| {
+                    this.streamer_mute = *on;
+                    this.schedule_save(cx);
+                    cx.notify();
+                })),
+        ))
+        .child(heading("While it's on"))
+        .child(row(
+            "Private chatter notes",
+            "The notes editor won't open.",
+            div()
+                .text_size(px(11.))
+                .text_color(rgb(theme::MUTED))
+                .child("Hidden"),
+        ))
+        .child(row(
+            "Whisper notifications",
+            "Say a whisper arrived, not who sent it or what it says.",
+            div()
+                .text_size(px(11.))
+                .text_color(rgb(theme::MUTED))
+                .child("Hidden"),
+        ))
+        .child(row(
+            "Stream thumbnails",
+            "Hovering a channel name shows its info without the preview image.",
+            div()
+                .text_size(px(11.))
+                .text_color(rgb(theme::MUTED))
+                .child("Hidden"),
+        ))
     }
 }

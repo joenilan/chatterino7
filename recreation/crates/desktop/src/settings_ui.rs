@@ -4,12 +4,13 @@ use super::*;
 use gpui_kit::assets::IconName as Kit;
 use gpui_kit::component::switch::Switch;
 
-const SECTIONS: [(&str, Kit); 8] = [
+const SECTIONS: [(&str, Kit); 9] = [
     ("General", Kit::SlidersHorizontal),
     ("Appearance", Kit::Palette),
     ("Chat", Kit::MessageSquareText),
     ("Highlights", Kit::Highlighter),
     ("Notifications", Kit::BellRing),
+    ("Streamer mode", Kit::Tv),
     ("Connections", Kit::Plug),
     ("Shortcuts", Kit::Keyboard),
     ("Updates", Kit::Download),
@@ -253,7 +254,8 @@ impl Workbench {
                     "A notification for each whisper unless that conversation is open.",
                     div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Always on"),
                 )),
-            5 => {
+            5 => self.streamer_rows(page, cx),
+            6 => {
                 let bot: SharedString = if self.bot_settings.enabled && !self.streamer_bot.status.is_empty() {
                     self.streamer_bot.status.clone().into()
                 } else {
@@ -276,7 +278,7 @@ impl Workbench {
                         open_button("settings-bot", "Set up").on_click(cx.listener(|this, _, w, cx| this.open_bot_settings(w, cx))),
                     ))
             }
-            6 => page.children(SHORTCUTS.iter().map(|(keys, what)| {
+            7 => page.children(SHORTCUTS.iter().map(|(keys, what)| {
                 div()
                     .h_flex()
                     .items_center()

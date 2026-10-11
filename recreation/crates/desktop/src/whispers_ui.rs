@@ -24,7 +24,19 @@ impl Workbench {
             return;
         }
         let looking = reading && self.whispers.selected.as_deref() == Some(from_login.as_str());
-        if !looking {
+        if !looking && self.streamer_live {
+            // Streamer mode: say that one arrived, never who or what.
+            let owner = cx.entity().downgrade();
+            window.push_notification(
+                Notification::new()
+                    .title("New whisper")
+                    .message("Hidden while streamer mode is on.")
+                    .on_click(move |_, window, cx| {
+                        let _ = owner.update(cx, |this, cx| this.open_whispers(None, window, cx));
+                    }),
+                cx,
+            );
+        } else if !looking {
             let owner = cx.entity().downgrade();
             let login = from_login.clone();
             window.push_notification(

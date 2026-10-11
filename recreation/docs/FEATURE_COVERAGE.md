@@ -189,7 +189,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | --- | --- | --- | --- | --- |
 | PF01 | Appearance and density | Part | Dark Studio retained; font family/weight, UI scale, timestamps/line/badge/emote options and collapse controls remain. | settingspages/GeneralPage.cpp |
 | PF02 | Accessibility | Part | Toolkit/fixed shortcuts only; screen reader semantics, keyboard-only paths, focus, high contrast, IME/bidi/DPI need acceptance. | Jawjack PLAN.md; native controls |
-| PF03 | Streamer privacy | Backlog | Manual/automatic policy for notes, whispers, thumbnails, restricted users, viewer data and alerts. | singletons/StreamerMode; Settings.hpp |
+| PF03 | Streamer privacy | Part | Off/On/Automatic (broadcasting-software detection); hides notes, whisper text and stream thumbnails, optional ping mute ([details](STREAMER_MODE.md)); viewer data and restricted-user redaction pending. | singletons/StreamerMode; Settings.hpp |
 | PF04 | Optional logs | Backlog | Destination/allowlist/per-stream files, privacy and deletion/retention policy; distinct from transcript memory. | controllers/logging |
 | PF05 | Live notifications | Part | Go-live alerts: per-channel "Notify when live" (tab menu) or every open channel (Appearance & memory), shown in-app and as a Windows notification that opens the channel when clicked. Only an observed offline → live change alerts (channels already live at startup do not). Sounds and quiet hours remain; no live alert observed yet. | controllers/notifications; settingspages/NotificationPage.cpp |
 | PF06 | External playback/tools | Part | Browser URLs exist; Streamlink/custom player/quality/options/mod-view/clip/marker integration remain. | settingspages/ExternalToolsPage.cpp; util/StreamLink |
