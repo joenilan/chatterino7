@@ -78,3 +78,16 @@ needs native review.
 - [7TV cosmetic models](https://github.com/SevenTV/SevenTV/blob/main/shared/src/old_types/cosmetic.rs)
 - Chatterino reference: src/providers/seventv/SeventvPaints.cpp and paints/.
 - Pinned gpui-pre 0.3.8: text_system.rs, elements/text.rs and window.rs.
+
+## Approximate rendering (2026-10-11)
+
+Live traffic showed nearly every current paint carries drop shadows, layers or
+text styling, which previously rejected the whole paint. The supported linear or
+radial brush is now drawn and the omitted parts are recorded as
+`approximation` ("Approximate: shadows not drawn"), shown on the chatter card.
+Layered paints without a top-level brush use their first layer. Image (URL)
+paints and unknown functions still fall back to the name color.
+
+Native Windows, #xqc: 6 of 7 observed definitions rendered approximately and 1
+fell back; painted names kept their original glyph geometry (no gap before the
+colon). Shadows, multi-layer composition and image paints remain open parity work.

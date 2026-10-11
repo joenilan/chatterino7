@@ -8,4 +8,4 @@ Saved notes remain in this Jawjack profile's local workspace file. They are plai
 
 Limits: 2,000 characters per note, 256 saved chatters, and a 192 KiB serialized notes budget to leave space for other workspace preferences. Save queues the existing atomic workspace persistence; application-level storage failures remain surfaced by the workspace save status. Delete requires a second click, and reopening resets that confirmation.
 
-Linux locked build passed. Native focus, storage reload and compact-window appearance are pending manual acceptance.
+Windows 2026-10-11: draft retention across close/reopen, Ctrl+S persistence to workspace.json and two-step deletion were observed. Saved-chatter navigation now sits below the controls so saving never moves them. Reload after app restart and compact appearance are still pending.

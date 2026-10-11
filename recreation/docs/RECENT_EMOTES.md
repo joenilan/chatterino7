@@ -11,4 +11,4 @@ The collection is shared across channel panes during the current account session
 - Search and service filters work without replacing recency order with alphabetical sorting. Mixed providers share one compact grid.
 - Clear removes the recent list across open pickers. Sign-out/account changes and app exit clear it as well. Favorites remain independently saved.
 
-Build validation is Linux-only for this batch. Real send acknowledgement, account switching and picker interaction still need native acceptance.
+Windows 2026-10-11: real sends in the owner's channel were acknowledged and the Recently used collection recorded the emote, restarting empty after relaunch as designed. Account switching is still unverified.

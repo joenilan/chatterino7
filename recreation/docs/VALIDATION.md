@@ -662,3 +662,42 @@ remain unverified while the owner repairs Deadlink's terminal-action limit.
 
 Recovered exact-tree locked/offline cloud build PASSED: Rust 1.99.0, 3m 48s, exit 0.
 This includes all reconstructed badge source and corrected expiry fields.
+
+### Windows native acceptance of the Oct 11 batch — 2026-10-11
+
+Owner profile `JawjackManual-b92a50a5-20261009`, locked Rust 1.99.0 release builds,
+control sessions plus `PrintWindow` screenshots. Saved account restored each launch.
+
+Observed working (real UI, live Twitch traffic):
+- Manual pause held the view while 46 rows arrived; header showed Paused; resume
+  returned to Latest and cleared unread. Last-read divider appeared on departure.
+- Scrolling into history: `n/10000 · History`, unread kept counting.
+- Ctrl-click on a typed mention opened the **mentioned** chatter's card with their
+  retained messages; Ctrl-click on a username opened that sender's card.
+- Private note: unsaved draft survived close/reopen; Ctrl+S wrote workspace.json;
+  two-step delete removed it from disk.
+- Real send in the owner's own channel (Kappa, LUL) echoed and rendered; the
+  Recently used collection recorded the emote. First verified delivered send.
+- FFZ supporter catalog loaded live: 4 definitions, 41,553 grants; `ffz-badge:2`
+  art decoded and rendered. FFZ room-role replacement art was not encountered.
+- Drag-to-split created a two-pane layout; both composers independent.
+
+Defects found and fixed in this pass (each re-observed after the fix):
+- Animated 7TV badges/emotes over 120 frames failed (`frame_limit`) and left blank
+  badge slots → frames are thinned preserving duration; 0 failures afterwards.
+- Display names with trailing whitespace ("1Hugges :") → trimmed like Chatterino.
+- Notes dialog moved Save/Delete under the cursor after saving → stable layout.
+- Chatter cards showed raw ISO dates and badge set IDs → local date, badge titles + art.
+- Jump button covered the centered last-read label → bottom-right, "N new" counting
+  only unread rows below the viewport.
+- 14 of 25 subscription collections stayed "Twitch channel <id>" with initials →
+  batched Helix profile lookups; all names and avatars resolved.
+- Own sent message counted as unread → excluded.
+- Composer grew a "Sent" row, misaligning split composers → inline status.
+- Two splits overflowed a 420 px window, close button clipped → 200 px pane
+  minimum and truncating titles; verified at 436×328.
+- Divider drawn above the first retained row → hidden there.
+- All observed 7TV paints fell back → approximate rendering (6/7 drawn).
+
+Not verified in this pass: hover/Alt-hover pause modes, sent-history browser UI,
+FFZ room-role art, multi-account, long-session memory, reduced motion.

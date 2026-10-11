@@ -12,4 +12,4 @@ References:
 - https://dev.twitch.tv/docs/eventsub/eventsub-reference/#channel-chat-message-event
 - https://dev.twitch.tv/docs/api/guide#ids-are-opaque
 
-Linux locked build verified during implementation. Windows/native visual acceptance remains to be checked with a real typed mention and a mixed emote message.
+Linux locked build verified during implementation. Windows 2026-10-11: Ctrl-click on a real typed mention in #xqc opened the mentioned chatter's card with retained messages. A mention inside an emote-bearing message is still unverified.

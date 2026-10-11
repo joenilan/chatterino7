@@ -43,8 +43,9 @@ blanket “all tests passed” or “complete” label.
 
 ## Priorities that remain
 
-1. Native acceptance of the combined reading, painted-name, mention, recent-emote,
-   notes and custom-badge batch, fixing observed issues without changing user layout.
+1. Native acceptance of the combined batch largely done on Windows 2026-10-11 with
+   eleven observed defects fixed (VALIDATION.md). Remaining: hover/Alt-hover pause,
+   sent-history browser, FFZ room-role art, note reload after restart.
 2. Live acceptance of FFZ supporter/channel grants and remaining 7TV rendering/visibility parity.
 3. Account and channel capability model before moderator write actions; permission
    changes must be deliberate, and viewer chat must keep working when declined.

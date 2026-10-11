@@ -92,7 +92,9 @@ The native pointer command also accepts `button: "middle"` for actual tab-close
 interaction. Inspection reports `close_tab_pending` by stable tab ID, per-pane
 connection status and send-pending booleans. The `offline` value reflects actual
 pane connection state, not a hardcoded preview label. No access/refresh tokens,
-message bodies or draft contents are included. Account restoration remains off
+message bodies or draft contents are included. Controlled launches restore the saved
+account like ordinary launches (re-confirmed on Windows 2026-10-11); the remainder of
+this paragraph predates that behavior:
 for controlled launches; signing in or sending is a real account action.
 
 ## Windows observation — 2026-10-09, 7466e04b
@@ -198,3 +200,11 @@ Attention inspection adds `unread`, `unread_highlights`, `retained_highlights` a
 `control` to dispatch a real Ctrl+wheel event. Shortcuts: Ctrl+Shift+M activity,
 Ctrl+Shift+R mark all open panes read, Ctrl+plus/minus chat font, Ctrl+0 reset.
 No synthetic attention-message injection was added.
+
+## Windows acceptance pass — 2026-10-11
+
+Locked Rust 1.99.0 release builds on Windows, driven through control sessions
+`claude-qa-01`…`claude-qa-14` against the owner's existing profile. Screenshots
+used `PrintWindow`, so other windows covering Jawjack do not corrupt evidence.
+Pointer gestures must not park on the titlebar's close button (x≈1270, y≈15 at
+1296 px wide); use empty titlebar space instead. See VALIDATION.md for results.

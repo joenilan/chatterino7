@@ -63,6 +63,7 @@ new target. Thread/activity jumps also receive this location feedback.
 
 ## Evidence
 
-Locked Linux development compilation passed for this implementation. Native hover,
-Alt transitions, selection, compact sizing and sent-history interaction still need
-runtime acceptance. No new testing UI or automated runtime harness was added.
+Locked Linux development compilation passed for this implementation. Windows 2026-10-11:
+manual pause/resume, last-read divider, history counting and compact splits were
+observed working (VALIDATION.md). Hover and Alt-hover modes, selection while paused
+and the sent-history browser still need runtime acceptance. No new testing UI or automated runtime harness was added.
