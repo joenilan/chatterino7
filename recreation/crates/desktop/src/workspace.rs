@@ -486,8 +486,10 @@ impl Workbench {
             .unwrap_or_else(|| "Workspace saved locally".into());
         let state = loaded.unwrap_or(json!({"version":1}));
         let (accounts, active_account) = Self::load_accounts(&state, cx);
-        let input = cx
-            .new(|cx| InputState::new(window, cx).placeholder("Channel name or twitch.tv/channel"));
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Twitch channel or link, or a YouTube live link")
+        });
         cx.subscribe_in(&input, window, |this: &mut Self, _, event, window, cx| {
             if this.adding && matches!(event, InputEvent::PressEnter { shift: false, .. }) {
                 this.accept_input(window, cx);
@@ -4746,7 +4748,7 @@ impl Render for Workbench {
                                         .child(div().text_size(px(12.)).child(if self.renaming {
                                             "Rename workspace"
                                         } else {
-                                            "Add a Twitch channel to this workspace"
+                                            "Add a channel to this workspace"
                                         }))
                                         .child(
                                             div()

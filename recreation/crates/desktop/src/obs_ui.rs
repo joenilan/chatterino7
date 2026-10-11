@@ -1104,6 +1104,22 @@ impl Workbench {
     }
 }
 
+/// Opens Google's sign-in page in the default browser. For clean demo
+/// recordings, JAWJACK_BROWSER (a browser .exe) and JAWJACK_BROWSER_ARGS
+/// (space-separated, e.g. a fresh --user-data-dir) open it elsewhere.
+fn open_sign_in(url: &str, cx: &App) {
+    if let Some(browser) = std::env::var_os("JAWJACK_BROWSER") {
+        let mut command = std::process::Command::new(browser);
+        if let Some(args) = std::env::var_os("JAWJACK_BROWSER_ARGS") {
+            command.args(args.to_string_lossy().split(' ').filter(|a| !a.is_empty()));
+        }
+        if command.arg(url).spawn().is_ok() {
+            return;
+        }
+    }
+    cx.open_url(url);
+}
+
 const GOOGLE_CLIENT_VAULT: &str = "https://jawjack.zombie.digital/youtube/oauth-client-v1";
 const GOOGLE_TOKEN_VAULT: &str = "https://jawjack.zombie.digital/youtube/oauth-token-v1";
 impl Workbench {
@@ -1198,7 +1214,7 @@ impl Workbench {
         cx.spawn_in(window, async move |view, cx| {
             for _ in 0..50 {
                 if let Ok(url) = urls_rx.try_recv() {
-                    let _ = view.update(cx, |_, cx| cx.open_url(&url));
+                    let _ = view.update(cx, |_, cx| open_sign_in(&url, cx));
                     break;
                 }
                 cx.background_executor()

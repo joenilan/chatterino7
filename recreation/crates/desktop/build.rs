@@ -11,9 +11,11 @@ include!("../../assets/brand/icon_res.rs");
 
 fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
-        let out_dir = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR is set"));
+        let out_dir =
+            std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR is set"));
         embed_icon(
-            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/brand/jawjack.ico"),
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../assets/brand/jawjack.ico"),
             &out_dir,
         );
     }
