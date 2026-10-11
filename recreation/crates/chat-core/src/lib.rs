@@ -83,6 +83,8 @@ pub struct MessagePresentation {
     pub notice: Option<String>,
     pub notice_type: Option<String>,
     pub source: Option<String>,
+    /// Loaded from recent history rather than received live.
+    pub historical: bool,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
@@ -271,6 +273,7 @@ impl Timeline {
                 message.presentation = MessagePresentation {
                     local_alias: message.presentation.local_alias.take(),
                     local_color: message.presentation.local_color,
+                    historical: message.presentation.historical,
                     ..MessagePresentation::default()
                 };
                 if let Some(reply) = &mut message.reply {

@@ -33,6 +33,7 @@ mod message_scroller;
 mod name_paint;
 mod owned_emotes;
 mod profiles;
+mod recent_messages;
 mod replies;
 mod rich_messages;
 mod room_settings;
@@ -357,6 +358,8 @@ impl ChannelPane {
         cx.notify();
     }
     fn received(&mut self, mut event: chat_core::Event, cx: &mut Context<Self>) {
+        let historical =
+            matches!(&event, chat_core::Event::Message(m) if m.presentation.historical);
         if let chat_core::Event::Message(message) = &mut event {
             message.fragments =
                 self.catalog
@@ -373,7 +376,8 @@ impl ChannelPane {
             chat_core::Change::Appended { evicted } => {
                 let now = Instant::now();
                 self.entrances.retain(|entry| entry.active(now));
-                if self.scroller.read(cx).is_following_tail() && !cx.reduce_motion() {
+                if !historical && self.scroller.read(cx).is_following_tail() && !cx.reduce_motion()
+                {
                     // Keep animating the newest visible arrivals even in busy chat.
                     // Retire the oldest effect rather than disabling all motion.
                     if self.entrances.len() >= 12 {
@@ -805,7 +809,8 @@ impl Render for ChannelPane {
                                 .when_some(pulse,|el,(_,at)|{let alpha=if cx.reduce_motion(){255}else{(255.*(1.-at.elapsed().as_secs_f32()/1.2).clamp(0.,1.))as u32};el.border_color(rgba((0x9DD8CB<<8)|alpha))})
                                 .left(px(12.0 * (1.0 - eased)))
                                 .top(px(6.0 * (1.0 - eased)))
-                                .opacity(0.25 + 0.75 * eased)
+                                // Recent history is dimmed, as in Chatterino.
+                                .opacity(if message.presentation.historical { 0.6 } else { 0.25 + 0.75 * eased })
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()

@@ -143,7 +143,8 @@ impl Attention {
             .identity
             .as_ref()
             .is_some_and(|(user, _)| &message.user_id == user);
-        if !own {
+        // History loaded on open is context, not something new to catch up on.
+        if !own && !message.presentation.historical {
             self.unread.insert(row);
         }
         self.arrivals.insert(row, Instant::now());

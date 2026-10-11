@@ -74,7 +74,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | AC07 | Server timestamps and message flags | Next | Extend normalized Message, time display/copy/logging, known and unknown event metadata. | messages/MessageBuilder.cpp; singletons/Settings.hpp |
 | AC08 | System notices and typed events | Next | Sub/gift/raid/announcement/reward/Bits/streak/etc. rows; distinct from connection status. | providers/twitch/IrcMessageHandler.cpp |
 | AC09 | Shared Chat provenance | Part | Cross-source reply guard only; origin IDs, badges, source routing/dedup/moderation still missing. | providers/twitch/TwitchChannel.cpp; messages/MessageBuilder.cpp |
-| AC10 | Recent history/backfill | Research | Retained history exists; optional recent-message service, trust/privacy/source choice and prepend anchors do not. | providers/recentmessages |
+| AC10 | Recent history/backfill | Part | Recent messages from recent-messages.robotty.de on open, parsed through the live message builder, dimmed and not unread ([details](RECENT_MESSAGES.md)); prepend into non-empty panes and reconnect gap fill remain. | providers/recentmessages |
 | AC11 | Bounded retention | Part | Native history cap/settings observed; day-long memory, selected/pruned rows and all duplicate-view edges remain. | common/Channel.cpp; widgets/helper/ChannelView.cpp |
 | AC12 | Room settings and capability state | Part | Public initial snapshot/live updates and compact hints implemented. Per-channel role (broadcaster/moderator/viewer) and scope checks exist ([details](STREAMER_TOOLS.md)); exemptions remain. | providers/twitch/api; widgets/splits/SplitHeader.cpp |
 

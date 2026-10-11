@@ -966,100 +966,19 @@ fn deliver(
     }
     let text = |key: &str| e[key].as_str().unwrap_or("").to_owned();
     let event = match v["payload"]["subscription"]["type"].as_str().unwrap_or("") {
-        "channel.chat.message" | "channel.chat.notification" => ChatEvent::Message(Message {
-            sent_at: v["metadata"]["message_timestamp"]
-                .as_str()
-                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                .map(|time| time.timestamp()),
-            id: if text("message_id").is_empty() {
-                envelope.to_owned()
-            } else {
-                text("message_id")
-            },
-            channel_id: channel.clone(),
-            user_id: text("chatter_user_id"),
-            display_name: if e["chatter_is_anonymous"].as_bool() == Some(true) {
-                "Anonymous".into()
-            } else {
-                // Twitch can send display names with stray whitespace; Chatterino trims too.
-                let name = text("chatter_user_name");
-                match name.trim() {
-                    "" => "Twitch".into(),
-                    trimmed => trimmed.to_owned(),
-                }
-            },
-            login: chat_core::twitch_login(&text("chatter_user_login")),
-            replyable: v["payload"]["subscription"]["type"] == "channel.chat.message"
-                && e["source_broadcaster_user_id"]
+        kind @ ("channel.chat.message" | "channel.chat.notification") => {
+            ChatEvent::Message(chat_message(
+                e,
+                envelope,
+                &channel,
+                id,
+                v["metadata"]["message_timestamp"]
                     .as_str()
-                    .is_none_or(|source| source == id),
-            reply: parse_reply(&e["reply"]),
-            mentions: e["message"]["fragments"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter(|f| f["type"] == "mention")
-                .filter_map(|f| f["mention"]["user_id"].as_str())
-                .filter(|s| !s.is_empty() && s.len() <= 255 && !s.chars().any(char::is_control))
-                .take(64)
-                .map(str::to_owned)
-                .collect(),
-            name_color: e["color"]
-                .as_str()
-                .and_then(|s| s.strip_prefix('#'))
-                .filter(|s| s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit()))
-                .and_then(|s| u32::from_str_radix(s, 16).ok()),
-            badges: e["badges"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .take(8)
-                .filter_map(|b| {
-                    Some(chat_core::Badge {
-                        set_id: b["set_id"].as_str()?.chars().take(128).collect(),
-                        id: b["id"].as_str()?.chars().take(128).collect(),
-                    })
-                })
-                .collect(),
-            fragments: twitch_fragments(&e["message"]),
-            presentation: chat_core::MessagePresentation {
-                local_alias: None,
-                local_color: None,
-                kind: e["message_type"]
-                    .as_str()
-                    .unwrap_or("text")
-                    .chars()
-                    .take(80)
-                    .collect(),
-                bits: e["cheer"]["bits"].as_u64().unwrap_or(0),
-                reward_id: e["channel_points_custom_reward_id"]
-                    .as_str()
-                    .map(|s| s.chars().take(128).collect()),
-                notice_type: e["notice_type"]
-                    .as_str()
-                    .map(|s| s.chars().take(80).collect()),
-                notice: e["system_message"]
-                    .as_str()
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.chars().take(1200).collect()),
-                // Provenance follows the source ID even when its optional display
-                // name is unavailable, so destination-room cosmetics stay suppressed.
-                source: e["source_broadcaster_user_id"]
-                    .as_str()
-                    .filter(|source| !source.is_empty() && *source != id)
-                    .map(|_| {
-                        e["source_broadcaster_user_name"]
-                            .as_str()
-                            .map(str::trim)
-                            .filter(|s| !s.is_empty())
-                            .unwrap_or("Shared Chat")
-                            .chars()
-                            .take(80)
-                            .collect()
-                    }),
-            },
-            deleted: false,
-        }),
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|time| time.timestamp()),
+                kind == "channel.chat.message",
+            ))
+        }
         "channel.chat.message_delete" => ChatEvent::DeleteMessage {
             channel_id: channel.clone(),
             message_id: text("message_id"),
@@ -1074,6 +993,111 @@ fn deliver(
         _ => return,
     };
     let _ = tx.send((version, Event::Chat(channel, event)));
+}
+
+/// Build a message from an EventSub chat event (also used for recent history,
+/// which is converted into the same shape).
+pub(crate) fn chat_message(
+    e: &Value,
+    envelope: &str,
+    channel: &str,
+    id: &str,
+    sent_at: Option<i64>,
+    chat: bool,
+) -> Message {
+    let text = |key: &str| e[key].as_str().unwrap_or("").to_owned();
+    Message {
+        sent_at,
+        id: if text("message_id").is_empty() {
+            envelope.to_owned()
+        } else {
+            text("message_id")
+        },
+        channel_id: channel.to_owned(),
+        user_id: text("chatter_user_id"),
+        display_name: if e["chatter_is_anonymous"].as_bool() == Some(true) {
+            "Anonymous".into()
+        } else {
+            // Twitch can send display names with stray whitespace; Chatterino trims too.
+            let name = text("chatter_user_name");
+            match name.trim() {
+                "" => "Twitch".into(),
+                trimmed => trimmed.to_owned(),
+            }
+        },
+        login: chat_core::twitch_login(&text("chatter_user_login")),
+        replyable: chat
+            && e["source_broadcaster_user_id"]
+                .as_str()
+                .is_none_or(|source| source == id),
+        reply: parse_reply(&e["reply"]),
+        mentions: e["message"]["fragments"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|f| f["type"] == "mention")
+            .filter_map(|f| f["mention"]["user_id"].as_str())
+            .filter(|s| !s.is_empty() && s.len() <= 255 && !s.chars().any(char::is_control))
+            .take(64)
+            .map(str::to_owned)
+            .collect(),
+        name_color: e["color"]
+            .as_str()
+            .and_then(|s| s.strip_prefix('#'))
+            .filter(|s| s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+            .and_then(|s| u32::from_str_radix(s, 16).ok()),
+        badges: e["badges"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .take(8)
+            .filter_map(|b| {
+                Some(chat_core::Badge {
+                    set_id: b["set_id"].as_str()?.chars().take(128).collect(),
+                    id: b["id"].as_str()?.chars().take(128).collect(),
+                })
+            })
+            .collect(),
+        fragments: twitch_fragments(&e["message"]),
+        presentation: chat_core::MessagePresentation {
+            local_alias: None,
+            local_color: None,
+            kind: e["message_type"]
+                .as_str()
+                .unwrap_or("text")
+                .chars()
+                .take(80)
+                .collect(),
+            bits: e["cheer"]["bits"].as_u64().unwrap_or(0),
+            reward_id: e["channel_points_custom_reward_id"]
+                .as_str()
+                .map(|s| s.chars().take(128).collect()),
+            notice_type: e["notice_type"]
+                .as_str()
+                .map(|s| s.chars().take(80).collect()),
+            notice: e["system_message"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.chars().take(1200).collect()),
+            // Provenance follows the source ID even when its optional display
+            // name is unavailable, so destination-room cosmetics stay suppressed.
+            source: e["source_broadcaster_user_id"]
+                .as_str()
+                .filter(|source| !source.is_empty() && *source != id)
+                .map(|_| {
+                    e["source_broadcaster_user_name"]
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("Shared Chat")
+                        .chars()
+                        .take(80)
+                        .collect()
+                }),
+            historical: false,
+        },
+        deleted: false,
+    }
 }
 
 fn twitch_fragments(message: &Value) -> Vec<Fragment> {

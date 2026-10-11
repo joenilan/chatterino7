@@ -149,6 +149,9 @@ pub struct Workbench {
     streams: crate::stream_status::Streams,
     capabilities: crate::capabilities::Capabilities,
     chatters: crate::chatters::Chatters,
+    recent: crate::recent_messages::RecentMessages,
+    recent_enabled: bool,
+    recent_requested: std::collections::HashSet<String>,
     updates: crate::updates::Updates,
     announced_update: Option<String>,
     live_workspaces: bool,
@@ -381,6 +384,9 @@ impl Workbench {
             streams: crate::stream_status::Streams::new(),
             capabilities: crate::capabilities::Capabilities::new(),
             chatters: crate::chatters::Chatters::new(),
+            recent: crate::recent_messages::RecentMessages::new(),
+            recent_enabled: state["recent_messages"].as_bool().unwrap_or(true),
+            recent_requested: Default::default(),
             updates: {
                 let mut updates = crate::updates::Updates::new();
                 updates.enabled = state["update_checks"].as_bool().unwrap_or(true);
@@ -583,6 +589,7 @@ impl Workbench {
             cx.notify();
         }
         self.pump_imported_nicknames(cx);
+        self.pump_recent_messages(cx);
         if self.updates.auto_check_due() {
             self.updates.check();
         }
@@ -1353,6 +1360,40 @@ impl Workbench {
         .detach();
         pane
     }
+    /// Request recent history once per opened channel (visible ones first) and
+    /// fill panes that have not received anything yet.
+    fn pump_recent_messages(&mut self, cx: &mut Context<Self>) {
+        let open: Vec<String> = self
+            .tabs
+            .iter()
+            .flat_map(|t| t.panes.iter())
+            .map(|p| p.read(cx).name.to_string())
+            .collect();
+        self.recent_requested.retain(|c| open.contains(c));
+        if self.recent_enabled {
+            for channel in self.connection_priority(cx) {
+                if self.recent_requested.insert(channel.clone()) {
+                    self.recent.request(&channel);
+                }
+            }
+        }
+        while let Some((channel, result)) = self.recent.poll() {
+            let Ok(messages) = result else { continue };
+            for pane in self.tabs.iter().flat_map(|t| t.panes.iter()) {
+                if pane.read(cx).name.as_ref() != channel
+                    || !pane.read(cx).timeline.borrow().messages().is_empty()
+                {
+                    continue;
+                }
+                pane.update(cx, |p, cx| {
+                    for message in &messages {
+                        p.received(chat_core::Event::Message(message.clone()), cx);
+                    }
+                    p.scroller.update(cx, |s, cx| s.scroll_to_end(cx));
+                });
+            }
+        }
+    }
     /// Download the published installer, or start it once verified.
     fn update_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.updates.ready() {
@@ -1527,7 +1568,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"recent_messages":self.recent_enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
@@ -3085,6 +3126,9 @@ impl Render for Workbench {
                                     .selected(limit==self.history_limit).when(limit==self.history_limit,|b|b.primary()).on_click(cx.listener(move|this,_,_,cx|this.change_history_limit(limit,cx)))
                             )))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Image cache is separately bounded to 48 MiB. Visible chat rows are drawn on demand."))
+                            .child(Button::new("recent-messages").small().label(if self.recent_enabled { "✓ Load recent messages" } else { "Load recent messages" }).selected(self.recent_enabled).when(self.recent_enabled,|b|b.primary())
+                                .on_click(cx.listener(|this,_,_,cx|{this.recent_enabled = !this.recent_enabled;this.schedule_save(cx);cx.notify();})))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Shows recent chat when a channel opens, from {} (the service Chatterino uses). It receives the channel names you open.", crate::recent_messages::SERVICE)))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Tabs, splits, channel drafts and appearance are saved locally."))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Updates"))
                             .child(div().text_size(px(12.)).child(self.render_updates(cx)))
