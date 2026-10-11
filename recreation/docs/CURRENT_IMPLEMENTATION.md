@@ -32,6 +32,12 @@ cells as proof that the newer code is absent. Native acceptance remains separate
 - **Twitch rich media:** GIF preview cards and bounded duration-preserving animation
   sampling. Live provider examples still require acceptance. [GIFs](TWITCH_GIF_PREVIEWS.md)
 
+- **Import from Chatterino:** read-only preview and import of layout, highlights,
+  nicknames, ignored phrases, commands and display preferences. [Import](CHATTERINO_IMPORT.md)
+- **AC04 / AT06 / AT03:** sharded EventSub connections up to 150 channels with
+  incremental changes ([connections](LIVE_CONNECTIONS.md)); local ignores
+  ([ignores](IGNORES.md)); regex highlight rules.
+
 ## Evidence boundary
 
 These recent batches compile in the Linux development environment. Focused source

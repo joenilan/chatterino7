@@ -52,3 +52,12 @@ exact sender/channel matching, rule priority, invalid channel scopes, own/delete
 messages and color cleanup. This is not Windows UI or live-event acceptance.
 The new editor's native Windows workflow and incoming-live-chat colors still need
 runtime review. No CI workflow or permanent test UI was added.
+
+## Regex rules (2026-10-11)
+
+A rule can be **Regex** instead of plain text (up to 200 characters, bounded
+compile size). Regex message rules match the whole original message, emote codes
+included, like Chatterino; sender rules match the login. Whole-word applies to
+plain text only. Option groups show the current choice as selected.
+Windows: `^[A-Z !?]+$` (match case) highlighted all-caps live #xqc messages,
+including all-caps emote codes, and was removed afterwards.

@@ -68,7 +68,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | AC01 | Device login and saved account | Part | Native sign-in/restore observed; interrupted login, refresh/revocation and secure removal need broader real-use evidence. | controllers/accounts; providers/twitch/TwitchAccountManager.cpp |
 | AC02 | Multiple accounts and switching | Backlog | Account manager, per-account grants/identity isolation, deliberate composer/account changes. | controllers/accounts |
 | AC03 | Anonymous reading | Research | Preserve as a compatibility target; evaluate current supported transport and auth constraints. | providers/twitch/TwitchIrcServer.cpp |
-| AC04 | EventSub lifecycle | Part | Existing reconnect/dedup/bounded queue; long-session, revocation, suspend and subscription-capacity recovery remain. | providers/twitch/eventsub; TwitchReadConnectionPool.cpp |
+| AC04 | EventSub lifecycle | Part | Sharded over up to three sockets (150 channels), incremental subscribe/delete, paced requests, per-channel revocation ([details](LIVE_CONNECTIONS.md)); long-session, suspend and three-socket acceptance remain. | providers/twitch/eventsub; TwitchReadConnectionPool.cpp |
 | AC05 | Text send and acknowledgements | Part | Source inspects send/drop/uncertainty; actual delivered send unverified. Add permission/room-aware feedback. | providers/twitch/TwitchChannel.cpp |
 | AC06 | Incoming delete/user clear/channel clear | Part | Redaction implemented, including reply references; real moderation-driven acceptance remains. | messages/MessageFlag.hpp; providers/twitch/eventsub |
 | AC07 | Server timestamps and message flags | Next | Extend normalized Message, time display/copy/logging, known and unknown event metadata. | messages/MessageBuilder.cpp; singletons/Settings.hpp |
@@ -154,10 +154,10 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | --- | --- | --- | --- | --- |
 | AT01 | Unread and retained activity | Part | Native unread/tail clearing, activity filters and Mark all read observed; Jump and inactive/offscreen edges unverified. | Jawjack attention.rs; activity.rs |
 | AT02 | Basic mentions and highlight words | Part | Native custom-word highlighting observed; natural own-mention/reply matching unverified. | controllers/highlights; settingspages/HighlightingPage.cpp |
-| AT03 | Advanced highlight rules | Backlog | Regex/case/user/badge rules, colors, priority/exclusions and bounded evaluation. | controllers/highlights |
+| AT03 | Advanced highlight rules | Part | Plain/regex, case, sender and channel rules with colors and priority exist; badge rules, exclusions, sounds remain. | controllers/highlights |
 | AT04 | Special-event highlight policies | Backlog | Whisper/sub/reward/first-message/announcement/AutoMod/thread rules. | singletons/Settings.hpp |
 | AT05 | Sounds, taskbar and attention preferences | Backlog | Per-rule/per-channel sound/mute, foreground behavior, duration and privacy controls. | controllers/pings; sound; highlights |
-| AT06 | Local ignores and replacements | Backlog | Phrase/regex replacement, exclusions and safe display semantics. | controllers/ignores; settingspages/IgnoresPage.cpp |
+| AT06 | Local ignores and replacements | Part | Chatter and phrase/regex hide/replace implemented ([details](IGNORES.md)); exclusions and show-hidden display remain. | controllers/ignores; settingspages/IgnoresPage.cpp |
 | AT07 | Twitch blocks | Backlog | Approved account-backed block sync/actions, local visibility policy and clear distinction from local ignore. | controllers/ignores |
 | AT08 | Message filter language | Backlog | Named typed expressions, validation, per-view selection and regex limits. Live-only tab filtering is unrelated. | controllers/filters/lang; FilterSet.cpp |
 | AT09 | Similarity suppression | Backlog | Bounded threshold/window/user rules, dim/hide and highlight interaction. | messages/MessageBuilder.cpp; Settings.hpp |
