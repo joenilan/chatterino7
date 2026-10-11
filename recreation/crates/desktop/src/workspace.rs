@@ -12,6 +12,8 @@ mod pane_navigation;
 mod roles;
 #[path = "streamer_bot_ui.rs"]
 mod streamer_bot_ui;
+#[path = "whispers_ui.rs"]
+mod whispers_ui;
 #[path = "workspace_search.rs"]
 mod workspace_search;
 use crate::dock::Dock;
@@ -70,6 +72,7 @@ gpui_kit::actions!(
         EditCustomCommands,
         EditIgnores,
         EditEventHighlights,
+        OpenWhispers,
         ChooseSetup,
         ToggleStudio,
         ImportChatterino,
@@ -162,6 +165,9 @@ pub struct Workbench {
     experience: roles::Experience,
     streamer_bot: crate::streamer_bot::StreamerBot,
     feed: crate::activity_feed::Feed,
+    whispers: crate::whispers::Whispers,
+    whisper_input: Option<Entity<InputState>>,
+    whispers_drawn: std::time::Instant,
     engagement: crate::engagement::Engagement,
     feed_filter: Option<crate::activity_feed::Kind>,
     /// Studio tab: 0 Activity, 1 Stream, 2 Tools.
@@ -419,6 +425,9 @@ impl Workbench {
             experience: roles::Experience::from_key(state["experience"].as_str().unwrap_or("")),
             streamer_bot: crate::streamer_bot::StreamerBot::new(),
             feed: Default::default(),
+            whispers: Default::default(),
+            whisper_input: None,
+            whispers_drawn: std::time::Instant::now() - Duration::from_secs(60),
             engagement: crate::engagement::Engagement::new(),
             feed_filter: None,
             studio_tab: state["studio_tab"]
@@ -865,6 +874,14 @@ impl Workbench {
                         }
                     }
                     cx.notify();
+                }
+                crate::live::Event::Whisper {
+                    id,
+                    from_login,
+                    from_name,
+                    text,
+                } => {
+                    self.whisper_received(id, from_login, from_name, text, window, cx);
                 }
                 crate::live::Event::Activity(item) => {
                     self.feed.push(item);
@@ -3420,6 +3437,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|this,_:&EditIgnores,w,cx|this.open_ignores(w,cx)))
             .on_action(cx.listener(|this,_:&EditEventHighlights,w,cx|this.open_event_highlights(w,cx)))
             .on_action(cx.listener(|this,_:&ChooseSetup,w,cx|this.open_setup(w,cx)))
+            .on_action(cx.listener(|this,_:&OpenWhispers,w,cx|this.open_whispers(None,w,cx)))
             .on_action(cx.listener(|this,_:&ToggleStudio,_,cx|{this.studio_open = !this.studio_open;this.schedule_save(cx);cx.notify();}))
             .on_action(cx.listener(|this,_:&ImportChatterino,w,cx|this.open_chatterino_import(w,cx)))
             .on_action(cx.listener(|this,_:&SearchOpenChannels,w,cx|this.open_workspace_search(None,w,cx)))
@@ -3452,6 +3470,14 @@ impl Render for Workbench {
                 .child(div().h_flex().px_2().gap_1().window_control_area(WindowControlArea::Drag).child(div().text_color(rgb(0xA99CF4)).font_weight(FontWeight::BOLD).child("//"))
                     .child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(11.)).child("JAWJACK")))
                 .child(div().flex_1().min_w(px(8.)).h_full().window_control_area(WindowControlArea::Drag))
+                .child({
+                    let unread = self.whispers.unread();
+                    Button::new("whispers-menu").ghost().xsmall()
+                        .icon(Icon::new(gpui_kit::assets::IconName::MessageCircle))
+                        .when(unread > 0, |b| b.label(crate::attention::count(unread)))
+                        .tooltip("Whispers")
+                        .on_click(cx.listener(|this, _, w, cx| this.open_whispers(None, w, cx)))
+                })
                 .child(Button::new("activity-menu").ghost().xsmall().icon(IconName::Bell).when(counts.1>0||counts.0>0,|b|b.label(if counts.1>0{format!("@{}",crate::attention::count(counts.1))}else{crate::attention::count(counts.0)})).tooltip("Highlights & unread · Ctrl+Shift+M").on_click(cx.listener(|this,_,w,cx|this.open_activity(w,cx))))
                 .child(Button::new("account-menu").ghost().xsmall().label(if self.account.read(cx).missing_scopes().is_empty(){self.account.read(cx).label()}else{format!("{} •",self.account.read(cx).label())}).tooltip(if self.account.read(cx).missing_scopes().is_empty(){"Twitch account"}else{"Twitch account · permissions can be updated"})
                     .on_click(cx.listener(|this,_,window,cx|{let account=this.account.clone();let width=(f32::from(window.viewport_size().width)-24.).min(380.);window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Twitch account").child(account.clone()));})))
@@ -3461,6 +3487,7 @@ impl Render for Workbench {
                     .menu("Highlights & unread",Box::new(OpenActivity))
                     .menu("Mark all read",Box::new(MarkAllRead))
                     .menu("Custom commands",Box::new(EditCustomCommands))
+                    .menu("Whispers",Box::new(OpenWhispers))
                     .menu("Choose your setup…",Box::new(ChooseSetup))
                     .menu("Event highlights",Box::new(EditEventHighlights))
                     .menu("Ignores",Box::new(EditIgnores))

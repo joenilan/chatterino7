@@ -42,6 +42,13 @@ pub enum Event {
     Resolved(String, String),
     /// Follow or reward redemption on the signed-in broadcaster's own channel.
     Activity(crate::activity_feed::Item),
+    /// A whisper received by the signed-in account.
+    Whisper {
+        id: String,
+        from_login: String,
+        from_name: String,
+        text: String,
+    },
     RoomSettings(String, crate::room_settings::RoomSettings, bool),
     Chat(String, ChatEvent),
     Sent(u64, Result<(), String>),
@@ -461,6 +468,9 @@ fn run(
     let mut over_cap: HashSet<String> = HashSet::new();
     let mut next_request = Instant::now();
     let mut turn = 0usize;
+    // Account-wide whisper subscription: (shard, generation) it was made on, and retry time.
+    let mut whispers: Option<(usize, u64)> = None;
+    let mut whispers_retry = Instant::now();
     while !stop.load(Ordering::Relaxed) {
         let c = config.lock().map(|c| c.clone()).unwrap_or_default();
         let version = epoch.load(Ordering::Relaxed);
@@ -472,6 +482,7 @@ fn run(
             assigned.clear();
             deletions.clear();
             over_cap.clear();
+            whispers = None;
             if let Ok(mut names) = names.lock() {
                 names.clear();
             }
@@ -682,6 +693,36 @@ fn run(
                     snapshots: &snapshots,
                 };
                 step.run(&channel, a, &mut next_request);
+            }
+        } else if id.has("user:read:whispers")
+            && now >= whispers_retry
+            && !whispers.is_some_and(|(i, g)| {
+                sessions[i]
+                    .as_ref()
+                    .is_some_and(|(_, current)| *current == g)
+            })
+            && let Some((index, (session, generation))) = sessions
+                .iter()
+                .enumerate()
+                .find_map(|(i, s)| s.clone().map(|s| (i, s)))
+        {
+            // Whispers aren't tied to a channel; one subscription on any live socket.
+            next_request = Instant::now() + REQUEST_INTERVAL;
+            let body = json!({"type":"user.whisper.message","version":"1","condition":{"user_id":id.user_id},"transport":{"method":"websocket","session_id":session}});
+            let ok = client
+                .post("https://api.twitch.tv/helix/eventsub/subscriptions")
+                .header("Client-Id", CLIENT_ID)
+                .bearer_auth(&id.access)
+                .header("Content-Type", "application/json")
+                .body(body.to_string())
+                .send()
+                .ok()
+                .and_then(|r| response_json(r).ok())
+                .is_some_and(|(status, _)| status == 202 || status == 409);
+            if ok {
+                whispers = Some((index, generation));
+            } else {
+                whispers_retry = Instant::now() + FAILURE_RETRY;
             }
         } else if let Some(sub) = deletions.pop_front() {
             next_request = Instant::now() + REQUEST_INTERVAL;
@@ -981,6 +1022,35 @@ fn deliver(
         seen.remove(&id);
     }
     let e = &v["payload"]["event"];
+    if v["payload"]["subscription"]["type"] == "user.whisper.message" {
+        let text = |key: &str| {
+            e[key]
+                .as_str()
+                .unwrap_or("")
+                .chars()
+                .take(64)
+                .collect::<String>()
+        };
+        let body: String = e["whisper"]["text"]
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(500)
+            .collect();
+        if let Some(login) = chat_core::twitch_login(&text("from_user_login")) {
+            let _ = tx.send((
+                version,
+                Event::Whisper {
+                    id: text("whisper_id"),
+                    from_login: login,
+                    from_name: text("from_user_name"),
+                    text: body,
+                },
+            ));
+        }
+        return;
+    }
     let id = e["broadcaster_user_id"].as_str().unwrap_or("");
     let Some(channel) = map.lock().ok().and_then(|m| m.get(id).cloned()) else {
         return;

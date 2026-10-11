@@ -21,7 +21,8 @@ gpui_kit::assets::icon_assets!(
         Tv,
         ChartBar,
         Trophy,
-        Lock
+        Lock,
+        MessageCircle
     ]
 );
 

@@ -55,6 +55,7 @@ mod theme;
 mod twitch_actions;
 mod twitch_assets;
 mod updates;
+mod whispers;
 mod workspace;
 use workspace::Workbench;
 
