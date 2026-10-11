@@ -125,6 +125,11 @@ impl TwitchAccount {
             .map(|a| a.login.clone())
             .unwrap_or_else(|| "Sign in".into())
     }
+    /// Why there is no signed-in account, once checking has finished (None while
+    /// signed in or still checking).
+    pub fn signed_out_reason(&self) -> Option<String> {
+        (self.account.is_none() && !self.busy).then(|| self.status.clone())
+    }
     pub fn login(&self) -> Option<String> {
         self.account.as_ref().map(|a| a.login.clone())
     }

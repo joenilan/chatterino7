@@ -4311,6 +4311,62 @@ fn valid_channel(value: &str) -> Option<String> {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_'))
     .then_some(value)
 }
+impl Workbench {
+    /// A banner nobody can miss while Twitch is signed out: chat can't connect.
+    fn render_signed_out(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let reason = self.account.read(cx).signed_out_reason()?;
+        let detail = if reason.starts_with("Sign in with Twitch") {
+            "Chat can't connect until you sign in.".to_owned()
+        } else {
+            format!("{reason} Chat can't connect until you sign in.")
+        };
+        Some(
+            div()
+                .id("signed-out-banner")
+                .mx(px(2.))
+                .mt(px(2.))
+                .px_3()
+                .py_2()
+                .h_flex()
+                .gap_3()
+                .items_center()
+                .rounded(px(6.))
+                .bg(rgb(0x2A1F3D))
+                .border_1()
+                .border_color(rgb(0x6D5BC7))
+                .child(Icon::new(gpui_kit::assets::IconName::Lock).text_color(rgb(theme::ACCENT)))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .v_flex()
+                        .child(
+                            div()
+                                .text_size(px(13.))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(rgb(theme::TEXT))
+                                .child("You're signed out of Twitch"),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(12.))
+                                .text_color(rgb(theme::MUTED))
+                                .child(detail),
+                        ),
+                )
+                .child(
+                    Button::new("signed-out-sign-in")
+                        .small()
+                        .primary()
+                        .label("Sign in")
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.open_accounts(window, cx)),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+}
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.streamer_live = match self.streamer_mode {
@@ -4720,9 +4776,16 @@ impl Render for Workbench {
                     )
                     .child(
                         Button::new("account-menu")
-                            .ghost()
                             .xsmall()
-                            .label(if self.account.read(cx).missing_scopes().is_empty() {
+                            .when(self.account.read(cx).signed_out_reason().is_some(), |b| {
+                                b.primary()
+                            })
+                            .when(self.account.read(cx).signed_out_reason().is_none(), |b| {
+                                b.ghost()
+                            })
+                            .label(if self.account.read(cx).signed_out_reason().is_some() {
+                                "Sign in to Twitch".to_owned()
+                            } else if self.account.read(cx).missing_scopes().is_empty() {
                                 self.account.read(cx).label()
                             } else {
                                 format!("{} •", self.account.read(cx).label())
@@ -4878,6 +4941,7 @@ impl Render for Workbench {
                                         }),
                                 )
                             })
+                            .children(self.render_signed_out(cx))
                             .child(
                                 div()
                                     .h_flex()
