@@ -10,6 +10,8 @@ mod channel_details;
 mod channel_switcher;
 #[path = "engagement_ui.rs"]
 mod engagement_ui;
+#[path = "live_stats.rs"]
+mod live_stats;
 #[path = "mod_onboarding.rs"]
 mod mod_onboarding;
 #[path = "obs_ui.rs"]
@@ -226,6 +228,7 @@ pub struct Workbench {
     went_live_at: Option<std::time::Instant>,
     was_live: bool,
     peak_viewers: u64,
+    stats_tick: u64,
     last_stream_info: Option<(String, String)>,
     /// Latest incoming raid on your channel: (login, display name, viewers, when).
     last_raid: Option<(String, String, u64, std::time::Instant)>,
@@ -620,6 +623,7 @@ impl Workbench {
             went_live_at: None,
             was_live: false,
             peak_viewers: 0,
+            stats_tick: 0,
             last_stream_info: None,
             last_raid: None,
             shouted: Default::default(),
@@ -880,6 +884,12 @@ impl Workbench {
         }
         if live {
             self.track_stream(cx);
+            // Live stats refresh every few seconds while Studio is open.
+            let tick = self.went_live_at.map_or(0, |t| t.elapsed().as_secs() / 5);
+            if self.studio_open && tick != self.stats_tick {
+                self.stats_tick = tick;
+                cx.notify();
+            }
         }
         if !live && self.was_live {
             self.show_recap(window, cx);

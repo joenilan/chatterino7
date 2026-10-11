@@ -112,3 +112,14 @@ chat messages and unique chatters in your channel, activity counts (follows, sub
 rewards, tips), and the top five chatters. **Copy as text** is for Discord or notes. Peak viewers come from
 Twitch's stream status sampled while you're live. Unit tested, but not yet seen at the end of a real stream.
 
+## Live stats (owner request, 2026-10-11)
+
+While you're live (Twitch reports it or OBS is streaming), a card at the top of Studio, above the tabs, shows:
+- viewers (with this stream's peak) and uptime,
+- chat messages per minute, the busiest minute, and a 30-minute sparkline (one bar per minute) from your
+  channel's messages,
+- this stream's follows, subs, Bits events and raids (from the Activity feed since going live),
+- OBS bitrate, dropped frames and fps when OBS is connected.
+
+It refreshes every 5 s while Studio is open. The pace bucketing is unit tested, but the card hasn't been seen during a live stream yet.
+
