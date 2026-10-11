@@ -115,7 +115,10 @@ impl Frames {
         let mut old = std::mem::take(&mut self.frames).into_iter();
         while let Some(mut first) = old.next() {
             if let Some(second) = old.next() {
-                extend_delay(&mut first, Duration::from(second.delay()).as_millis() as u32);
+                extend_delay(
+                    &mut first,
+                    Duration::from(second.delay()).as_millis() as u32,
+                );
             }
             kept.push(first);
         }

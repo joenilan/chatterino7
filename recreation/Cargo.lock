@@ -880,6 +880,7 @@ dependencies = [
  "chrono",
  "gpui-kit",
  "image",
+ "regex",
  "reqwest",
  "serde_json",
  "tungstenite",

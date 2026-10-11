@@ -884,7 +884,10 @@ fn download(
         if w == 0 || h == 0 || w > max_dimension || h > max_dimension {
             return Err(MediaFailure::Dimensions);
         }
-        Ok(matches!(sampler.push(frame), crate::frame_sampler::Push::Continue))
+        Ok(matches!(
+            sampler.push(frame),
+            crate::frame_sampler::Push::Continue
+        ))
     };
     match format {
         ImageFormat::Gif => {

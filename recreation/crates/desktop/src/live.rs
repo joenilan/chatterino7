@@ -226,7 +226,7 @@ fn resolve(
     v["data"][0]["id"]
         .as_str()
         .map(str::to_owned)
-        .ok_or_else(|| "Channel was not found on Twitch".into())
+        .ok_or_else(|| "Channel was not found on Twitch (renamed, banned or deleted)".into())
 }
 type Socket = tungstenite::WebSocket<MaybeTlsStream<TcpStream>>;
 fn open(url: &str) -> Result<Socket, String> {
@@ -342,7 +342,10 @@ const CHANNEL_KINDS: [&str; 6] = [
 ];
 /// Notices and room settings are useful but not required for chat to work.
 fn optional_kind(kind: &str) -> bool {
-    matches!(kind, "channel.chat.notification" | "channel.chat_settings.update")
+    matches!(
+        kind,
+        "channel.chat.notification" | "channel.chat_settings.update"
+    )
 }
 /// EventSub allows 300 enabled subscriptions per WebSocket and three WebSockets
 /// per user token.
@@ -354,6 +357,8 @@ pub const MAX_CHANNELS: usize = CHANNELS_PER_SOCKET * MAX_SOCKETS;
 const REQUEST_INTERVAL: Duration = Duration::from_millis(110);
 /// A channel whose required subscription failed is retried after this delay.
 const FAILURE_RETRY: Duration = Duration::from_secs(60);
+/// A channel login that no longer exists is checked again much later.
+const MISSING_RETRY: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Default)]
 struct Dedup {
@@ -408,7 +413,13 @@ impl Assignment {
         self.ready = false;
     }
 }
-fn state(tx: &mpsc::SyncSender<(u64, Event)>, version: u64, channel: &str, text: &str, ready: bool) {
+fn state(
+    tx: &mpsc::SyncSender<(u64, Event)>,
+    version: u64,
+    channel: &str,
+    text: &str,
+    ready: bool,
+) {
     let _ = tx.send((version, Event::State(channel.into(), text.into(), ready)));
 }
 /// Owns channel-to-socket assignment and all subscription requests. Only an
@@ -458,7 +469,9 @@ fn run(
                     &tx,
                     version,
                     channel,
-                    &format!("Not connected · Jawjack connects at most {MAX_CHANNELS} channels at once. Close others to connect this one."),
+                    &format!(
+                        "Not connected · Jawjack connects at most {MAX_CHANNELS} channels at once. Close others to connect this one."
+                    ),
                     false,
                 );
             }
@@ -534,7 +547,13 @@ fn run(
             let (session, generation, revoked) = shard
                 .status
                 .lock()
-                .map(|mut s| (s.session.clone(), s.generation, std::mem::take(&mut s.revoked)))
+                .map(|mut s| {
+                    (
+                        s.session.clone(),
+                        s.generation,
+                        std::mem::take(&mut s.revoked),
+                    )
+                })
                 .unwrap_or_default();
             for (broadcaster, reason) in revoked {
                 if let Some((channel, a)) = assigned
@@ -547,7 +566,9 @@ fn run(
                         &tx,
                         version,
                         channel,
-                        &format!("Twitch revoked this chat subscription ({reason}). Retrying in a minute."),
+                        &format!(
+                            "Twitch revoked this chat subscription ({reason}). Retrying in a minute."
+                        ),
                         false,
                     );
                 }
@@ -598,11 +619,15 @@ fn run(
             a.shard == index
                 && !a.ready
                 && a.failed_until.is_none_or(|t| now >= t)
-                && sessions[index].as_ref().is_some_and(|(_, g)| *g == a.generation)
+                && sessions[index]
+                    .as_ref()
+                    .is_some_and(|(_, g)| *g == a.generation)
         };
         let starving = (0..MAX_SOCKETS).find(|i| {
             sessions[*i].is_some()
-                && !assigned.values().any(|a| a.shard == *i && !a.ids.is_empty())
+                && !assigned
+                    .values()
+                    .any(|a| a.shard == *i && !a.ids.is_empty())
                 && assigned.values().any(|a| pending(*i, a))
         });
         let mut job = None;
@@ -678,7 +703,13 @@ impl Step<'_> {
                     a.broadcaster = Some(id);
                 }
                 Err(error) => {
-                    a.failed_until = Some(Instant::now() + FAILURE_RETRY);
+                    // A missing account (renamed, banned or deleted) rarely returns soon.
+                    let retry = if error.contains("not found") {
+                        MISSING_RETRY
+                    } else {
+                        FAILURE_RETRY
+                    };
+                    a.failed_until = Some(Instant::now() + retry);
                     state(tx, version, channel, &error, false);
                 }
             }
@@ -841,9 +872,7 @@ fn socket_loop(
                             if let Some(next) = frame(&mut replacement)?
                                 && next["metadata"]["message_type"] == "session_welcome"
                             {
-                                break next["payload"]["session"]["id"]
-                                    .as_str()
-                                    .map(str::to_owned);
+                                break next["payload"]["session"]["id"].as_str().map(str::to_owned);
                             }
                         };
                         // Subscriptions carry over: keep the generation, update the session.
@@ -863,11 +892,13 @@ fn socket_loop(
                     }
                     "revocation" => {
                         let sub = &v["payload"]["subscription"];
-                        if let (Some(b), Ok(mut s)) =
-                            (sub["condition"]["broadcaster_user_id"].as_str(), status.lock())
-                        {
+                        if let (Some(b), Ok(mut s)) = (
+                            sub["condition"]["broadcaster_user_id"].as_str(),
+                            status.lock(),
+                        ) {
                             let reason = sub["status"].as_str().unwrap_or("revoked");
-                            s.revoked.push((b.into(), reason.chars().take(40).collect()));
+                            s.revoked
+                                .push((b.into(), reason.chars().take(40).collect()));
                         }
                     }
                     _ => deliver_one(&v),

@@ -78,7 +78,10 @@ impl Profiles {
             || id.len() > 255
             || id.chars().any(char::is_control)
             || self.identity.is_none()
-            || self.requested.get(id).is_some_and(|at| at.elapsed() < REFRESH)
+            || self
+                .requested
+                .get(id)
+                .is_some_and(|at| at.elapsed() < REFRESH)
             || self.pending.iter().any(|p| p == id)
         {
             return;
@@ -113,7 +116,8 @@ impl Profiles {
                     }
                     // Unknown or failed IDs retry after RETRY instead of REFRESH.
                     None if failed => {
-                        self.requested.insert(id, Instant::now() - (REFRESH - RETRY));
+                        self.requested
+                            .insert(id, Instant::now() - (REFRESH - RETRY));
                     }
                     None => {}
                 }
@@ -127,7 +131,11 @@ impl Profiles {
             let ids: Vec<String> = self.pending.drain(..take).collect();
             if self.requested.len() + ids.len() > 1024 {
                 // Bound memory: forget the oldest lookups and their values.
-                let mut by_age: Vec<_> = self.requested.iter().map(|(k, at)| (*at, k.clone())).collect();
+                let mut by_age: Vec<_> = self
+                    .requested
+                    .iter()
+                    .map(|(k, at)| (*at, k.clone()))
+                    .collect();
                 by_age.sort();
                 for (_, old) in by_age.into_iter().take(ids.len()) {
                     self.requested.remove(&old);
@@ -173,7 +181,10 @@ fn load(
         return None;
     }
     let mut bytes = vec![];
-    response.take(1024 * 1024 + 1).read_to_end(&mut bytes).ok()?;
+    response
+        .take(1024 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
     if bytes.len() > 1024 * 1024 {
         return None;
     }

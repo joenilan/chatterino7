@@ -8,6 +8,7 @@ mod chat_search;
 mod chat_text;
 mod chatter_appearance;
 mod chatter_notes;
+mod chatterino_import;
 mod commands;
 mod community;
 mod control;
@@ -18,6 +19,7 @@ mod ffz_badges;
 mod ffz_role_badges;
 mod frame_sampler;
 mod highlight_rules;
+mod ignores;
 mod inline_chat;
 mod input_history;
 mod live;
@@ -161,6 +163,7 @@ struct ChannelPane {
     catalog: Rc<RefCell<catalog::Catalog>>,
     custom_commands: custom_commands::Definitions,
     chatter_appearance: chatter_appearance::Preferences,
+    ignores: ignores::Shared,
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
     draft: Entity<TextareaState>,
@@ -229,6 +232,7 @@ impl ChannelPane {
             catalog,
             custom_commands: Default::default(),
             chatter_appearance: Default::default(),
+            ignores: Default::default(),
             connection: "Sign in to connect".into(),
             connected: false,
             room_settings: None,
@@ -336,6 +340,9 @@ impl ChannelPane {
                 self.catalog
                     .borrow()
                     .expand(&self.name, &message.user_id, &message.fragments);
+            if let ignores::Outcome::Hide = self.ignores.borrow().apply(message) {
+                return;
+            }
             chatter_appearance::apply(&self.chatter_appearance, message);
         }
         self.observe_reply_redaction(&event, cx);

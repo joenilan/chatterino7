@@ -1,8 +1,9 @@
 //! Bounded local highlight rules. Never changes message identity or sends anything.
 use crate::theme;
+use gpui_kit::component::Selectable;
 use gpui_kit::component::{
     Disableable, Sizable, StyledExt,
-    button::Button,
+    button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState},
 };
 use gpui_kit::prelude::FluentBuilder;
@@ -18,10 +19,32 @@ pub const COLORS: [(&str, u32, u32); 5] = [
     ("Peach", 0xE8C68A, 0x30291D),
 ];
 pub type Rules = Rc<RefCell<Vec<Rule>>>;
+/// Regular expressions stay small so a pasted pattern cannot exhaust memory.
+pub const REGEX_LIMIT: usize = 256 * 1024;
+/// A compiled pattern compares by its source, keeping rules comparable.
+#[derive(Clone)]
+pub struct Pattern(pub std::sync::Arc<regex::Regex>);
+impl PartialEq for Pattern {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_str() == other.0.as_str()
+    }
+}
+impl Eq for Pattern {}
+pub fn compile(pattern: &str, case_sensitive: bool) -> Result<Pattern, String> {
+    regex::RegexBuilder::new(pattern)
+        .case_insensitive(!case_sensitive)
+        .size_limit(REGEX_LIMIT)
+        .dfa_size_limit(REGEX_LIMIT)
+        .build()
+        .map(|r| Pattern(std::sync::Arc::new(r)))
+        .map_err(|_| "That regular expression is invalid or too complex.".into())
+}
 #[derive(Clone, PartialEq, Eq)]
 pub struct Rule {
     folded: String,
+    compiled: Option<Pattern>,
     pub pattern: String,
+    pub regex: bool,
     pub channel: String,
     pub author: bool,
     pub case_sensitive: bool,
@@ -33,7 +56,9 @@ impl Default for Rule {
     fn default() -> Self {
         Self {
             folded: String::new(),
+            compiled: None,
             pattern: String::new(),
+            regex: false,
             channel: String::new(),
             author: false,
             case_sensitive: false,
@@ -46,13 +71,17 @@ impl Default for Rule {
 impl Rule {
     pub fn validate(mut self) -> Result<Self, String> {
         self.pattern = self.pattern.trim().to_owned();
+        let limit = if self.regex { 200 } else { 80 };
         if self.pattern.is_empty()
-            || self.pattern.chars().count() > 80
+            || self.pattern.chars().count() > limit
             || self.pattern.chars().any(char::is_control)
         {
-            return Err("Enter 1–80 characters on one line.".into());
+            return Err(format!("Enter 1–{limit} characters on one line."));
         }
-        if self.author {
+        self.compiled = None;
+        if self.regex {
+            self.compiled = Some(compile(&self.pattern, self.case_sensitive)?);
+        } else if self.author {
             self.pattern = chat_core::twitch_login(self.pattern.trim_start_matches('@'))
                 .ok_or("Enter a Twitch login, not a display name.")?;
         }
@@ -72,6 +101,14 @@ impl Rule {
             || (!self.channel.is_empty() && !self.channel.eq_ignore_ascii_case(channel))
         {
             return false;
+        }
+        if let Some(regex) = &self.compiled {
+            let subject = if self.author {
+                login.unwrap_or("")
+            } else {
+                text
+            };
+            return regex.0.is_match(subject);
         }
         if self.author {
             return login.is_some_and(|login| login.eq_ignore_ascii_case(&self.pattern));
@@ -164,6 +201,18 @@ pub fn first_color(rules: &[Rule], message: &chat_core::Message, channel: &str) 
             {
                 return false;
             }
+            if let Some(regex) = &rule.compiled {
+                // Like Chatterino, patterns see the whole original message,
+                // emote codes included, not only the text between emotes.
+                return if rule.author {
+                    message
+                        .login
+                        .as_deref()
+                        .is_some_and(|l| regex.0.is_match(l))
+                } else {
+                    regex.0.is_match(&message.body())
+                };
+            }
             if rule.author {
                 return message
                     .login
@@ -188,7 +237,9 @@ pub fn load(value: &serde_json::Value) -> Rules {
         for item in items.iter().take(24) {
             let rule = Rule {
                 folded: String::new(),
+                compiled: None,
                 pattern: item["pattern"].as_str().unwrap_or("").into(),
+                regex: item["regex"].as_bool().unwrap_or(false),
                 channel: item["channel"].as_str().unwrap_or("").into(),
                 author: item["author"].as_bool().unwrap_or(false),
                 case_sensitive: item["case_sensitive"].as_bool().unwrap_or(false),
@@ -204,7 +255,7 @@ pub fn load(value: &serde_json::Value) -> Rules {
     Rc::new(RefCell::new(rules))
 }
 pub fn json(rules: &Rules) -> serde_json::Value {
-    serde_json::Value::Array(rules.borrow().iter().map(|r|serde_json::json!({"pattern":r.pattern,"channel":r.channel,"author":r.author,"case_sensitive":r.case_sensitive,"whole_word":r.whole_word,"enabled":r.enabled,"color":r.color})).collect())
+    serde_json::Value::Array(rules.borrow().iter().map(|r|serde_json::json!({"pattern":r.pattern,"regex":r.regex,"channel":r.channel,"author":r.author,"case_sensitive":r.case_sensitive,"whole_word":r.whole_word,"enabled":r.enabled,"color":r.color})).collect())
 }
 
 pub struct Changed;
@@ -228,7 +279,7 @@ impl Editor {
             InputState::new(window, cx)
                 .placeholder("A phrase or Twitch login")
                 .validate(|value, _| {
-                    value.chars().count() <= 80 && !value.chars().any(char::is_control)
+                    value.chars().count() <= 200 && !value.chars().any(char::is_control)
                 })
         });
         let scope = cx.new(|cx| {
@@ -411,15 +462,16 @@ impl Render for Editor {
                     .on_click(cx.listener(move|this,_,w,cx|this.select(Some(index),w,cx)))
             })))
             .child(div().h_flex().flex_wrap().gap_1()
-                .child(Button::new("rule-text").small().label("Message text").disabled(!self.draft.author).on_click(cx.listener(|this,_,_,cx|{this.draft.author=false;this.edited(cx);})))
-                .child(Button::new("rule-author").small().label("Sender login").disabled(self.draft.author).on_click(cx.listener(|this,_,_,cx|{this.draft.author=true;this.edited(cx);})))
-                .child(Button::new("rule-enabled").small().label(if self.draft.enabled{"Enabled"}else{"Disabled"}).on_click(cx.listener(|this,_,_,cx|{this.draft.enabled = !this.draft.enabled;this.edited(cx);}))))
+                .child(Button::new("rule-text").small().label("Message text").selected(!self.draft.author).when(!self.draft.author,|b|b.primary()).on_click(cx.listener(|this,_,_,cx|{this.draft.author=false;this.edited(cx);})))
+                .child(Button::new("rule-author").small().label("Sender login").selected(self.draft.author).when(self.draft.author,|b|b.primary()).on_click(cx.listener(|this,_,_,cx|{this.draft.author=true;this.edited(cx);})))
+                .child(Button::new("rule-enabled").small().label(if self.draft.enabled{"Enabled"}else{"Disabled"}).on_click(cx.listener(|this,_,_,cx|{this.draft.enabled = !this.draft.enabled;this.edited(cx);})))
+                .child(Button::new("rule-regex").small().label(if self.draft.regex{"Regex"}else{"Plain text"}).tooltip("Match a regular expression instead of plain text").on_click(cx.listener(|this,_,_,cx|{this.draft.regex = !this.draft.regex;this.edited(cx);}))))
             .child(Input::new(&self.pattern).small()).child(Input::new(&self.channel).small())
             .when(!self.draft.author,|el|el.child(div().h_flex().flex_wrap().gap_1()
                 .child(Button::new("rule-case").small().label(if self.draft.case_sensitive{"Match case"}else{"Ignore case"}).on_click(cx.listener(|this,_,_,cx|{this.draft.case_sensitive = !this.draft.case_sensitive;this.edited(cx);})))
-                .child(Button::new("rule-word").small().label(if self.draft.whole_word{"Whole words"}else{"Anywhere in text"}).on_click(cx.listener(|this,_,_,cx|{this.draft.whole_word = !this.draft.whole_word;this.edited(cx);})))))
+                .when(!self.draft.regex,|el|el.child(Button::new("rule-word").small().label(if self.draft.whole_word{"Whole words"}else{"Anywhere in text"}).on_click(cx.listener(|this,_,_,cx|{this.draft.whole_word = !this.draft.whole_word;this.edited(cx);}))))))
             .child(div().h_flex().flex_wrap().gap_1().children(COLORS.iter().enumerate().map(|(index,(name,color,_))|
-                Button::new(("rule-color",index)).small().label(*name).text_color(rgb(*color)).disabled(self.draft.color==index).on_click(cx.listener(move|this,_,_,cx|{this.draft.color=index;this.edited(cx);})))))
+                Button::new(("rule-color",index)).small().label(if self.draft.color==index{format!("✓ {name}")}else{name.to_string()}).text_color(rgb(*color)).selected(self.draft.color==index).on_click(cx.listener(move|this,_,_,cx|{this.draft.color=index;this.edited(cx);})))))
             .child(div().border_l_2().border_color(rgb(accent)).bg(rgb(background)).rounded(px(4.)).p_2().v_flex().gap_1()
                 .child(div().text_size(px(11.)).child(format!("Preview in #{} · {}",self.preview_channel,if preview{"matches"}else{"does not match"})))
                 .child(Input::new(&self.sample).small()).child(Input::new(&self.login).small())

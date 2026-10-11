@@ -11,6 +11,7 @@ mod workspace_search;
 use crate::dock::Dock;
 use crate::{ChannelPane, DragPreview, DraggedChannel, PaneEvent, caption_control, storage, theme};
 use gpui_kit::base::ElementExt;
+use gpui_kit::component::Selectable;
 use gpui_kit::component::{
     Disableable, IconName, Sizable, StyledExt, WindowExt,
     button::{Button, ButtonVariants},
@@ -61,6 +62,8 @@ gpui_kit::actions!(
         SwitchChannel,
         SearchOpenChannels,
         EditCustomCommands,
+        EditIgnores,
+        ImportChatterino,
         EditChatterAppearance
     ]
 );
@@ -182,6 +185,12 @@ pub struct Workbench {
     highlight_rules: crate::highlight_rules::Rules,
     highlight_editor: Option<Entity<crate::highlight_rules::Editor>>,
     chatter_appearance: crate::chatter_appearance::Preferences,
+    ignores: crate::ignores::Shared,
+    ignores_editor: Option<Entity<crate::ignores::Editor>>,
+    /// Nicknames from a Chatterino import awaiting login-to-ID lookup.
+    /// A short-lived status message that takes precedence over save status.
+    notice: Option<(String, std::time::Instant)>,
+    pending_nicknames: Option<std::sync::mpsc::Receiver<Vec<crate::chatterino_import::Nickname>>>,
     chatter_editor: Option<Entity<crate::chatter_appearance::Editor>>,
     chatter_notes: crate::chatter_notes::Notes,
     notes_editor: Option<Entity<crate::chatter_notes::Editor>>,
@@ -257,7 +266,7 @@ impl Workbench {
         json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()})
     }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>()})
+        json!({"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
     }
     /// Channels to connect, highest priority first: visible panes, the rest of the
     /// active workspace, then other workspaces by most recent use. Beyond the
@@ -345,6 +354,10 @@ impl Workbench {
             highlight_rules: crate::highlight_rules::load(&state["highlight_rules"]),
             highlight_editor: None,
             chatter_appearance: crate::chatter_appearance::load(&state["chatter_appearance"]),
+            ignores: crate::ignores::load(&state["ignores"]),
+            ignores_editor: None,
+            pending_nicknames: None,
+            notice: None,
             chatter_editor: None,
             chatter_notes: crate::chatter_notes::load(&state["chatter_notes"]),
             notes_editor: None,
@@ -533,6 +546,7 @@ impl Workbench {
         ) {
             cx.notify();
         }
+        self.pump_imported_nicknames(cx);
         let profiles_changed = self.catalog.borrow_mut().profiles.pump(identity.clone());
         if profiles_changed {
             for pane in &panes {
@@ -598,7 +612,10 @@ impl Workbench {
                 });
             }
         }
-        if self.live.configure(identity.clone(), self.connection_priority(cx)) {
+        if self
+            .live
+            .configure(identity.clone(), self.connection_priority(cx))
+        {
             for pane in &panes {
                 pane.update(cx, |p, cx| {
                     p.connected = false;
@@ -813,6 +830,190 @@ impl Workbench {
                 .child(editor.clone())
         });
     }
+    fn open_chatterino_import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings = false;
+        let preview = cx.new(|_| crate::chatterino_import::Preview::load());
+        cx.subscribe_in(
+            &preview,
+            window,
+            |this, preview, _: &crate::chatterino_import::Apply, window, cx| {
+                let Some(plan) = preview.update(cx, |p, _| p.plan.take()) else {
+                    return;
+                };
+                window.close_dialog(cx);
+                this.apply_chatterino_import(plan, window, cx);
+            },
+        )
+        .detach();
+        let width = (f32::from(window.viewport_size().width) - 24.).clamp(180., 520.);
+        window.open_dialog(cx, move |dialog, _, _| {
+            dialog
+                .w(px(width))
+                .title("Import from Chatterino")
+                .child(preview.clone())
+        });
+    }
+    /// Add an imported Chatterino setup alongside existing workspaces and settings.
+    fn apply_chatterino_import(
+        &mut self,
+        plan: crate::chatterino_import::Plan,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut notes = Vec::new();
+        let first_new = self.tabs.len();
+        for (name, dock) in plan.workspaces {
+            let id = self.next_id;
+            self.next_id += 1;
+            let mut unique = name.clone();
+            let mut n = 2;
+            while self.tabs.iter().any(|t| t.name == unique) {
+                unique = format!("{name} {n}");
+                n += 1;
+            }
+            let mut names = Vec::new();
+            dock.names(&mut names);
+            let panes = names
+                .iter()
+                .map(|channel| self.make_pane(id, channel, window, cx))
+                .collect();
+            self.tabs.push(WorkspaceTab {
+                id,
+                name: unique,
+                panes,
+                vertical: false,
+                sizes: vec![],
+                split: cx.new(|_| ResizableState::default()),
+                dock: Some(dock),
+                dock_states: BTreeMap::new(),
+            });
+        }
+        {
+            let mut rules = self.highlight_rules.borrow_mut();
+            let before = rules.len();
+            for rule in plan.highlights {
+                if rules
+                    .iter()
+                    .any(|r| r.pattern == rule.pattern && r.author == rule.author)
+                {
+                    continue;
+                }
+                if rules.len() >= 24 {
+                    notes.push("Highlight rules are full (24); some were not added".to_string());
+                    break;
+                }
+                rules.push(rule);
+            }
+            if rules.len() != before {
+                notes.push(format!("{} highlight rules", rules.len() - before));
+            }
+        }
+        {
+            let mut commands = self.custom_commands.borrow_mut();
+            for (name, template) in plan.commands {
+                if commands.len() >= 32 && !commands.contains_key(&name) {
+                    notes.push("Custom commands are full (32); some were not added".into());
+                    break;
+                }
+                commands.entry(name).or_insert(template);
+            }
+        }
+        {
+            let mut ignores = self.ignores.borrow_mut();
+            for phrase in plan.ignored_phrases {
+                if let Err(e) = ignores.add_phrase(phrase) {
+                    notes.push(e);
+                    break;
+                }
+            }
+        }
+        if let Some(mode) = plan.timestamps {
+            self.change_timestamps(mode, cx);
+        }
+        if let Some(size) = plan.font_size {
+            self.change_font(size - self.font_size, cx);
+        }
+        if let Some(limit) = plan.history_limit {
+            self.change_history_limit(limit, cx);
+        }
+        if !plan.nicknames.is_empty() {
+            match self.account.read(cx).identity() {
+                Some(identity) => {
+                    self.pending_nicknames = Some(crate::chatterino_import::resolve_nicknames(
+                        identity,
+                        plan.nicknames,
+                    ));
+                }
+                None => notes.push("Sign in to import nicknames".into()),
+            }
+        }
+        if first_new < self.tabs.len() {
+            self.select_tab(first_new, cx);
+        }
+        let summary = if notes.is_empty() {
+            "Imported from Chatterino".into()
+        } else {
+            format!("Imported from Chatterino · {}", notes.join(" · "))
+        };
+        self.notice = Some((summary, std::time::Instant::now()));
+        self.schedule_save(cx);
+        cx.notify();
+    }
+    /// Apply nicknames once their logins resolve to stable Twitch user IDs.
+    fn pump_imported_nicknames(&mut self, cx: &mut Context<Self>) {
+        let Some(rx) = &self.pending_nicknames else {
+            return;
+        };
+        let Ok(resolved) = rx.try_recv() else {
+            return;
+        };
+        self.pending_nicknames = None;
+        {
+            let mut preferences = self.chatter_appearance.borrow_mut();
+            for (id, login, name, alias) in resolved {
+                if preferences.len() >= 256 && !preferences.contains_key(&id) {
+                    break;
+                }
+                let entry = preferences.entry(id).or_default();
+                if entry.alias.is_empty() {
+                    entry.alias = alias;
+                }
+                entry.login = login;
+                entry.name = name;
+            }
+        }
+        for pane in self.panes() {
+            pane.update(cx, |p, cx| {
+                crate::chatter_appearance::restyle(
+                    &self.chatter_appearance,
+                    &mut p.timeline.borrow_mut(),
+                );
+                p.scroller.update(cx, |s, cx| s.remeasure(cx));
+                cx.notify();
+            });
+        }
+        self.schedule_save(cx);
+    }
+    fn open_ignores(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings = false;
+        let editor = if let Some(editor) = &self.ignores_editor {
+            editor.update(cx, |e, cx| e.reset(cx));
+            editor.clone()
+        } else {
+            let editor = cx.new(|cx| crate::ignores::Editor::new(self.ignores.clone(), window, cx));
+            cx.subscribe(&editor, |this, _, _: &crate::ignores::Changed, cx| {
+                this.schedule_save(cx);
+                cx.notify();
+            })
+            .detach();
+            self.ignores_editor = Some(editor.clone());
+            editor
+        };
+        let width = (f32::from(window.viewport_size().width) - 24.).clamp(180., 500.);
+        window.open_dialog(cx, move |dialog, _, _| {
+            dialog.w(px(width)).title("Ignores").child(editor.clone())
+        });
+    }
     fn open_custom_commands(
         &mut self,
         origin: Option<String>,
@@ -890,6 +1091,7 @@ impl Workbench {
             p.pause_mode = self.pause_mode;
             p.custom_commands = self.custom_commands.clone();
             p.chatter_appearance = self.chatter_appearance.clone();
+            p.ignores = self.ignores.clone();
         });
         if let Some((connected, connection, room)) = shared_state {
             pane.update(cx, |p, _| {
@@ -1035,7 +1237,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
@@ -2494,6 +2696,8 @@ impl Render for Workbench {
             .on_action(cx.listener(|this,_:&EqualizeAllSplits,w,cx|this.equalize_panes(None,true,w,cx)))
             .on_action(cx.listener(|this,_:&EditChatterAppearance,w,cx|this.open_chatter_appearance(None,w,cx)))
             .on_action(cx.listener(|this,_:&EditCustomCommands,w,cx|this.open_custom_commands(None,w,cx)))
+            .on_action(cx.listener(|this,_:&EditIgnores,w,cx|this.open_ignores(w,cx)))
+            .on_action(cx.listener(|this,_:&ImportChatterino,w,cx|this.open_chatterino_import(w,cx)))
             .on_action(cx.listener(|this,_:&SearchOpenChannels,w,cx|this.open_workspace_search(None,w,cx)))
             .on_action(cx.listener(|this,_:&SwitchChannel,w,cx|this.open_switcher(w,cx)))
             .on_action(cx.listener(|this,_:&ChannelDetails,w,cx|this.open_focused_channel_details(w,cx)))
@@ -2533,6 +2737,7 @@ impl Render for Workbench {
                     .menu("Highlights & unread",Box::new(OpenActivity))
                     .menu("Mark all read",Box::new(MarkAllRead))
                     .menu("Custom commands",Box::new(EditCustomCommands))
+                    .menu("Ignores",Box::new(EditIgnores))
                     .menu("Chatter nicknames & colors",Box::new(EditChatterAppearance))
                     .menu("Appearance & memory",Box::new(ToggleAppearance))
                     .menu_with_check("Only show live channel tabs",live_channels,Box::new(ToggleLiveChannels))
@@ -2540,6 +2745,7 @@ impl Render for Workbench {
                     .menu("Close workspace…",Box::new(CloseTab)).menu_with_enable("Reopen workspace",Box::new(ReopenTab),can_reopen)
                     .menu_with_enable("Move workspace up",Box::new(MoveTabLeft),can_left).menu_with_enable("Move workspace down",Box::new(MoveTabRight),can_right)
                     .menu_with_check("Only show live workspaces",live_workspaces,Box::new(ToggleLiveWorkspaces))
+                    .separator().menu("Import from Chatterino…",Box::new(ImportChatterino))
                     .when(can_discard,|menu|menu.separator().menu("Discard unsaved changes and quit",Box::new(QuitWithoutSaving)))))
                 .child(caption_control("minimize",IconName::WindowMinimize,WindowControlArea::Min,false))
                 .child(caption_control("maximize",if window.is_maximized(){IconName::WindowRestore}else{IconName::WindowMaximize},WindowControlArea::Max,false))
@@ -2569,26 +2775,28 @@ impl Render for Workbench {
                                 .child(format!("{} px",self.font_size as u32)).child(Button::new("font-reset").small().label("Reset").tooltip("Ctrl+0").on_click(cx.listener(|this,_,w,cx|this.font_feedback(0.,true,w,cx)))).child(Button::new("font-plus").small().label("A+").on_click(cx.listener(|this,_,_,cx|this.change_font(1.,cx)))))
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Ctrl+wheel or Ctrl+plus/minus · Ctrl+0 resets"))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Pause scrolling"))
-                            .child(div().h_flex().flex_wrap().gap_1().children([(0u8,"Manual"),(1,"On hover"),(2,"Alt + hover")].into_iter().map(|(mode,label)|Button::new(("pause-mode",mode as usize)).small().label(label).disabled(self.pause_mode==mode).on_click(cx.listener(move|this,_,w,cx|this.change_pause_mode(mode,w,cx))))))
+                            .child(div().h_flex().flex_wrap().gap_1().children([(0u8,"Manual"),(1,"On hover"),(2,"Alt + hover")].into_iter().map(|(mode,label)|Button::new(("pause-mode",mode as usize)).small().label(label).selected(self.pause_mode==mode).when(self.pause_mode==mode,|b|b.primary()).on_click(cx.listener(move|this,_,w,cx|this.change_pause_mode(mode,w,cx))))))
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Ctrl+Space toggles pause. Incoming chat keeps arriving. Scrolling up or selecting text keeps your reading position."))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Timestamps"))
-                            .child(div().h_flex().flex_wrap().gap_1().children([(0u8,"Off"),(1,"Hours/minutes"),(2,"With seconds")].into_iter().map(|(mode,label)|Button::new(("timestamps",mode as usize)).small().label(label).disabled(self.timestamps==mode).on_click(cx.listener(move|this,_,_,cx|this.change_timestamps(mode,cx))))))
+                            .child(div().h_flex().flex_wrap().gap_1().children([(0u8,"Off"),(1,"Hours/minutes"),(2,"With seconds")].into_iter().map(|(mode,label)|Button::new(("timestamps",mode as usize)).small().label(label).selected(self.timestamps==mode).when(self.timestamps==mode,|b|b.primary()).on_click(cx.listener(move|this,_,_,cx|this.change_timestamps(mode,cx))))))
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Twitch event time in your local timezone. Hover for date and UTC offset."))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Highlights"))
                             .child(Input::new(&self.highlight_input).small())
                             .child(Button::new("edit-highlight-rules").small().label("Manage highlight rules…").on_click(cx.listener(|this,_,w,cx|this.open_highlight_rules(w,cx))))
+                            .child(Button::new("edit-ignores").small().label("Manage ignores…").on_click(cx.listener(|this,_,w,cx|this.open_ignores(w,cx))))
+                            .child(Button::new("import-chatterino").small().label("Import from Chatterino…").on_click(cx.listener(|this,_,w,cx|this.open_chatterino_import(w,cx))))
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Your mentions and replies are included. Add up to 8 words/phrases (40 characters each). Whole-word, case-insensitive; no alerts or sounds."))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Chat memory"))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Newest messages per channel. Older history is released; drafts stay saved."))
                             .child(div().h_flex().flex_wrap().gap_1().children([500usize,1000,2000,5000,10_000].into_iter().map(|limit|
                                 Button::new(("history-limit",limit)).small().label(if limit<1000 {limit.to_string()}else{format!("{}k",limit/1000)})
-                                    .disabled(limit==self.history_limit).on_click(cx.listener(move|this,_,_,cx|this.change_history_limit(limit,cx)))
+                                    .selected(limit==self.history_limit).when(limit==self.history_limit,|b|b.primary()).on_click(cx.listener(move|this,_,_,cx|this.change_history_limit(limit,cx)))
                             )))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Image cache is separately bounded to 48 MiB. Visible chat rows are drawn on demand."))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Tabs, splits, channel drafts and appearance are saved locally."))
                             ))))))
             .child(div().h_flex().h(px(20.)).flex_shrink_0().px_2().gap_2().border_t_1().border_color(rgb(theme::BORDER)).text_size(px(10.)).text_color(rgb(theme::MUTED))
-                .child(div().flex_1().min_w_0().overflow_hidden().child(live_status)).child(self.save_status.clone()))
+                .child(div().flex_1().min_w_0().overflow_hidden().child(live_status)).child(self.notice.as_ref().filter(|(_, at)| at.elapsed() < Duration::from_secs(12)).map(|(text, _)| text.clone()).unwrap_or_else(|| self.save_status.clone())))
     }
 }
 
