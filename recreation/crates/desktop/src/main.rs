@@ -60,6 +60,7 @@ mod stream_status;
 mod streamer_bot;
 mod streamer_mode;
 mod studio;
+mod suspicious;
 mod theme;
 mod twitch_actions;
 mod twitch_assets;
@@ -207,6 +208,8 @@ struct ChannelPane {
     streamer_mode: bool,
     /// What to do with a chatter's near-repeats of their recent messages.
     similar_mode: similarity::Mode,
+    /// Suspicious labels for messages that haven't arrived yet (by message ID).
+    suspicious_pending: std::collections::HashMap<String, String>,
     send_as: Option<SharedString>,
     connection: String,
     connected: bool,
@@ -301,6 +304,7 @@ impl ChannelPane {
             quiet_pings: false,
             streamer_mode: false,
             similar_mode: Default::default(),
+            suspicious_pending: Default::default(),
             send_as: None,
             media,
             catalog,
@@ -419,6 +423,9 @@ impl ChannelPane {
                     .expand(&self.name, &message.user_id, &message.fragments);
             if let ignores::Outcome::Hide = self.ignores.borrow().apply(message) {
                 return;
+            }
+            if let Some(label) = self.suspicious_pending.remove(&message.id) {
+                message.presentation.suspicious = Some(label);
             }
             if self.similar_mode != similarity::Mode::Show
                 && !historical

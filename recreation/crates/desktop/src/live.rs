@@ -44,6 +44,8 @@ pub enum Event {
     Resolved(String, String),
     /// Follow or reward redemption on the signed-in broadcaster's own channel.
     Activity(crate::activity_feed::Item),
+    /// A message in your channel is from a flagged chatter: (channel, message ID, label).
+    Suspicious(String, String, String),
     /// Moderated channels whose AutoMod queue is subscribed (diagnostics).
     ModAutomod(Vec<String>),
     /// Own-channel extras (follows, redemptions, AutoMod) Twitch refused.
@@ -396,12 +398,14 @@ fn optional_kind(kind: &str) -> bool {
 }
 /// Extra, optional subscriptions for the signed-in broadcaster's own channel,
 /// feeding the Studio activity feed: (type, version).
-const OWN_KINDS: [(&str, &str); 4] = [
+const OWN_KINDS: [(&str, &str); 5] = [
     ("channel.follow", "2"),
     ("channel.channel_points_custom_reward_redemption.add", "1"),
     // AutoMod queue: held messages and their outcome.
     ("automod.message.hold", "2"),
     ("automod.message.update", "2"),
+    // Monitored/restricted chatters and likely ban evaders.
+    ("channel.suspicious_user.message", "1"),
 ];
 /// EventSub allows 300 enabled subscriptions per WebSocket and three WebSockets
 /// per user token. One shard also carries the own channel's extras.
@@ -926,7 +930,10 @@ impl Step<'_> {
         let extra = a.step >= CHANNEL_KINDS.len();
         let (kind, kind_version, condition) = if extra {
             let (kind, kind_version) = OWN_KINDS[a.step - CHANNEL_KINDS.len()];
-            let condition = if kind == "channel.follow" || kind.starts_with("automod.") {
+            let condition = if kind == "channel.follow"
+                || kind.starts_with("automod.")
+                || kind.starts_with("channel.suspicious_user.")
+            {
                 json!({"broadcaster_user_id":broadcaster,"moderator_user_id":self.identity.user_id})
             } else {
                 json!({"broadcaster_user_id":broadcaster})
@@ -1210,6 +1217,12 @@ fn deliver(
         return;
     }
     let kind = v["payload"]["subscription"]["type"].as_str().unwrap_or("");
+    if kind == "channel.suspicious_user.message" {
+        if let Some((message, label)) = crate::suspicious::parse(e) {
+            let _ = tx.send((version, Event::Suspicious(channel, message, label)));
+        }
+        return;
+    }
     if let Some(update) = crate::automod::parse(kind, e) {
         let _ = tx.send((version, Event::AutoMod(channel, update)));
         return;
@@ -1350,6 +1363,7 @@ pub(crate) fn chat_message(
                 }),
             historical: false,
             similar: false,
+            suspicious: None,
         },
         deleted: false,
     }

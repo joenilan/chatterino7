@@ -1042,6 +1042,14 @@ impl Workbench {
                 } => {
                     self.whisper_received(id, from_login, from_name, text, window, cx);
                 }
+                crate::live::Event::Suspicious(channel, message, label) => {
+                    for pane in &panes {
+                        if pane.read(cx).name.as_ref() == channel {
+                            let (message, label) = (message.clone(), label.clone());
+                            pane.update(cx, |p, cx| p.mark_suspicious(message, label, cx));
+                        }
+                    }
+                }
                 crate::live::Event::ModAutomod(channels) => {
                     self.mod_automod_channels = channels;
                 }

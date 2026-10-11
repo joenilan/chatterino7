@@ -110,3 +110,25 @@ impl ChannelPane {
         )
     }
 }
+
+impl ChannelPane {
+    /// Label a message from a flagged chatter, now or when it arrives.
+    pub fn mark_suspicious(&mut self, id: String, label: String, cx: &mut Context<Self>) {
+        let mut found = false;
+        self.timeline.borrow_mut().enrich(|m| {
+            if m.id == id {
+                m.presentation.suspicious = Some(label.clone());
+                found = true;
+            }
+        });
+        if found {
+            self.scroller.update(cx, |s, cx| s.remeasure(cx));
+            cx.notify();
+        } else {
+            if self.suspicious_pending.len() >= 200 {
+                self.suspicious_pending.clear();
+            }
+            self.suspicious_pending.insert(id, label);
+        }
+    }
+}

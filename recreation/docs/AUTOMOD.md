@@ -20,7 +20,7 @@ counts the rest.
 ## Channels you moderate
 
 Each EventSub socket reserves room for the AutoMod queue of **10 moderated channels** (hold +
-update = 2 subscriptions each), which lowers the per-socket channel cap from 49 to 46 (138 total).
+update = 2 subscriptions each), which (with five own-channel extras) sets the per-socket channel cap to 45 (135 total).
 These subscriptions are separate from a channel's required chat subscriptions: a refusal (not a mod
 any more, missing scope) never affects chat and is retried after 10 minutes. On-screen channels are
 first in line. When a channel closes, moves socket, or its session ends, its AutoMod subscriptions

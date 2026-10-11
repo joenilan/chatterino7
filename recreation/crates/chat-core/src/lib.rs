@@ -87,6 +87,8 @@ pub struct MessagePresentation {
     pub historical: bool,
     /// Nearly repeats the same chatter's recent message (shown dimmed).
     pub similar: bool,
+    /// Moderator-only suspicious-user label, e.g. "Suspicious · Monitored".
+    pub suspicious: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {

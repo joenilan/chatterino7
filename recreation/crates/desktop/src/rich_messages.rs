@@ -10,6 +10,9 @@ pub fn accent(message: &Message) -> Option<u32> {
     if message.deleted {
         return None;
     }
+    if message.presentation.suspicious.is_some() {
+        return Some(0xE8C468);
+    }
     match message.presentation.kind.as_str() {
         "channel_points_highlighted" | "channel_points_sub_only" => Some(0xA99CF4),
         "user_intro" => Some(0x91D7BA),
@@ -24,6 +27,9 @@ pub fn heading(message: &Message) -> Option<AnyElement> {
     }
     let p = &message.presentation;
     let mut labels = Vec::new();
+    if let Some(label) = &p.suspicious {
+        labels.push(label.clone());
+    }
     match p.kind.as_str() {
         "channel_points_highlighted" => labels.push("Highlighted reward".to_owned()),
         "channel_points_sub_only" => labels.push("Subscriber reward".to_owned()),
