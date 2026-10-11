@@ -11,6 +11,17 @@ again on dispatch. Switching setups keeps channels, drafts and layouts.
 | Moderator | 🛡 in the header of channels you moderate or own: chat-mode toggles with live state, and Clear chat with confirmation. |
 | Streamer | Moderator tools, plus your own channel pinned (📌) as the first tab of the primary group in **every** workspace, plus the **Studio** panel. |
 
+## Pinned tabs (any setup)
+
+Right-click a channel tab → **Pin tab** / **Unpin tab**. Pinned tabs:
+- show the pin icon;
+- stay at the front of their group, behind the Streamer anchor (`Dock::pin_front`, applied
+  on every update);
+- can't be closed until they're unpinned, and the notice says how;
+- are never hidden by "Only show live channel tabs".
+
+Pins are saved per workspace (`pinned` in the workspace file).
+
 ## Streamer anchor
 
 - `Dock::pin_first` puts the own channel first in the primary group, the first leaf or deck

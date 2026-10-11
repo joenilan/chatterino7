@@ -385,6 +385,27 @@ impl Dock {
         }
         (rest, true)
     }
+    /// Move `pinned` channels to the front of whichever deck holds them, in
+    /// that order; other tabs keep their relative order. Returns whether it changed.
+    pub fn pin_front(&mut self, pinned: &[String]) -> bool {
+        match self {
+            Self::Leaf(_) => false,
+            Self::Deck { channels, .. } => {
+                let mut order: Vec<String> = pinned
+                    .iter()
+                    .filter(|p| channels.contains(p))
+                    .cloned()
+                    .collect();
+                order.extend(channels.iter().filter(|c| !pinned.contains(c)).cloned());
+                let changed = order != *channels;
+                *channels = order;
+                changed
+            }
+            Self::Split { children, .. } => children
+                .iter_mut()
+                .fold(false, |changed, child| child.pin_front(pinned) | changed),
+        }
+    }
     fn push_front(&mut self, name: &str) {
         match self {
             Self::Leaf(current) => {

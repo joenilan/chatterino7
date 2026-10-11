@@ -174,10 +174,14 @@ impl Workbench {
     /// Keep the own channel first in the primary group of every workspace.
     /// Runs after every pump, so drags, closes and new workspaces all converge.
     pub(super) fn ensure_anchor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let mut changed = self.order_pinned_tabs(cx);
         let Some(own) = self.anchor(cx) else {
+            if changed {
+                self.schedule_save(cx);
+                cx.notify();
+            }
             return;
         };
-        let mut changed = false;
         for index in 0..self.tabs.len() {
             if !self.tabs[index]
                 .panes
@@ -206,6 +210,60 @@ impl Workbench {
             self.schedule_save(cx);
             cx.notify();
         }
+    }
+    /// Keep pinned tabs at the front of their group (after the Streamer anchor).
+    fn order_pinned_tabs(&mut self, cx: &mut Context<Self>) -> bool {
+        let anchor = self.anchor(cx);
+        let mut changed = false;
+        for tab in &mut self.tabs {
+            let names: Vec<String> = tab
+                .panes
+                .iter()
+                .map(|p| p.read(cx).name.to_string())
+                .collect();
+            tab.pinned.retain(|c| names.contains(c));
+            let mut order: Vec<String> = anchor.iter().cloned().collect();
+            order.extend(
+                tab.pinned
+                    .iter()
+                    .filter(|c| Some(*c) != anchor.as_ref())
+                    .cloned(),
+            );
+            if !order.is_empty()
+                && let Some(dock) = &mut tab.dock
+            {
+                changed |= dock.pin_front(&order);
+            }
+        }
+        changed
+    }
+    pub(super) fn is_pinned(&self, channel: &str, cx: &App) -> bool {
+        self.anchor(cx).as_deref() == Some(channel)
+            || self
+                .tabs
+                .get(self.active)
+                .is_some_and(|t| t.pinned.iter().any(|c| c == channel))
+    }
+    pub(super) fn toggle_pin(&mut self, channel: &str, cx: &mut Context<Self>) {
+        if self.anchor(cx).as_deref() == Some(channel) {
+            self.notice = Some((
+                "Your channel is pinned by the Streamer setup.".into(),
+                std::time::Instant::now(),
+            ));
+            cx.notify();
+            return;
+        }
+        let Some(tab) = self.tabs.get_mut(self.active) else {
+            return;
+        };
+        if let Some(at) = tab.pinned.iter().position(|c| c == channel) {
+            tab.pinned.remove(at);
+        } else {
+            tab.pinned.push(channel.to_owned());
+        }
+        self.order_pinned_tabs(cx);
+        self.schedule_save(cx);
+        cx.notify();
     }
     pub(super) fn set_experience(&mut self, experience: Experience, cx: &mut Context<Self>) {
         self.experience = experience;
