@@ -10,12 +10,14 @@ mod chat_text;
 mod chatter_appearance;
 mod chatter_notes;
 mod chatterino_import;
+mod chatters;
 mod commands;
 mod community;
 mod control;
 mod custom_commands;
 mod dock;
 mod emote_picker;
+mod event_highlights;
 mod ffz_badges;
 mod ffz_role_badges;
 mod frame_sampler;
@@ -157,6 +159,8 @@ struct ChannelPane {
     name: SharedString,
     /// The signed-in account's role here, when known.
     role: Option<capabilities::Role>,
+    /// Twitch's chatter list for @-completion (moderated or own channels only).
+    chatter_list: std::rc::Rc<Vec<String>>,
     connection: String,
     connected: bool,
     room_settings: Option<room_settings::RoomSettings>,
@@ -241,6 +245,7 @@ impl ChannelPane {
         Self {
             name: name.to_owned().into(),
             role: None,
+            chatter_list: Default::default(),
             media,
             catalog,
             custom_commands: Default::default(),

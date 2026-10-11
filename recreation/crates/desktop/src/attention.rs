@@ -1,4 +1,5 @@
 //! Session-local, retention-bounded attention. References never own message bodies.
+use crate::event_highlights::Kind;
 use chat_core::{Fragment, Message, Timeline};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -17,6 +18,8 @@ pub struct Attention {
     rules: Vec<crate::highlight_rules::Rule>,
     channel: String,
     since: u64,
+    events: crate::event_highlights::EventHighlights,
+    raiders: crate::event_highlights::Raiders,
 }
 pub fn terms(text: &str) -> Vec<String> {
     let mut result = Vec::new();
@@ -53,30 +56,56 @@ impl Attention {
                     .as_ref()
                     .is_some_and(|r| &r.parent_user_id == user)
         }) {
-            return Some(0);
+            return self.events.get(Kind::Mention);
         }
+        if let Some(kind) = crate::event_highlights::EventHighlights::kind(message) {
+            return self.events.get(kind);
+        }
+        if self.raiders.recent(message)
+            && let Some(color) = self.events.get(Kind::Raid)
+        {
+            return Some(color);
+        }
+        // Your login in plain text counts as a mention; custom words use the first colour.
         let matches = |text: &str| {
             let folded = text.to_lowercase();
-            self.identity.as_ref().is_some_and(|(_, login)| {
+            if self.identity.as_ref().is_some_and(|(_, login)| {
                 crate::highlight_rules::normalized_match(&folded, login, true)
-            }) || self
-                .terms
+            }) {
+                return Some(self.events.get(Kind::Mention));
+            }
+            self.terms
                 .iter()
                 .any(|term| crate::highlight_rules::normalized_match(&folded, term, true))
+                .then_some(Some(0))
         };
         let mut text = String::new();
         for fragment in &message.fragments {
             match fragment {
                 Fragment::Text(part) | Fragment::Mention { label: part, .. } => text.push_str(part),
                 _ => {
-                    if matches(&text) {
-                        return Some(0);
+                    if let Some(color) = matches(&text) {
+                        return color;
                     }
                     text.clear();
                 }
             }
         }
-        matches(&text).then_some(0)
+        matches(&text).flatten()
+    }
+    /// Apply new event colours; re-highlights retained rows when they changed.
+    pub fn set_events(
+        &mut self,
+        events: &crate::event_highlights::EventHighlights,
+        timeline: &Timeline,
+        first: u64,
+    ) -> bool {
+        if &self.events == events {
+            return false;
+        }
+        self.events = events.clone();
+        self.reconcile(timeline, first);
+        true
     }
     pub fn configure(
         &mut self,
@@ -118,6 +147,7 @@ impl Attention {
             self.unread.insert(row);
         }
         self.arrivals.insert(row, Instant::now());
+        self.raiders.note(message);
         if row >= self.since
             && let Some(color) = self.color(message)
         {

@@ -577,7 +577,7 @@ STREAMER_TOOLS.md or FEATURE_COVERAGE.md says so.
   Moderator (shield, modes, queue counts), Streamer (Studio, ads, raid).
 
 ### Integrations
-- **Streamer.bot** (owner request 2026-10-11): connect to Streamer.bot's local
+- **Streamer.bot** (owner request 2026-10-11, full plan in [STREAMER_BOT.md](STREAMER_BOT.md)): connect to Streamer.bot's local
   WebSocket server (default `ws://127.0.0.1:8080/`; optional password).
   - List actions and run them from buttons in Studio, from a chat command
     alias or from a message card. Arguments carry the message and user.

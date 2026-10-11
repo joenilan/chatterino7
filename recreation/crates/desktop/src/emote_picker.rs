@@ -563,24 +563,7 @@ impl ChannelPane {
             return;
         }
         if let Some(query) = raw.strip_prefix('@') {
-            let query = query.to_ascii_lowercase();
-            let mut seen = std::collections::HashSet::new();
-            // Suggestions describe recent speakers, never a complete viewer roster.
-            for message in self.timeline.borrow().messages().iter().rev() {
-                let Some(login) = message.login.as_deref().and_then(chat_core::twitch_login) else {
-                    continue;
-                };
-                if login.starts_with(&query) && seen.insert(login.clone()) {
-                    self.picker.suggestions.push(Choice {
-                        label: format!("@{login}"),
-                        provider: "Recent chatter",
-                        key: None,
-                    });
-                    if self.picker.suggestions.len() == 8 {
-                        break;
-                    }
-                }
-            }
+            self.picker.suggestions = self.user_choices(query, "@", 10);
             if !self.picker.suggestions.is_empty() {
                 self.picker.token = Some((start..range.end, raw.into()));
             }
@@ -591,9 +574,52 @@ impl ChannelPane {
             return;
         }
         self.picker.suggestions = self.catalog.borrow().choices(&self.name, query, 8);
+        // Tab on a bare word also completes chatter names, as in Chatterino.
+        if forced && !raw.starts_with(':') {
+            let users = self.user_choices(query, "", 10 - self.picker.suggestions.len().min(10));
+            self.picker.suggestions.extend(users);
+        }
         if !self.picker.suggestions.is_empty() {
             self.picker.token = Some((start..range.end, raw.into()));
         }
+    }
+    /// Chatter names matching `query`: recent speakers first, then Twitch's chatter
+    /// list where available. Login and display-name prefixes rank above substrings.
+    fn user_choices(&self, query: &str, prefix: &str, limit: usize) -> Vec<Choice> {
+        let query = query.to_lowercase();
+        let mut candidates: Vec<(String, String, &'static str)> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for message in self.timeline.borrow().messages().iter().rev() {
+            let Some(login) = message.login.as_deref().and_then(chat_core::twitch_login) else {
+                continue;
+            };
+            if seen.insert(login.clone()) {
+                candidates.push((login, message.display_name.to_lowercase(), "Recent chatter"));
+            }
+        }
+        for login in self.chatter_list.iter() {
+            if seen.insert(login.clone()) {
+                candidates.push((login.clone(), login.clone(), "In chat"));
+            }
+        }
+        let starts = |(login, display, _): &&(String, String, &'static str)| {
+            login.starts_with(&query) || display.starts_with(&query)
+        };
+        let contains = |(login, display, _): &&(String, String, &'static str)| {
+            login.contains(&query) || display.contains(&query)
+        };
+        let ranked = candidates
+            .iter()
+            .filter(starts)
+            .chain(candidates.iter().filter(|c| !starts(c) && contains(c)));
+        ranked
+            .take(limit)
+            .map(|(login, _, source)| Choice {
+                label: format!("{prefix}{login}"),
+                provider: source,
+                key: None,
+            })
+            .collect()
     }
     pub fn insert_emote(
         &mut self,

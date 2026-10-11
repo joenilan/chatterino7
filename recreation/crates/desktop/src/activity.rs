@@ -34,6 +34,10 @@ impl Workbench {
                     first,
                     p.next_id as u64,
                 );
+                let configured =
+                    p.attention
+                        .set_events(&self.event_highlights.borrow(), &timeline, first)
+                        || configured;
                 drop(timeline);
                 let eligible =
                     eligible && p.scroller.read(cx).is_following_tail() && !p.search.open;

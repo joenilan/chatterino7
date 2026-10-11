@@ -63,6 +63,7 @@ gpui_kit::actions!(
         SearchOpenChannels,
         EditCustomCommands,
         EditIgnores,
+        EditEventHighlights,
         ImportChatterino,
         EditChatterAppearance
     ]
@@ -147,6 +148,7 @@ pub struct Workbench {
     live: crate::live::LiveChat,
     streams: crate::stream_status::Streams,
     capabilities: crate::capabilities::Capabilities,
+    chatters: crate::chatters::Chatters,
     updates: crate::updates::Updates,
     announced_update: Option<String>,
     live_workspaces: bool,
@@ -190,6 +192,7 @@ pub struct Workbench {
     chatter_appearance: crate::chatter_appearance::Preferences,
     ignores: crate::ignores::Shared,
     ignores_editor: Option<Entity<crate::ignores::Editor>>,
+    event_highlights: crate::event_highlights::Shared,
     /// Nicknames from a Chatterino import awaiting login-to-ID lookup.
     /// A short-lived status message that takes precedence over save status.
     notice: Option<(String, std::time::Instant)>,
@@ -361,6 +364,7 @@ impl Workbench {
             chatter_appearance: crate::chatter_appearance::load(&state["chatter_appearance"]),
             ignores: crate::ignores::load(&state["ignores"]),
             ignores_editor: None,
+            event_highlights: crate::event_highlights::load(&state["event_highlights"]),
             pending_nicknames: None,
             notice: None,
             announced_missing_scopes: 0,
@@ -376,6 +380,7 @@ impl Workbench {
             live: crate::live::LiveChat::new(),
             streams: crate::stream_status::Streams::new(),
             capabilities: crate::capabilities::Capabilities::new(),
+            chatters: crate::chatters::Chatters::new(),
             updates: {
                 let mut updates = crate::updates::Updates::new();
                 updates.enabled = state["update_checks"].as_bool().unwrap_or(true);
@@ -590,6 +595,29 @@ impl Workbench {
         let login = self.account.read(cx).login();
         if self.capabilities.pump(identity.clone(), login) {
             cx.notify();
+        }
+        // Chatter lists for visible channels the account moderates or owns.
+        let listed: Vec<String> = self
+            .visible_panes(cx)
+            .iter()
+            .map(|p| p.read(cx).name.to_string())
+            .filter(|c| {
+                self.capabilities
+                    .role(c)
+                    .is_some_and(|r| r != crate::capabilities::Role::Viewer)
+                    && identity
+                        .as_ref()
+                        .is_some_and(|i| i.has("moderator:read:chatters"))
+            })
+            .collect();
+        for channel in self.chatters.pump(identity.as_ref(), &listed) {
+            if let Some(list) = self.chatters.get(&channel) {
+                for pane in &panes {
+                    if pane.read(cx).name.as_ref() == channel {
+                        pane.update(cx, |p, _| p.chatter_list = list.clone());
+                    }
+                }
+            }
         }
         for pane in &panes {
             let role = self.capabilities.role(&pane.read(cx).name);
@@ -1067,6 +1095,26 @@ impl Workbench {
             dialog.w(px(width)).title("Ignores").child(editor.clone())
         });
     }
+    fn open_event_highlights(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings = false;
+        let editor =
+            cx.new(|_| crate::event_highlights::Editor::new(self.event_highlights.clone()));
+        cx.subscribe(
+            &editor,
+            |this, _, _: &crate::event_highlights::Changed, cx| {
+                this.schedule_save(cx);
+                cx.notify();
+            },
+        )
+        .detach();
+        let width = (f32::from(window.viewport_size().width) - 24.).clamp(180., 500.);
+        window.open_dialog(cx, move |dialog, _, _| {
+            dialog
+                .w(px(width))
+                .title("Event highlights")
+                .child(editor.clone())
+        });
+    }
     fn open_custom_commands(
         &mut self,
         origin: Option<String>,
@@ -1461,7 +1509,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
@@ -2920,6 +2968,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|this,_:&EditChatterAppearance,w,cx|this.open_chatter_appearance(None,w,cx)))
             .on_action(cx.listener(|this,_:&EditCustomCommands,w,cx|this.open_custom_commands(None,w,cx)))
             .on_action(cx.listener(|this,_:&EditIgnores,w,cx|this.open_ignores(w,cx)))
+            .on_action(cx.listener(|this,_:&EditEventHighlights,w,cx|this.open_event_highlights(w,cx)))
             .on_action(cx.listener(|this,_:&ImportChatterino,w,cx|this.open_chatterino_import(w,cx)))
             .on_action(cx.listener(|this,_:&SearchOpenChannels,w,cx|this.open_workspace_search(None,w,cx)))
             .on_action(cx.listener(|this,_:&SwitchChannel,w,cx|this.open_switcher(w,cx)))
@@ -2960,6 +3009,7 @@ impl Render for Workbench {
                     .menu("Highlights & unread",Box::new(OpenActivity))
                     .menu("Mark all read",Box::new(MarkAllRead))
                     .menu("Custom commands",Box::new(EditCustomCommands))
+                    .menu("Event highlights",Box::new(EditEventHighlights))
                     .menu("Ignores",Box::new(EditIgnores))
                     .menu("Chatter nicknames & colors",Box::new(EditChatterAppearance))
                     .menu("Appearance & memory",Box::new(ToggleAppearance))
@@ -3006,6 +3056,7 @@ impl Render for Workbench {
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Highlights"))
                             .child(Input::new(&self.highlight_input).small())
                             .child(Button::new("edit-highlight-rules").small().label("Manage highlight rules…").on_click(cx.listener(|this,_,w,cx|this.open_highlight_rules(w,cx))))
+                            .child(Button::new("edit-event-highlights").small().label("Event highlights (mentions, raids, subs…)").on_click(cx.listener(|this,_,w,cx|this.open_event_highlights(w,cx))))
                             .child(Button::new("edit-ignores").small().label("Manage ignores…").on_click(cx.listener(|this,_,w,cx|this.open_ignores(w,cx))))
                             .child(Button::new("import-chatterino").small().label("Import from Chatterino…").on_click(cx.listener(|this,_,w,cx|this.open_chatterino_import(w,cx))))
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Your mentions and replies are included. Add up to 8 words/phrases (40 characters each). Whole-word, case-insensitive; no alerts or sounds."))

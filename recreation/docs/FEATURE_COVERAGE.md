@@ -120,7 +120,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | IN04 | Sent-message input history | P | Alt+Up/Down bounded session-local successful sends with draft restoration and account clearing; native pending, persistence/search remains. | widgets/splits/SplitInput.cpp |
 | IN05 | Command routing | Next | Prevent unsupported slash commands being mistaken for working moderator commands; deliberate literal-text behavior. | controllers/commands/CommandController.cpp |
 | IN06 | Custom command editor | Backlog | Aliases, parameters/context variables, multiword expansion and validation. | controllers/commands/CommandModel.cpp; settingspages/CommandPage.cpp |
-| IN07 | Command completion | Backlog | Discover supported built-in/custom actions with permission-aware hints. | controllers/completion; controllers/commands |
+| IN07 | Command completion | Part | @ shows recent chatters plus Twitch's chatter list in moderated/own channels, with display-name and substring matching; Tab completes names without @. Command hints remain. | controllers/completion; controllers/commands |
 | IN08 | Utility commands | Part | Twitch utility commands (/w, /color, /block) via Helix ([details](STREAMER_TOOLS.md)); /me, chatters/mods/VIP lists, popout remain. | controllers/commands/builtin/Misc.cpp; builtin/twitch |
 | IN09 | Broadcaster commands | Part | /settitle, /setgame, /marker, /commercial, /raid, /announce, /shoutout via Helix with capability checks; /clip and live acceptance remain. | controllers/commands/builtin/twitch |
 | IN10 | Configurable hotkeys | Part | Fixed shortcuts exist; action registry/editor, conflicts, contexts, arguments and import/export remain. | controllers/hotkeys; settingspages/KeyboardSettingsPage.cpp |
@@ -155,7 +155,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | AT01 | Unread and retained activity | Part | Native unread/tail clearing, activity filters and Mark all read observed; Jump and inactive/offscreen edges unverified. | Jawjack attention.rs; activity.rs |
 | AT02 | Basic mentions and highlight words | Part | Native custom-word highlighting observed; natural own-mention/reply matching unverified. | controllers/highlights; settingspages/HighlightingPage.cpp |
 | AT03 | Advanced highlight rules | Part | Plain/regex, case, sender and channel rules with colors and priority exist; badge rules, exclusions, sounds remain. | controllers/highlights |
-| AT04 | Special-event highlight policies | Backlog | Whisper/sub/reward/first-message/announcement/AutoMod/thread rules. | singletons/Settings.hpp |
+| AT04 | Special-event highlight policies | Part | Event highlight colours for mentions, raids (and the raider for 30 min), subs/gifts, Bits, rewards, announcements and first-time chatters ([details](EVENT_HIGHLIGHTS.md)); whisper/AutoMod/thread rules remain. | singletons/Settings.hpp |
 | AT05 | Sounds, taskbar and attention preferences | Backlog | Per-rule/per-channel sound/mute, foreground behavior, duration and privacy controls. | controllers/pings; sound; highlights |
 | AT06 | Local ignores and replacements | Part | Chatter and phrase/regex hide/replace implemented ([details](IGNORES.md)); exclusions and show-hidden display remain. | controllers/ignores; settingspages/IgnoresPage.cpp |
 | AT07 | Twitch blocks | Backlog | Approved account-backed block sync/actions, local visibility policy and clear distinction from local ignore. | controllers/ignores |
