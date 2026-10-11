@@ -389,6 +389,87 @@ impl Workbench {
                 )
         });
     }
+    /// Newest first: kind pill, who, what, when and (if not Twitch) where.
+    fn render_feed(&self) -> AnyElement {
+        if self.feed.items.is_empty() {
+            return div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                "Nothing yet this session. Follows, subs, gifts, Bits, raids and rewards show up here; donations and YouTube/Kick events come in through Streamer.bot.",
+            ).into_any_element();
+        }
+        div()
+            .id("studio-feed")
+            .v_flex()
+            .gap_1()
+            .max_h(px(260.))
+            .overflow_y_scroll()
+            .children(
+                self.feed
+                    .items
+                    .iter()
+                    .take(40)
+                    .enumerate()
+                    .map(|(index, item)| {
+                        let (_, accent, background) =
+                            crate::highlight_rules::COLORS[item.kind.color()];
+                        div()
+                            .id(("feed", index))
+                            .v_flex()
+                            .gap(px(2.))
+                            .px_2()
+                            .py_1()
+                            .rounded(px(6.))
+                            .bg(rgb(background))
+                            .border_l_2()
+                            .border_color(rgb(accent))
+                            .child(
+                                div()
+                                    .h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .child(
+                                        div()
+                                            .text_size(px(10.))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(rgb(accent))
+                                            .child(item.kind.label().to_uppercase()),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .overflow_hidden()
+                                            .whitespace_nowrap()
+                                            .text_ellipsis()
+                                            .text_size(px(12.))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .child(item.who.clone()),
+                                    )
+                                    .when(item.source != "Twitch", |el| {
+                                        el.child(
+                                            div()
+                                                .text_size(px(10.))
+                                                .text_color(rgb(theme::MUTED))
+                                                .child(item.source.clone()),
+                                        )
+                                    })
+                                    .child(
+                                        div()
+                                            .text_size(px(10.))
+                                            .text_color(rgb(theme::MUTED))
+                                            .child(item.at.format("%H:%M").to_string()),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(11.))
+                                    .text_color(rgb(theme::MUTED))
+                                    .line_clamp(2)
+                                    .child(item.detail.clone()),
+                            )
+                    }),
+            )
+            .into_any_element()
+    }
     pub(super) fn render_studio(
         &mut self,
         window: &mut Window,
@@ -534,6 +615,7 @@ impl Workbench {
                 .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
                     pane.as_ref().map(|p| format!("Chat · {}", p.read(cx).connection)).unwrap_or_default(),
                 )))
+            .child(card("Activity").child(self.render_feed()))
             .child(card("Stream info").children(self.studio_editor.clone()))
             .child(card("Chat modes").child(match &pane {
                 Some(pane) => mode_buttons(owner.clone(), pane.clone(), own.clone(), pane.read(cx).room_settings.clone()),

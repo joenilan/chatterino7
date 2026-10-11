@@ -44,8 +44,17 @@ Toggle it with the panel icon right of the settings gear (panel-right open/close
   Twitch's live room state and toggles through the same command path as `/slow`.
 - **Broadcast:** Add marker, ads of 30, 60 or 90 s (each asks first), and Raid… (asks first, explains
   the countdown and /unraid).
-- Planned next: Streamer.bot action buttons ([STREAMER_BOT.md](STREAMER_BOT.md)),
-  an audience event feed, polls and predictions.
+- **Activity:** newest-first feed, capped at 200 items for the session, with kind pills coloured to match
+  event highlights:
+  - Twitch: follows (`channel.follow` v2) and channel-point redemptions. These are extra EventSub subscriptions,
+    made only for the signed-in broadcaster's own channel, and they are optional: a failure doesn't affect chat. Each
+    socket now carries at most 49 channels (147 in total) to leave room for them.
+  - Own-channel subs, gifts, raids, Bits and charity notices taken from chat.
+  - Streamer.bot: donations (Ko-fi, Streamlabs, StreamElements, Fourthwall, TipeeeStream,
+    Patreon) and YouTube/Kick events. Jawjack asks Streamer.bot which events it supports (`GetEvents`) and
+    subscribes to those.
+- **Streamer.bot** card and pinned action buttons ([STREAMER_BOT.md](STREAMER_BOT.md)).
+- Planned next: polls and predictions.
 
 ## Evidence (Windows, 2026-10-11)
 
@@ -56,3 +65,7 @@ Toggle it with the panel icon right of the settings gear (panel-right open/close
 - 🛡 showed on #bessvibes and #3putt_ (moderated channels).
 - Not yet exercised live: markers, ads and raids (they need a live stream or a target),
   saving stream info, and Clear chat.
+
+Activity evidence (Windows, 2026-10-11): Streamer.bot accepted the event subscription
+("Connected · events from YouTube, Kick, Ko-fi, …"). No follow, redemption or donation
+happened during testing, so live items haven't been observed yet. Feed parsing is unit-tested.

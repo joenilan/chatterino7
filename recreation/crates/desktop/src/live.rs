@@ -40,6 +40,8 @@ struct Config {
 pub enum Event {
     State(String, String, bool),
     Resolved(String, String),
+    /// Follow or reward redemption on the signed-in broadcaster's own channel.
+    Activity(crate::activity_feed::Item),
     RoomSettings(String, crate::room_settings::RoomSettings, bool),
     Chat(String, ChatEvent),
     Sent(u64, Result<(), String>),
@@ -359,9 +361,15 @@ fn optional_kind(kind: &str) -> bool {
         "channel.chat.notification" | "channel.chat_settings.update"
     )
 }
+/// Extra, optional subscriptions for the signed-in broadcaster's own channel,
+/// feeding the Studio activity feed: (type, version).
+const OWN_KINDS: [(&str, &str); 2] = [
+    ("channel.follow", "2"),
+    ("channel.channel_points_custom_reward_redemption.add", "1"),
+];
 /// EventSub allows 300 enabled subscriptions per WebSocket and three WebSockets
-/// per user token.
-const CHANNELS_PER_SOCKET: usize = 300 / CHANNEL_KINDS.len();
+/// per user token. One shard also carries the own channel's extras.
+const CHANNELS_PER_SOCKET: usize = (300 - OWN_KINDS.len()) / CHANNEL_KINDS.len();
 const MAX_SOCKETS: usize = 3;
 pub const MAX_CHANNELS: usize = CHANNELS_PER_SOCKET * MAX_SOCKETS;
 /// Subscription requests stay well inside Helix's 800 points/minute budget,
@@ -728,8 +736,25 @@ impl Step<'_> {
             }
             return;
         };
-        let kind = CHANNEL_KINDS[a.step];
-        let body = json!({"type":kind,"version":"1","condition":{"broadcaster_user_id":broadcaster,"user_id":self.identity.user_id},"transport":{"method":"websocket","session_id":self.session}});
+        let own = broadcaster == self.identity.user_id;
+        let total = CHANNEL_KINDS.len() + if own { OWN_KINDS.len() } else { 0 };
+        let extra = a.step >= CHANNEL_KINDS.len();
+        let (kind, kind_version, condition) = if extra {
+            let (kind, kind_version) = OWN_KINDS[a.step - CHANNEL_KINDS.len()];
+            let condition = if kind == "channel.follow" {
+                json!({"broadcaster_user_id":broadcaster,"moderator_user_id":self.identity.user_id})
+            } else {
+                json!({"broadcaster_user_id":broadcaster})
+            };
+            (kind, kind_version, condition)
+        } else {
+            (
+                CHANNEL_KINDS[a.step],
+                "1",
+                json!({"broadcaster_user_id":broadcaster,"user_id":self.identity.user_id}),
+            )
+        };
+        let body = json!({"type":kind,"version":kind_version,"condition":condition,"transport":{"method":"websocket","session_id":self.session}});
         let response = match self
             .client
             .post("https://api.twitch.tv/helix/eventsub/subscriptions")
@@ -777,6 +802,8 @@ impl Step<'_> {
             if let Some(id) = value["data"][0]["id"].as_str() {
                 a.ids.push(id.to_owned());
             }
+        } else if extra {
+            // Activity-feed extras are best effort (missing scope or role).
         } else if optional_kind(kind) {
             a.notices_unavailable = true;
         } else {
@@ -792,7 +819,7 @@ impl Step<'_> {
             return;
         }
         a.step += 1;
-        if a.step == CHANNEL_KINDS.len() {
+        if a.step == total {
             a.ready = true;
             a.failed_until = None;
             let _ = self.snapshots.try_send(RoomSnapshot {
@@ -962,6 +989,11 @@ fn deliver(
         if let Some(settings) = crate::room_settings::RoomSettings::parse(e) {
             let _ = tx.send((version, Event::RoomSettings(channel, settings, false)));
         }
+        return;
+    }
+    let kind = v["payload"]["subscription"]["type"].as_str().unwrap_or("");
+    if let Some(item) = crate::activity_feed::Feed::from_eventsub(kind, e) {
+        let _ = tx.send((version, Event::Activity(item)));
         return;
     }
     let text = |key: &str| e[key].as_str().unwrap_or("").to_owned();

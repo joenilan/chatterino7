@@ -50,6 +50,8 @@ pub enum Event {
     Status(String, bool),
     Actions(Vec<Action>),
     Ran(u64, Result<String, String>),
+    /// A subscribed Streamer.bot event, for the activity feed.
+    Feed(crate::activity_feed::Item),
 }
 
 pub struct StreamerBot {
@@ -90,10 +92,17 @@ impl StreamerBot {
         });
         self.next_request
     }
-    /// Apply worker events; returns completed runs for feedback.
-    pub fn poll(&mut self) -> (bool, Vec<(u64, Result<String, String>)>) {
+    /// Apply worker events; returns completed runs and new feed items.
+    pub fn poll(
+        &mut self,
+    ) -> (
+        bool,
+        Vec<(u64, Result<String, String>)>,
+        Vec<crate::activity_feed::Item>,
+    ) {
         let mut changed = false;
         let mut ran = Vec::new();
+        let mut feed = Vec::new();
         while let Ok(event) = self.rx.try_recv() {
             changed = true;
             match event {
@@ -106,9 +115,10 @@ impl StreamerBot {
                 }
                 Event::Actions(actions) => self.actions = actions,
                 Event::Ran(request, result) => ran.push((request, result)),
+                Event::Feed(item) => feed.push(item),
             }
         }
-        (changed, ran)
+        (changed, ran, feed)
     }
 }
 
@@ -120,6 +130,7 @@ fn worker(commands: mpsc::Receiver<Command>, events: mpsc::Sender<Event>) {
     let mut retry_at = Instant::now();
     let mut backoff = Duration::from_secs(2);
     let mut pending: Vec<(String, u64)> = Vec::new();
+    let mut sources: Vec<String> = Vec::new();
     loop {
         // Commands first, so turning the integration off takes effect at once.
         loop {
@@ -188,6 +199,8 @@ fn worker(commands: mpsc::Receiver<Command>, events: mpsc::Sender<Event>) {
                     backoff = Duration::from_secs(2);
                     let _ = events.send(Event::Status("Connected".into(), true));
                     let _ = send(&mut s, json!({"request":"GetActions","id":"actions"}));
+                    // Discover which event sources this Streamer.bot knows before subscribing.
+                    let _ = send(&mut s, json!({"request":"GetEvents","id":"events"}));
                     socket = Some(s);
                 }
                 Err(error) => {
@@ -208,7 +221,51 @@ fn worker(commands: mpsc::Receiver<Command>, events: mpsc::Sender<Event>) {
                     continue;
                 };
                 let id = value["id"].as_str().unwrap_or("");
-                if id == "actions" {
+                if value["event"].is_object() {
+                    if let Some(item) = crate::activity_feed::Feed::from_streamer_bot(&value) {
+                        let _ = events.send(Event::Feed(item));
+                    }
+                } else if id == "events" {
+                    let available = &value["events"];
+                    let mut wanted = serde_json::Map::new();
+                    for (source, kinds) in crate::activity_feed::STREAMER_BOT_EVENTS {
+                        let known: Vec<&str> = kinds
+                            .iter()
+                            .copied()
+                            .filter(|k| {
+                                available[source]
+                                    .as_array()
+                                    .is_some_and(|a| a.iter().any(|v| v == k))
+                            })
+                            .collect();
+                        if !known.is_empty() {
+                            wanted.insert((*source).into(), json!(known));
+                        }
+                    }
+                    if !wanted.is_empty() {
+                        sources = wanted
+                            .keys()
+                            .map(|k| {
+                                if k == "Kofi" {
+                                    "Ko-fi".into()
+                                } else {
+                                    k.clone()
+                                }
+                            })
+                            .collect();
+                        let _ = send(
+                            s,
+                            json!({"request":"Subscribe","id":"subscribe","events":wanted}),
+                        );
+                    }
+                } else if id == "subscribe" {
+                    let status = if value["status"] == "ok" {
+                        format!("Connected · events from {}", sources.join(", "))
+                    } else {
+                        "Connected · event subscription refused".into()
+                    };
+                    let _ = events.send(Event::Status(status, true));
+                } else if id == "actions" {
                     let mut actions: Vec<Action> = value["actions"]
                         .as_array()
                         .into_iter()

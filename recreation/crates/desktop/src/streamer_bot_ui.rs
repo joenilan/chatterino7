@@ -62,7 +62,11 @@ impl Workbench {
         .detach();
     }
     pub(super) fn pump_streamer_bot(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let (changed, ran) = self.streamer_bot.poll();
+        let (changed, ran, feed) = self.streamer_bot.poll();
+        for item in feed {
+            self.feed.push(item);
+            cx.notify();
+        }
         for (request, result) in ran {
             let name = self.bot_runs.remove(&request).unwrap_or_default();
             let text = match result {
