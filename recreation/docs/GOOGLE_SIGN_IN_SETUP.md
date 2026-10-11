@@ -29,24 +29,54 @@ is selected at the top of every page below.
    account. Google shows "Google hasn't verified this app" (expected while testing) → **Continue** →
    allow YouTube access. Then paste a YouTube live link into Add channel (Ctrl+K).
 
-## While in Testing
+## Current state (October 11, 2026)
 
-- Only the test users from step 2 can sign in. Google ends their sign-in after **7 days**, and pressing
-  Connect again is one click.
-- Quota is shared by every user of this project: about 5 units per chat refresh and 50 per message
-  sent, out of 10,000 a day by default. You can request more in Google Cloud once people use it.
+Done: Google Cloud project `jawjack` (number 334168989213) under the YouTube account; YouTube Data API v3
+enabled; consent screen "Jawjack", External; scope `youtube.force-ssl`; Desktop client "Jawjack" (saved to
+`recreation/google-client.json`, git-ignored); test user added; Branding filled in:
+- home page https://zombie.digital/apps/jawjack
+- privacy policy https://zombie.digital/apps/jawjack/privacy (source: the zombie-digital repo,
+  `app/(site)/apps/[slug]/privacy/page.tsx`)
+- terms https://zombie.digital/terms, authorized domain `zombie.digital`.
 
-## Before a public release: verification
+## Going live, in order
 
-Google must verify the app before anyone can sign in without being a test user. `youtube.force-ssl` is a
-"sensitive" scope: verification is free (no paid security audit). It needs:
-- a homepage and a privacy-policy page on a domain you own (e.g. `apps.zombie.digital/jawjack`),
-  with the domain verified in Google Search Console and added under Branding → Authorized domains;
-- a short screen recording showing the sign-in and how Jawjack uses YouTube chat;
-- a one-line reason for the scope ("read and post the user's YouTube live chat in a chat client").
+1. **Publish** (owner clicks): Audience → Publish app → Confirm. Anyone can then sign in, and the 7-day
+   sign-in limit ends. Until verification, people see "Google hasn't verified this app" (Advanced → Go to
+   Jawjack), and there is a 100-user lifetime cap.
+2. **Prove the domain**: Google Search Console → add `zombie.digital` as a Domain property, verify with the
+   DNS TXT record in Cloudflare, using the same Google account as the Cloud project.
+3. **Verification** (Verification Center → Prepare for verification). Answers:
+   - *Scope justification (youtube.force-ssl):* "Jawjack is a desktop live-chat client for streamers and
+     moderators. When the user opens a YouTube live stream in Jawjack, it reads that stream's live chat
+     (liveChatMessages.list / streamList) and looks up the video's title and live chat ID (videos.list).
+     When the user types a message and presses Enter, Jawjack posts it to that live chat
+     (liveChatMessages.insert). Posting chat requires youtube.force-ssl; no narrower scope allows
+     liveChatMessages.insert. Jawjack does nothing else with the account."
+   - *Demo video* (unlisted YouTube upload, 1-3 minutes, English UI): show the app name, press Connect in
+     Settings → YouTube; the consent screen showing "Jawjack" and the YouTube permission, with the browser
+     address bar visible (client ID in the URL); approve; paste a live stream link with Ctrl+K; chat
+     arriving; type and send a message that appears on YouTube; then Settings → Sign out.
+4. **More quota** (YouTube API Services audit and quota extension form,
+   https://support.google.com/youtube/contact/yt_api_form). Owner submits (it asks for legal and contact
+   details). Draft answers:
+   - *Project number:* 334168989213. *API client:* Jawjack (Windows desktop), https://zombie.digital/apps/jawjack.
+   - *What it does:* a native chat client for live streamers, moderators and viewers, combining Twitch
+     and YouTube live chat; YouTube is used only to read a live stream's chat and post the user's own
+     messages, with the user's OAuth consent. No data leaves the user's PC except requests to YouTube.
+   - *Endpoints and why:* videos.list (1 unit) to find a stream's live chat; liveChatMessages.streamList
+     (5 units per connection) to receive chat; liveChatMessages.list only as a fallback; liveChatMessages.insert
+     (50 units) for messages the user sends.
+   - *Quota-saving measures already in the app:* streaming instead of polling, adaptive slow polling as a
+     fallback, no requests for closed tabs, a pause until the daily reset instead of retrying once quota
+     runs out, and no background use.
+   - *Estimate to request:* per active user per streaming hour ≈ 12 streamList reconnects (60 units) + 20
+     sent messages (1,000 units) ≈ 1,000-1,100 units. Ask for 1,000,000 units/day (≈ 300 users streaming
+     3 hours a day), and request more with real usage numbers later.
+   - *Screenshots to attach:* the privacy policy page, the home page, the consent screen, and Jawjack's
+     YouTube tab.
 
-Submit from https://console.cloud.google.com/auth/verification (Audience → Publish app first). It usually
-takes a few days to a few weeks. After that the 7-day limit and the 100-user cap go away.
+The daily quota resets at midnight Pacific time. Jawjack shows "back at <local time>" when it runs out.
 
 ## Why the secret can ship in the app
 
