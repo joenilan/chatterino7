@@ -63,6 +63,9 @@ pub struct Ignores {
     /// Twitch logins, lowercase.
     pub users: Vec<String>,
     pub phrases: Vec<Phrase>,
+    /// Twitch-blocked user IDs (session only, from the account's block list);
+    /// empty when hiding blocked users is turned off.
+    pub blocked: std::collections::BTreeSet<String>,
 }
 pub type Shared = Rc<RefCell<Ignores>>;
 
@@ -103,6 +106,9 @@ impl Ignores {
     }
     /// Hide the message, or rewrite matched text in place.
     pub fn apply(&self, message: &mut Message) -> Outcome {
+        if self.blocked.contains(&message.user_id) {
+            return Outcome::Hide;
+        }
         if message
             .login
             .as_deref()

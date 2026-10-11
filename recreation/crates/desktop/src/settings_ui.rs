@@ -237,6 +237,23 @@ impl Workbench {
                     open_button("settings-commands", "Edit").on_click(cx.listener(|this, _, w, cx| this.open_custom_commands(None, w, cx))),
                 ))
                 .child(row(
+                    "Hide blocked users",
+                    match &self.blocks.ids {
+                        Some(ids) if ids.len() >= crate::blocks::MAX_IDS => format!(
+                            "New messages from people you've blocked on Twitch stay hidden, as on twitch.tv ({}+ blocked; the first {} are used).",
+                            crate::blocks::MAX_IDS, crate::blocks::MAX_IDS
+                        ),
+                        Some(ids) => format!("New messages from the {} people you've blocked on Twitch stay hidden, as on twitch.tv.", ids.len()),
+                        None => "New messages from people you've blocked on Twitch stay hidden, as on twitch.tv.".into(),
+                    },
+                    Switch::new("settings-hide-blocked").checked(self.hide_blocked).on_click(cx.listener(|this, on: &bool, _, cx| {
+                        this.hide_blocked = *on;
+                        this.apply_blocks();
+                        this.schedule_save(cx);
+                        cx.notify();
+                    })),
+                ))
+                .child(row(
                     "Ignores",
                     "Hide chatters or phrases locally. Twitch blocks are separate.",
                     open_button("settings-ignores", "Edit").on_click(cx.listener(|this, _, w, cx| this.open_ignores(w, cx))),

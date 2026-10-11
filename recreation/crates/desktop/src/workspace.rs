@@ -191,6 +191,9 @@ pub struct Workbench {
     pinged: std::collections::VecDeque<String>,
     /// Channels in their own windows; reopened on the next launch.
     popouts: Vec<popout::Popout>,
+    /// Twitch block list; blocked users' messages are hidden unless turned off.
+    blocks: crate::blocks::Blocks,
+    hide_blocked: bool,
     /// Optional chat logs (off by default).
     logs: crate::chat_logs::Logs,
     logs_enabled: bool,
@@ -544,6 +547,8 @@ impl Workbench {
                 .unwrap_or(0.6),
             pinged: Default::default(),
             popouts: Vec::new(),
+            blocks: crate::blocks::Blocks::new(),
+            hide_blocked: state["hide_blocked"].as_bool().unwrap_or(true),
             logs: crate::chat_logs::Logs::new(),
             logs_enabled: state["logs"]["enabled"].as_bool().unwrap_or(false),
             logs_folder: state["logs"]["folder"]
@@ -907,6 +912,9 @@ impl Workbench {
                 });
             }
             cx.notify();
+        }
+        if self.blocks.pump(identity.as_ref()) {
+            self.apply_blocks();
         }
         let priority = self.connection_priority(cx);
         // Ask 7TV for the cosmetics of people in open channels (visible first).
@@ -1914,11 +1922,15 @@ impl Workbench {
             });
             return;
         };
+        let blocking = matches!(request, crate::twitch_actions::Request::Block { .. });
         let task = cx.background_spawn(async move {
             crate::twitch_actions::run(&identity, &channel, &request)
         });
-        cx.spawn_in(window, async move |_, cx| {
+        cx.spawn_in(window, async move |view, cx| {
             let result = task.await;
+            if blocking && result.is_ok() {
+                let _ = view.update(cx, |this, _| this.blocks.refresh());
+            }
             let _ = pane.update_in(cx, |p, window, cx| match result {
                 Ok(done) => {
                     if p.draft.read(cx).value().as_ref() == draft {
@@ -1984,6 +1996,7 @@ impl Workbench {
         value["active_account"] = accounts["active_account"].clone();
         value["send_as"] = json!(self.send_as);
         value["popouts"] = json!(self.popout_channels(cx));
+        value["hide_blocked"] = json!(self.hide_blocked);
         value["logs"] =
             json!({"enabled": self.logs_enabled, "folder": self.logs_folder.display().to_string()});
         value["streamer_mode"] =

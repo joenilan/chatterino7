@@ -6,6 +6,7 @@ mod attention_navigation;
 mod auth;
 mod automod;
 mod automod_ui;
+mod blocks;
 mod bttv_events;
 mod capabilities;
 mod catalog;
