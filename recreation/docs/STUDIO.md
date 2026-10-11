@@ -123,3 +123,9 @@ While you're live (Twitch reports it or OBS is streaming), a card at the top of 
 
 It refreshes every 5 s while Studio is open. The pace bucketing is unit tested, but the card hasn't been seen during a live stream yet.
 
+## Raid finder (2026-10-11)
+
+Under the Raid box in Tools, up to 8 live channels you follow (from the LIVE NOW list, most viewers first)
+are listed with category and viewers, and the title shows on hover. Clicking one fills the Raid box, and Raid still asks
+for confirmation. Verified: the list shows and a click fills the box (no raid was started).
+

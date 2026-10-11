@@ -982,6 +982,82 @@ impl Workbench {
                     .child(div().flex_1().child(Input::new(&raid_input).small()))
                     .child(raid),
             )
+            // Raid finder: live channels you follow (from LIVE NOW), click to fill in.
+            .when_some(
+                self.follows_live
+                    .list
+                    .clone()
+                    .map(|l| {
+                        l.into_iter()
+                            .filter(|f| f.login != own)
+                            .take(8)
+                            .collect::<Vec<_>>()
+                    })
+                    .filter(|l| !l.is_empty()),
+                |el, list| {
+                    el.child(
+                        div()
+                            .pl(px(40.))
+                            .pt_1()
+                            .v_flex()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_size(px(10.))
+                                    .text_color(rgb(theme::MUTED))
+                                    .child("LIVE NOW · YOU FOLLOW"),
+                            )
+                            .children(list.into_iter().enumerate().map(|(index, live)| {
+                                let (input, login) = (raid_input.clone(), live.login.clone());
+                                div()
+                                    .id(("raid-pick", index))
+                                    .h_flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .px_1()
+                                    .rounded(px(4.))
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(rgb(theme::HOVER)))
+                                    .text_size(px(11.))
+                                    .tooltip({
+                                        let title = live.title.clone();
+                                        move |w, cx| {
+                                            gpui_kit::component::tooltip::Tooltip::new(
+                                                title.clone(),
+                                            )
+                                            .build(w, cx)
+                                        }
+                                    })
+                                    .child(div().flex_shrink_0().child(if live.name.is_empty() {
+                                        live.login.clone()
+                                    } else {
+                                        live.name.clone()
+                                    }))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .overflow_hidden()
+                                            .whitespace_nowrap()
+                                            .text_ellipsis()
+                                            .text_color(rgb(theme::MUTED))
+                                            .child(live.game.clone()),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex_shrink_0()
+                                            .text_color(rgb(theme::MUTED))
+                                            .child(crate::follows_live::viewers(live.viewers)),
+                                    )
+                                    .on_click(move |_, window, cx| {
+                                        input.update(cx, |i, cx| {
+                                            i.set_value(login.clone(), window, cx)
+                                        });
+                                    })
+                            })),
+                    )
+                },
+            )
             .child(Self::studio_section("Polls & predictions"))
             .child(self.render_engagement(window, cx))
             .child(Self::studio_section("Streamer.bot"))
