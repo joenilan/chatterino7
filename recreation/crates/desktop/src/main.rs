@@ -8,6 +8,7 @@ mod automod;
 mod automod_ui;
 mod capabilities;
 mod catalog;
+mod chat_logs;
 mod chat_pause;
 mod chat_search;
 mod chat_text;

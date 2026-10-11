@@ -209,6 +209,29 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "Save chat logs",
+                    "A text file per channel per day, like Chatterino's logs. Off by default.",
+                    Switch::new("settings-logs").checked(self.logs_enabled).on_click(cx.listener(|this, on: &bool, _, cx| {
+                        this.logs_enabled = *on;
+                        this.schedule_save(cx);
+                        cx.notify();
+                    })),
+                ))
+                .when(self.logs_enabled, |el| {
+                    el.child(row(
+                        "Log folder",
+                        self.logs_folder.display().to_string(),
+                        div()
+                            .h_flex()
+                            .gap_1()
+                            .child(open_button("settings-logs-open", "Open").on_click(cx.listener(|this, _, _, cx| {
+                                let _ = std::fs::create_dir_all(&this.logs_folder);
+                                cx.open_with_system(&this.logs_folder);
+                            })))
+                            .child(open_button("settings-logs-change", "Change…").on_click(cx.listener(|this, _, w, cx| this.choose_logs_folder(w, cx)))),
+                    ))
+                })
+                .child(row(
                     "Custom commands",
                     "Your own /commands that expand into text.",
                     open_button("settings-commands", "Edit").on_click(cx.listener(|this, _, w, cx| this.open_custom_commands(None, w, cx))),

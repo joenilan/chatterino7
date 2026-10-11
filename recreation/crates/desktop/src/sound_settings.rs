@@ -208,3 +208,69 @@ impl Workbench {
         ))
     }
 }
+
+impl Workbench {
+    /// One log line for a chat event in `channel`.
+    pub(super) fn log_event(&self, channel: &str, event: &chat_core::Event, cx: &App) {
+        // A deleted or cleared message's author comes from what's on screen.
+        let find = |pred: &dyn Fn(&chat_core::Message) -> bool| {
+            self.panes()
+                .iter()
+                .filter(|p| p.read(cx).name.as_ref() == channel)
+                .find_map(|p| {
+                    p.read(cx)
+                        .timeline
+                        .borrow()
+                        .messages()
+                        .iter()
+                        .rev()
+                        .find(|m| pred(m))
+                        .cloned()
+                })
+        };
+        let text = match event {
+            chat_core::Event::Message(message) => crate::chat_logs::message_text(message),
+            chat_core::Event::DeleteMessage { message_id, .. } => {
+                match find(&|m| &m.id == message_id) {
+                    Some(m) => format!(
+                        "A moderator deleted {}'s message: {}",
+                        m.display_name,
+                        m.body()
+                    ),
+                    None => "A moderator deleted a message.".into(),
+                }
+            }
+            chat_core::Event::ClearUser { user_id, .. } => match find(&|m| &m.user_id == user_id) {
+                Some(m) => format!(
+                    "{} was timed out or banned; their messages were cleared.",
+                    m.display_name
+                ),
+                None => "A chatter was timed out or banned.".into(),
+            },
+            chat_core::Event::ClearChannel { .. } => "Chat was cleared by a moderator.".into(),
+        };
+        self.logs.write(&self.logs_folder, channel, text);
+    }
+    pub(super) fn choose_logs_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let paths = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("Save logs here".into()),
+        });
+        cx.spawn_in(window, async move |view, cx| {
+            let Ok(Ok(Some(paths))) = paths.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            let _ = view.update(cx, |this, cx| {
+                this.logs_folder = path;
+                this.schedule_save(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+}
