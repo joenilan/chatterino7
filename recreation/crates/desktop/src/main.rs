@@ -48,6 +48,7 @@ mod owned_emotes;
 mod profiles;
 mod recent_messages;
 mod replies;
+mod rewards;
 mod rich_messages;
 mod room_settings;
 mod seven_badges;

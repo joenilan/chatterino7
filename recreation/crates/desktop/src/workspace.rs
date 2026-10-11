@@ -22,6 +22,8 @@ mod pane_navigation;
 mod popout;
 #[path = "recap.rs"]
 mod recap;
+#[path = "rewards_ui.rs"]
+mod rewards_ui;
 #[path = "roles.rs"]
 mod roles;
 #[path = "settings_ui.rs"]
@@ -229,6 +231,7 @@ pub struct Workbench {
     was_live: bool,
     peak_viewers: u64,
     stats_tick: u64,
+    rewards: crate::rewards::Rewards,
     last_stream_info: Option<(String, String)>,
     /// Latest incoming raid on your channel: (login, display name, viewers, when).
     last_raid: Option<(String, String, u64, std::time::Instant)>,
@@ -624,6 +627,7 @@ impl Workbench {
             was_live: false,
             peak_viewers: 0,
             stats_tick: 0,
+            rewards: crate::rewards::Rewards::new(),
             last_stream_info: None,
             last_raid: None,
             shouted: Default::default(),
@@ -877,6 +881,7 @@ impl Workbench {
         }
         self.pump_obs(cx);
         self.pump_ads(identity.as_ref(), window, cx);
+        self.pump_rewards(identity.as_ref(), window, cx);
         // A new stream starts a fresh checklist.
         let live = self.own_live(cx);
         if live && !self.was_live {
@@ -1195,6 +1200,10 @@ impl Workbench {
                     cx.notify();
                 }
                 crate::live::Event::Activity(item) => {
+                    // A redemption may need handling in the Studio queue.
+                    if item.kind == crate::activity_feed::Kind::Redemption {
+                        self.rewards.refresh();
+                    }
                     self.feed.push(item);
                     self.animate_for(Duration::from_millis(320), cx);
                     cx.notify();

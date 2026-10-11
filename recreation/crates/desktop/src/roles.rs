@@ -1058,6 +1058,8 @@ impl Workbench {
                     )
                 },
             )
+            .child(Self::studio_section("Channel points"))
+            .child(self.render_rewards(cx))
             .child(Self::studio_section("Polls & predictions"))
             .child(self.render_engagement(window, cx))
             .child(Self::studio_section("Streamer.bot"))

@@ -129,3 +129,13 @@ Under the Raid box in Tools, up to 8 live channels you follow (from the LIVE NOW
 are listed with category and viewers, and the title shows on hover. Clicking one fills the Raid box, and Raid still asks
 for confirmation. Verified: the list shows and a click fills the box (no raid was started).
 
+## Channel points (2026-10-11)
+
+Studio → Tools → Channel points lists every reward with its cost. Twitch only lets the app that created a
+reward change it, so rewards made on the Twitch dashboard are read-only and show a lock that explains why.
+**New reward** (name, cost, description, require a message) creates a reward from Jawjack. Jawjack rewards can
+be paused or resumed with a switch and deleted with ×, and their unfulfilled redemptions appear at the top
+with **Complete** / **Refund**. The list refreshes every 60 s while Tools is open and right after a redemption
+arrives (EventSub). Evidence: the owner's 45 dashboard rewards listed as locked. Not exercised: creating,
+pausing or deleting a reward, or completing a redemption.
+
