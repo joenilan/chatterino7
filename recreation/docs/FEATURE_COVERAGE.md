@@ -108,7 +108,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | WS09 | Overlay and attached windows | Backlog | Always-on-top, transparency/click-through and deliberate interaction modes; browser attachment later. | widgets/OverlayWindow; AttachedWindow; FramelessEmbedWindow |
 | WS10 | Special channels | Part | New local activity dialog only; mentions, whispers, watching/live and AutoMod feeds need explicit models. | widgets/dialogs/SelectChannelDialog.cpp |
 | WS11 | Combined feeds | Backlog | Preserve per-message origin and an explicit destination composer; never broadcast by accident. | util/MultiChannel; SelectChannelDialog.cpp |
-| WS12 | Split recovery and reset conveniences | Backlog | Neighbor focus, equalize/reset divider, split close/reopen history and robust drag cancellation. | widgets/splits |
+| WS12 | Split recovery and reset conveniences | Part | Double-click a divider to even out that split (eased), plus Equalize this/all splits; neighbour focus, close/reopen history and drag cancellation remain. | widgets/splits |
 
 ### Composer and commands
 
@@ -137,7 +137,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | EM04 | 7TV channel/global aliases | Part | Public catalogs and basic zero-width support exist; special/unlisted sets and provider controls remain. | providers/seventv/SeventvEmotes.cpp |
 | EM05 | 7TV personal emotes | Part | Source supports own bootstrap plus passive sender-scoped Personal/Commercial grants and own picker; native acceptance pending. Passive feed is not a historical roster. | providers/seventv/SeventvPersonalEmotes |
 | EM06 | 7TV live updates and presence | Part | Anonymous object subscriptions acknowledged on Windows, coalesced REST invalidation and polling fallback; actual set changes untested. Passive channel entitlement/cosmetic subscriptions now in source, native pending; presence publishing remains excluded. | providers/seventv/SeventvEventAPI; eventapi |
-| EM07 | 7TV paints | Backlog | Linear/radial/image paints, animated textures, shadows, DPI and mentions; user-selectable effect limits. | providers/seventv/SeventvPaints; paints |
+| EM07 | 7TV paints | Part | Layered linear/radial/image paints (animated WebP), chained drop-shadow glows, paints on first sight via batched 7TV lookups and passive presence ([details](SEVENTV_PAINTS.md)); text stroke/transform styling and DPI-specific glow tuning remain. | providers/seventv/SeventvPaints; paints |
 | EM08 | 7TV badges | Part | Passive sender grants, updated definitions, bounded animated media/reduced motion in source; native acceptance and visibility controls remain. | providers/seventv/SeventvBadges |
 | EM09 | Twitch and 7TV avatars | Part | On-demand Twitch avatar with allowlisted bounded JPEG/PNG/WebP; real native avatar accepted; 7TV identity remains. | widgets/dialogs/UserInfoPopup.cpp |
 | EM10 | BTTV and FFZ core | Part | Catalog counts observed; source media support exists, provider-specific visual/picker checks remain. | providers/bttv; providers/ffz |
@@ -191,7 +191,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | PF02 | Accessibility | Part | Toolkit/fixed shortcuts only; screen reader semantics, keyboard-only paths, focus, high contrast, IME/bidi/DPI need acceptance. | Jawjack PLAN.md; native controls |
 | PF03 | Streamer privacy | Backlog | Manual/automatic policy for notes, whispers, thumbnails, restricted users, viewer data and alerts. | singletons/StreamerMode; Settings.hpp |
 | PF04 | Optional logs | Backlog | Destination/allowlist/per-stream files, privacy and deletion/retention policy; distinct from transcript memory. | controllers/logging |
-| PF05 | Live notifications | Backlog | Channel rules, toast/sound/taskbar, initial-live suppression and deliberate navigation. | controllers/notifications; settingspages/NotificationPage.cpp |
+| PF05 | Live notifications | Part | Go-live alerts: per-channel "Notify when live" (tab menu) or every open channel (Appearance & memory), shown in-app and as a Windows notification that opens the channel when clicked. Only an observed offline → live change alerts (channels already live at startup do not). Sounds and quiet hours remain; no live alert observed yet. | controllers/notifications; settingspages/NotificationPage.cpp |
 | PF06 | External playback/tools | Part | Browser URLs exist; Streamlink/custom player/quality/options/mod-view/clip/marker integration remain. | settingspages/ExternalToolsPage.cpp; util/StreamLink |
 | PF07 | Link previews and image uploads | Research | Safe bounded previews, explicit upload destination/approval, progress/error and deletion URL; no automatic screenshot upload. | providers/links; util/ImageUploader |
 | PF08 | Browser integration | Research | Native messaging, approved extension IDs, watching feed and attached-window behavior. | singletons/NativeMessaging; widgets/AttachedWindow |

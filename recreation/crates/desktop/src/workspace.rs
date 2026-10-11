@@ -180,6 +180,9 @@ pub struct Workbench {
     chatters: crate::chatters::Chatters,
     recent: crate::recent_messages::RecentMessages,
     recent_enabled: bool,
+    /// Go-live alerts: channels opted in from the tab menu, or every open channel.
+    live_notify: Vec<String>,
+    live_notify_all: bool,
     presence: crate::seven_presence::Presence,
     recent_requested: std::collections::HashSet<String>,
     updates: crate::updates::Updates,
@@ -438,6 +441,14 @@ impl Workbench {
             chatters: crate::chatters::Chatters::new(),
             recent: crate::recent_messages::RecentMessages::new(),
             recent_enabled: state["recent_messages"].as_bool().unwrap_or(true),
+            live_notify: state["live_notify"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| c.as_str().and_then(chat_core::twitch_login))
+                .take(500)
+                .collect(),
+            live_notify_all: state["live_notify_all"].as_bool().unwrap_or(false),
             presence: crate::seven_presence::Presence::new(
                 state["seventv_activity"].as_bool().unwrap_or(true),
             ),
@@ -652,6 +663,7 @@ impl Workbench {
             }
             cx.notify();
         }
+        self.pump_live_alerts(window, cx);
         self.pump_imported_nicknames(cx);
         self.pump_recent_messages(cx);
         self.ensure_anchor(window, cx);
@@ -1495,6 +1507,56 @@ impl Workbench {
         .detach();
         pane
     }
+    /// Show the channel: switch to a workspace that has it and select its tab.
+    pub(super) fn reveal_channel(&mut self, channel: &str, cx: &mut Context<Self>) {
+        let has = |t: &WorkspaceTab| t.panes.iter().any(|p| p.read(cx).name.as_ref() == channel);
+        let index = if has(&self.tabs[self.active]) {
+            Some(self.active)
+        } else {
+            self.tabs.iter().position(has)
+        };
+        let Some(index) = index else { return };
+        self.select_tab(index, cx);
+        if let Some(dock) = &mut self.tabs[index].dock {
+            dock.select(channel);
+        }
+        self.selected_channel = Some(channel.to_owned());
+        self.schedule_save(cx);
+        cx.notify();
+    }
+    fn pump_live_alerts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for (channel, info) in self.streams.take_went_live() {
+            if !self.live_notify_all && !self.live_notify.contains(&channel) {
+                continue;
+            }
+            let owner = cx.entity().downgrade();
+            let target = channel.clone();
+            let detail = [info.title.as_str(), info.category.as_str()]
+                .into_iter()
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join(" · ");
+            window.push_notification(
+                Notification::new()
+                    .title(format!("{channel} is live"))
+                    .message(detail)
+                    .in_app_and_system()
+                    .on_click(move |_, _, cx| {
+                        let _ = owner.update(cx, |this, cx| this.reveal_channel(&target, cx));
+                    }),
+                cx,
+            );
+        }
+    }
+    pub(super) fn toggle_live_notify(&mut self, channel: &str, cx: &mut Context<Self>) {
+        if let Some(at) = self.live_notify.iter().position(|c| c == channel) {
+            self.live_notify.remove(at);
+        } else {
+            self.live_notify.push(channel.to_owned());
+        }
+        self.schedule_save(cx);
+        cx.notify();
+    }
     /// Request recent history once per opened channel (visible ones first) and
     /// fill panes that have not received anything yet.
     fn pump_recent_messages(&mut self, cx: &mut Context<Self>) {
@@ -1703,7 +1765,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"studio_tab":self.studio_tab,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"seventv_activity":self.presence.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"studio_tab":self.studio_tab,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"live_notify":self.live_notify,"live_notify_all":self.live_notify_all,"seventv_activity":self.presence.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"pinned":t.pinned,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
@@ -2460,7 +2522,6 @@ impl Workbench {
                             .unwrap_or_default();
                         let tab_name = channel.clone();
                         let tab_bounds = self.tab_bounds.clone();
-                        let stream_tip = self.streams.summary(&channel);
                         let item = div()
                             .id(SharedString::from(format!(
                                 "channel-tab-{tab_id}-{channel}"
@@ -2481,10 +2542,6 @@ impl Workbench {
                                 tab_bounds.borrow_mut().insert(tab_name.clone(), bounds);
                             })
                             .hover(|s| s.bg(rgb(theme::HOVER)))
-                            .tooltip(move |w, cx| {
-                                gpui_kit::component::tooltip::Tooltip::new(stream_tip.clone())
-                                    .build(w, cx)
-                            })
                             .child(stream_marker(&channel, self.streams.get(&channel)))
                             .when(pins.contains(&channel), |el| {
                                 el.child(
@@ -2576,6 +2633,11 @@ impl Workbench {
                                 let pinned_now = owner
                                     .upgrade()
                                     .is_some_and(|o| o.read(cx).is_pinned(&menu_channel, cx));
+                                let notify_owner = owner.clone();
+                                let notify_channel = menu_channel.clone();
+                                let notify_now = owner.upgrade().is_some_and(|o| {
+                                    o.read(cx).live_notify.contains(&menu_channel)
+                                });
                                 menu.item(
                                     PopupMenuItem::new(if pinned_now {
                                         "Unpin tab"
@@ -2589,6 +2651,15 @@ impl Workbench {
                                             });
                                         },
                                     ),
+                                )
+                                .item(
+                                    PopupMenuItem::new("Notify when live")
+                                        .checked(notify_now)
+                                        .on_click(move |_, _, cx| {
+                                            let _ = notify_owner.update(cx, |this, cx| {
+                                                this.toggle_live_notify(&notify_channel, cx)
+                                            });
+                                        }),
                                 )
                                 .separator()
                                 .submenu(
@@ -3462,6 +3533,10 @@ impl Render for Workbench {
                             .child(Button::new("recent-messages").small().label(if self.recent_enabled { "✓ Load recent messages" } else { "Load recent messages" }).selected(self.recent_enabled).when(self.recent_enabled,|b|b.primary())
                                 .on_click(cx.listener(|this,_,_,cx|{this.recent_enabled = !this.recent_enabled;this.schedule_save(cx);cx.notify();})))
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Shows recent chat when a channel opens, from {} (the service Chatterino uses). It receives the channel names you open.", crate::recent_messages::SERVICE)))
+                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Live alerts"))
+                            .child(Button::new("live-notify-all").small().label(if self.live_notify_all { "✓ Every open channel" } else { "Every open channel" }).selected(self.live_notify_all).when(self.live_notify_all,|b|b.primary())
+                                .on_click(cx.listener(|this,_,_,cx|{this.live_notify_all = !this.live_notify_all;this.schedule_save(cx);cx.notify();})))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("A Windows notification when a channel goes live. Otherwise only channels set to Notify when live in their tab menu ({} now).", self.live_notify.len())))
                             .child(Button::new("seventv-activity").small().label(if self.presence.enabled { "✓ Share 7TV activity" } else { "Share 7TV activity" }).selected(self.presence.enabled).when(self.presence.enabled,|b|b.primary())
                                 .on_click(cx.listener(|this,_,_,cx|{this.presence.enabled = !this.presence.enabled;this.schedule_save(cx);cx.notify();})))
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("After you chat, tells 7TV you're in that channel so other 7TV users see your paint, badge and personal emotes (as Chatterino7 does). At most once a minute per channel."))

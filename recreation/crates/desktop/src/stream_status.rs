@@ -64,6 +64,9 @@ pub struct Streams {
     pending: bool,
     last: Instant,
     values: HashMap<String, (StreamInfo, Instant)>,
+    /// Last observed live state per channel, kept past snapshot expiry.
+    known: HashMap<String, bool>,
+    went_live: Vec<(String, StreamInfo)>,
     tx: mpsc::SyncSender<Job>,
     rx: mpsc::Receiver<(u64, Option<HashMap<String, StreamInfo>>)>,
 }
@@ -94,6 +97,8 @@ impl Streams {
             pending: false,
             last: Instant::now() - Duration::from_secs(60),
             values: HashMap::new(),
+            known: HashMap::new(),
+            went_live: Vec::new(),
             tx,
             rx,
         }
@@ -110,15 +115,9 @@ impl Streams {
             .filter(|(_, at)| at.elapsed() < Duration::from_secs(180))
             .map(|(info, at)| (info, at.elapsed().as_secs()))
     }
-    pub fn summary(&self, name: &str) -> String {
-        match self.detail(name) {
-            Some((info, _)) if info.live => format!(
-                "{} · {} · {} viewers",
-                info.title, info.category, info.viewers
-            ),
-            Some(_) => "Stream offline · chat may still be connected".into(),
-            None => "Stream metadata unavailable or refreshing".into(),
-        }
+    /// Channels that went live since the last call.
+    pub fn take_went_live(&mut self) -> Vec<(String, StreamInfo)> {
+        std::mem::take(&mut self.went_live)
     }
     pub fn pump(&mut self, identity: Option<Identity>, mut channels: Vec<String>) -> bool {
         channels.sort();
@@ -142,6 +141,11 @@ impl Streams {
             }
             if let Some(values) = result {
                 for (n, live) in values {
+                    // Only an observed offline -> live change counts; channels already
+                    // live when first seen don't alert.
+                    if self.known.insert(n.clone(), live.live) == Some(false) && live.live {
+                        self.went_live.push((n.clone(), live.clone()));
+                    }
                     self.values.insert(n, (live, Instant::now()));
                 }
                 changed = true;
