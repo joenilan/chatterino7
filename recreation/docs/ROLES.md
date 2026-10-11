@@ -22,7 +22,10 @@ again on dispatch. Switching setups keeps channels, drafts and layouts.
 - Not yet: an account-level shared draft for the pin across workspaces (each
   workspace keeps its own draft), and a drag preview explaining the pin.
 
-## Studio panel (right side, titlebar **Studio** toggles it)
+## Studio panel (right side)
+
+Toggle it with the titlebar button (`◂ Studio` when hidden, a highlighted `Studio ▸` when shown),
+**Ctrl+Shift+S**, or gear menu → "Studio panel". The choice is saved.
 
 - Live/offline, uptime, viewers and category for your channel, plus its chat connection.
 - **Stream info:** the title/category editor embedded (Revert/Reload instead of Close).

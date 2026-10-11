@@ -89,6 +89,7 @@ pub fn bind_keys(cx: &mut App) {
         ),
         KeyBinding::new("ctrl-shift-f", SearchOpenChannels, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-p", SwitchChannel, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-shift-s", ToggleStudio, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-i", ChannelDetails, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-shift-m", OpenActivity, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-shift-r", MarkAllRead, Some("ChatWorkspace")),
@@ -2987,6 +2988,7 @@ impl Render for Workbench {
         let pointer_guard = cx.entity().downgrade();
         let live_workspaces = self.live_workspaces;
         let live_channels = self.live_channels;
+        let studio = (self.experience == roles::Experience::Streamer).then_some(self.studio_open);
         let can_reopen = !self.closed_tabs.is_empty();
         let can_discard = self.close_failed;
         let can_left = self.active > 0;
@@ -3117,7 +3119,7 @@ impl Render for Workbench {
                     .child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(11.)).child("JAWJACK")))
                 .child(div().flex_1().min_w(px(8.)).h_full().window_control_area(WindowControlArea::Drag))
                 .child(Button::new("activity-menu").ghost().xsmall().label(if counts.1>0{format!("@{}",crate::attention::count(counts.1))}else if counts.0>0{format!("• {}",crate::attention::count(counts.0))}else{"@".into()}).tooltip("Highlights & unread · Ctrl+Shift+M").on_click(cx.listener(|this,_,w,cx|this.open_activity(w,cx))))
-                .when(self.experience == roles::Experience::Streamer, |el| el.child(Button::new("studio-toggle").ghost().xsmall().label("Studio").selected(self.studio_open).tooltip("Show or hide the Studio panel").on_click(cx.listener(|this,_,_,cx|{this.studio_open = !this.studio_open;this.schedule_save(cx);cx.notify();}))))
+                .when(self.experience == roles::Experience::Streamer, |el| el.child(Button::new("studio-toggle").small().label(if self.studio_open{"Studio ▸"}else{"◂ Studio"}).selected(self.studio_open).when(self.studio_open,|b|b.primary()).tooltip(if self.studio_open{"Hide the Studio panel · Ctrl+Shift+S"}else{"Show the Studio panel · Ctrl+Shift+S"}).on_click(cx.listener(|this,_,_,cx|{this.studio_open = !this.studio_open;this.schedule_save(cx);cx.notify();}))))
                 .child(Button::new("account-menu").ghost().xsmall().label(if self.account.read(cx).missing_scopes().is_empty(){self.account.read(cx).label()}else{format!("{} •",self.account.read(cx).label())}).tooltip(if self.account.read(cx).missing_scopes().is_empty(){"Twitch account"}else{"Twitch account · permissions can be updated"})
                     .on_click(cx.listener(|this,_,window,cx|{let account=this.account.clone();let width=(f32::from(window.viewport_size().width)-24.).min(380.);window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Twitch account").child(account.clone()));})))
                 .child(Button::new("settings-menu").ghost().small().label("⚙").tooltip("Settings and workspace actions").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
@@ -3132,6 +3134,7 @@ impl Render for Workbench {
                     .menu("Chatter nicknames & colors",Box::new(EditChatterAppearance))
                     .menu("Appearance & memory",Box::new(ToggleAppearance))
                     .menu_with_check("Only show live channel tabs",live_channels,Box::new(ToggleLiveChannels))
+                    .when_some(studio,|menu,open|menu.menu_with_check("Studio panel · Ctrl+Shift+S",open,Box::new(ToggleStudio)))
                     .separator().menu("New workspace",Box::new(NewTab)).menu("Rename workspace",Box::new(RenameWorkspace))
                     .menu("Close workspace…",Box::new(CloseTab)).menu_with_enable("Reopen workspace",Box::new(ReopenTab),can_reopen)
                     .menu_with_enable("Move workspace up",Box::new(MoveTabLeft),can_left).menu_with_enable("Move workspace down",Box::new(MoveTabRight),can_right)
