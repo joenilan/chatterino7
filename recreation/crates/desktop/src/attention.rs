@@ -20,6 +20,8 @@ pub struct Attention {
     since: u64,
     events: crate::event_highlights::EventHighlights,
     raiders: crate::event_highlights::Raiders,
+    /// Reply threads you follow (thread root IDs): new replies highlight and ping.
+    pub followed: std::collections::BTreeSet<String>,
 }
 /// Why a new message deserves a sound.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,9 +43,44 @@ pub fn terms(text: &str) -> Vec<String> {
     result
 }
 impl Attention {
+    /// The thread a message belongs to (a reply's thread, or itself as a root).
+    pub fn thread_of(message: &Message) -> String {
+        message
+            .reply
+            .as_ref()
+            .map(|r| r.thread_id.clone())
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| message.id.clone())
+    }
+    fn in_followed_thread(&self, message: &Message) -> bool {
+        message.reply.as_ref().is_some_and(|r| {
+            self.followed.contains(&r.thread_id) || self.followed.contains(&r.parent_id)
+        })
+    }
+    /// Follow or unfollow a thread; returns true if now following.
+    pub fn toggle_follow(&mut self, thread: &str) -> bool {
+        if self.followed.remove(thread) {
+            false
+        } else {
+            if self.followed.len() >= 100 {
+                self.followed.pop_first();
+            }
+            self.followed.insert(thread.to_owned());
+            true
+        }
+    }
     fn color(&self, message: &Message) -> Option<usize> {
         if message.deleted {
             return None;
+        }
+        // Replies in a followed thread stand out like mentions (not your own).
+        if self.in_followed_thread(message)
+            && self
+                .identity
+                .as_ref()
+                .is_none_or(|(user, _)| &message.user_id != user)
+        {
+            return self.events.get(Kind::Mention).or(Some(5));
         }
         if let Some((user, _)) = &self.identity
             && &message.user_id == user
@@ -150,6 +187,9 @@ impl Attention {
         if message.deleted || &message.user_id == user {
             return None;
         }
+        if self.in_followed_thread(message) {
+            return Some(Ping::Mention);
+        }
         let text: String = message
             .fragments
             .iter()
@@ -183,6 +223,20 @@ impl Attention {
             .identity
             .as_ref()
             .is_some_and(|(user, _)| &message.user_id == user);
+        // Replying to a thread follows it, as on Twitch.
+        if own
+            && !message.presentation.historical
+            && let Some(reply) = &message.reply
+        {
+            let thread = if reply.thread_id.is_empty() {
+                reply.parent_id.clone()
+            } else {
+                reply.thread_id.clone()
+            };
+            if !thread.is_empty() {
+                self.followed.insert(thread);
+            }
+        }
         // History loaded on open is context, not something new to catch up on.
         if !own && !message.presentation.historical {
             self.unread.insert(row);
@@ -280,5 +334,45 @@ pub fn count(value: usize) -> String {
         "99+".into()
     } else {
         value.to_string()
+    }
+}
+
+#[cfg(test)]
+mod follow_tests {
+    use super::Attention;
+    fn message(id: &str, thread: Option<&str>) -> chat_core::Message {
+        chat_core::Message {
+            sent_at: Some(0),
+            id: id.into(),
+            channel_id: "c".into(),
+            user_id: "other".into(),
+            display_name: "Bob".into(),
+            login: Some("bob".into()),
+            reply: thread.map(|t| chat_core::Reply {
+                parent_id: t.into(),
+                parent_user_id: "x".into(),
+                parent_name: "X".into(),
+                thread_id: t.into(),
+                parent_deleted: false,
+            }),
+            mentions: vec![],
+            replyable: true,
+            name_color: None,
+            badges: vec![],
+            fragments: vec![chat_core::Fragment::Text("hi".into())],
+            presentation: Default::default(),
+            deleted: false,
+        }
+    }
+    #[test]
+    fn following_threads() {
+        let mut a = Attention::default();
+        assert_eq!(Attention::thread_of(&message("root", None)), "root");
+        assert_eq!(Attention::thread_of(&message("r1", Some("root"))), "root");
+        assert!(a.toggle_follow("root"));
+        assert!(a.in_followed_thread(&message("r2", Some("root"))));
+        assert!(!a.in_followed_thread(&message("r3", Some("other"))));
+        assert!(!a.toggle_follow("root"));
+        assert!(!a.in_followed_thread(&message("r2", Some("root"))));
     }
 }

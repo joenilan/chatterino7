@@ -217,6 +217,8 @@ pub enum Action {
     ModBan,
     /// One of your own moderator buttons (command template).
     ModCustom(String),
+    /// Highlight and ping on new replies in this message's thread (toggle).
+    FollowThread,
 }
 fn copy(text: String, window: &mut Window, cx: &mut App) {
     cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
@@ -255,6 +257,7 @@ pub fn menu(
     for (label, action) in [
         ("Reply to message", Action::Reply),
         ("View conversation", Action::Thread),
+        ("Follow thread replies", Action::FollowThread),
         ("Inspect chatter", Action::Inspect),
         ("Personalize chatter…", Action::Customize),
         ("Private chatter note…", Action::Notes),
@@ -283,6 +286,17 @@ pub fn menu(
         {
             continue;
         }
+        let label = if action == Action::FollowThread
+            && owner.upgrade().is_some_and(|p| {
+                p.read(cx)
+                    .attention
+                    .followed
+                    .contains(&crate::attention::Attention::thread_of(&message))
+            }) {
+            "Unfollow thread"
+        } else {
+            label
+        };
         let owner = owner.clone();
         let id = id.clone();
         menu = menu.item(PopupMenuItem::new(label).on_click(move |_, w, cx| {
@@ -516,6 +530,18 @@ impl ChannelPane {
             }
             Action::Reply => self.begin_reply(&message, window, cx),
             Action::Thread => self.open_conversation(&message, window, cx),
+            Action::FollowThread => {
+                let thread = crate::attention::Attention::thread_of(&message);
+                let following = self.attention.toggle_follow(&thread);
+                window.push_notification(
+                    Notification::info(if following {
+                        "Following this thread: new replies are highlighted and ping like mentions."
+                    } else {
+                        "Stopped following this thread."
+                    }),
+                    cx,
+                );
+            }
             Action::CopyLine => copy(message.copy_line(), window, cx),
             Action::CopyBody => copy(message.body(), window, cx),
             Action::CopyName => {
