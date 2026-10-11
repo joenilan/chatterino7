@@ -1,7 +1,8 @@
 # Jawjack: Viewer, Moderator and Streamer experiences
 
-Status: product and architecture plan, 2026-10-10. These experiences are planned,
-not implemented or accepted. This extends the full Chatterino7 replacement and
+Status: product and architecture plan, 2026-10-10. A first slice is implemented
+(2026-10-11): the setup chooser, the Streamer anchor, the Studio panel and Moderator tools. See
+[ROLES.md](ROLES.md) for what exists and what was verified. This extends the full Chatterino7 replacement and
 [MULTIPLATFORM.md](MULTIPLATFORM.md); it does not replace or reduce any parity work
 in [FEATURE_COVERAGE.md](FEATURE_COVERAGE.md).
 

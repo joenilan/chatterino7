@@ -6,6 +6,8 @@ mod channel_details;
 mod channel_switcher;
 #[path = "pane_navigation.rs"]
 mod pane_navigation;
+#[path = "roles.rs"]
+mod roles;
 #[path = "workspace_search.rs"]
 mod workspace_search;
 use crate::dock::Dock;
@@ -64,6 +66,8 @@ gpui_kit::actions!(
         EditCustomCommands,
         EditIgnores,
         EditEventHighlights,
+        ChooseSetup,
+        ToggleStudio,
         ImportChatterino,
         EditChatterAppearance
     ]
@@ -148,6 +152,11 @@ pub struct Workbench {
     live: crate::live::LiveChat,
     streams: crate::stream_status::Streams,
     capabilities: crate::capabilities::Capabilities,
+    experience: roles::Experience,
+    studio_open: bool,
+    studio_editor: Option<Entity<crate::studio::StreamEditor>>,
+    raid_input: Option<Entity<InputState>>,
+    setup_offered: bool,
     chatters: crate::chatters::Chatters,
     recent: crate::recent_messages::RecentMessages,
     recent_enabled: bool,
@@ -383,6 +392,11 @@ impl Workbench {
             live: crate::live::LiveChat::new(),
             streams: crate::stream_status::Streams::new(),
             capabilities: crate::capabilities::Capabilities::new(),
+            experience: roles::Experience::from_key(state["experience"].as_str().unwrap_or("")),
+            studio_open: state["studio_open"].as_bool().unwrap_or(false),
+            studio_editor: None,
+            raid_input: None,
+            setup_offered: state["setup_offered"].as_bool().unwrap_or(false),
             chatters: crate::chatters::Chatters::new(),
             recent: crate::recent_messages::RecentMessages::new(),
             recent_enabled: state["recent_messages"].as_bool().unwrap_or(true),
@@ -590,6 +604,25 @@ impl Workbench {
         }
         self.pump_imported_nicknames(cx);
         self.pump_recent_messages(cx);
+        self.ensure_anchor(window, cx);
+        if !self.setup_offered && identity.is_some() {
+            self.setup_offered = true;
+            self.notice = Some((
+                "New: choose a Viewer, Moderator or Streamer setup · gear menu → Choose your setup"
+                    .into(),
+                std::time::Instant::now(),
+            ));
+            self.schedule_save(cx);
+        }
+        let mod_tools = self.experience != roles::Experience::Viewer;
+        for pane in &panes {
+            if pane.read(cx).mod_tools != mod_tools {
+                pane.update(cx, |p, cx| {
+                    p.mod_tools = mod_tools;
+                    cx.notify();
+                });
+            }
+        }
         if self.updates.auto_check_due() {
             self.updates.check();
         }
@@ -1286,6 +1319,10 @@ impl Workbench {
                 );
                 return;
             }
+            if matches!(event, PaneEvent::OpenModTools) {
+                this.open_mod_tools(channel.clone(), window, cx);
+                return;
+            }
             if matches!(event, PaneEvent::OpenStreamInfo) {
                 this.open_stream_info(channel.clone(), window, cx);
                 return;
@@ -1568,7 +1605,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"recent_messages":self.recent_enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"studio_open":self.studio_open,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
@@ -2157,7 +2194,12 @@ impl Workbench {
             .group(&current)
             .unwrap_or_default()
             .into_iter()
-            .filter(|n| !self.live_channels || n == &current || self.streams.get(n) != Some(false))
+            .filter(|n| {
+                !self.live_channels
+                    || n == &current
+                    || self.streams.get(n) != Some(false)
+                    || self.anchor(cx).as_ref() == Some(n)
+            })
             .collect::<Vec<_>>();
         if channels.len() < 2 {
             return;
@@ -2188,6 +2230,13 @@ impl Workbench {
     }
     fn confirm_close_channel(&mut self, name: String, window: &mut Window, cx: &mut Context<Self>) {
         if self.close_channel_pending {
+            return;
+        }
+        if self.anchor(cx).as_deref() == Some(name.as_str()) {
+            window.push_notification(
+                Notification::info("Your channel stays pinned in Streamer setup. Gear menu → Choose your setup → Viewer unpins it."),
+                cx,
+            );
             return;
         }
         let Some(pane) = self.tabs[self.active]
@@ -2274,12 +2323,14 @@ impl Workbench {
                 let dock_bounds = self.dock_bounds.clone();
                 let strip_name = name.clone();
                 let strip_bounds = self.strip_bounds.clone();
+                let anchor = self.anchor(cx);
                 let tabs = names
                     .iter()
                     .filter(|channel| {
                         !self.live_channels
                             || *channel == &name
                             || self.streams.get(channel) != Some(false)
+                            || anchor.as_ref() == Some(*channel)
                     })
                     .map(|channel| {
                         let selected = channel == &name;
@@ -2321,7 +2372,11 @@ impl Workbench {
                                     .build(w, cx)
                             })
                             .child(stream_marker(&channel, self.streams.get(&channel)))
-                            .child(format!("#{channel}"))
+                            .child(if anchor.as_ref() == Some(&channel) {
+                                format!("📌 #{channel}")
+                            } else {
+                                format!("#{channel}")
+                            })
                             .when(counts.0 > 0, |el| {
                                 el.child(
                                     div()
@@ -3028,6 +3083,8 @@ impl Render for Workbench {
             .on_action(cx.listener(|this,_:&EditCustomCommands,w,cx|this.open_custom_commands(None,w,cx)))
             .on_action(cx.listener(|this,_:&EditIgnores,w,cx|this.open_ignores(w,cx)))
             .on_action(cx.listener(|this,_:&EditEventHighlights,w,cx|this.open_event_highlights(w,cx)))
+            .on_action(cx.listener(|this,_:&ChooseSetup,w,cx|this.open_setup(w,cx)))
+            .on_action(cx.listener(|this,_:&ToggleStudio,_,cx|{this.studio_open = !this.studio_open;this.schedule_save(cx);cx.notify();}))
             .on_action(cx.listener(|this,_:&ImportChatterino,w,cx|this.open_chatterino_import(w,cx)))
             .on_action(cx.listener(|this,_:&SearchOpenChannels,w,cx|this.open_workspace_search(None,w,cx)))
             .on_action(cx.listener(|this,_:&SwitchChannel,w,cx|this.open_switcher(w,cx)))
@@ -3060,6 +3117,7 @@ impl Render for Workbench {
                     .child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(11.)).child("JAWJACK")))
                 .child(div().flex_1().min_w(px(8.)).h_full().window_control_area(WindowControlArea::Drag))
                 .child(Button::new("activity-menu").ghost().xsmall().label(if counts.1>0{format!("@{}",crate::attention::count(counts.1))}else if counts.0>0{format!("• {}",crate::attention::count(counts.0))}else{"@".into()}).tooltip("Highlights & unread · Ctrl+Shift+M").on_click(cx.listener(|this,_,w,cx|this.open_activity(w,cx))))
+                .when(self.experience == roles::Experience::Streamer, |el| el.child(Button::new("studio-toggle").ghost().xsmall().label("Studio").selected(self.studio_open).tooltip("Show or hide the Studio panel").on_click(cx.listener(|this,_,_,cx|{this.studio_open = !this.studio_open;this.schedule_save(cx);cx.notify();}))))
                 .child(Button::new("account-menu").ghost().xsmall().label(if self.account.read(cx).missing_scopes().is_empty(){self.account.read(cx).label()}else{format!("{} •",self.account.read(cx).label())}).tooltip(if self.account.read(cx).missing_scopes().is_empty(){"Twitch account"}else{"Twitch account · permissions can be updated"})
                     .on_click(cx.listener(|this,_,window,cx|{let account=this.account.clone();let width=(f32::from(window.viewport_size().width)-24.).min(380.);window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Twitch account").child(account.clone()));})))
                 .child(Button::new("settings-menu").ghost().small().label("⚙").tooltip("Settings and workspace actions").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
@@ -3068,6 +3126,7 @@ impl Render for Workbench {
                     .menu("Highlights & unread",Box::new(OpenActivity))
                     .menu("Mark all read",Box::new(MarkAllRead))
                     .menu("Custom commands",Box::new(EditCustomCommands))
+                    .menu("Choose your setup…",Box::new(ChooseSetup))
                     .menu("Event highlights",Box::new(EditEventHighlights))
                     .menu("Ignores",Box::new(EditIgnores))
                     .menu("Chatter nicknames & colors",Box::new(EditChatterAppearance))
@@ -3097,6 +3156,7 @@ impl Render for Workbench {
                     .child(div().h_flex().items_stretch().flex_1().min_h_0().overflow_hidden().p(px(2.)).child(div().id("channel-dock").relative().flex_1().h_full().min_w_0().min_h_0()
                         .child(content)
                         )
+                        .when(self.studio_open && self.anchor(cx).is_some(), |el| el.child(self.render_studio(window, cx)))
                         .when(self.settings,|el|el.child(div().absolute().top(px(34.)).right(px(4.)).w(px((f32::from(window.viewport_size().width)-8.).min(300.))).max_h(px(f32::from(window.viewport_size().height)-60.)).id("settings-card").occlude().overflow_hidden().v_flex().bg(rgb(theme::PANEL)).border_1().border_color(rgb(theme::BORDER)).rounded(px(6.))
                             .child(div().h_flex().flex_shrink_0().p_2().gap_2().border_b_1().border_color(rgb(theme::BORDER))
                                 .child(div().flex_1().font_weight(FontWeight::SEMIBOLD).child("Appearance & memory"))

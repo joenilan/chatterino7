@@ -359,6 +359,48 @@ impl Dock {
             _ => false,
         }
     }
+    /// Channels of the primary group: the first leaf or deck in layout order.
+    pub fn primary(&self) -> Vec<String> {
+        match self {
+            Self::Leaf(name) => vec![name.clone()],
+            Self::Deck { channels, .. } => channels.clone(),
+            Self::Split { children, .. } => children.first().map(Self::primary).unwrap_or_default(),
+        }
+    }
+    /// Pin `name` as the first tab of the primary group (Streamer own-chat anchor),
+    /// moving it there if needed. The primary group keeps its selected tab.
+    pub fn pin_first(self, name: &str) -> (Self, bool) {
+        if self.primary().first().map(String::as_str) == Some(name) {
+            return (self, false);
+        }
+        let mut active = Vec::new();
+        self.active_names(&mut active);
+        let Some(mut rest) = self.remove(name) else {
+            return (Self::Leaf(name.to_owned()), true);
+        };
+        rest.push_front(name);
+        // Moving the channel must not change which tab the owner was looking at.
+        if active.iter().any(|n| n == name) {
+            rest.select(name);
+        }
+        (rest, true)
+    }
+    fn push_front(&mut self, name: &str) {
+        match self {
+            Self::Leaf(current) => {
+                *self = Self::Deck {
+                    channels: vec![name.to_owned(), current.clone()],
+                    active: current.clone(),
+                }
+            }
+            Self::Deck { channels, .. } => channels.insert(0, name.to_owned()),
+            Self::Split { children, .. } => {
+                if let Some(first) = children.first_mut() {
+                    first.push_front(name);
+                }
+            }
+        }
+    }
     pub fn minimum(&self) -> (f32, f32) {
         match self {
             // A pane's header and composer controls fit in 200px, so two
@@ -377,5 +419,25 @@ impl Dock {
                     }
                 }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn pin_first_moves_into_primary_group() {
+        let dock = Dock::Split {
+            vertical: false,
+            weights: vec![1., 1.],
+            children: vec![Dock::Leaf("a".into()), Dock::Leaf("me".into())],
+        };
+        let (dock, changed) = dock.pin_first("me");
+        assert!(changed);
+        assert_eq!(dock.primary(), vec!["me".to_owned(), "a".to_owned()]);
+        let (dock, changed) = dock.pin_first("me");
+        assert!(!changed);
+        let (_, changed) = Dock::Leaf("x".into()).pin_first("me");
+        assert!(changed);
     }
 }

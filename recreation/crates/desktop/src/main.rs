@@ -145,6 +145,7 @@ enum PaneEvent {
     EmoteRecentsChanged,
     OpenAccount,
     OpenStreamInfo,
+    OpenModTools,
     /// A parsed Twitch command; `draft` is cleared only once Twitch confirms.
     TwitchCommand {
         request: twitch_actions::Request,
@@ -165,6 +166,8 @@ struct ChannelPane {
     chatter_list: std::rc::Rc<Vec<String>>,
     /// Latest stream snapshot, for the header hover card.
     stream: Option<stream_status::StreamInfo>,
+    /// Moderator/Streamer setup shows the 🛡 button where the role allows.
+    mod_tools: bool,
     connection: String,
     connected: bool,
     room_settings: Option<room_settings::RoomSettings>,
@@ -251,6 +254,7 @@ impl ChannelPane {
             role: None,
             chatter_list: Default::default(),
             stream: None,
+            mod_tools: false,
             media,
             catalog,
             custom_commands: Default::default(),
@@ -685,6 +689,7 @@ impl Render for ChannelPane {
                             .text_color(rgb(theme::MUTED))
                             .child(if self.connected { if paused { "Paused".to_owned() } else if following { "Latest".to_owned() } else { format!("{retained}/{} · History", self.timeline.borrow().capacity()) } } else { self.connection.clone() }),
                     )
+                    .when(self.mod_tools && matches!(self.role, Some(capabilities::Role::Moderator | capabilities::Role::Broadcaster)), |el| el.child(Button::new("mod-tools").xsmall().label("🛡").tooltip("Moderation: chat modes, clear chat").on_click(cx.listener(|_,_,_,cx|cx.emit(PaneEvent::OpenModTools)))))
                     .when(self.role == Some(capabilities::Role::Broadcaster), |el| el.child(Button::new("stream-info").xsmall().label("✎").tooltip("Edit stream title and category").on_click(cx.listener(|_,_,_,cx|cx.emit(PaneEvent::OpenStreamInfo)))))
                     .child(Button::new("pause-chat").xsmall().label(if paused{"▶"}else{"Ⅱ"}).tooltip(if paused{"Resume live chat · Ctrl+End"}else{"Pause scrolling · Ctrl+Space"}).on_click(cx.listener(|this,_,_,cx|{this.scroller.update(cx,|s,cx|{if s.paused(){s.scroll_to_end(cx);}else{s.toggle_pause(cx);}});})))
                     .child(Button::new("find-chat").xsmall().label("⌕").tooltip("Find in chat · Ctrl+F").on_click(cx.listener(|this,_,w,cx|this.open_search(w,cx))))

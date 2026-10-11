@@ -38,6 +38,8 @@ pub struct StreamEditor {
     busy: bool,
     status: String,
     error: bool,
+    /// Shown inside the Studio panel rather than a dialog.
+    embedded: bool,
 }
 
 fn helix(
@@ -201,9 +203,14 @@ impl StreamEditor {
             busy: false,
             status: String::new(),
             error: false,
+            embedded: false,
         };
         this.load(window, cx);
         this
+    }
+    /// Use inside a panel: Cancel reverts the edits and reloads instead of closing.
+    pub fn embed(&mut self) {
+        self.embedded = true;
     }
     fn identity(&self, cx: &App) -> Result<Identity, String> {
         let identity = self
@@ -463,12 +470,18 @@ impl Render for StreamEditor {
                                 .on_click(cx.listener(|this, _, w, cx| this.load(w, cx))),
                         )
                     })
-                    .child(
+                    .child(if self.embedded {
+                        Button::new("stream-info-cancel")
+                            .small()
+                            .label(if changed { "Revert" } else { "Reload" })
+                            .disabled(self.busy)
+                            .on_click(cx.listener(|this, _, w, cx| this.load(w, cx)))
+                    } else {
                         Button::new("stream-info-cancel")
                             .small()
                             .label(if changed { "Cancel" } else { "Close" })
-                            .on_click(|_, window, cx| window.close_dialog(cx)),
-                    )
+                            .on_click(|_, window, cx| window.close_dialog(cx))
+                    })
                     .child(
                         Button::new("stream-info-save")
                             .small()
