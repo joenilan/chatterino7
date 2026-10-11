@@ -15,6 +15,7 @@ mod chatter_appearance;
 mod chatter_notes;
 mod chatterino_import;
 mod chatters;
+mod chatters_ui;
 mod commands;
 mod community;
 mod control;
@@ -733,6 +734,7 @@ impl Render for ChannelPane {
                             .text_color(rgb(theme::MUTED))
                             .child(if self.connected { if paused { "Paused".to_owned() } else if following { "Latest".to_owned() } else { format!("{retained}/{} · History", self.timeline.borrow().capacity()) } } else { self.connection.clone() }),
                     )
+                    .child(Button::new("chatter-list").ghost().xsmall().icon(Icon::new(gpui_kit::assets::IconName::Users)).tooltip("Chatters").on_click(cx.listener(|this,_,window,cx|this.open_chatter_list(window,cx))))
                     .when(self.mod_tools && matches!(self.role, Some(capabilities::Role::Moderator | capabilities::Role::Broadcaster)), |el| el.child(Button::new("mod-tools").ghost().xsmall().icon(Icon::new(gpui_kit::assets::IconName::Shield)).tooltip("Moderation: chat modes, clear chat").on_click(cx.listener(|_,_,_,cx|cx.emit(PaneEvent::OpenModTools)))))
                     .when(self.role == Some(capabilities::Role::Broadcaster), |el| el.child(Button::new("stream-info").ghost().xsmall().icon(Icon::new(gpui_kit::assets::IconName::Pencil)).tooltip("Edit stream title and category").on_click(cx.listener(|_,_,_,cx|cx.emit(PaneEvent::OpenStreamInfo)))))
                     .child(Button::new("pause-chat").ghost().xsmall().icon(if paused{IconName::Play}else{IconName::Pause}).tooltip(if paused{"Resume live chat · Ctrl+End"}else{"Pause scrolling · Ctrl+Space"}).on_click(cx.listener(|this,_,_,cx|{this.scroller.update(cx,|s,cx|{if s.paused(){s.scroll_to_end(cx);}else{s.toggle_pause(cx);}});})))

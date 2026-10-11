@@ -564,7 +564,7 @@ impl ChannelPane {
             }
         }
     }
-    fn inspect_chatter(
+    pub(crate) fn inspect_chatter(
         &mut self,
         user_id: String,
         clicked_name: String,
@@ -643,7 +643,12 @@ impl ChannelPane {
                             .child(Button::new("chatter-copy-id").small().label("Copy ID").on_click(move|_,w,cx|copy(id.clone(),w,cx)))))
                 });
     }
-    fn insert_mention(&mut self, login: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn insert_mention(
+        &mut self,
+        login: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let input = self.draft.read(cx);
         let value = input.value().to_string();
         let range = input.selected_range();

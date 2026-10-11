@@ -30,7 +30,8 @@ gpui_kit::assets::icon_assets!(
         Plug,
         Keyboard,
         Download,
-        Palette
+        Palette,
+        Users
     ]
 );
 
