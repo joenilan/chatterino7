@@ -138,7 +138,7 @@ impl Workbench {
                     .child(div().text_size(px(12.)).child("Address"))
                     .child(div().h_flex().gap_1().child(div().flex_1().child(Input::new(&host).small())).child(div().w(px(80.)).child(Input::new(&port).small())))
                     .child(div().text_size(px(12.)).child("Password"))
-                    .child(Input::new(&password).small()))
+                    .child(Input::new(&password).small().mask_toggle()))
                 .footer(div().h_flex().justify_end().gap_2()
                     .child(Button::new("bot-cancel").small().label("Cancel").on_click(|_, w, cx| w.close_dialog(cx)))
                     .child(Button::new("bot-save").small().primary().label("Connect").on_click(move |_, w, cx| {
