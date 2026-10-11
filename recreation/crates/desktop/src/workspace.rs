@@ -10,6 +10,8 @@ mod channel_details;
 mod channel_switcher;
 #[path = "engagement_ui.rs"]
 mod engagement_ui;
+#[path = "obs_ui.rs"]
+mod obs_ui;
 #[path = "pane_navigation.rs"]
 mod pane_navigation;
 #[path = "popout.rs"]
@@ -199,6 +201,12 @@ pub struct Workbench {
     follows_live: crate::follows_live::FollowsLive,
     follows_open: bool,
     stream_presets: crate::studio::Presets,
+    obs: crate::obs::Obs,
+    obs_settings: crate::streamer_bot::Settings,
+    obs_started: bool,
+    obs_tick: u64,
+    /// "Find OBS": None = not searched, Some(None) = searching, Some(Some(ips)) = done.
+    obs_found: Option<Option<Vec<crate::obs::Found>>>,
     /// Optional chat logs (off by default).
     logs: crate::chat_logs::Logs,
     logs_enabled: bool,
@@ -558,6 +566,11 @@ impl Workbench {
             follows_live: crate::follows_live::FollowsLive::new(),
             follows_open: state["follows_open"].as_bool().unwrap_or(true),
             stream_presets: crate::studio::load_presets(&state["stream_presets"]),
+            obs: crate::obs::Obs::new(),
+            obs_settings: obs_ui::load_obs_settings(&state["obs"]),
+            obs_started: false,
+            obs_tick: 0,
+            obs_found: None,
             similar_mode: crate::similarity::Mode::from_key(
                 state["similar_messages"].as_str().unwrap_or(""),
             ),
@@ -801,6 +814,11 @@ impl Workbench {
             self.start_streamer_bot(cx);
         }
         self.pump_streamer_bot(window, cx);
+        if !self.obs_started {
+            self.obs_started = true;
+            self.start_obs(cx);
+        }
+        self.pump_obs(cx);
         self.pump_engagement(window, cx);
         if !self.setup_offered && identity.is_some() {
             self.setup_offered = true;
@@ -2045,6 +2063,7 @@ impl Workbench {
         value["mod_buttons"] = json!(self.mod_buttons);
         value["follows_open"] = json!(self.follows_open);
         value["stream_presets"] = crate::studio::presets_json(&self.stream_presets);
+        value["obs"] = self.obs_json();
         value["logs"] =
             json!({"enabled": self.logs_enabled, "folder": self.logs_folder.display().to_string()});
         value["streamer_mode"] =
@@ -3813,7 +3832,10 @@ impl Render for Workbench {
         self.streamer_live = match self.streamer_mode {
             crate::streamer_mode::Mode::On => true,
             crate::streamer_mode::Mode::Off => false,
-            crate::streamer_mode::Mode::Automatic => self.streamer_detector.detected(),
+            // OBS saying it's streaming is the surest signal; otherwise broadcasting software running.
+            crate::streamer_mode::Mode::Automatic => {
+                self.obs.state.streaming || self.streamer_detector.detected()
+            }
         };
         for channel in std::mem::take(&mut self.restore_popouts) {
             self.open_popout(channel, cx);

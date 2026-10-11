@@ -722,6 +722,8 @@ impl Workbench {
         };
         div()
             .v_flex()
+            .child(Self::studio_section("OBS"))
+            .child(self.render_obs_card(cx))
             .child(Self::studio_section("Stream info"))
             .children(self.studio_editor.clone())
             .child(Self::studio_section("Chat modes"))

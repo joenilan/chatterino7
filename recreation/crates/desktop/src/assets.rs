@@ -35,7 +35,9 @@ gpui_kit::assets::icon_assets!(
         Swords,
         Trash,
         Clock,
-        Ban
+        Ban,
+        Mic,
+        MicOff
     ]
 );
 

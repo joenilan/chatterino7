@@ -41,6 +41,7 @@ mod media_hover;
 mod message_actions;
 mod message_scroller;
 mod name_paint;
+mod obs;
 mod owned_emotes;
 mod profiles;
 mod recent_messages;
