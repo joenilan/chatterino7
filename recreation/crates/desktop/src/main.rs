@@ -75,6 +75,7 @@ mod twitch_assets;
 mod updates;
 mod whispers;
 mod workspace;
+mod youtube;
 use workspace::Workbench;
 
 use chat_core::{Timeline, selection::Selection};
@@ -235,6 +236,8 @@ struct ChannelPane {
     spelling: Vec<(String, Vec<String>)>,
     /// View filter (search syntax): only matching messages are shown; nothing is dropped.
     view_filter: Option<(String, std::rc::Rc<chat_search::Query>)>,
+    /// A friendlier title than the pane name (YouTube: "Channel · Stream title").
+    display_title: Option<String>,
     /// Suspicious labels for messages that haven't arrived yet (by message ID).
     suspicious_pending: std::collections::HashMap<String, String>,
     send_as: Option<SharedString>,
@@ -341,6 +344,7 @@ impl ChannelPane {
             spellcheck: false,
             spelling: Vec::new(),
             view_filter: None,
+            display_title: None,
             suspicious_pending: Default::default(),
             send_as: None,
             media,
@@ -823,7 +827,11 @@ impl Render for ChannelPane {
                                     cx.new(|cx| stream_preview::StreamPreview::new(channel, info, media, hide, cx)).into()
                                 }
                             })
-                            .child(format!("# {}", combined::title(&self.name))),
+                            .child(match &self.display_title {
+                                Some(title) => format!("▶ {title}"),
+                                None if youtube::is_youtube(&self.name) => "▶ YouTube stream".into(),
+                                None => format!("# {}", combined::title(&self.name)),
+                            }),
                     )
                     .children(self.render_filter_chip(cx))
                     .child(

@@ -956,3 +956,122 @@ impl Workbench {
         pane.update(cx, |p, cx| p.command_draft(text, window, cx));
     }
 }
+
+const YOUTUBE_VAULT: &str = "https://jawjack.zombie.digital/youtube/api-key-v1";
+impl Workbench {
+    /// YouTube panes: load the API key once, keep one watcher per pane, deliver updates.
+    pub(super) fn pump_youtube(&mut self, cx: &mut Context<Self>) {
+        if !self.youtube_key_loaded {
+            self.youtube_key_loaded = true;
+            let read = cx.read_credentials(YOUTUBE_VAULT);
+            cx.spawn(async move |view, cx| {
+                let key = read
+                    .await
+                    .ok()
+                    .flatten()
+                    .and_then(|(_, b)| String::from_utf8(b).ok())
+                    .filter(|k| !k.is_empty());
+                let _ = view.update(cx, |this, cx| {
+                    this.youtube.set_key(key);
+                    cx.notify();
+                });
+            })
+            .detach();
+            return;
+        }
+        let panes = self.panes();
+        let names: Vec<String> = panes
+            .iter()
+            .map(|p| p.read(cx).name.to_string())
+            .filter(|n| crate::youtube::is_youtube(n))
+            .collect();
+        for (name, update) in self.youtube.pump(&names) {
+            let targets: Vec<_> = panes
+                .iter()
+                .filter(|p| p.read(cx).name.as_ref() == name)
+                .cloned()
+                .collect();
+            for pane in targets {
+                pane.update(cx, |p, cx| {
+                    match &update {
+                        crate::youtube::Update::Status { connected, text } => {
+                            p.connected = *connected;
+                            p.connection = text.clone();
+                        }
+                        crate::youtube::Update::Title(title) => {
+                            p.display_title = Some(title.clone())
+                        }
+                        crate::youtube::Update::Message(m) => {
+                            p.received(chat_core::Event::Message(m.clone()), cx)
+                        }
+                    }
+                    cx.notify();
+                });
+            }
+            cx.notify();
+        }
+    }
+    pub(super) fn save_youtube_key(&mut self, key: String, cx: &mut Context<Self>) {
+        let key = key.trim().to_owned();
+        if key.is_empty() {
+            let delete = cx.delete_credentials(YOUTUBE_VAULT);
+            cx.spawn(async move |_, _| {
+                let _ = delete.await;
+            })
+            .detach();
+            self.youtube.set_key(None);
+        } else {
+            let save = cx.write_credentials(YOUTUBE_VAULT, "youtube", key.as_bytes());
+            cx.spawn(async move |_, _| {
+                let _ = save.await;
+            })
+            .detach();
+            self.youtube.set_key(Some(key));
+        }
+        cx.notify();
+    }
+    /// Settings > Connections: the YouTube Data API key (masked).
+    pub(super) fn youtube_rows(
+        &mut self,
+        page: Div,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        if self.youtube_key_input.is_none() {
+            self.youtube_key_input = Some(cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("YouTube Data API key")
+                    .masked(true)
+            }));
+        }
+        let input = self.youtube_key_input.clone().expect("created above");
+        let has = self.youtube.has_key();
+        page.child(settings_ui::heading("YouTube"))
+            .child(settings_ui::row(
+                "YouTube live chat (read-only)",
+                if has {
+                    "Key saved. Paste a YouTube live link into Add channel (Ctrl+K) to open its chat."
+                } else {
+                    "Needs a free YouTube Data API v3 key from console.cloud.google.com (about 2–3 hours of live chat a day)."
+                },
+                div()
+                    .h_flex()
+                    .gap_1()
+                    .child(div().w(px(180.)).child(Input::new(&input).small().mask_toggle()))
+                    .child(Button::new("youtube-key-save").small().label(if has { "Replace" } else { "Save" }).on_click(cx.listener({
+                        let input = input.clone();
+                        move |this, _, window, cx| {
+                            let key = input.read(cx).value().to_string();
+                            if key.trim().is_empty() {
+                                return;
+                            }
+                            this.save_youtube_key(key, cx);
+                            input.update(cx, |i, cx| i.set_value("", window, cx));
+                        }
+                    })))
+                    .when(has, |el| {
+                        el.child(Button::new("youtube-key-remove").small().ghost().label("Remove").on_click(cx.listener(|this, _, _, cx| this.save_youtube_key(String::new(), cx))))
+                    }),
+            ))
+    }
+}

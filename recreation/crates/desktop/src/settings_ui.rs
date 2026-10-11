@@ -355,6 +355,7 @@ impl Workbench {
                 } else {
                     "Run your actions from Studio and see YouTube, Kick, Ko-fi and other events in Activity.".into()
                 };
+                let page = self.youtube_rows(page, window, cx);
                 page.child(heading("7TV"))
                     .child(row(
                         "Share 7TV activity",

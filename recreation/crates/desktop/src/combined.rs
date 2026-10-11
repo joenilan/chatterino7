@@ -21,6 +21,8 @@ pub fn is_combined(name: &str) -> bool {
 pub fn title(name: &str) -> String {
     if is_combined(name) {
         sources(name).join(" + ")
+    } else if crate::youtube::is_youtube(name) {
+        "YouTube stream".into()
     } else {
         name.to_owned()
     }

@@ -200,7 +200,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | PF11 | Packaging, update and rollback | Part | Haiwire-style update check/download/verify/launch ([details](UPDATES.md)); installer, publishing and signing remain. | singletons/Updates; LastRunCrashDialog.cpp |
 | PF12 | Generic IRC | Research | Explicit legacy parity item; select supported scope and release placement rather than silently dropping it. | providers/irc |
 | PF13 | Kick | Research | Original experimental transport/features need a current official-provider audit; no parity claim from source alone. | providers/kick; builtin/kick; KickLoginPage.cpp |
-| PF14 | YouTube and other providers | Backlog | New scope, separately tracked in MULTIPLATFORM.md; viewer feeds and explicit combined-feed destinations. TikTok later. | MULTIPLATFORM.md |
+| PF14 | YouTube and other providers | Part | YouTube live chat read-only via the official Data API v3 and a user API key ([details](YOUTUBE.md)); untested with a real key. Sending (OAuth) and Kick pending. | MULTIPLATFORM.md |
 
 ### Upstream cases to preserve
 

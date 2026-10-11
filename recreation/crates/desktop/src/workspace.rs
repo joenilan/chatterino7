@@ -240,6 +240,9 @@ pub struct Workbench {
     stats_tick: u64,
     /// Latest connection state per channel (for combined feeds).
     channel_ready: std::collections::HashMap<String, bool>,
+    youtube: crate::youtube::YouTube,
+    youtube_key_loaded: bool,
+    youtube_key_input: Option<Entity<InputState>>,
     rewards: crate::rewards::Rewards,
     last_stream_info: Option<(String, String)>,
     /// Latest incoming raid on your channel: (login, display name, viewers, when).
@@ -448,6 +451,8 @@ impl Workbench {
         order
             .iter()
             .flat_map(|n| crate::combined::sources(n))
+            // YouTube tabs never reach Twitch.
+            .filter(|n| !crate::youtube::is_youtube(n))
             .collect()
     }
     /// Every pane fed by the live connection: workspace tabs and popouts.
@@ -646,6 +651,9 @@ impl Workbench {
             peak_viewers: 0,
             stats_tick: 0,
             channel_ready: Default::default(),
+            youtube: crate::youtube::YouTube::new(),
+            youtube_key_loaded: false,
+            youtube_key_input: None,
             rewards: crate::rewards::Rewards::new(),
             last_stream_info: None,
             last_raid: None,
@@ -771,7 +779,9 @@ impl Workbench {
                 if let Some(channels) = item["channels"].as_array() {
                     for channel in channels.iter() {
                         if let Some(name) = channel.as_str().and_then(|n| {
-                            valid_channel(n).or_else(|| crate::combined::from_saved(n))
+                            valid_channel(n)
+                                .or_else(|| crate::combined::from_saved(n))
+                                .or_else(|| crate::youtube::parse(n))
                         }) && !panes.iter().any(|p: &Entity<ChannelPane>| {
                             p.read(cx).name.as_ref() == name.as_str()
                         }) {
@@ -878,6 +888,7 @@ impl Workbench {
             panes
                 .iter()
                 .flat_map(|p| crate::combined::sources(&p.read(cx).name))
+                .filter(|n| !crate::youtube::is_youtube(n))
                 .collect(),
         ) {
             let visible = self.visible_panes(cx);
@@ -916,6 +927,7 @@ impl Workbench {
         self.pump_obs(cx);
         self.pump_ads(identity.as_ref(), window, cx);
         self.pump_rewards(identity.as_ref(), window, cx);
+        self.pump_youtube(cx);
         // Goals, charity and Shield Mode already running at sign-in.
         if let Some(identity) = identity.clone()
             && self.hype_loaded_for.as_deref() != Some(identity.user_id.as_str())
@@ -1884,6 +1896,14 @@ impl Workbench {
                 reply_parent,
             } = event
             {
+                if crate::youtube::is_youtube(&channel) {
+                    pane.update(cx, |p, cx| {
+                        p.pending = None;
+                        p.send_status = "YouTube chat is read-only in Jawjack for now (sending needs YouTube sign-in). Draft kept.".into();
+                        cx.notify();
+                    });
+                    return;
+                }
                 let destination = this.destination(pane, reply_parent.as_deref(), &channel, cx);
                 let as_identity = this.send_as_identity(&destination, cx);
                 if let Err(error) = this.live.send(
@@ -2663,6 +2683,17 @@ impl Workbench {
                 return;
             }
             self.tabs[self.active].name = value;
+        } else if let Some(video) = crate::youtube::parse(&value) {
+            if self.tabs[self.active]
+                .panes
+                .iter()
+                .any(|p| p.read(cx).name.as_ref() == video)
+            {
+                self.add_error = Some("This YouTube stream is already in the workspace".into());
+                cx.notify();
+                return;
+            }
+            self.add_channel_to_active(video, window, cx);
         } else if let Some(combined) = crate::combined::parse(&value, valid_channel) {
             if self.tabs[self.active]
                 .panes
@@ -3220,7 +3251,19 @@ impl Workbench {
                                         .child(Icon::new(gpui_kit::assets::IconName::Pin).xsmall()),
                                 )
                             })
-                            .child(format!("#{}", crate::combined::title(&channel)))
+                            .child(if crate::youtube::is_youtube(&channel) {
+                                let title = self.tabs[self.active]
+                                    .panes
+                                    .iter()
+                                    .find(|p| p.read(cx).name.as_ref() == channel)
+                                    .and_then(|p| p.read(cx).display_title.clone())
+                                    .map(|t| t.split(" · ").next().unwrap_or("").to_owned())
+                                    .filter(|t| !t.is_empty())
+                                    .unwrap_or_else(|| "YouTube".into());
+                                format!("▶ {title}")
+                            } else {
+                                format!("#{}", crate::combined::title(&channel))
+                            })
                             .when(counts.0 > 0, |el| {
                                 el.child(
                                     div()
