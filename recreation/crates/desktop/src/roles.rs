@@ -942,12 +942,17 @@ impl Workbench {
             .find(|p| p.read(cx).name.as_ref() == own)
             .cloned();
         if self.studio_editor.is_none() {
-            let account = self.account.clone();
-            self.studio_editor = Some(cx.new(|cx| {
-                let mut editor = crate::studio::StreamEditor::new(account, window, cx);
+            let (account, presets) = (self.account.clone(), self.stream_presets.clone());
+            let editor = cx.new(|cx| {
+                let mut editor = crate::studio::StreamEditor::new(account, presets, window, cx);
                 editor.embed();
                 editor
-            }));
+            });
+            cx.subscribe(&editor, |this, _, _: &crate::studio::PresetsChanged, cx| {
+                this.schedule_save(cx)
+            })
+            .detach();
+            self.studio_editor = Some(editor);
         }
         if self.raid_input.is_none() {
             self.raid_input = Some(cx.new(|cx| InputState::new(window, cx).placeholder("Channel")));

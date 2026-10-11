@@ -42,3 +42,16 @@ Polls/predictions evidence (Windows, 2026-10-11, in #dreadedzombie with the owne
   "Locked · pick the winner" with per-outcome winner buttons, and Cancel & refund (confirmed) returned
   "Prediction canceled; points refunded".
 - Resolving with a payout was not exercised.
+
+## Stream presets (2026-10-11)
+
+In Stream → Stream info, **Save as preset** stores the current title and category. Presets are named after the
+category, numbered if that name is taken, and you can keep up to 12. They show as chips above the title.
+Clicking a chip fills the form ("Loaded … Review, then Save."). Nothing changes on Twitch until
+you press Save, which goes through the same conflict check and readback as a manual edit. The chip's ×
+removes it, and the tooltip shows the full title and category. Presets are saved with the workspace, and the
+Stream info dialog has them too.
+
+Evidence: saved, applied (status shown, no Twitch write) and removed in the owner's profile, and
+`stream_presets` went back to empty.
+

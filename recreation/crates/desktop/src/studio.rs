@@ -20,6 +20,52 @@ struct Info {
     game_id: String,
     game_name: String,
 }
+/// A saved title + category, applied to the form (then reviewed and saved).
+#[derive(Clone, PartialEq, Eq)]
+pub struct Preset {
+    pub name: String,
+    pub title: String,
+    pub game_id: String,
+    pub game_name: String,
+}
+pub type Presets = std::rc::Rc<std::cell::RefCell<Vec<Preset>>>;
+const MAX_PRESETS: usize = 12;
+pub fn load_presets(value: &Value) -> Presets {
+    let text = |v: &Value, max: usize| {
+        v.as_str()
+            .unwrap_or("")
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(max)
+            .collect::<String>()
+    };
+    let list = value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .take(MAX_PRESETS)
+        .map(|p| Preset {
+            name: text(&p["name"], 40),
+            title: text(&p["title"], TITLE_LIMIT),
+            game_id: text(&p["game_id"], 32),
+            game_name: text(&p["game_name"], 80),
+        })
+        .filter(|p| !p.name.is_empty())
+        .collect();
+    std::rc::Rc::new(std::cell::RefCell::new(list))
+}
+pub fn presets_json(presets: &Presets) -> Value {
+    Value::Array(
+        presets
+            .borrow()
+            .iter()
+            .map(|p| json!({"name": p.name, "title": p.title, "game_id": p.game_id, "game_name": p.game_name}))
+            .collect(),
+    )
+}
+/// Presets were added or removed (the workspace saves).
+pub struct PresetsChanged;
+impl EventEmitter<PresetsChanged> for StreamEditor {}
 #[derive(Clone)]
 struct Category {
     id: String,
@@ -40,6 +86,7 @@ pub struct StreamEditor {
     error: bool,
     /// Shown inside the Studio panel rather than a dialog.
     embedded: bool,
+    presets: Presets,
 }
 
 fn helix(
@@ -165,6 +212,7 @@ fn save(identity: &Identity, snapshot: &Info, wanted: &Info) -> Result<Saved, St
 impl StreamEditor {
     pub fn new(
         account: Entity<TwitchAccount>,
+        presets: Presets,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -204,6 +252,7 @@ impl StreamEditor {
             status: String::new(),
             error: false,
             embedded: false,
+            presets,
         };
         this.load(window, cx);
         this
@@ -278,6 +327,55 @@ impl StreamEditor {
                 .map(|c| c.name.clone())
                 .unwrap_or_default(),
         }
+    }
+    /// Fill the form from a preset; nothing changes on Twitch until Save.
+    fn use_preset(&mut self, preset: Preset, window: &mut Window, cx: &mut Context<Self>) {
+        self.title
+            .update(cx, |i, cx| i.set_value(preset.title.clone(), window, cx));
+        self.category = (!preset.game_id.is_empty()).then(|| Category {
+            id: preset.game_id,
+            name: preset.game_name,
+        });
+        self.error = false;
+        self.status = format!("Loaded “{}”. Review, then Save.", preset.name);
+        cx.notify();
+    }
+    fn save_preset(&mut self, cx: &mut Context<Self>) {
+        let wanted = self.wanted(cx);
+        if wanted.title.is_empty() && wanted.game_id.is_empty() {
+            return;
+        }
+        let mut presets = self.presets.borrow_mut();
+        if presets.len() >= MAX_PRESETS {
+            drop(presets);
+            self.error = true;
+            self.status = format!("{MAX_PRESETS} presets saved. Remove one first.");
+            cx.notify();
+            return;
+        }
+        // Named after the category, numbered if that name is taken.
+        let base = if wanted.game_name.is_empty() {
+            "Preset".to_owned()
+        } else {
+            wanted.game_name.clone()
+        };
+        let mut name = base.clone();
+        let mut n = 2;
+        while presets.iter().any(|p| p.name == name) {
+            name = format!("{base} {n}");
+            n += 1;
+        }
+        presets.push(Preset {
+            name: name.clone(),
+            title: wanted.title,
+            game_id: wanted.game_id,
+            game_name: wanted.game_name,
+        });
+        drop(presets);
+        self.error = false;
+        self.status = format!("Saved preset “{name}”.");
+        cx.emit(PresetsChanged);
+        cx.notify();
     }
     fn changed(&self, cx: &App) -> bool {
         self.snapshot.as_ref().is_some_and(|s| {
@@ -402,10 +500,74 @@ impl Render for StreamEditor {
                 .text_color(rgb(theme::MUTED))
                 .child(text)
         };
+        let presets = self.presets.borrow().clone();
         div()
             .v_flex()
             .gap_2()
             .min_w_0()
+            .when(!presets.is_empty(), |el| {
+                el.child(label("Presets"))
+                    .child(div().h_flex().flex_wrap().gap_1().children(
+                        presets.into_iter().enumerate().map(|(index, preset)| {
+                            let tip = format!(
+                                "{} · {}",
+                                preset.title,
+                                if preset.game_name.is_empty() {
+                                    "No category"
+                                } else {
+                                    &preset.game_name
+                                }
+                            );
+                            let use_it = preset.clone();
+                            div()
+                                .id(("stream-preset", index))
+                                .h_flex()
+                                .items_center()
+                                .gap_1()
+                                .pl_2()
+                                .pr_1()
+                                .h(px(22.))
+                                .rounded(px(11.))
+                                .border_1()
+                                .border_color(rgb(theme::BORDER))
+                                .bg(rgb(theme::CONTROL))
+                                .text_size(px(11.))
+                                .cursor_pointer()
+                                .hover(|s| s.border_color(rgb(theme::ACCENT)))
+                                .tooltip(move |w, cx| {
+                                    gpui_kit::component::tooltip::Tooltip::new(tip.clone())
+                                        .build(w, cx)
+                                })
+                                .child(
+                                    div()
+                                        .max_w(px(110.))
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .text_ellipsis()
+                                        .child(preset.name.clone()),
+                                )
+                                .child(
+                                    div()
+                                        .id(("stream-preset-remove", index))
+                                        .px(px(3.))
+                                        .text_color(rgb(theme::MUTED))
+                                        .hover(|s| s.text_color(rgb(theme::TEXT)))
+                                        .child("×")
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            cx.stop_propagation();
+                                            if index < this.presets.borrow().len() {
+                                                this.presets.borrow_mut().remove(index);
+                                            }
+                                            cx.emit(PresetsChanged);
+                                            cx.notify();
+                                        })),
+                                )
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.use_preset(use_it.clone(), window, cx)
+                                }))
+                        }),
+                    ))
+            })
             .child(
                 div()
                     .h_flex()
@@ -541,6 +703,14 @@ impl Render for StreamEditor {
                                 .on_click(|_, window, cx| window.close_dialog(cx)),
                         )
                     })
+                    .child(
+                        Button::new("stream-info-preset")
+                            .small()
+                            .ghost()
+                            .label("Save as preset")
+                            .disabled(self.snapshot.is_none())
+                            .on_click(cx.listener(|this, _, _, cx| this.save_preset(cx))),
+                    )
                     .child(
                         Button::new("stream-info-save")
                             .small()

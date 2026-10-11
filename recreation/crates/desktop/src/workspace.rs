@@ -198,6 +198,7 @@ pub struct Workbench {
     mod_buttons: bool,
     follows_live: crate::follows_live::FollowsLive,
     follows_open: bool,
+    stream_presets: crate::studio::Presets,
     /// Optional chat logs (off by default).
     logs: crate::chat_logs::Logs,
     logs_enabled: bool,
@@ -556,6 +557,7 @@ impl Workbench {
             mod_buttons: state["mod_buttons"].as_bool().unwrap_or(false),
             follows_live: crate::follows_live::FollowsLive::new(),
             follows_open: state["follows_open"].as_bool().unwrap_or(true),
+            stream_presets: crate::studio::load_presets(&state["stream_presets"]),
             similar_mode: crate::similarity::Mode::from_key(
                 state["similar_messages"].as_str().unwrap_or(""),
             ),
@@ -1996,8 +1998,12 @@ impl Workbench {
             }
             return;
         }
-        let account = self.account.clone();
-        let editor = cx.new(|cx| crate::studio::StreamEditor::new(account, window, cx));
+        let (account, presets) = (self.account.clone(), self.stream_presets.clone());
+        let editor = cx.new(|cx| crate::studio::StreamEditor::new(account, presets, window, cx));
+        cx.subscribe(&editor, |this, _, _: &crate::studio::PresetsChanged, cx| {
+            this.schedule_save(cx)
+        })
+        .detach();
         let width = (f32::from(window.viewport_size().width) - 24.).min(420.);
         window.open_dialog(cx, move |dialog, _, _| {
             dialog
@@ -2038,6 +2044,7 @@ impl Workbench {
         value["similar_messages"] = json!(self.similar_mode.key());
         value["mod_buttons"] = json!(self.mod_buttons);
         value["follows_open"] = json!(self.follows_open);
+        value["stream_presets"] = crate::studio::presets_json(&self.stream_presets);
         value["logs"] =
             json!({"enabled": self.logs_enabled, "folder": self.logs_folder.display().to_string()});
         value["streamer_mode"] =
