@@ -238,10 +238,8 @@ impl Workbench {
                 ))
                 .child(
                     div().h_flex().gap_2()
-                        .child(Button::new("bot-connect").small().primary().icon(IconName::Bot).label("Connect").on_click(cx.listener(|this, _, _, cx| {
-                            let mut settings = this.bot_settings.clone();
-                            settings.enabled = true;
-                            this.set_bot_settings(settings, cx);
+                        .child(Button::new("bot-connect").small().primary().icon(IconName::Bot).label("Connect").on_click(cx.listener(|this, _, w, cx| {
+                            this.open_guide(super::guides::Guide::StreamerBot, w, cx)
                         })))
                         .child(Button::new("bot-settings").small().ghost().label("Settings…").on_click(cx.listener(|this, _, w, cx| this.open_bot_settings(w, cx)))),
                 );

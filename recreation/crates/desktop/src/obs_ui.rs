@@ -236,10 +236,8 @@ impl Workbench {
                     div()
                         .h_flex()
                         .gap_2()
-                        .child(Button::new("obs-connect").small().primary().icon(Icon::new(gpui_kit::assets::IconName::Tv)).label("Connect").on_click(cx.listener(|this, _, _, cx| {
-                            let mut settings = this.obs_settings.clone();
-                            settings.enabled = true;
-                            this.set_obs_settings(settings, cx);
+                        .child(Button::new("obs-connect").small().primary().icon(Icon::new(gpui_kit::assets::IconName::Tv)).label("Connect").on_click(cx.listener(|this, _, w, cx| {
+                            this.open_guide(guides::Guide::Obs, w, cx)
                         })))
                         .child(Button::new("obs-settings").small().ghost().label("Settings…").on_click(cx.listener(|this, _, w, cx| this.open_obs_settings(w, cx)))),
                 );
@@ -963,6 +961,7 @@ impl Workbench {
     pub(super) fn pump_youtube(&mut self, cx: &mut Context<Self>) {
         if !self.youtube_key_loaded {
             self.youtube_key_loaded = true;
+            self.load_google(cx);
             let read = cx.read_credentials(YOUTUBE_VAULT);
             cx.spawn(async move |view, cx| {
                 let key = read
@@ -986,6 +985,9 @@ impl Workbench {
             .filter(|n| crate::youtube::is_youtube(n))
             .collect();
         for (name, update) in self.youtube.pump(&names) {
+            if let crate::youtube::Update::ChatId(chat) = &update {
+                self.youtube_chats.insert(name.clone(), chat.clone());
+            }
             let targets: Vec<_> = panes
                 .iter()
                 .filter(|p| p.read(cx).name.as_ref() == name)
@@ -1001,6 +1003,7 @@ impl Workbench {
                         crate::youtube::Update::Title(title) => {
                             p.display_title = Some(title.clone())
                         }
+                        crate::youtube::Update::ChatId(_) => {}
                         crate::youtube::Update::Message(m) => {
                             p.received(chat_core::Event::Message(m.clone()), cx)
                         }
@@ -1030,48 +1033,229 @@ impl Workbench {
         }
         cx.notify();
     }
-    /// Settings > Connections: the YouTube Data API key (masked).
+    /// Settings > Connections: YouTube, OBS and Streamer.bot set-up.
     pub(super) fn youtube_rows(
         &mut self,
         page: Div,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Div {
-        if self.youtube_key_input.is_none() {
-            self.youtube_key_input = Some(cx.new(|cx| {
-                InputState::new(window, cx)
-                    .placeholder("YouTube Data API key")
-                    .masked(true)
-            }));
-        }
-        let input = self.youtube_key_input.clone().expect("created above");
         let has = self.youtube.has_key();
         page.child(settings_ui::heading("YouTube"))
             .child(settings_ui::row(
-                "YouTube live chat (read-only)",
+                "YouTube live chat",
                 if has {
                     "Key saved. Paste a YouTube live link into Add channel (Ctrl+K) to open its chat."
                 } else {
-                    "Needs a free YouTube Data API v3 key from console.cloud.google.com (about 2–3 hours of live chat a day)."
+                    "A free API key from Google, set up step by step (about 3 minutes)."
                 },
                 div()
                     .h_flex()
                     .gap_1()
-                    .child(div().w(px(180.)).child(Input::new(&input).small().mask_toggle()))
-                    .child(Button::new("youtube-key-save").small().label(if has { "Replace" } else { "Save" }).on_click(cx.listener({
-                        let input = input.clone();
-                        move |this, _, window, cx| {
-                            let key = input.read(cx).value().to_string();
-                            if key.trim().is_empty() {
-                                return;
-                            }
-                            this.save_youtube_key(key, cx);
-                            input.update(cx, |i, cx| i.set_value("", window, cx));
-                        }
+                    .child(Button::new("youtube-setup").small().when(!has, |b| b.primary()).label(if has { "Replace key…" } else { "Set up…" }).on_click(cx.listener(|this, _, w, cx| {
+                        this.settings = false;
+                        this.open_guide(guides::Guide::YouTube, w, cx)
                     })))
                     .when(has, |el| {
                         el.child(Button::new("youtube-key-remove").small().ghost().label("Remove").on_click(cx.listener(|this, _, _, cx| this.save_youtube_key(String::new(), cx))))
                     }),
             ))
+            .child(settings_ui::row(
+                "Chat on YouTube",
+                if self.google_tokens.is_some() {
+                    "Signed in with Google: you can send in YouTube tabs."
+                } else {
+                    "Sign in with Google to send messages (your own OAuth client, set up step by step)."
+                },
+                div()
+                    .h_flex()
+                    .gap_1()
+                    .child(Button::new("youtube-chat-setup").small().label(if self.google_tokens.is_some() { "Sign in again…" } else { "Set up…" }).on_click(cx.listener(|this, _, w, cx| {
+                        this.settings = false;
+                        this.open_guide(guides::Guide::YouTubeChat, w, cx)
+                    })))
+                    .when(self.google_tokens.is_some(), |el| {
+                        el.child(Button::new("youtube-chat-signout").small().ghost().label("Sign out").on_click(cx.listener(|this, _, _, cx| this.google_sign_out(cx))))
+                    }),
+            ))
+            .child(settings_ui::heading("OBS"))
+            .child(settings_ui::row(
+                "OBS",
+                if self.obs.state.connected { "Connected." } else { "Scenes, live state, mic and stream health in Studio. Works with OBS on another PC." },
+                Button::new("obs-setup-settings").small().label(if self.obs_settings.enabled { "Settings…" } else { "Set up…" }).on_click(cx.listener(|this, _, w, cx| {
+                    this.settings = false;
+                    if this.obs_settings.enabled {
+                        this.open_obs_settings(w, cx)
+                    } else {
+                        this.open_guide(guides::Guide::Obs, w, cx)
+                    }
+                })),
+            ))
+    }
+}
+
+const GOOGLE_CLIENT_VAULT: &str = "https://jawjack.zombie.digital/youtube/oauth-client-v1";
+const GOOGLE_TOKEN_VAULT: &str = "https://jawjack.zombie.digital/youtube/oauth-token-v1";
+impl Workbench {
+    /// Load the saved Google OAuth client and sign-in (once).
+    pub(super) fn load_google(&mut self, cx: &mut Context<Self>) {
+        let (client, token) = (
+            cx.read_credentials(GOOGLE_CLIENT_VAULT),
+            cx.read_credentials(GOOGLE_TOKEN_VAULT),
+        );
+        cx.spawn(async move |view, cx| {
+            let client = client
+                .await
+                .ok()
+                .flatten()
+                .and_then(|(_, b)| serde_json::from_slice::<Value>(&b).ok());
+            let refresh = token
+                .await
+                .ok()
+                .flatten()
+                .and_then(|(_, b)| String::from_utf8(b).ok())
+                .filter(|t| !t.is_empty());
+            let _ = view.update(cx, |this, cx| {
+                this.google_client = client.and_then(|v| {
+                    Some(crate::google_auth::OAuthClient {
+                        id: v["id"].as_str()?.to_owned(),
+                        secret: v["secret"].as_str()?.to_owned(),
+                    })
+                });
+                this.google_tokens = refresh.map(|refresh| crate::google_auth::Tokens {
+                    refresh,
+                    access: String::new(),
+                    expires: std::time::Instant::now(),
+                });
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+    pub(super) fn google_sign_in(
+        &mut self,
+        id: &str,
+        secret: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(client) = crate::google_auth::parse_client(id, secret) else {
+            self.guide_status = Some((false, "Paste the Client ID (ends with .apps.googleusercontent.com) and the Client secret, or the whole downloaded JSON in the first box.".into()));
+            cx.notify();
+            return;
+        };
+        self.guide_status = Some((
+            true,
+            "Your browser is opening Google's sign-in. Approve YouTube access there…".into(),
+        ));
+        let (urls_tx, urls_rx) = std::sync::mpsc::channel::<String>();
+        let job = client.clone();
+        let task = cx.background_spawn(async move {
+            crate::google_auth::sign_in(&job, move |url| {
+                let _ = urls_tx.send(url);
+            })
+        });
+        // Open the consent page as soon as the sign-in has its local port.
+        cx.spawn_in(window, async move |view, cx| {
+            for _ in 0..50 {
+                if let Ok(url) = urls_rx.try_recv() {
+                    let _ = view.update(cx, |_, cx| cx.open_url(&url));
+                    break;
+                }
+                cx.background_executor()
+                    .timer(Duration::from_millis(100))
+                    .await;
+            }
+            let result = task.await;
+            let _ = view.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(tokens) => {
+                        let client_json =
+                            json!({"id": client.id, "secret": client.secret}).to_string();
+                        for save in [
+                            cx.write_credentials(
+                                GOOGLE_CLIENT_VAULT,
+                                "google",
+                                client_json.as_bytes(),
+                            ),
+                            cx.write_credentials(
+                                GOOGLE_TOKEN_VAULT,
+                                "google",
+                                tokens.refresh.as_bytes(),
+                            ),
+                        ] {
+                            cx.spawn(async move |_, _| {
+                                let _ = save.await;
+                            })
+                            .detach();
+                        }
+                        this.google_client = Some(client);
+                        this.google_tokens = Some(tokens);
+                        this.guide_status =
+                            Some((true, "Signed in. You can now chat in YouTube tabs.".into()));
+                    }
+                    Err(e) => this.guide_status = Some((false, e)),
+                }
+                window.refresh();
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+    pub(super) fn google_sign_out(&mut self, cx: &mut Context<Self>) {
+        self.google_tokens = None;
+        let delete = cx.delete_credentials(GOOGLE_TOKEN_VAULT);
+        cx.spawn(async move |_, _| {
+            let _ = delete.await;
+        })
+        .detach();
+        cx.notify();
+    }
+    /// Send in a YouTube tab: needs a Google sign-in and the stream's live chat.
+    pub(super) fn send_youtube(
+        &mut self,
+        pane: Entity<ChannelPane>,
+        name: String,
+        request: u64,
+        text: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (Some(client), Some(tokens)) = (self.google_client.clone(), self.google_tokens.clone())
+        else {
+            pane.update(cx, |p, cx| {
+                p.pending = None;
+                p.send_status = "To chat on YouTube, sign in with Google (opening the set-up guide). Draft kept.".into();
+                cx.notify();
+            });
+            self.open_guide(guides::Guide::YouTubeChat, window, cx);
+            return;
+        };
+        let Some(chat) = self.youtube_chats.get(&name).cloned() else {
+            pane.update(cx, |p, cx| {
+                p.pending = None;
+                p.send_status = "This stream's live chat isn't connected yet. Draft kept.".into();
+                cx.notify();
+            });
+            return;
+        };
+        let task = cx.background_spawn(async move {
+            let mut tokens = tokens;
+            let result = crate::google_auth::access(&client, &mut tokens)
+                .and_then(|access| crate::google_auth::send(&access, &chat, &text));
+            (tokens, result)
+        });
+        cx.spawn_in(window, async move |view, cx| {
+            let (tokens, result) = task.await;
+            let _ = view.update_in(cx, |this, window, cx| {
+                if result.as_ref().is_err_and(|e| e.contains("Sign in again")) {
+                    this.google_tokens = None;
+                } else {
+                    this.google_tokens = Some(tokens);
+                }
+                pane.update(cx, |p, cx| p.sent(request, &result, true, window, cx));
+            });
+        })
+        .detach();
     }
 }

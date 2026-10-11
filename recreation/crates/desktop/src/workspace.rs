@@ -10,6 +10,8 @@ mod channel_details;
 mod channel_switcher;
 #[path = "engagement_ui.rs"]
 mod engagement_ui;
+#[path = "guides.rs"]
+mod guides;
 #[path = "live_stats.rs"]
 mod live_stats;
 #[path = "mod_onboarding.rs"]
@@ -242,7 +244,13 @@ pub struct Workbench {
     channel_ready: std::collections::HashMap<String, bool>,
     youtube: crate::youtube::YouTube,
     youtube_key_loaded: bool,
-    youtube_key_input: Option<Entity<InputState>>,
+    /// The open setup guide's result line: (ok, text).
+    guide_status: Option<(bool, String)>,
+    /// Google sign-in for sending on YouTube.
+    google_client: Option<crate::google_auth::OAuthClient>,
+    google_tokens: Option<crate::google_auth::Tokens>,
+    /// Live chat IDs of open YouTube tabs.
+    youtube_chats: std::collections::HashMap<String, String>,
     rewards: crate::rewards::Rewards,
     last_stream_info: Option<(String, String)>,
     /// Latest incoming raid on your channel: (login, display name, viewers, when).
@@ -653,7 +661,10 @@ impl Workbench {
             channel_ready: Default::default(),
             youtube: crate::youtube::YouTube::new(),
             youtube_key_loaded: false,
-            youtube_key_input: None,
+            guide_status: None,
+            google_client: None,
+            google_tokens: None,
+            youtube_chats: Default::default(),
             rewards: crate::rewards::Rewards::new(),
             last_stream_info: None,
             last_raid: None,
@@ -1897,11 +1908,14 @@ impl Workbench {
             } = event
             {
                 if crate::youtube::is_youtube(&channel) {
-                    pane.update(cx, |p, cx| {
-                        p.pending = None;
-                        p.send_status = "YouTube chat is read-only in Jawjack for now (sending needs YouTube sign-in). Draft kept.".into();
-                        cx.notify();
-                    });
+                    this.send_youtube(
+                        pane.clone(),
+                        channel.clone(),
+                        *request,
+                        text.clone(),
+                        window,
+                        cx,
+                    );
                     return;
                 }
                 let destination = this.destination(pane, reply_parent.as_deref(), &channel, cx);
@@ -1965,6 +1979,10 @@ impl Workbench {
                 this.mod_buttons = !this.mod_buttons;
                 this.schedule_save(cx);
                 cx.notify();
+                return;
+            }
+            if matches!(event, PaneEvent::SetUpYouTube) {
+                this.open_guide(guides::Guide::YouTube, window, cx);
                 return;
             }
             if matches!(event, PaneEvent::ViewFilterChanged) {

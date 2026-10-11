@@ -370,7 +370,14 @@ impl Workbench {
                     .child(row(
                         "Streamer.bot",
                         bot,
-                        open_button("settings-bot", "Set up").on_click(cx.listener(|this, _, w, cx| this.open_bot_settings(w, cx))),
+                        open_button("settings-bot", if self.bot_settings.enabled { "Settings…" } else { "Set up…" }).on_click(cx.listener(|this, _, w, cx| {
+                            this.settings = false;
+                            if this.bot_settings.enabled {
+                                this.open_bot_settings(w, cx)
+                            } else {
+                                this.open_guide(super::guides::Guide::StreamerBot, w, cx)
+                            }
+                        })),
                     ))
             }
             7 => page.children(SHORTCUTS.iter().map(|(keys, what)| {

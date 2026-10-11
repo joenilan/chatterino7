@@ -1,4 +1,4 @@
-# YouTube live chat (read-only, first step)
+# YouTube live chat
 
 Paste a YouTube live link into Add channel (Ctrl+K): `youtube.com/watch?v=…`, `youtu.be/…` or
 `youtube.com/live/…`. It opens as a tab ("▶ Channel"), with "Channel · Stream title" in the header.
@@ -10,7 +10,16 @@ Paste a YouTube live link into Add channel (Ctrl+K): `youtube.com/watch?v=…`, 
 - **Messages:** text, Super Chats/Stickers ("[Super Chat $5.00] …") and membership messages. Owner,
   moderator and member status map to the broadcaster, moderator and subscriber badges, so search and filters
   (`is:mod`, `is:sub`) work. Each author gets a stable name colour.
-- **Read-only:** sending is refused with an explanation (it needs Google OAuth, which comes later).
+- **Sending (Sign in with Google):** Settings → Connections → Chat on YouTube → Set up… opens a guide.
+  You create a "Desktop app" OAuth client in the same Google Cloud project (with links to the exact pages),
+  add yourself as a test user, paste the client ID and secret (or the downloaded JSON), and press
+  **Sign in with Google**. The browser shows Google's consent page, and Jawjack receives the code on a
+  temporary 127.0.0.1 port (PKCE, scope `youtube.force-ssl`). The client and refresh token live in
+  Windows Credential Manager. Messages go out through `liveChatMessages.insert` (50 quota units each).
+  Sending in a YouTube tab before signing in opens the guide. In Testing mode Google ends sign-ins
+  after 7 days, and the guide says so. Public release needs Google's verification for this scope.
+- **Onboarding:** the first YouTube tab without a key shows **Set up YouTube…**. Every guide links the
+  exact console pages and tests the key with YouTube before saving it.
 - **Isolation:** pane names are `yt:<videoId>`. They are filtered out of every Twitch path (subscriptions,
   stream status, 7TV, recent messages), so a YouTube tab can't affect Twitch.
 - Not live, or chat off: it checks again every minute. Ended chat: the status says so. Quota used up:

@@ -51,7 +51,12 @@ pub fn parse(input: &str) -> Option<String> {
 }
 
 pub enum Update {
-    Status { connected: bool, text: String },
+    /// The live chat's ID, needed to send.
+    ChatId(String),
+    Status {
+        connected: bool,
+        text: String,
+    },
     Title(String),
     Message(chat_core::Message),
 }
@@ -219,9 +224,10 @@ fn watch(name: String, key: String, stop: Arc<AtomicBool>, tx: mpsc::Sender<(Str
             }
         }
     };
+    send(Update::ChatId(chat.clone()));
     send(Update::Status {
         connected: true,
-        text: "Connected (YouTube, read-only)".into(),
+        text: "Connected (YouTube)".into(),
     });
     let mut page: Option<String> = None;
     while !stop.load(Ordering::Relaxed) {
