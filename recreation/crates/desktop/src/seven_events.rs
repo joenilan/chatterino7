@@ -55,8 +55,9 @@ impl Events {
         mut watches: Vec<Watch>,
         mut channels: Vec<String>,
     ) -> (HashSet<String>, Vec<Change>) {
-        channels.sort();
-        channels.dedup();
+        // Keep priority order (visible channels first); drop repeats.
+        let mut seen = HashSet::new();
+        channels.retain(|c| seen.insert(c.clone()));
         channels.truncate(128);
         if let Ok(mut wanted) = self.channels.lock() {
             *wanted = channels;
@@ -301,7 +302,7 @@ fn run(
     let mut delay = 1u64;
     while !stop.load(Ordering::Relaxed) {
         let watches = wanted.lock().map(|w| w.clone()).unwrap_or_default();
-        let channel_routes = channels.lock().map(|c| c.clone()).unwrap_or_default();
+        let mut channel_routes = channels.lock().map(|c| c.clone()).unwrap_or_default();
         if watches.is_empty() && channel_routes.is_empty() {
             std::thread::sleep(Duration::from_millis(250));
             continue;
@@ -320,11 +321,9 @@ fn run(
             while !stop.load(Ordering::Relaxed) && last.elapsed() < timeout {
                 if hello {
                     routes = wanted.lock().map(|w| w.clone()).unwrap_or_default();
-                    let next_channels = channels.lock().map(|c| c.clone()).unwrap_or_default();
-                    if next_channels != channel_routes {
-                        reset(&changes);
-                        break;
-                    }
+                    // Channel changes adjust subscriptions in place; reconnecting would
+                    // drop every observed paint and badge grant.
+                    channel_routes = channels.lock().map(|c| c.clone()).unwrap_or_default();
                     if routes.is_empty() && channel_routes.is_empty() {
                         break;
                     }

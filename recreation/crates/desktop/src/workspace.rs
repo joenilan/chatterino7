@@ -719,10 +719,8 @@ impl Workbench {
             }
             cx.notify();
         }
-        if self.catalog.borrow_mut().pump(
-            panes.iter().map(|p| p.read(cx).name.to_string()).collect(),
-            identity.clone(),
-        ) {
+        let priority = self.connection_priority(cx);
+        if self.catalog.borrow_mut().pump(priority, identity.clone()) {
             for pane in &panes {
                 pane.update(cx, |p, cx| {
                     p.search.dirty = true;

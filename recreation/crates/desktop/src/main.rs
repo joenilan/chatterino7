@@ -808,9 +808,11 @@ impl Render for ChannelPane {
                             let eased = 1.0 - (1.0 - progress).powi(3);
                             div()
                                 .relative()
-                                .border_l_2().border_color(rgba(0x00000000))
-                                .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(0xA99CF40D)))
-                                .when(highlight_rows.contains(&row),|el|{let (_,accent,background)=highlight_rules::COLORS[highlight_colors.get(&row).copied().unwrap_or(0)];el.bg(rgb(background)).border_color(rgb(accent))})
+                                // Every row keeps the same inset so text never touches a highlight edge
+                                // and highlighting a row doesn't shift its text sideways.
+                                .border_l_2().border_color(rgba(0x00000000)).pl(px(6.)).pr(px(4.))
+                                .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(0xA99CF40D)).py(px(2.)).rounded_r(px(4.)))
+                                .when(highlight_rows.contains(&row),|el|{let (_,accent,background)=highlight_rules::COLORS[highlight_colors.get(&row).copied().unwrap_or(0)];el.bg(rgb(background)).border_color(rgb(accent)).py(px(2.)).rounded_r(px(4.))})
                                 .on_prepaint(move|bounds,window,cx|{
                                     let clip=window.content_mask().bounds;
                                     if following&&eligible.get()&&window.is_window_active()&&!window.has_active_dialog(cx)

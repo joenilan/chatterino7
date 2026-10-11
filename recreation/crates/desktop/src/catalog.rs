@@ -179,11 +179,10 @@ impl Catalog {
                 .insert(name.into(), (id.into(), Instant::now()));
         }
     }
-    pub fn pump(
-        &mut self,
-        active: HashSet<String>,
-        identity: Option<crate::live::Identity>,
-    ) -> bool {
+    /// `priority` lists open channels, visible ones first; 7TV's per-connection
+    /// subscription limit is spent in that order.
+    pub fn pump(&mut self, priority: Vec<String>, identity: Option<crate::live::Identity>) -> bool {
+        let active: HashSet<String> = priority.iter().cloned().collect();
         let owned_changed = self.owned.pump(identity.clone());
         let old_global_state = self.global_state;
         let user = identity.as_ref().map(|i| i.user_id.clone());
@@ -196,11 +195,9 @@ impl Catalog {
             self.personal_user = user;
         }
         let personal_key = self.personal_user.as_ref().map(|id| format!("@{id}"));
-        let channels = self
-            .requested
+        let channels = priority
             .iter()
-            .filter(|(name, _)| active.contains(*name))
-            .map(|(_, (id, _))| id.clone())
+            .filter_map(|name| self.requested.get(name).map(|(id, _)| id.clone()))
             .collect();
         let (dirty, events) = self
             .events

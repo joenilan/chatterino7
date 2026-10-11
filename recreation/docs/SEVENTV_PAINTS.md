@@ -91,3 +91,13 @@ paints and unknown functions still fall back to the name color.
 Native Windows, #xqc: 6 of 7 observed definitions rendered approximately and 1
 fell back; painted names kept their original glyph geometry (no gap before the
 colon). Shadows, multi-layer composition and image paints remain open parity work.
+
+## Live connection fix (2026-10-11)
+
+With many channels open, every change to the channel list (each newly resolved
+channel ID) made the 7TV EventAPI connection reconnect and wipe all observed
+paint and badge grants, so none survived. The channel routes were also sorted by
+ID before 7TV's subscription limit was applied, so visible channels could fall outside it.
+Now channel changes subscribe and unsubscribe in place, and channels are taken in the same
+priority order as Twitch connections (visible panes first). After the fix, with
+82 channels open: 0 grants → 4 badges and 5 paints from 9 entitled senders within two minutes.
