@@ -319,6 +319,8 @@ pub fn dispatch(
                 alt: request["alt"].as_bool().unwrap_or(false),
                 ..Default::default()
             };
+            // Optional click count (1–3) for double/triple-click gestures.
+            let clicks = request["clicks"].as_u64().unwrap_or(1).clamp(1, 3) as usize;
             let kind = request["kind"]
                 .as_str()
                 .filter(|k| matches!(*k, "move" | "down" | "up"))
@@ -345,7 +347,7 @@ pub fn dispatch(
                             position,
                             button,
                             modifiers,
-                            click_count: 1,
+                            click_count: clicks,
                             first_mouse: false,
                         }
                         .to_platform_input(),
@@ -358,7 +360,7 @@ pub fn dispatch(
                             position,
                             button,
                             modifiers,
-                            click_count: 1,
+                            click_count: clicks,
                         }
                         .to_platform_input(),
                         cx,

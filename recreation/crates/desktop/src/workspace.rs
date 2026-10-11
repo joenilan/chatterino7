@@ -160,6 +160,8 @@ pub struct Workbench {
     experience: roles::Experience,
     streamer_bot: crate::streamer_bot::StreamerBot,
     feed: crate::activity_feed::Feed,
+    /// A divider double-click easing a split to equal sizes: tab, path, start weights, start.
+    equalizing: Option<(u64, Vec<usize>, Vec<f32>, std::time::Instant)>,
     bot_settings: crate::streamer_bot::Settings,
     bot_pinned: Vec<crate::streamer_bot::Action>,
     bot_runs: std::collections::HashMap<u64, String>,
@@ -407,6 +409,7 @@ impl Workbench {
             experience: roles::Experience::from_key(state["experience"].as_str().unwrap_or("")),
             streamer_bot: crate::streamer_bot::StreamerBot::new(),
             feed: Default::default(),
+            equalizing: None,
             bot_settings: streamer_bot_ui::load_settings(&state["streamer_bot"]).0,
             bot_pinned: streamer_bot_ui::load_settings(&state["streamer_bot"]).1,
             bot_runs: Default::default(),
@@ -2824,6 +2827,31 @@ impl Workbench {
                 children,
             } => {
                 let key = format!("{tab_id}:{path:?}");
+                // While a divider reset eases, sizes come from interpolated weights.
+                let mut weights = weights.clone();
+                if let Some((tab, at, from, started)) = &self.equalizing
+                    && *tab == tab_id
+                    && *at == path
+                    && from.len() == weights.len()
+                {
+                    let t = (started.elapsed().as_secs_f32() / 0.2).clamp(0., 1.);
+                    let eased = 1. - (1. - t).powi(3);
+                    let total = from.iter().sum::<f32>().max(f32::EPSILON);
+                    let equal = 1. / from.len() as f32;
+                    weights = from
+                        .iter()
+                        .map(|w| w / total + (equal - w / total) * eased)
+                        .collect();
+                    self.tabs[self.active].dock_states.remove(&key);
+                    if t >= 1. {
+                        if let Some(dock) = &mut self.tabs[self.active].dock {
+                            dock.resize(&path, vec![1.; from.len()]);
+                        }
+                        self.equalizing = None;
+                        self.schedule_save(cx);
+                    }
+                }
+                let weights = &weights;
                 let state = self.tabs[self.active]
                     .dock_states
                     .entry(key.clone())
@@ -2858,11 +2886,68 @@ impl Workbench {
                 } else {
                     h_resizable(SharedString::from(key))
                 };
-                group
-                    .with_state(&state)
-                    .children(panels)
-                    .on_resize(
-                        cx.listener(move |this, state: &Entity<ResizableState>, _, cx| {
+                // Double-clicking a divider evens out this split (like resetting a grid).
+                // Dividers occlude their ancestors, so listen at window level within our bounds.
+                let shares: Vec<f32> = weights
+                    .iter()
+                    .map(|w| w / total.max(f32::EPSILON))
+                    .collect();
+                let (vertical, reset_path, owner) =
+                    (*vertical, path.clone(), cx.entity().downgrade());
+                let group = group.with_state(&state).children(panels);
+                div()
+                    .relative()
+                    .size_full()
+                    .child(
+                        canvas(
+                            |_, _, _| (),
+                            move |b, _, window, _| {
+                                let (shares, reset_path, owner) =
+                                    (shares.clone(), reset_path.clone(), owner.clone());
+                                window.on_mouse_event(
+                                    move |event: &MouseDownEvent, phase, _, cx| {
+                                        if !phase.capture()
+                                            || event.button != MouseButton::Left
+                                            || event.click_count != 2
+                                            || shares.len() < 2
+                                            || !b.contains(&event.position)
+                                        {
+                                            return;
+                                        }
+                                        let (offset, length) = if vertical {
+                                            (
+                                                f32::from(event.position.y - b.origin.y),
+                                                f32::from(b.size.height),
+                                            )
+                                        } else {
+                                            (
+                                                f32::from(event.position.x - b.origin.x),
+                                                f32::from(b.size.width),
+                                            )
+                                        };
+                                        let mut edge = 0.;
+                                        let on_divider =
+                                            shares[..shares.len() - 1].iter().any(|share| {
+                                                edge += share * length;
+                                                (offset - edge).abs() <= 5.
+                                            });
+                                        if on_divider {
+                                            cx.stop_propagation();
+                                            let (path, shares) =
+                                                (reset_path.clone(), shares.clone());
+                                            let _ = owner.update(cx, |this, cx| {
+                                                this.equalize_split(tab_id, path, shares, cx)
+                                            });
+                                        }
+                                    },
+                                );
+                            },
+                        )
+                        .absolute()
+                        .size_full(),
+                    )
+                    .child(group.on_resize(cx.listener(
+                        move |this, state: &Entity<ResizableState>, _, cx| {
                             if let Some(tab) = this.tabs.iter_mut().find(|t| t.id == tab_id)
                                 && let Some(dock) = &mut tab.dock
                             {
@@ -2877,11 +2962,44 @@ impl Workbench {
                                 );
                             }
                             this.schedule_save(cx);
-                        }),
-                    )
+                        },
+                    )))
                     .into_any_element()
             }
         }
+    }
+    /// Ease a split to equal sizes (instantly with reduced motion).
+    fn equalize_split(
+        &mut self,
+        tab_id: u64,
+        path: Vec<usize>,
+        from: Vec<f32>,
+        cx: &mut Context<Self>,
+    ) {
+        if cx.reduce_motion() {
+            if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+                if let Some(dock) = &mut tab.dock {
+                    dock.resize(&path, vec![1.; from.len()]);
+                }
+                tab.dock_states.clear();
+            }
+            self.schedule_save(cx);
+            cx.notify();
+            return;
+        }
+        self.equalizing = Some((tab_id, path, from, std::time::Instant::now()));
+        cx.spawn(async move |view, cx| {
+            for _ in 0..16 {
+                cx.background_executor()
+                    .timer(Duration::from_millis(16))
+                    .await;
+                if view.update(cx, |_, cx| cx.notify()).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+        cx.notify();
     }
     fn render_sidebar(&self, reading_available: bool, cx: &mut Context<Self>) -> AnyElement {
         div()

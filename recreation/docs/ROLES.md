@@ -22,6 +22,14 @@ Right-click a channel tab → **Pin tab** / **Unpin tab**. Pinned tabs:
 
 Pins are saved per workspace (`pinned` in the workspace file).
 
+## Resetting splits
+
+Double-click any divider between side-by-side or stacked panes to even out that
+split. It eases over 0.2 s, or snaps instantly with reduced motion. Each split resets on its own, so a 2×2
+grid becomes even by double-clicking each line. "Equalize this split" and "Equalize all
+splits" in the tab menu still work. Dividers block clicks from reaching the elements behind them, so the
+double-click is caught by a window-level listener limited to the split's area.
+
 ## Streamer anchor
 
 - `Dock::pin_first` puts the own channel first in the primary group, the first leaf or deck

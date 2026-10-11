@@ -33,7 +33,7 @@ Methods:
   draft character counts and last copy verification outcome. No draft or clipboard
   text is exposed in the state response.
 - focus: target workspace, channel_input, composer or transcript; pane is a visible pane index.
-- pointer: kind down/move/up, x/y, optional left/right button, held, shift.
+- pointer: kind down/move/up, x/y, optional left/right button, held, shift, and `clicks` (1–3) for double/triple-click gestures.
 - key: a GPUI keystroke name; key-down and key-up are both dispatched.
 - text: single-line committed text, at most 2048 bytes, to the focused editor.
 - scroll: x/y and signed lines from -120 to 120.
