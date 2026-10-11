@@ -4,7 +4,19 @@
 //! downloads for a Desktop-app client; git-ignored) or the
 //! JAWJACK_GOOGLE_CLIENT_ID / JAWJACK_GOOGLE_CLIENT_SECRET environment
 //! variables. Without either, users set up their own client in the app.
+//!
+//! Also embeds the Jawjack icon (window, taskbar and Explorer).
+
+include!("../../assets/brand/icon_res.rs");
+
 fn main() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        let out_dir = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR is set"));
+        embed_icon(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/brand/jawjack.ico"),
+            &out_dir,
+        );
+    }
     println!("cargo:rerun-if-env-changed=JAWJACK_GOOGLE_CLIENT_ID");
     println!("cargo:rerun-if-env-changed=JAWJACK_GOOGLE_CLIENT_SECRET");
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../google-client.json");

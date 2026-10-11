@@ -3,8 +3,10 @@
 //! required. `asInvoker` also keeps Windows' installer-detection heuristic
 //! from requesting elevation for an executable named "*setup*".
 //!
-//! Jawjack has no icon file yet, so unlike Haiwire's setup no icon resource
-//! is embedded; task dialogs show no main icon.
+//! The Jawjack icon is embedded too (assets/brand/jawjack.ico), for the
+//! installer's .exe and its task dialogs.
+
+include!("../../assets/brand/icon_res.rs");
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
@@ -20,6 +22,10 @@ fn main() {
     let out_dir = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR is set"));
     let manifest = out_dir.join("jawjack-setup.manifest");
     std::fs::write(&manifest, MANIFEST).expect("write setup manifest");
+    embed_icon(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/brand/jawjack.ico"),
+        &out_dir,
+    );
     println!("cargo:rustc-link-arg-bins=/MANIFEST:EMBED");
     println!("cargo:rustc-link-arg-bins=/MANIFESTUAC:NO");
     println!(
