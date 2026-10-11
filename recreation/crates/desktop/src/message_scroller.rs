@@ -125,6 +125,13 @@ impl MessageScrollerState {
     }
 
     /// Return the current number of rows known by the virtual list.
+    /// Whether the item is entirely below the viewport. Visible rows are always
+    /// measured, so an unmeasured row past the scroll top (such as a new arrival
+    /// while reading history) is below it.
+    pub fn item_is_below_viewport(&self, ix: usize) -> bool {
+        ix >= self.list_state.logical_scroll_top().item_ix
+            && self.list_state.item_is_below_viewport(ix).unwrap_or(true)
+    }
     pub fn item_count(&self) -> usize {
         self.list_state.item_count()
     }
@@ -496,13 +503,13 @@ impl RenderOnce for MessageScroller {
                 let state = self.state.clone();
 
                 this.child(
+                    // Bottom-right keeps the button clear of centered row
+                    // markers such as the last-read divider label.
                     div()
                         .absolute()
-                        .left_0()
-                        .right_0()
+                        .right(rems(1.25))
                         .bottom(rems(0.5 + jump_button_visibility * 0.5))
                         .flex()
-                        .justify_center()
                         .opacity(jump_button_visibility)
                         .child(
                             // No explicit width or height: Button sizes an

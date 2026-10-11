@@ -527,6 +527,21 @@ impl Render for ChannelPane {
         let media = self.media.clone();
         let retained = timeline.borrow().messages().len();
         let first_order = (self.next_id - retained) as u64;
+        // Only unread rows actually below the view are "new below"; rows that
+        // arrived while the window was inactive may already be on screen or above.
+        let unread_below = {
+            let scroller = self.scroller.read(cx);
+            self.attention
+                .unread
+                .iter()
+                .rev()
+                .take_while(|row| {
+                    row.checked_sub(first_order)
+                        .is_some_and(|ix| scroller.item_is_below_viewport(ix as usize))
+                })
+                .take(1000)
+                .count()
+        };
         self.search.refresh(&timeline.borrow(), first_order);
         let search_hits = if self.search.open {
             self.search.hits.clone()
@@ -763,6 +778,10 @@ impl Render for ChannelPane {
                         })
                         .flex_1()
                         .min_h_0()
+                        .with_jump_button_renderer(move |button| {
+                            // Show how much arrived below, like Chatterino's "more messages below".
+                            if unread_below == 0 { button } else { button.label(format!("{} new", if unread_below > 999 { "999+".to_string() } else { unread_below.to_string() })) }
+                        })
                         .with_row_style(StyleRefinement::default().px_3().pb_0())
                         .with_list_style(StyleRefinement::default().py_2())
                         .h_full(),

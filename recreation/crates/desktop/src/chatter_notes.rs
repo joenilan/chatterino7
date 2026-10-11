@@ -238,10 +238,6 @@ impl Render for Editor {
         div().id("private-chatter-notes").v_flex().gap_2().max_h(px(height)).overflow_y_scroll()
             .capture_key_down(cx.listener(|this,e:&KeyDownEvent,w,cx|{if e.keystroke.modifiers.control&&!e.keystroke.modifiers.alt&&e.keystroke.key=="s"{this.save(w,cx);w.prevent_default();cx.stop_propagation();}}))
             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Private to this Jawjack profile, stored locally as plain text. Hidden from ordinary chatter cards and transcripts. Anyone who can access this profile’s files can read them."))
-            .when(!entries.is_empty(),|el|el.child(div().id("saved-note-chatters").h_flex().flex_wrap().gap_1().max_h(px(90.)).overflow_y_scroll().children(entries.into_iter().map(|target|{
-                let label=if target.login.is_empty(){target.name.clone()}else{format!("@{}",target.login)};
-                Button::new(SharedString::from(format!("note-{}",target.id))).xsmall().label(label).on_click(cx.listener(move|this,_,w,cx|{this.open(target.clone(),w,cx);this.focus(w,cx);}))
-            }))))
             .when_some(self.target.clone(),|el,t|el.child(div().text_size(px(12.)).child(format!("{} · @{}",t.name,t.login))))
             .child(Textarea::new(&self.input))
             .child(div().text_size(px(11.)).text_color(rgb(if count>2000{0xE69DCD}else{theme::MUTED})).child(format!("{count}/2,000 characters")))
@@ -254,5 +250,10 @@ impl Render for Editor {
                 })))
                 .when(self.pending.is_some(),|el|el.child(Button::new("discard-note-switch").small().label("Discard edits & switch").on_click(cx.listener(|this,_,w,cx|{if let Some(next)=this.pending.take(){this.select(next,w,cx);}})))))
             .when(!self.status.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xE9C99C)).child(self.status.clone())))
+            // Saved-chatter navigation sits last, so saving or deleting never shifts the controls above.
+            .when(!entries.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Saved notes")).child(div().id("saved-note-chatters").h_flex().flex_wrap().gap_1().max_h(px(90.)).overflow_y_scroll().children(entries.into_iter().map(|target|{
+                let label=if target.login.is_empty(){target.name.clone()}else{format!("@{}",target.login)};
+                Button::new(SharedString::from(format!("note-{}",target.id))).xsmall().label(label).on_click(cx.listener(move|this,_,w,cx|{this.open(target.clone(),w,cx);this.focus(w,cx);}))
+            }))))
     }
 }

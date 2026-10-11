@@ -475,7 +475,14 @@ impl ChannelPane {
                         let pane=pane.read(cx);let timeline=pane.timeline.borrow();
                         let messages=timeline.messages().iter().filter(|m|m.user_id==user_id).collect::<Vec<_>>();
                         let last=messages.last().copied();
-                        (pane.name.to_string(),messages.len(),last.map(|m|m.author_label().to_owned()).unwrap_or_else(||clicked_name.clone()),last.and_then(|m|m.login.clone()).or_else(||clicked_login.clone()),messages.iter().rev().take(20).map(|m|m.body()).collect::<Vec<_>>(),last.map(|m|m.badges.iter().map(|b|b.set_id.clone()).collect::<Vec<_>>()).unwrap_or_default())
+                        (pane.name.to_string(),messages.len(),last.map(|m|m.author_label().to_owned()).unwrap_or_else(||clicked_name.clone()),last.and_then(|m|m.login.clone()).or_else(||clicked_login.clone()),messages.iter().rev().take(20).map(|m|m.body()).collect::<Vec<_>>(),last.map(|m|{
+                            // Show the provider's badge title and art, not internal set IDs.
+                            let catalog=pane.catalog.borrow();
+                            m.badges.iter().map(|b|match catalog.twitch.badge(&m.channel_id,&b.set_id,&b.id){
+                                Some(badge)=>(badge.title.clone(),Some(badge.key.clone())),
+                                None=>(b.set_id.replace('_'," "),None),
+                            }).collect::<Vec<_>>()
+                        }).unwrap_or_default())
                     });
                     let Some((channel,count,name,login,recent,badges))=current else{return dialog.title("Channel closed");};
                     if let Some(pane)=owner.upgrade(){pane.read(cx).catalog.borrow_mut().profiles.request(&user_id);}
@@ -508,12 +515,15 @@ impl ChannelPane {
                         .when_some(profile,|el,profile|el.child(div().h_flex().items_start().gap_2()
                             .child(crate::emote_picker::icon(avatar,String::new(),48.,48.))
                             .child(div().v_flex().gap_1().flex_1().min_w_0().child(profile.display_name)
-                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Created · {}",profile.created)))
+                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Created · {}",created_label(&profile.created))))
                                 .when(!profile.role.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(profile.role)))))
                             .when(!profile.description.is_empty(),|el|el.child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(profile.description))))
                         .child(login.clone().map(|login|format!("@{login}" )).unwrap_or_else(||"Login unavailable".into()))
                         .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("{count} retained messages in #{channel}")))
-                        .when(!badges.is_empty(),|el|el.child(div().text_size(px(11.)).child(badges.join(" · "))))
+                        .when(!badges.is_empty(),|el|el.child(div().h_flex().flex_wrap().gap_x_3().gap_y_1().text_size(px(11.)).children(badges.into_iter().map(|(title,key)|{
+                            let image=key.and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(&key,cx)}));
+                            div().h_flex().gap_1().items_center().when_some(image,|el,image|el.child(crate::emote_picker::icon(Some(image),String::new(),18.,18.))).child(title)
+                        }))))
                         .children(cosmetic_panel)
                         .child(div().id("chatter-recent").v_flex().gap_2()
                             .children(recent.into_iter().map(|body|div().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL)).min_w_0().child(body))))
@@ -565,4 +575,15 @@ impl ChannelPane {
         cx.emit(PaneEvent::DraftChanged);
         cx.notify();
     }
+}
+
+/// Twitch returns RFC 3339 timestamps; cards show a readable local date.
+fn created_label(raw: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(raw)
+        .map(|time| {
+            time.with_timezone(&chrono::Local)
+                .format("%b %-d, %Y")
+                .to_string()
+        })
+        .unwrap_or_else(|_| raw.to_owned())
 }
