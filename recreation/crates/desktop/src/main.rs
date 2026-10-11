@@ -62,6 +62,7 @@ use workspace::Workbench;
 use chat_core::{Timeline, selection::Selection};
 use chat_text::ChatText;
 use gpui_kit::base::ElementExt as _;
+use gpui_kit::component::menu::DropdownMenu as _;
 use gpui_kit::component::{
     Disableable, Icon, IconName, Sizable, StyledExt, WindowExt,
     button::{Button, ButtonVariants},
@@ -153,6 +154,8 @@ enum PaneEvent {
     OpenAccount,
     OpenStreamInfo,
     OpenModTools,
+    /// Choose which signed-in account sends from this pane (vault entry).
+    SendAs(SharedString),
     RunBotAction {
         action: streamer_bot::Action,
         args: serde_json::Value,
@@ -181,6 +184,9 @@ struct ChannelPane {
     mod_tools: bool,
     /// Pinned Streamer.bot actions offered in the message menu while connected.
     bot_actions: std::rc::Rc<Vec<streamer_bot::Action>>,
+    /// Signed-in accounts (vault, login), active first; the picker shows with 2+.
+    send_as_options: std::rc::Rc<Vec<(SharedString, String)>>,
+    send_as: Option<SharedString>,
     connection: String,
     connected: bool,
     room_settings: Option<room_settings::RoomSettings>,
@@ -269,6 +275,8 @@ impl ChannelPane {
             stream: None,
             mod_tools: false,
             bot_actions: Default::default(),
+            send_as_options: Default::default(),
+            send_as: None,
             media,
             catalog,
             custom_commands: Default::default(),
@@ -938,7 +946,22 @@ impl Render for ChannelPane {
                         .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500", self.draft.read(cx).value().chars().count())))
                         .when(routine_status && !self.send_status.is_empty(), |el|el.child(self.send_status.clone())))
                     .when_some(self.room_settings.as_ref().filter(|r|!r.labels().is_empty()).map(|r|r.summary()),|el,summary|el.child(div().id("room-modes-hint").max_w(px(120.)).min_w_0().flex_shrink(1.).overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(rgb(0xC5B8E6)).tooltip({let summary=summary.clone();move|w,cx|gpui_kit::component::tooltip::Tooltip::new(format!("{summary}. Your role may grant exemptions; Twitch validates sending. Ctrl+I for channel details.")).build(w,cx)}).child(summary)))
-                    .child(div().h_flex().gap_2().child(Button::new("sent-history").ghost().small().icon(Icon::new(gpui_kit::assets::IconName::RotateCcwClock)).tooltip("Sent message history · Ctrl+Shift+H").on_click(cx.listener(|this,_,w,cx|this.open_input_history(w,cx)))).child(div().id("emote-button-area").on_prepaint(move|bounds,_,cx|{if emote_button_bounds.replace(Some(bounds))!=Some(bounds)&&emote_picker_open{let owner=emote_button_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}}).on_hover(cx.listener(|this,over,_,cx|{if *over{this.prepare_picker_media(cx);}})).child(Button::new("emotes-toggle").ghost().small().icon(Icon::new(gpui_kit::assets::IconName::Sticker)).tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
+                    .child(div().h_flex().gap_2().when(self.send_as_options.len() > 1, |el| {
+                        let options = self.send_as_options.clone();
+                        let current = self.send_as.clone().filter(|v| options.iter().any(|(o, _)| o == v)).unwrap_or_else(|| options[0].0.clone());
+                        let login = options.iter().find(|(v, _)| *v == current).map(|(_, l)| l.clone()).unwrap_or_default();
+                        let owner = cx.entity().downgrade();
+                        el.child(Button::new("send-as").ghost().xsmall().label(format!("as {login}")).tooltip("Send as another signed-in account")
+                            .dropdown_menu(move |mut menu, _, _| {
+                                for (index, (vault, login)) in options.iter().enumerate() {
+                                    let (owner, vault) = (owner.clone(), vault.clone());
+                                    menu = menu.item(gpui_kit::component::menu::PopupMenuItem::new(if index == 0 { format!("{login} (active)") } else { login.clone() })
+                                        .checked(vault == current)
+                                        .on_click(move |_, _, cx| { let _ = owner.update(cx, |_, cx| cx.emit(PaneEvent::SendAs(vault.clone()))); }));
+                                }
+                                menu
+                            }))
+                    }).child(Button::new("sent-history").ghost().small().icon(Icon::new(gpui_kit::assets::IconName::RotateCcwClock)).tooltip("Sent message history · Ctrl+Shift+H").on_click(cx.listener(|this,_,w,cx|this.open_input_history(w,cx)))).child(div().id("emote-button-area").on_prepaint(move|bounds,_,cx|{if emote_button_bounds.replace(Some(bounds))!=Some(bounds)&&emote_picker_open{let owner=emote_button_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}}).on_hover(cx.listener(|this,over,_,cx|{if *over{this.prepare_picker_media(cx);}})).child(Button::new("emotes-toggle").ghost().small().icon(Icon::new(gpui_kit::assets::IconName::Sticker)).tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
                     .child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else if commands::is_command(&self.draft.read(cx).value()) { "Run" } else { "Send" }).disabled(self.pending.is_some() || (!self.connected && !commands::is_command(&self.draft.read(cx).value()))).tooltip("Send a message or run a local /command").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx)))))))
             .child(
                 canvas(

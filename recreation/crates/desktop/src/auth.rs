@@ -17,7 +17,9 @@ use std::{
 };
 
 pub const CLIENT_ID: &str = "cf1jr97a5fduscdul5yv9b5hnzm005";
-const VAULT: &str = "https://jawjack.zombie.digital/twitch/account-v1";
+/// The first account's vault entry (existing installs keep it); added accounts
+/// use `{VAULT}/{n}`.
+pub const VAULT: &str = "https://jawjack.zombie.digital/twitch/account-v1";
 /// Everything Jawjack's viewer, moderator and streamer tools use, requested
 /// together (owner decision, 2026-10-11). Twitch still grants moderator and
 /// broadcaster actions only where the account actually holds that role.
@@ -106,6 +108,8 @@ pub struct TwitchAccount {
     cancel: Arc<AtomicBool>,
     generation: u64,
     account: Option<Account>,
+    /// This account's entry in the OS credential vault.
+    vault: SharedString,
 }
 impl Drop for TwitchAccount {
     fn drop(&mut self) {
@@ -147,8 +151,12 @@ impl TwitchAccount {
             .filter(|s| !granted.iter().any(|g| g == s))
             .collect()
     }
-    pub fn new(cx: &mut Context<Self>) -> Self {
-        let read = cx.read_credentials(VAULT);
+    pub fn vault(&self) -> &SharedString {
+        &self.vault
+    }
+    /// An account stored under its own vault entry.
+    pub fn with_vault(vault: SharedString, cx: &mut Context<Self>) -> Self {
+        let read = cx.read_credentials(&vault);
         cx.spawn(async move |view, cx| {
             let result = read.await;
             let _ = view.update(cx, |this, cx| {
@@ -176,6 +184,7 @@ impl TwitchAccount {
             cancel: Arc::new(AtomicBool::new(false)),
             generation: 0,
             account: None,
+            vault,
         }
     }
     fn start(&mut self, saved: Option<Value>, cx: &mut Context<Self>) {
@@ -255,7 +264,7 @@ impl TwitchAccount {
     ) {
         self.saving = true;
         let bytes = serde_json::to_vec(&tokens).expect("JSON value serialization");
-        let save = cx.write_credentials(VAULT, "twitch", &bytes);
+        let save = cx.write_credentials(&self.vault, "twitch", &bytes);
         cx.spawn(async move |view, cx| {
             let ok = save.await.is_ok();
             let active = view
@@ -303,7 +312,7 @@ impl TwitchAccount {
         self.code = None;
         self.status = "Saving account in the OS credential vault…".into();
         let bytes = serde_json::to_vec(&account.tokens).expect("JSON value serialization");
-        let save = cx.write_credentials(VAULT, &account.login, &bytes);
+        let save = cx.write_credentials(&self.vault, &account.login, &bytes);
         cx.spawn(async move |view, cx| {
             let result = save.await;
             let _ = view.update(cx, |this, cx| {
@@ -372,7 +381,7 @@ impl TwitchAccount {
         self.generation += 1;
         let generation = self.generation;
         self.status = "Checking secure account storage…".into();
-        let read = cx.read_credentials(VAULT);
+        let read = cx.read_credentials(&self.vault);
         cx.spawn(async move |view, cx| {
             let result = read.await;
             let _ = view.update(cx, |this, cx| {
@@ -425,7 +434,7 @@ impl TwitchAccount {
         self.busy = true;
         self.saving = true;
         self.status = "Removing saved account…".into();
-        let delete = cx.delete_credentials(VAULT);
+        let delete = cx.delete_credentials(&self.vault);
         cx.spawn(async move |view, cx| {
             let result = delete.await;
             let _ = view.update(cx, |this, cx| {

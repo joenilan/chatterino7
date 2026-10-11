@@ -121,13 +121,17 @@ impl LiveChat {
         channel: String,
         text: String,
         reply_parent: Option<String>,
+        // "Send as": another signed-in account's identity; defaults to the reading account.
+        as_identity: Option<Identity>,
     ) -> Result<(), String> {
         if crate::commands::is_command(&text) {
             return Err(
                 "Slash commands must be handled locally. Nothing was sent; draft kept.".into(),
             );
         }
-        let Some(identity) = self.config.lock().ok().and_then(|c| c.identity.clone()) else {
+        let Some(identity) =
+            as_identity.or_else(|| self.config.lock().ok().and_then(|c| c.identity.clone()))
+        else {
             return Err("Account disconnected. Draft kept.".into());
         };
         {

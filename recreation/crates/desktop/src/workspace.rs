@@ -1,3 +1,5 @@
+#[path = "accounts_ui.rs"]
+mod accounts_ui;
 #[path = "activity.rs"]
 mod activity;
 #[path = "channel_details.rs"]
@@ -159,6 +161,11 @@ struct WorkspaceTab {
 }
 pub struct Workbench {
     account: Entity<crate::auth::TwitchAccount>,
+    /// Every signed-in or signing-in account; `account` is the active one.
+    accounts: Vec<Entity<crate::auth::TwitchAccount>>,
+    account_focus: Option<usize>,
+    /// "Send as" choice per channel: the chosen account's vault entry.
+    send_as: std::collections::HashMap<String, SharedString>,
     live: crate::live::LiveChat,
     streams: crate::stream_status::Streams,
     capabilities: crate::capabilities::Capabilities,
@@ -358,6 +365,7 @@ impl Workbench {
             .cloned()
             .unwrap_or_else(|| "Workspace saved locally".into());
         let state = loaded.unwrap_or(json!({"version":1}));
+        let (accounts, active_account) = Self::load_accounts(&state, cx);
         let input = cx
             .new(|cx| InputState::new(window, cx).placeholder("Channel name or twitch.tv/channel"));
         cx.subscribe_in(&input, window, |this: &mut Self, _, event, window, cx| {
@@ -472,7 +480,18 @@ impl Workbench {
             live_channels: state["live_channels"].as_bool().unwrap_or(false),
             catalog: std::rc::Rc::new(std::cell::RefCell::new(crate::catalog::Catalog::new())),
             media: std::rc::Rc::new(std::cell::RefCell::new(crate::media::MediaCache::new())),
-            account: cx.new(crate::auth::TwitchAccount::new),
+            account: accounts[active_account].clone(),
+            accounts,
+            account_focus: None,
+            send_as: state["send_as"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .filter_map(|(c, v)| {
+                    v.as_str()
+                        .map(|v| (c.clone(), SharedString::from(v.to_owned())))
+                })
+                .collect(),
             drop_edge: None,
             drop_target: None,
             dock_bounds: Default::default(),
@@ -690,6 +709,19 @@ impl Workbench {
                 std::time::Instant::now(),
             ));
             self.schedule_save(cx);
+        }
+        // Keep each composer's "send as" picker in step with the signed-in accounts.
+        let options = std::rc::Rc::new(self.send_as_options(cx));
+        for pane in &panes {
+            let send_as = self.send_as.get(pane.read(cx).name.as_ref()).cloned();
+            if *pane.read(cx).send_as_options != *options || pane.read(cx).send_as != send_as {
+                let options = options.clone();
+                pane.update(cx, |p, cx| {
+                    p.send_as_options = options;
+                    p.send_as = send_as;
+                    cx.notify();
+                });
+            }
         }
         let mod_tools = self.experience != roles::Experience::Viewer;
         for pane in &panes {
@@ -1410,11 +1442,13 @@ impl Workbench {
                 reply_parent,
             } = event
             {
+                let as_identity = this.send_as_identity(&channel, cx);
                 if let Err(error) = this.live.send(
                     *request,
                     channel.clone(),
                     text.clone(),
                     reply_parent.clone(),
+                    as_identity,
                 ) {
                     pane.update(cx, |p, cx| {
                         p.pending = None;
@@ -1459,6 +1493,16 @@ impl Workbench {
                 this.run_bot_action(action.clone(), args.clone(), cx);
                 return;
             }
+            if let PaneEvent::SendAs(vault) = event {
+                if this.account.read(cx).vault() == vault {
+                    this.send_as.remove(channel.as_str());
+                } else {
+                    this.send_as.insert(channel.clone(), vault.clone());
+                }
+                this.schedule_save(cx);
+                cx.notify();
+                return;
+            }
             if matches!(event, PaneEvent::OpenModTools) {
                 this.open_mod_tools(channel.clone(), window, cx);
                 return;
@@ -1468,14 +1512,7 @@ impl Workbench {
                 return;
             }
             if matches!(event, PaneEvent::OpenAccount) {
-                let account = this.account.clone();
-                let width = (f32::from(window.viewport_size().width) - 24.).min(380.);
-                window.open_dialog(cx, move |dialog, _, _| {
-                    dialog
-                        .w(px(width))
-                        .title("Twitch account")
-                        .child(account.clone())
-                });
+                this.open_accounts(window, cx);
                 return;
             }
             if matches!(
@@ -1756,14 +1793,7 @@ impl Workbench {
             window.push_notification(Notification::info(check.reason()), cx);
             // A missing grant is fixed in the account dialog, so take the owner there.
             if check == crate::capabilities::Check::NeedsPermission {
-                let account = self.account.clone();
-                let width = (f32::from(window.viewport_size().width) - 24.).min(380.);
-                window.open_dialog(cx, move |dialog, _, _| {
-                    dialog
-                        .w(px(width))
-                        .title("Twitch account")
-                        .child(account.clone())
-                });
+                self.open_accounts(window, cx);
             }
             return;
         }
@@ -1797,8 +1827,14 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"studio_tab":self.studio_tab,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"live_notify":self.live_notify,"live_notify_all":self.live_notify_all,"seventv_activity":self.presence.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
-            "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"pinned":t.pinned,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
+        let mut value = json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"studio_tab":self.studio_tab,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"live_notify":self.live_notify,"live_notify_all":self.live_notify_all,"seventv_activity":self.presence.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+            "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"pinned":t.pinned,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()});
+        // Kept outside the macro above, which is at its recursion limit.
+        let accounts = self.accounts_json(cx);
+        value["accounts"] = accounts["accounts"].clone();
+        value["active_account"] = accounts["active_account"].clone();
+        value["send_as"] = json!(self.send_as);
+        value
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
         self.save_revision += 1;
@@ -3495,7 +3531,7 @@ impl Render for Workbench {
                 })
                 .child(Button::new("activity-menu").ghost().xsmall().icon(IconName::Bell).when(counts.1>0||counts.0>0,|b|b.label(if counts.1>0{format!("@{}",crate::attention::count(counts.1))}else{crate::attention::count(counts.0)})).tooltip("Highlights & unread · Ctrl+Shift+M").on_click(cx.listener(|this,_,w,cx|this.open_activity(w,cx))))
                 .child(Button::new("account-menu").ghost().xsmall().label(if self.account.read(cx).missing_scopes().is_empty(){self.account.read(cx).label()}else{format!("{} •",self.account.read(cx).label())}).tooltip(if self.account.read(cx).missing_scopes().is_empty(){"Twitch account"}else{"Twitch account · permissions can be updated"})
-                    .on_click(cx.listener(|this,_,window,cx|{let account=this.account.clone();let width=(f32::from(window.viewport_size().width)-24.).min(380.);window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Twitch account").child(account.clone()));})))
+                    .on_click(cx.listener(|this,_,window,cx|this.open_accounts(window,cx))))
                 .child(Button::new("settings-menu").ghost().small().icon(IconName::Settings).tooltip("Settings and workspace actions").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
                     .menu("Switch channel · Ctrl+P",Box::new(SwitchChannel))
                     .menu("Search open channels · Ctrl+Shift+F",Box::new(SearchOpenChannels))

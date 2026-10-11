@@ -1,0 +1,199 @@
+//! Several signed-in Twitch accounts: one active (reading, tools), others usable
+//! from any composer's "send as" picker. Each account keeps its own vault entry.
+use super::*;
+use crate::auth::{TwitchAccount, VAULT};
+
+impl Workbench {
+    pub(super) fn load_accounts(
+        state: &Value,
+        cx: &mut Context<Self>,
+    ) -> (Vec<Entity<TwitchAccount>>, usize) {
+        let mut vaults: Vec<SharedString> = state["accounts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| v.as_str())
+            .filter(|v| v.starts_with(VAULT))
+            .take(8)
+            .map(|v| SharedString::from(v.to_owned()))
+            .collect();
+        if vaults.is_empty() {
+            vaults.push(VAULT.into());
+        }
+        let active = state["active_account"]
+            .as_str()
+            .and_then(|a| vaults.iter().position(|v| v.as_ref() == a))
+            .unwrap_or(0);
+        let accounts = vaults
+            .into_iter()
+            .map(|vault| cx.new(|cx| TwitchAccount::with_vault(vault, cx)))
+            .collect();
+        (accounts, active)
+    }
+    pub(super) fn accounts_json(&self, cx: &App) -> Value {
+        json!({
+            "accounts": self.accounts.iter().map(|a| a.read(cx).vault().to_string()).collect::<Vec<_>>(),
+            "active_account": self.account.read(cx).vault().to_string(),
+        })
+    }
+    /// Signed-in accounts as (vault, login), active first.
+    pub(super) fn send_as_options(&self, cx: &App) -> Vec<(SharedString, String)> {
+        let mut options: Vec<(SharedString, String)> = self
+            .accounts
+            .iter()
+            .filter_map(|a| {
+                let a = a.read(cx);
+                a.login().map(|login| (a.vault().clone(), login))
+            })
+            .collect();
+        let active = self.account.read(cx).vault().clone();
+        options.sort_by_key(|(vault, _)| *vault != active);
+        options
+    }
+    /// The identity to send with in `channel`, when it isn't the active account.
+    pub(super) fn send_as_identity(
+        &self,
+        channel: &str,
+        cx: &App,
+    ) -> Option<crate::live::Identity> {
+        let vault = self.send_as.get(channel)?;
+        if vault == self.account.read(cx).vault() {
+            return None;
+        }
+        self.accounts
+            .iter()
+            .find(|a| a.read(cx).vault() == vault)
+            .and_then(|a| a.read(cx).identity())
+    }
+    fn switch_account(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(account) = self.accounts.get(index).cloned() else {
+            return;
+        };
+        if account == self.account {
+            return;
+        }
+        self.account = account;
+        // Tools bound to the previous account start fresh.
+        self.studio_editor = None;
+        self.send_as.clear();
+        self.notice = Some((
+            format!(
+                "Switched to {}. Chat reconnects as this account.",
+                self.account.read(cx).label()
+            ),
+            std::time::Instant::now(),
+        ));
+        self.schedule_save(cx);
+        cx.notify();
+    }
+    fn add_account(&mut self, cx: &mut Context<Self>) -> usize {
+        let used: Vec<SharedString> = self
+            .accounts
+            .iter()
+            .map(|a| a.read(cx).vault().clone())
+            .collect();
+        let vault: SharedString = (1..)
+            .map(|n| SharedString::from(format!("{VAULT}/{n}")))
+            .find(|v| !used.contains(v))
+            .expect("free vault slot");
+        self.accounts
+            .push(cx.new(|cx| TwitchAccount::with_vault(vault, cx)));
+        self.account_focus = Some(self.accounts.len() - 1);
+        self.schedule_save(cx);
+        cx.notify();
+        self.accounts.len() - 1
+    }
+    /// Forget a non-active account on this device (its vault entry is removed by Sign out).
+    fn remove_account(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.accounts.get(index).is_none_or(|a| *a == self.account) {
+            return;
+        }
+        let removed = self.accounts.remove(index);
+        let vault = removed.read(cx).vault().clone();
+        self.send_as.retain(|_, v| *v != vault);
+        let delete = cx.delete_credentials(&vault);
+        cx.spawn(async move |_, _| {
+            let _ = delete.await;
+        })
+        .detach();
+        self.account_focus = None;
+        self.schedule_save(cx);
+        cx.notify();
+    }
+    pub(super) fn open_accounts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.account_focus = None;
+        let owner = cx.entity().downgrade();
+        let width = (f32::from(window.viewport_size().width) - 24.).min(420.);
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let Some(this) = owner.upgrade() else { return dialog.title("Workspace closed") };
+            let (accounts, active, focus) = {
+                let this = this.read(cx);
+                (this.accounts.clone(), this.account.clone(), this.account_focus)
+            };
+            let focused = focus.and_then(|i| accounts.get(i).cloned()).unwrap_or(active.clone());
+            let rows = accounts.iter().enumerate().map(|(index, account)| {
+                let is_active = *account == active;
+                let (login, signed_in) = {
+                    let a = account.read(cx);
+                    (a.login(), a.login().is_some())
+                };
+                let owner = owner.clone();
+                let remove_owner = owner.clone();
+                let focus_owner = owner.clone();
+                div()
+                    .id(("account-row", index))
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .py(px(6.))
+                    .rounded(px(6.))
+                    .cursor_pointer()
+                    .when(*account == focused, |el| el.bg(rgb(theme::CONTROL)))
+                    .hover(|s| s.bg(rgb(theme::HOVER)))
+                    .on_click(move |_, _, cx| {
+                        let _ = focus_owner.update(cx, |this, cx| {
+                            this.account_focus = Some(index);
+                            cx.notify();
+                        });
+                    })
+                    .child(div().size(px(7.)).flex_shrink_0().rounded_full().bg(rgb(if signed_in { theme::STREAM_LIVE } else { theme::MUTED })))
+                    .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().text_size(px(13.)).child(login.unwrap_or_else(|| "Not signed in".into())))
+                    .when(is_active, |el| el.child(div().text_size(px(10.)).font_weight(FontWeight::SEMIBOLD).text_color(rgb(theme::ACCENT)).child("ACTIVE")))
+                    .when(!is_active && signed_in, |el| {
+                        el.child(Button::new(("account-switch", index)).xsmall().ghost().label("Switch").on_click(move |_, _, cx| {
+                            let _ = owner.update(cx, |this, cx| this.switch_account(index, cx));
+                        }))
+                    })
+                    .when(!is_active, |el| {
+                        el.child(Button::new(("account-remove", index)).xsmall().ghost().label("Remove").on_click(move |_, _, cx| {
+                            let _ = remove_owner.update(cx, |this, cx| this.remove_account(index, cx));
+                        }))
+                    })
+            });
+            dialog
+                .w(px(width))
+                .title("Twitch accounts")
+                .child(
+                    div()
+                        .v_flex()
+                        .gap_1()
+                        .children(rows)
+                        .child(
+                            div().pt_1().child(Button::new("account-add").xsmall().ghost().icon(IconName::Plus).label("Add account").on_click({
+                                let owner = owner.clone();
+                                move |_, _, cx| {
+                                    let _ = owner.update(cx, |this, cx| {
+                                        this.add_account(cx);
+                                    });
+                                }
+                            })),
+                        )
+                        .child(div().pt_2().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                            "The active account reads chat and runs tools. With more than one account signed in, each message box gets a \"send as\" picker.",
+                        ))
+                        .child(div().pt_2().child(focused.clone())),
+                )
+        });
+    }
+}

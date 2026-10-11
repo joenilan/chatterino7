@@ -66,7 +66,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | ID | Feature | State | Remaining work and evidence boundary | Reference |
 | --- | --- | --- | --- | --- |
 | AC01 | Device login and saved account | Part | Native sign-in/restore observed; interrupted login, refresh/revocation and secure removal need broader real-use evidence. | controllers/accounts; providers/twitch/TwitchAccountManager.cpp |
-| AC02 | Multiple accounts and switching | Backlog | Account manager, per-account grants/identity isolation, deliberate composer/account changes. | controllers/accounts |
+| AC02 | Multiple accounts and switching | Part | Accounts window (add, switch, remove), per-account vault entries, per-channel "send as" picker ([details](ACCOUNTS.md)); a second sign-in, switching and send-as are unverified live. | controllers/accounts |
 | AC03 | Anonymous reading | Research | Preserve as a compatibility target; evaluate current supported transport and auth constraints. | providers/twitch/TwitchIrcServer.cpp |
 | AC04 | EventSub lifecycle | Part | Sharded over up to three sockets (150 channels), incremental subscribe/delete, paced requests, per-channel revocation ([details](LIVE_CONNECTIONS.md)); long-session, suspend and three-socket acceptance remain. | providers/twitch/eventsub; TwitchReadConnectionPool.cpp |
 | AC05 | Text send and acknowledgements | Part | Source inspects send/drop/uncertainty; actual delivered send unverified. Add permission/room-aware feedback. | providers/twitch/TwitchChannel.cpp |
