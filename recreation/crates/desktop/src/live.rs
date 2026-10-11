@@ -38,12 +38,16 @@ struct Config {
     channels: Vec<String>,
     /// Channels you moderate (not your own), in priority order, for the AutoMod queue.
     automod: Vec<String>,
+    /// Your own channel's login: its socket also carries the own-channel extras.
+    own: Option<String>,
 }
 pub enum Event {
     State(String, String, bool),
     Resolved(String, String),
     /// Follow or reward redemption on the signed-in broadcaster's own channel.
     Activity(crate::activity_feed::Item),
+    /// A hype train, goal, charity or Shield Mode update in your channel: (type, event).
+    Hype(String, Value),
     /// A message in your channel is from a flagged chatter: (channel, message ID, label).
     Suspicious(String, String, String),
     /// Moderated channels whose AutoMod queue is subscribed (diagnostics).
@@ -109,6 +113,7 @@ impl LiveChat {
         identity: Option<Identity>,
         channels: Vec<String>,
         automod: Vec<String>,
+        own: Option<String>,
     ) -> bool {
         let mut seen = HashSet::new();
         let channels = channels
@@ -124,6 +129,7 @@ impl LiveChat {
             identity,
             channels,
             automod,
+            own,
         };
         if let Ok(mut c) = self.config.lock()
             && *c != next
@@ -398,7 +404,7 @@ fn optional_kind(kind: &str) -> bool {
 }
 /// Extra, optional subscriptions for the signed-in broadcaster's own channel,
 /// feeding the Studio activity feed: (type, version).
-const OWN_KINDS: [(&str, &str); 6] = [
+const OWN_KINDS: [(&str, &str); 17] = [
     ("channel.follow", "2"),
     ("channel.channel_points_custom_reward_redemption.add", "1"),
     // AutoMod queue: held messages and their outcome.
@@ -408,6 +414,18 @@ const OWN_KINDS: [(&str, &str); 6] = [
     ("channel.suspicious_user.message", "1"),
     // Moderator actions, for the mod log in Studio's Activity feed.
     ("channel.moderate", "2"),
+    // Studio hype strip: hype trains, creator goals, charity, Shield Mode.
+    ("channel.hype_train.begin", "2"),
+    ("channel.hype_train.progress", "2"),
+    ("channel.hype_train.end", "2"),
+    ("channel.goal.begin", "1"),
+    ("channel.goal.progress", "1"),
+    ("channel.goal.end", "1"),
+    ("channel.charity_campaign.start", "1"),
+    ("channel.charity_campaign.progress", "1"),
+    ("channel.charity_campaign.stop", "1"),
+    ("channel.shield_mode.begin", "1"),
+    ("channel.shield_mode.end", "1"),
 ];
 /// EventSub allows 300 enabled subscriptions per WebSocket and three WebSockets
 /// per user token. One shard also carries the own channel's extras.
@@ -415,8 +433,9 @@ const OWN_KINDS: [(&str, &str); 6] = [
 /// channels you moderate.
 const AUTOMOD_PER_SOCKET: usize = 10;
 const MOD_KINDS: [&str; 2] = ["automod.message.hold", "automod.message.update"];
-const CHANNELS_PER_SOCKET: usize =
-    (300 - OWN_KINDS.len() - AUTOMOD_PER_SOCKET * MOD_KINDS.len()) / CHANNEL_KINDS.len();
+/// Subscriptions a socket may use for channels (the rest is the AutoMod reserve).
+const SOCKET_BUDGET: usize = 300 - AUTOMOD_PER_SOCKET * MOD_KINDS.len();
+const CHANNELS_PER_SOCKET: usize = SOCKET_BUDGET / CHANNEL_KINDS.len();
 /// A moderated channel whose AutoMod subscription was refused is retried after this.
 const MOD_RETRY: Duration = Duration::from_secs(600);
 /// AutoMod subscriptions for a channel you moderate, on its channel's socket.
@@ -426,7 +445,9 @@ struct ModAutomod {
     ids: Vec<String>,
 }
 const MAX_SOCKETS: usize = 3;
-pub const MAX_CHANNELS: usize = CHANNELS_PER_SOCKET * MAX_SOCKETS;
+/// Only the socket carrying your own channel pays for its extras.
+pub const MAX_CHANNELS: usize =
+    CHANNELS_PER_SOCKET * MAX_SOCKETS - OWN_KINDS.len().div_ceil(CHANNEL_KINDS.len());
 /// Subscription requests stay well inside Helix's 800 points/minute budget,
 /// leaving room for profiles, emotes and room settings.
 const REQUEST_INTERVAL: Duration = Duration::from_millis(110);
@@ -586,8 +607,23 @@ fn run(
                 continue;
             }
             let load = |i: usize| assigned.values().filter(|a| a.shard == i).count();
+            let cost = |name: &str| {
+                CHANNEL_KINDS.len()
+                    + if c.own.as_deref() == Some(name) {
+                        OWN_KINDS.len()
+                    } else {
+                        0
+                    }
+            };
+            let used = |i: usize| {
+                assigned
+                    .iter()
+                    .filter(|(_, a)| a.shard == i)
+                    .map(|(name, _)| cost(name))
+                    .sum::<usize>()
+            };
             let Some(index) = (0..MAX_SOCKETS)
-                .filter(|i| load(*i) < CHANNELS_PER_SOCKET)
+                .filter(|i| used(*i) + cost(channel) <= SOCKET_BUDGET)
                 .min_by_key(|i| (shards[*i].is_none(), load(*i)))
             else {
                 break;
@@ -936,6 +972,7 @@ impl Step<'_> {
                 || kind.starts_with("automod.")
                 || kind.starts_with("channel.suspicious_user.")
                 || kind == "channel.moderate"
+                || kind.starts_with("channel.shield_mode.")
             {
                 json!({"broadcaster_user_id":broadcaster,"moderator_user_id":self.identity.user_id})
             } else {
@@ -1224,6 +1261,10 @@ fn deliver(
         if let Some((message, label)) = crate::suspicious::parse(e) {
             let _ = tx.send((version, Event::Suspicious(channel, message, label)));
         }
+        return;
+    }
+    if crate::hype::KINDS.contains(&kind) {
+        let _ = tx.send((version, Event::Hype(kind.to_owned(), e.clone())));
         return;
     }
     if let Some(update) = crate::automod::parse(kind, e) {

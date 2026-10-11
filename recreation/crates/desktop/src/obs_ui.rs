@@ -488,3 +488,128 @@ impl Workbench {
         pane.update(cx, |p, cx| p.command_draft(&text, window, cx));
     }
 }
+
+impl Workbench {
+    /// Thin live bar under the Studio header: hype train, goals, charity, Shield Mode.
+    pub(super) fn render_hype_strip(&self) -> Div {
+        let bar = |ratio: f32, color: u32| {
+            div()
+                .h(px(4.))
+                .w_full()
+                .rounded(px(2.))
+                .bg(rgb(theme::CONTROL))
+                .child(
+                    div()
+                        .h_full()
+                        .rounded(px(2.))
+                        .bg(rgb(color))
+                        .w(gpui_kit::relative(ratio.clamp(0., 1.))),
+                )
+        };
+        let item = |icon: gpui_kit::assets::IconName,
+                    color: u32,
+                    title: String,
+                    right: String,
+                    ratio: Option<f32>| {
+            div()
+                .v_flex()
+                .gap(px(3.))
+                .child(
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .text_size(px(11.))
+                        .child(div().text_color(rgb(color)).child(Icon::new(icon).xsmall()))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_ellipsis()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(title),
+                        )
+                        .child(
+                            div()
+                                .flex_shrink_0()
+                                .text_color(rgb(theme::MUTED))
+                                .child(right),
+                        ),
+                )
+                .when_some(ratio, |el, r| el.child(bar(r, color)))
+        };
+        let mut strip = div()
+            .v_flex()
+            .gap_2()
+            .mx_3()
+            .mb_2()
+            .p_2()
+            .rounded(px(8.))
+            .bg(rgb(theme::ELEVATED))
+            .border_1()
+            .border_color(rgb(theme::BORDER));
+        if let Some(by) = &self.hype.shield {
+            strip = strip.child(item(
+                gpui_kit::assets::IconName::Shield,
+                0xF07A7A,
+                "Shield Mode is on".into(),
+                if by.is_empty() {
+                    String::new()
+                } else {
+                    format!("by {by}")
+                },
+                None,
+            ));
+        }
+        if let Some(train) = &self.hype.train {
+            let left = train
+                .expires_at
+                .and_then(crate::ads::countdown)
+                .unwrap_or_default();
+            strip = strip.child(item(
+                gpui_kit::assets::IconName::Rocket,
+                if train.golden {
+                    0xE8C468
+                } else {
+                    theme::ACCENT
+                },
+                format!(
+                    "{}Hype Train · Level {}",
+                    if train.golden { "Golden Kappa " } else { "" },
+                    train.level
+                ),
+                left,
+                Some(if train.goal > 0 {
+                    train.progress as f32 / train.goal as f32
+                } else {
+                    0.
+                }),
+            ));
+        }
+        for goal in self.hype.goals.values() {
+            strip = strip.child(item(
+                gpui_kit::assets::IconName::Trophy,
+                0x91D7BA,
+                goal.label.clone(),
+                format!("{} / {}", goal.current, goal.target),
+                Some(if goal.target > 0 {
+                    goal.current as f32 / goal.target as f32
+                } else {
+                    0.
+                }),
+            ));
+        }
+        if let Some(charity) = &self.hype.charity {
+            strip = strip.child(item(
+                gpui_kit::assets::IconName::HandCoins,
+                0xE69DCD,
+                format!("Charity · {}", charity.name),
+                format!("{} / {}", charity.raised, charity.target),
+                Some(charity.ratio),
+            ));
+        }
+        strip
+    }
+}

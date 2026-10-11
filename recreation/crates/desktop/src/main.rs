@@ -33,6 +33,7 @@ mod ffz_role_badges;
 mod follows_live;
 mod frame_sampler;
 mod highlight_rules;
+mod hype;
 mod ignores;
 mod inline_chat;
 mod input_history;

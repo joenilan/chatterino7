@@ -206,6 +206,7 @@ pub struct Workbench {
     obs_started: bool,
     obs_tick: u64,
     ads: crate::ads::Ads,
+    hype: crate::hype::Hype,
     /// "Find OBS": None = not searched, Some(None) = searching, Some(Some(ips)) = done.
     obs_found: Option<Option<Vec<crate::obs::Found>>>,
     /// Optional chat logs (off by default).
@@ -572,6 +573,7 @@ impl Workbench {
             obs_started: false,
             obs_tick: 0,
             ads: crate::ads::Ads::new(),
+            hype: Default::default(),
             obs_found: None,
             similar_mode: crate::similarity::Mode::from_key(
                 state["similar_messages"].as_str().unwrap_or(""),
@@ -1037,7 +1039,11 @@ impl Workbench {
             })
             .cloned()
             .collect();
-        if self.live.configure(identity.clone(), priority, moderated) {
+        let own = self.account.read(cx).login();
+        if self
+            .live
+            .configure(identity.clone(), priority, moderated, own)
+        {
             for pane in &panes {
                 pane.update(cx, |p, cx| {
                     p.connected = false;
@@ -1080,6 +1086,12 @@ impl Workbench {
                     text,
                 } => {
                     self.whisper_received(id, from_login, from_name, text, window, cx);
+                }
+                crate::live::Event::Hype(kind, event) => {
+                    if crate::hype::apply(&mut self.hype, &kind, &event) {
+                        self.animate_for(Duration::from_millis(240), cx);
+                        cx.notify();
+                    }
                 }
                 crate::live::Event::Suspicious(channel, message, label) => {
                     for pane in &panes {

@@ -74,3 +74,19 @@ posts on its own. Times are accepted as RFC 3339 or Unix seconds.
 Evidence: offline state renders ("Available while live"); parsing unit tested. Not yet observed live
 (needs a live stream with ads).
 
+## Hype strip (2026-10-11)
+
+A card under the Studio header, shown only while something is happening:
+- **Shield Mode** (red) and who turned it on.
+- **Hype Train**: level, progress bar to the next level, and time left. A Golden Kappa train is shown in gold.
+- **Creator goals** (follower/sub/Bits/cheerer, up to 4) with current/target.
+- **Charity** campaign: raised / target in its currency.
+
+Source: own-channel EventSub `channel.hype_train.*` v2, `channel.goal.*`, `channel.charity_campaign.*`
+and `channel.shield_mode.*` (all accepted live, `own_extras_refused: []`). Goals already running when Jawjack
+starts appear at their next progress event (Get Creator Goals at startup is still to do).
+
+**Budget change:** only the socket carrying your own channel pays for its 17 extras. Each socket has
+280 subscriptions for channels (20 reserved for moderated AutoMod), the own channel costs 6 + 17, and the cap is
+3 × 46 − 3 = 135 channels. Verified: all 81 live channels connected.
+

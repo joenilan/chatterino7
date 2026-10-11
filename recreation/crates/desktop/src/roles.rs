@@ -1095,6 +1095,9 @@ impl Workbench {
                             ),
                     ),
             )
+            .when(!self.hype.is_empty(), |el| {
+                el.child(self.render_hype_strip())
+            })
             .child(
                 div().px_3().child(
                     gpui_kit::component::tab::TabBar::new("studio-tabs")
