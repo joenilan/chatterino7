@@ -467,8 +467,6 @@ impl Workbench {
             .child(
                 div().h_flex().items_center().gap_2().px_1()
                     .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().font_weight(FontWeight::SEMIBOLD).child(format!("Studio · #{own}")))
-                    .child(Button::new("studio-close").ghost().xsmall().icon(IconName::PanelRightClose).tooltip("Hide Studio · Ctrl+Shift+S")
-                        .on_click(cx.listener(|this, _, _, cx| { this.studio_open = false; this.schedule_save(cx); cx.notify(); }))),
             )
             .child(card("Broadcast status")
                 .child(div().h_flex().items_center().gap_2()

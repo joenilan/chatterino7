@@ -1,44 +1,23 @@
-//! GPUI Kit's default icon assets plus the few extra Lucide icons Jawjack uses
-//! (copied from gpui-kit-assets, ISC licence in assets/LICENSE-LUCIDE), so every
-//! control uses the same icon family without embedding the whole catalog.
+//! GPUI Kit's default component icons plus the few extra kit icons Jawjack uses,
+//! selected with the kit's `icon_assets!` so only those SVGs are embedded.
 use gpui_kit::{AssetSource, Result, SharedString};
 use std::borrow::Cow;
 
-const EXTRA: &[(&str, &[u8])] = &[
-    (
-        "icons/pencil.svg",
-        include_bytes!("../assets/icons/pencil.svg"),
-    ),
-    (
-        "icons/shield.svg",
-        include_bytes!("../assets/icons/shield.svg"),
-    ),
-    (
-        "icons/rotate-ccw-clock.svg",
-        include_bytes!("../assets/icons/rotate-ccw-clock.svg"),
-    ),
-    (
-        "icons/sticker.svg",
-        include_bytes!("../assets/icons/sticker.svg"),
-    ),
-];
+gpui_kit::assets::icon_assets!(ExtraIcons, [Pencil, Shield, RotateCcwClock, Sticker]);
 
 pub struct Assets;
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
-        if let Some((_, bytes)) = EXTRA.iter().find(|(p, _)| *p == path) {
-            return Ok(Some(Cow::Borrowed(bytes)));
+        if let Some(bytes) = ExtraIcons.load(path)? {
+            return Ok(Some(bytes));
         }
         gpui_kit::assets::Assets.load(path)
     }
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
         let mut list = gpui_kit::assets::Assets.list(path)?;
-        list.extend(
-            EXTRA
-                .iter()
-                .filter(|(p, _)| p.starts_with(path))
-                .map(|(p, _)| SharedString::from(*p)),
-        );
+        list.extend(ExtraIcons.list(path)?);
+        list.sort();
+        list.dedup();
         Ok(list)
     }
 }
