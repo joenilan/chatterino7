@@ -178,6 +178,8 @@ pub struct Workbench {
     automod: std::collections::HashMap<String, std::rc::Rc<Vec<crate::automod::Held>>>,
     /// Own-channel extra subscriptions Twitch refused (None until the own channel connects).
     own_extras_refused: Option<Vec<&'static str>>,
+    /// Moderated channels with a live AutoMod queue subscription.
+    mod_automod_channels: Vec<String>,
     /// Ping sounds (Chatterino defaults: mentions on, other highlights off,
     /// silent while Jawjack is the active window).
     sound_mentions: bool,
@@ -355,7 +357,7 @@ impl Workbench {
         json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()})
     }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"own_extras_refused":self.own_extras_refused,"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"capabilities":self.capabilities.inspection(),"seventv_presence":self.presence.last.lock().map(|s|s.clone()).unwrap_or_default(),"roles":self.panes().iter().map(|p|{let p=p.read(cx);(p.name.to_string(),p.role.map(|r|r.label()))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
+        json!({"own_extras_refused":self.own_extras_refused,"automod_channels":self.mod_automod_channels,"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"capabilities":self.capabilities.inspection(),"seventv_presence":self.presence.last.lock().map(|s|s.clone()).unwrap_or_default(),"roles":self.panes().iter().map(|p|{let p=p.read(cx);(p.name.to_string(),p.role.map(|r|r.label()))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
     }
     /// Channels to connect, highest priority first: visible panes, the rest of the
     /// active workspace, then other workspaces by most recent use. Beyond the
@@ -526,6 +528,7 @@ impl Workbench {
             account_focus: None,
             automod: Default::default(),
             own_extras_refused: None,
+            mod_automod_channels: Vec::new(),
             sound_mentions: state["sound"]["mentions"].as_bool().unwrap_or(true),
             sound_highlights: state["sound"]["highlights"].as_bool().unwrap_or(false),
             sound_focused: state["sound"]["focused"].as_bool().unwrap_or(false),
@@ -955,10 +958,20 @@ impl Workbench {
                 });
             }
         }
-        if self
-            .live
-            .configure(identity.clone(), self.connection_priority(cx))
-        {
+        let priority = self.connection_priority(cx);
+        // Moderated channels (not your own) get AutoMod queues, on-screen ones first.
+        let moderated: Vec<String> = priority
+            .iter()
+            .filter(|channel| {
+                self.panes().iter().any(|p| {
+                    let p = p.read(cx);
+                    p.name.as_ref() == channel.as_str()
+                        && p.role == Some(crate::capabilities::Role::Moderator)
+                })
+            })
+            .cloned()
+            .collect();
+        if self.live.configure(identity.clone(), priority, moderated) {
             for pane in &panes {
                 pane.update(cx, |p, cx| {
                     p.connected = false;
@@ -1001,6 +1014,9 @@ impl Workbench {
                     text,
                 } => {
                     self.whisper_received(id, from_login, from_name, text, window, cx);
+                }
+                crate::live::Event::ModAutomod(channels) => {
+                    self.mod_automod_channels = channels;
                 }
                 crate::live::Event::OwnExtras(refused) => {
                     self.own_extras_refused = Some(refused);

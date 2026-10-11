@@ -17,8 +17,20 @@ counts the rest.
 - **Diagnostics:** `inspect` → `workspace.own_extras_refused` lists any own-channel extras Twitch
   refused.
 
-Not yet: moderated channels other than your own, which need a share of the subscription budget per
-moderated channel. Also not yet: inline held rows in the chat timeline (Chatterino style).
+## Channels you moderate
+
+Each EventSub socket reserves room for the AutoMod queue of **10 moderated channels** (hold +
+update = 2 subscriptions each), which lowers the per-socket channel cap from 49 to 46 (138 total).
+These subscriptions are separate from a channel's required chat subscriptions: a refusal (not a mod
+any more, missing scope) never affects chat and is retried after 10 minutes. On-screen channels are
+first in line. When a channel closes, moves socket, or its session ends, its AutoMod subscriptions
+are released or remade. `inspect` → `workspace.automod_channels` lists the covered channels.
+
+Evidence (Windows, 2026-10-11): with 82 open channels on two sockets, 17 of 27 moderated channels
+got AutoMod queues (3putt_, bessvibes, alphakep, …) and every chat stayed connected.
+
+Not yet: inline held rows in the chat timeline (Chatterino style), and rebalancing slots toward
+newly visible channels once a socket's 10 are taken.
 
 Evidence (Windows, 2026-10-11): Twitch accepted both subscriptions for #dreadedzombie
 (`own_extras_refused: []`), and the parser/queue tests pass. No message has been held live yet,

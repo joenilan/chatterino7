@@ -36,12 +36,16 @@ fn user(identity: &Option<Identity>) -> Option<&str> {
 struct Config {
     identity: Option<Identity>,
     channels: Vec<String>,
+    /// Channels you moderate (not your own), in priority order, for the AutoMod queue.
+    automod: Vec<String>,
 }
 pub enum Event {
     State(String, String, bool),
     Resolved(String, String),
     /// Follow or reward redemption on the signed-in broadcaster's own channel.
     Activity(crate::activity_feed::Item),
+    /// Moderated channels whose AutoMod queue is subscribed (diagnostics).
+    ModAutomod(Vec<String>),
     /// Own-channel extras (follows, redemptions, AutoMod) Twitch refused.
     OwnExtras(Vec<&'static str>),
     /// A held AutoMod message, or its outcome, in a channel you moderate.
@@ -98,13 +102,27 @@ impl LiveChat {
     /// Set the account and the channels to connect, highest priority first.
     /// Channel changes are applied incrementally; returns true only when the
     /// account changed and every channel restarts.
-    pub fn configure(&self, identity: Option<Identity>, channels: Vec<String>) -> bool {
+    pub fn configure(
+        &self,
+        identity: Option<Identity>,
+        channels: Vec<String>,
+        automod: Vec<String>,
+    ) -> bool {
         let mut seen = HashSet::new();
         let channels = channels
             .into_iter()
             .filter(|c| seen.insert(c.clone()))
             .collect();
-        let next = Config { identity, channels };
+        let mut seen = HashSet::new();
+        let automod = automod
+            .into_iter()
+            .filter(|c| seen.insert(c.clone()))
+            .collect();
+        let next = Config {
+            identity,
+            channels,
+            automod,
+        };
         if let Ok(mut c) = self.config.lock()
             && *c != next
         {
@@ -387,7 +405,20 @@ const OWN_KINDS: [(&str, &str); 4] = [
 ];
 /// EventSub allows 300 enabled subscriptions per WebSocket and three WebSockets
 /// per user token. One shard also carries the own channel's extras.
-const CHANNELS_PER_SOCKET: usize = (300 - OWN_KINDS.len()) / CHANNEL_KINDS.len();
+/// Each socket also keeps room for the AutoMod queue (hold + update) of this many
+/// channels you moderate.
+const AUTOMOD_PER_SOCKET: usize = 10;
+const MOD_KINDS: [&str; 2] = ["automod.message.hold", "automod.message.update"];
+const CHANNELS_PER_SOCKET: usize =
+    (300 - OWN_KINDS.len() - AUTOMOD_PER_SOCKET * MOD_KINDS.len()) / CHANNEL_KINDS.len();
+/// A moderated channel whose AutoMod subscription was refused is retried after this.
+const MOD_RETRY: Duration = Duration::from_secs(600);
+/// AutoMod subscriptions for a channel you moderate, on its channel's socket.
+struct ModAutomod {
+    shard: usize,
+    generation: u64,
+    ids: Vec<String>,
+}
 const MAX_SOCKETS: usize = 3;
 pub const MAX_CHANNELS: usize = CHANNELS_PER_SOCKET * MAX_SOCKETS;
 /// Subscription requests stay well inside Helix's 800 points/minute budget,
@@ -486,6 +517,9 @@ fn run(
     // Account-wide whisper subscription: (shard, generation) it was made on, and retry time.
     let mut whispers: Option<(usize, u64)> = None;
     let mut whispers_retry = Instant::now();
+    let mut mod_automod: HashMap<String, ModAutomod> = HashMap::new();
+    let mut mod_retry: HashMap<String, Instant> = HashMap::new();
+    let mut mod_reported: Vec<String> = Vec::new();
     while !stop.load(Ordering::Relaxed) {
         let c = config.lock().map(|c| c.clone()).unwrap_or_default();
         let version = epoch.load(Ordering::Relaxed);
@@ -498,6 +532,8 @@ fn run(
             deletions.clear();
             over_cap.clear();
             whispers = None;
+            mod_automod.clear();
+            mod_retry.clear();
             if let Ok(mut names) = names.lock() {
                 names.clear();
             }
@@ -662,6 +698,65 @@ fn run(
             })
             .collect();
         let now = Instant::now();
+        // AutoMod queues for moderated channels: drop ones no longer wanted, moved,
+        // or from a session that ended (Twitch removed those with the session).
+        mod_automod.retain(|channel, m| {
+            let live = sessions[m.shard]
+                .as_ref()
+                .is_some_and(|(_, g)| *g == m.generation);
+            let keep = live
+                && c.automod.contains(channel)
+                && assigned.get(channel).is_some_and(|a| a.shard == m.shard);
+            if !keep && live {
+                deletions.extend(m.ids.drain(..));
+            }
+            keep
+        });
+        mod_retry.retain(|_, t| now < *t);
+        let complete: Vec<String> = c
+            .automod
+            .iter()
+            .filter(|ch| {
+                mod_automod
+                    .get(*ch)
+                    .is_some_and(|m| m.ids.len() == MOD_KINDS.len())
+            })
+            .cloned()
+            .collect();
+        if complete != mod_reported {
+            mod_reported = complete.clone();
+            let _ = tx.send((version, Event::ModAutomod(complete)));
+        }
+        let mod_job = if id.has("moderator:manage:automod") {
+            c.automod.iter().find_map(|channel| {
+                let a = assigned.get(channel).filter(|a| a.ready)?;
+                let broadcaster = a.broadcaster.clone().filter(|b| *b != id.user_id)?;
+                let (session, generation) = sessions[a.shard].clone()?;
+                if mod_retry.contains_key(channel) {
+                    return None;
+                }
+                let step = match mod_automod.get(channel) {
+                    Some(m) if m.ids.len() >= MOD_KINDS.len() => return None,
+                    Some(m) => m.ids.len(),
+                    None if mod_automod.values().filter(|m| m.shard == a.shard).count()
+                        >= AUTOMOD_PER_SOCKET =>
+                    {
+                        return None;
+                    }
+                    None => 0,
+                };
+                Some((
+                    channel.clone(),
+                    a.shard,
+                    broadcaster,
+                    session,
+                    generation,
+                    step,
+                ))
+            })
+        } else {
+            None
+        };
         let pending = |index: usize, a: &Assignment| {
             a.shard == index
                 && !a.ready
@@ -738,6 +833,40 @@ fn run(
                 whispers = Some((index, generation));
             } else {
                 whispers_retry = Instant::now() + FAILURE_RETRY;
+            }
+        } else if let Some((channel, shard, broadcaster, session, generation, step)) = mod_job {
+            next_request = Instant::now() + REQUEST_INTERVAL;
+            let body = json!({"type":MOD_KINDS[step],"version":"2","condition":{"broadcaster_user_id":broadcaster,"moderator_user_id":id.user_id},"transport":{"method":"websocket","session_id":session}});
+            let response = client
+                .post("https://api.twitch.tv/helix/eventsub/subscriptions")
+                .header("Client-Id", CLIENT_ID)
+                .bearer_auth(&id.access)
+                .header("Content-Type", "application/json")
+                .body(body.to_string())
+                .send()
+                .ok()
+                .and_then(|r| response_json(r).ok());
+            let entry = mod_automod.entry(channel.clone()).or_insert(ModAutomod {
+                shard,
+                generation,
+                ids: Vec::new(),
+            });
+            match response {
+                Some((202, value)) if value["data"][0]["status"] == "enabled" => {
+                    entry.ids.push(
+                        value["data"][0]["id"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_owned(),
+                    );
+                }
+                // Not a moderator there any more, missing scope, or over budget: back off.
+                _ => {
+                    if let Some(m) = mod_automod.remove(&channel) {
+                        deletions.extend(m.ids);
+                    }
+                    mod_retry.insert(channel, Instant::now() + MOD_RETRY);
+                }
             }
         } else if let Some(sub) = deletions.pop_front() {
             next_request = Instant::now() + REQUEST_INTERVAL;

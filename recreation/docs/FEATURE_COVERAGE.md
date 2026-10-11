@@ -176,7 +176,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | MD06 | Warnings and blocks | Part | /warn and /block, /unblock commands; block list sync and display remain. | builtin/twitch/Warn.cpp; Block.cpp |
 | MD07 | Moderator mode and custom buttons | Part | Moderator layout with chat modes, clear chat and mod actions; editable custom buttons pending. | settingspages/ModerationPage.cpp |
 | MD08 | Room mode management | Part | Room mode commands (/slow, /followers, /subscribers, /emoteonly, /uniquechat); header controls remain. | builtin/twitch/ChatSettings.cpp |
-| MD09 | AutoMod and blocked terms | Part | Own-channel AutoMod queue strip with Allow/Deny via EventSub hold/update v2 and Helix ([details](AUTOMOD.md)); moderated channels and inline rows pending; no live hold observed yet. | providers/twitch/eventsub; messages/MessageBuilder.cpp |
+| MD09 | AutoMod and blocked terms | Part | AutoMod queue strip with Allow/Deny for your channel and up to 10 moderated channels per socket (17 live in testing) via EventSub hold/update v2 and Helix ([details](AUTOMOD.md)); inline rows pending; no live hold observed yet. | providers/twitch/eventsub; messages/MessageBuilder.cpp |
 | MD10 | Suspicious users | Backlog | Monitored/restricted state, annotations and capability-gated management. | builtin/twitch/LowTrust.cpp |
 | MD11 | Roles and Shield Mode | Part | /mod, /unmod, /vip and /unvip commands (broadcaster); lists and Shield Mode remain. | builtin/twitch/AddModerator.cpp; AddVIP.cpp; ShieldMode.cpp |
 | MD12 | Announcements and shoutouts | Part | /announce (colours) and /shoutout commands; display variants remain. | builtin/twitch/Announce.cpp; Shoutout.cpp |
