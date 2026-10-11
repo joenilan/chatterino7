@@ -25,7 +25,10 @@ pub struct Paint {
     pub color: Option<u32>,
     pub stops: Vec<Stop>,
     pub repeat: bool,
+    /// Why the paint cannot be drawn at all; the name falls back to its color.
     pub limitation: Option<String>,
+    /// Drawn, but parts of the 7TV effect (shadows, extra layers) are omitted.
+    pub approximation: Option<String>,
 }
 fn packed(value: &Value) -> Option<u32> {
     value
@@ -48,31 +51,48 @@ pub fn definition(data: &Value) -> Option<Paint> {
         .take(80)
         .collect();
     let color = packed(&data["color"]);
-    let repeat = data["repeat"].as_bool().unwrap_or(false);
     let mut paint = Paint {
         id,
         name,
         color,
-        repeat,
+        repeat: false,
         brush: Brush::Unsupported,
         stops: Vec::new(),
         limitation: None,
+        approximation: None,
     };
     let unsupported = |mut p: Paint, reason: &str| {
         p.brush = Brush::Unsupported;
         p.limitation = Some(reason.into());
         p
     };
-    if data["gradients"].as_array().is_some_and(|a| !a.is_empty()) || !data["text"].is_null() {
-        return Some(unsupported(paint, "Layered or styled-text paint"));
+    // Layered paints carry their brushes in `gradients`; the first supported layer
+    // is a far closer rendering than falling back to a plain color.
+    let layers = data["gradients"].as_array().filter(|a| !a.is_empty());
+    let has_top_level = data["function"].as_str().is_some_and(|f| !f.is_empty());
+    let layer = match layers {
+        Some(layers) if !has_top_level => &layers[0],
+        _ => data,
+    };
+    let mut omitted = Vec::new();
+    if layers.is_some_and(|l| l.len() > (!has_top_level) as usize) {
+        omitted.push("extra layers");
     }
     if data["shadows"].as_array().is_some_and(|a| !a.is_empty()) {
-        return Some(unsupported(paint, "Paint includes shadows"));
+        omitted.push("shadows");
     }
-    let function = data["function"].as_str().unwrap_or("");
+    if !data["text"].is_null() {
+        omitted.push("text styling");
+    }
+    if !omitted.is_empty() {
+        paint.approximation = Some(format!("Approximate: {} not drawn", omitted.join(", ")));
+    }
+    let repeat = layer["repeat"].as_bool().unwrap_or(false);
+    paint.repeat = repeat;
+    let function = layer["function"].as_str().unwrap_or("");
     paint.brush = match function {
         "LINEAR_GRADIENT" | "linear-gradient" => {
-            let angle = data["angle"].as_f64().unwrap_or(0.);
+            let angle = layer["angle"].as_f64().unwrap_or(0.);
             if !angle.is_finite() {
                 return Some(unsupported(paint, "Invalid gradient angle"));
             }
@@ -81,12 +101,12 @@ pub fn definition(data: &Value) -> Option<Paint> {
             }
         }
         "RADIAL_GRADIENT" | "radial-gradient" => Brush::Radial {
-            ellipse: data["shape"].as_str() == Some("ellipse"),
+            ellipse: layer["shape"].as_str() == Some("ellipse"),
         },
         "URL" | "url" => return Some(unsupported(paint, "Image or animated paint")),
         _ => return Some(unsupported(paint, "Unknown paint function")),
     };
-    if let Some(stops) = data["stops"].as_array() {
+    if let Some(stops) = layer["stops"].as_array() {
         if stops.len() > 32 {
             return Some(unsupported(paint, "More than 32 gradient stops"));
         }
@@ -221,7 +241,7 @@ impl Paints {
         serde_json::json!({
             "definitions":self.definitions.len(),"sender_grants":self.users.len(),
             "unresolved_grants":self.users.values().filter(|(id,_)|!self.definitions.contains_key(id)).count(),
-            "unsupported_definitions":self.definitions.values().filter(|(p,_)|p.limitation.is_some()).count(),
+            "unsupported_definitions":self.definitions.values().filter(|(p,_)|p.limitation.is_some()).count(),"approximated_definitions":self.definitions.values().filter(|(p,_)|p.limitation.is_none()&&p.approximation.is_some()).count(),
             "name_rendering":"bounded static glyph-mask rendering","scope":"observed session entitlements only"
         })
     }

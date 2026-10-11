@@ -504,7 +504,7 @@ impl ChannelPane {
                                 .child(div().text_size(px(12.)).child(p.name))
                                 .when_some(preview,|el,image|el.child(img(image).w_full().h(px(32.)).object_fit(ObjectFit::Fill)))
                                 .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
-                                    p.limitation.map(|reason|format!("{reason} · preview unavailable")).unwrap_or_else(||"Static username paint · local color overrides take priority".into()))))
+                                    p.limitation.map(|reason|format!("{reason} · preview unavailable")).or(p.approximation).unwrap_or_else(||"Static username paint · local color overrides take priority".into()))))
                             .when(pending,|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Paint grant received; waiting for its definition")))
                             .into_any_element())
                     });
