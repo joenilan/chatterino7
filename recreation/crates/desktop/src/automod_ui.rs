@@ -3,7 +3,7 @@ use crate::{ChannelPane, PaneEvent, theme};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     component::{
-        Disableable, Icon, Sizable, StyledExt,
+        Disableable, Icon, Sizable, StyledExt, WindowExt,
         button::{Button, ButtonVariants},
     },
     *,
@@ -240,6 +240,113 @@ impl ChannelPane {
                         items
                     },
                 ))
+                .into_any_element(),
+        )
+    }
+}
+
+impl ChannelPane {
+    /// Set or clear the view filter; returns a problem with the query, if any.
+    pub fn set_view_filter(&mut self, query: &str, cx: &mut Context<Self>) -> Result<(), String> {
+        let query = query.trim();
+        if query.is_empty() {
+            self.view_filter = None;
+        } else {
+            let parsed = crate::chat_search::Query::parse(query);
+            if let Some(problem) = parsed.error() {
+                return Err(problem.to_owned());
+            }
+            self.view_filter = Some((query.to_owned(), std::rc::Rc::new(parsed)));
+        }
+        self.scroller.update(cx, |s, cx| s.remeasure(cx));
+        cx.emit(PaneEvent::ViewFilterChanged);
+        cx.notify();
+        Ok(())
+    }
+    pub fn open_view_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let input = cx.new(|cx| {
+            gpui_kit::component::input::InputState::new(window, cx)
+                .placeholder("e.g. is:mod   -is:notice   from:bob   regex:\\bgg\\b")
+        });
+        if let Some((query, _)) = &self.view_filter {
+            let query = query.clone();
+            input.update(cx, |i, cx| i.set_value(query, window, cx));
+        }
+        let focus = input.clone();
+        let owner = cx.entity().downgrade();
+        let channel = crate::combined::title(&self.name);
+        let width = (f32::from(window.viewport_size().width) - 24.).clamp(240., 420.);
+        window.open_dialog(cx, move |dialog, _, _| {
+            let (apply_input, apply_owner, clear_owner) = (input.clone(), owner.clone(), owner.clone());
+            dialog
+                .w(px(width))
+                .title(format!("Filter #{channel}"))
+                .on_ok(|_, _, _| false)
+                .child(
+                    div()
+                        .v_flex()
+                        .gap_2()
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                            "Show only messages matching a search: is:mod, is:sub, is:vip, is:first, from:name, has:link, badge:…, subtier:2, regex:…, -is:notice to exclude. Nothing is removed; clear the filter to see everything.",
+                        ))
+                        .child(gpui_kit::component::input::Input::new(&input).small()),
+                )
+                .footer(
+                    div()
+                        .h_flex()
+                        .justify_end()
+                        .gap_2()
+                        .child(Button::new("filter-clear").small().ghost().label("Show everything").on_click(move |_, w, cx| {
+                            w.close_dialog(cx);
+                            let _ = clear_owner.update(cx, |p, cx| p.set_view_filter("", cx));
+                        }))
+                        .child(Button::new("filter-apply").small().primary().label("Apply").on_click(move |_, w, cx| {
+                            let query = apply_input.read(cx).value().to_string();
+                            let result = apply_owner.update(cx, |p, cx| p.set_view_filter(&query, cx));
+                            match result {
+                                Ok(Err(problem)) => w.push_notification(gpui_kit::component::notification::Notification::info(problem), cx),
+                                _ => w.close_dialog(cx),
+                            }
+                        })),
+                )
+        });
+        focus.update(cx, |i, cx| i.focus(window, cx));
+    }
+    /// "Filtered: is:mod ×" in the header while a view filter is on.
+    pub fn render_filter_chip(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (query, _) = self.view_filter.as_ref()?;
+        Some(
+            div()
+                .id("view-filter-chip")
+                .h_flex()
+                .items_center()
+                .gap_1()
+                .px(px(6.))
+                .h(px(20.))
+                .max_w(px(180.))
+                .rounded(px(10.))
+                .bg(rgb(0x272237))
+                .text_size(px(10.))
+                .text_color(rgb(theme::ACCENT))
+                .cursor_pointer()
+                .child(
+                    div()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .child(format!("Filtered: {query}")),
+                )
+                .child(
+                    div()
+                        .id("view-filter-clear")
+                        .child("×")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            cx.stop_propagation();
+                            let _ = this.set_view_filter("", cx);
+                        })),
+                )
+                .on_click(cx.listener(|this, _, window, cx| this.open_view_filter(window, cx)))
                 .into_any_element(),
         )
     }

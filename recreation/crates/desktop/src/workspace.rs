@@ -211,6 +211,8 @@ pub struct Workbench {
     hide_blocked: bool,
     similar_mode: crate::similarity::Mode,
     spellcheck: bool,
+    /// Saved view filters by "{tab id}:{channel}".
+    view_filters: std::collections::HashMap<String, String>,
     mod_buttons: bool,
     custom_mod_buttons: std::rc::Rc<Vec<crate::mod_buttons::ModButton>>,
     mod_button_inputs: Option<(Entity<InputState>, Entity<InputState>)>,
@@ -650,6 +652,17 @@ impl Workbench {
             shouted: Default::default(),
             obs_found: None,
             spellcheck: state["spellcheck"].as_bool().unwrap_or(false),
+            view_filters: state["view_filters"]
+                .as_object()
+                .map(|o| {
+                    o.iter()
+                        .filter_map(|(k, v)| {
+                            v.as_str()
+                                .map(|v| (k.clone(), v.chars().take(256).collect()))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             similar_mode: crate::similarity::Mode::from_key(
                 state["similar_messages"].as_str().unwrap_or(""),
             ),
@@ -1816,6 +1829,7 @@ impl Workbench {
     ) -> Entity<ChannelPane> {
         let key = format!("{tab_id}:{name}");
         let draft = self.drafts.get(&key).cloned().unwrap_or_default();
+        let saved_filter = self.view_filters.get(&key).cloned();
         let shared_state = self
             .panes()
             .iter()
@@ -1848,6 +1862,11 @@ impl Workbench {
                 p.connected = connected;
                 p.connection = connection;
                 p.room_settings = room;
+            });
+        }
+        if let Some(query) = saved_filter {
+            pane.update(cx, |p, cx| {
+                let _ = p.set_view_filter(&query, cx);
             });
         }
         if let Some(target) = self
@@ -1926,6 +1945,10 @@ impl Workbench {
                 this.mod_buttons = !this.mod_buttons;
                 this.schedule_save(cx);
                 cx.notify();
+                return;
+            }
+            if matches!(event, PaneEvent::ViewFilterChanged) {
+                this.schedule_save(cx);
                 return;
             }
             if let PaneEvent::Ping(ping, id) = event {
@@ -2309,6 +2332,15 @@ impl Workbench {
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
         value["spellcheck"] = json!(self.spellcheck);
+        let mut filters = serde_json::Map::new();
+        for tab in &self.tabs {
+            for pane in &tab.panes {
+                if let Some((query, _)) = &pane.read(cx).view_filter {
+                    filters.insert(format!("{}:{}", tab.id, pane.read(cx).name), json!(query));
+                }
+            }
+        }
+        value["view_filters"] = Value::Object(filters);
         value["mod_buttons"] = json!(self.mod_buttons);
         value["custom_mod_buttons"] = crate::mod_buttons::json(&self.custom_mod_buttons);
         value["follows_open"] = json!(self.follows_open);
@@ -3438,6 +3470,23 @@ impl Workbench {
                                     },
                                 ))
                                 .separator()
+                                .item(PopupMenuItem::new("Filter view…").on_click({
+                                    let owner = owner.clone();
+                                    let channel = menu_channel.clone();
+                                    move |_, window, cx| {
+                                        let pane = owner.upgrade().and_then(|o| {
+                                            let o = o.read(cx);
+                                            o.tabs[o.active]
+                                                .panes
+                                                .iter()
+                                                .find(|p| p.read(cx).name.as_ref() == channel)
+                                                .cloned()
+                                        });
+                                        if let Some(pane) = pane {
+                                            pane.update(cx, |p, cx| p.open_view_filter(window, cx));
+                                        }
+                                    }
+                                }))
                                 .item(PopupMenuItem::new("Pop out to its own window").on_click({
                                     let owner = owner.clone();
                                     let channel = menu_channel.clone();

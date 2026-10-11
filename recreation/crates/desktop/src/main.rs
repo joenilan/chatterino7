@@ -172,6 +172,8 @@ enum PaneEvent {
     OpenAccount,
     OpenStreamInfo,
     OpenModTools,
+    /// The view filter changed (saved with the workspace).
+    ViewFilterChanged,
     /// Show or hide the inline moderator buttons (all channels).
     ToggleModButtons,
     /// Choose which signed-in account sends from this pane (vault entry).
@@ -231,6 +233,8 @@ struct ChannelPane {
     /// Spellcheck the message box, and what it found in the current draft.
     spellcheck: bool,
     spelling: Vec<(String, Vec<String>)>,
+    /// View filter (search syntax): only matching messages are shown; nothing is dropped.
+    view_filter: Option<(String, std::rc::Rc<chat_search::Query>)>,
     /// Suspicious labels for messages that haven't arrived yet (by message ID).
     suspicious_pending: std::collections::HashMap<String, String>,
     send_as: Option<SharedString>,
@@ -336,6 +340,7 @@ impl ChannelPane {
             send_to: combined::is_combined(name).then(|| combined::sources(name)[0].clone()),
             spellcheck: false,
             spelling: Vec::new(),
+            view_filter: None,
             suspicious_pending: Default::default(),
             send_as: None,
             media,
@@ -696,6 +701,7 @@ impl Render for ChannelPane {
         let jump_pulse = self.jump_pulse;
         let highlight_rows = self.attention.highlights.clone();
         let highlight_colors = self.attention.colors.clone();
+        let view_filter = self.view_filter.as_ref().map(|(_, q)| q.clone());
         let moderating = matches!(
             self.role,
             Some(capabilities::Role::Moderator | capabilities::Role::Broadcaster)
@@ -819,6 +825,7 @@ impl Render for ChannelPane {
                             })
                             .child(format!("# {}", combined::title(&self.name))),
                     )
+                    .children(self.render_filter_chip(cx))
                     .child(
                         div()
                             .min_w_0()
@@ -893,6 +900,10 @@ impl Render for ChannelPane {
                             let Some(message) = messages.messages().get(index) else {
                                 return div().into_any_element();
                             };
+                            // A filtered-out row draws nothing (rows have no padding of their own).
+                            if view_filter.as_ref().is_some_and(|q| q.matches(message).is_none()) {
+                                return div().into_any_element();
+                            }
                             let row = first_order + index as u64;
                             let paint=if appearance.borrow().get(&message.user_id).is_some_and(|a|a.color.is_some()){None}else{
                                 let catalog=catalog.borrow();catalog.paints.for_user(&message.user_id).filter(|p|p.limitation.is_none()).cloned().map(|paint|{
