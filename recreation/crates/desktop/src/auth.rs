@@ -105,6 +105,8 @@ pub struct TwitchAccount {
     vault_unavailable: bool,
     code: Option<(String, String)>,
     copied_at: Option<Instant>,
+    /// The sign-in code stays masked until revealed (screen sharing, streams).
+    code_revealed: bool,
     cancel: Arc<AtomicBool>,
     generation: u64,
     account: Option<Account>,
@@ -181,6 +183,7 @@ impl TwitchAccount {
             vault_unavailable: false,
             code: None,
             copied_at: None,
+            code_revealed: false,
             cancel: Arc::new(AtomicBool::new(false)),
             generation: 0,
             account: None,
@@ -199,6 +202,7 @@ impl TwitchAccount {
         self.saving = false;
         self.code = None;
         self.copied_at = None;
+        self.code_revealed = false;
         self.validating = saved.is_some() && self.account.is_some();
         self.upgrading = saved.is_none() && self.account.is_some();
         if !self.validating && !self.upgrading {
@@ -236,7 +240,7 @@ impl TwitchAccount {
                         let _ = view.update(cx, |this, cx| {
                             if this.generation != generation { return; }
                             match event {
-                                Event::Code(code, url) => { this.code = Some((code, url)); this.status = if this.upgrading { "Enter this code on Twitch and approve the updated permissions. You stay signed in meanwhile." } else { "Enter this code on Twitch and approve Jawjack. This code expires shortly." }.into(); }
+                                Event::Code(code, url) => { this.code = Some((code, url)); this.status = if this.upgrading { "Open Twitch, check its code matches this one (the eye shows it), and approve the updated permissions. You stay signed in meanwhile." } else { "Open Twitch, check its code matches this one (the eye shows it), and approve Jawjack. The code expires shortly." }.into(); }
                                 Event::Renewing(ack) => { this.renewing = true; this.status = "Renewing Twitch session securely…".into(); let _ = ack.send(true); }
                                 Event::Invalidated => { this.account = None; this.status = "Renewing expired Twitch authorization…".into(); }
                                 Event::Error(message) if this.upgrading => this.keep_account(format!("Permissions were not updated: {message}"), cx),
@@ -525,12 +529,30 @@ impl Render for TwitchAccount {
                     div()
                         .v_flex().w_full().min_w_0()
                         .gap_3()
-                        .child(
+                        .child({
+                            let revealed = self.code_revealed;
+                            let shown = if revealed {
+                                code.clone()
+                            } else {
+                                code.chars().map(|c| if c.is_alphanumeric() { '•' } else { c }).collect()
+                            };
                             div()
-                                .font_family("Consolas")
-                                .text_size(px(20.))
-                                .child(code.clone()),
-                        )
+                                .h_flex()
+                                .items_center()
+                                .gap_2()
+                                .child(div().font_family("Consolas").text_size(px(20.)).child(shown))
+                                .child(
+                                    Button::new("reveal-twitch-code")
+                                        .ghost()
+                                        .small()
+                                        .icon(if revealed { gpui_kit::component::IconName::EyeOff } else { gpui_kit::component::IconName::Eye })
+                                        .tooltip(if revealed { "Hide code" } else { "Show code (Twitch shows it too; just check they match)" })
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.code_revealed = !this.code_revealed;
+                                            cx.notify();
+                                        })),
+                                )
+                        })
                         .child(
                             Button::new("copy-twitch-code")
                                 .small()

@@ -15,6 +15,8 @@ pub enum Kind {
     Raid,
     Redemption,
     Donation,
+    /// A moderator action in your channel (channel.moderate).
+    Moderation,
     Other,
 }
 impl Kind {
@@ -26,6 +28,7 @@ impl Kind {
             Kind::Raid => "Raid",
             Kind::Redemption => "Reward",
             Kind::Donation => "Donation",
+            Kind::Moderation => "Mod",
             Kind::Other => "Event",
         }
     }
@@ -38,6 +41,7 @@ impl Kind {
             Kind::Raid => 1,
             Kind::Redemption => 2,
             Kind::Donation => 3,
+            Kind::Moderation => 5,
             Kind::Other => 2,
         }
     }
@@ -50,6 +54,118 @@ pub struct Item {
     pub source: String,
     pub who: String,
     pub detail: String,
+}
+/// "timed out bob for 10m: spam", "turned on slow mode (30s)", … for a
+/// `channel.moderate` v2 event.
+pub fn moderation(e: &Value) -> Option<String> {
+    let action = e["action"].as_str()?;
+    // Shared-chat variants carry the same object under a prefixed key.
+    let key = action.strip_prefix("shared_chat_").unwrap_or(action);
+    let object = if e[action].is_object() {
+        &e[action]
+    } else {
+        &e[key]
+    };
+    let user = text(&object["user_name"], 60);
+    let reason = text(&object["reason"], 120);
+    let with_reason = |s: String| {
+        if reason.is_empty() {
+            s
+        } else {
+            format!("{s}: {reason}")
+        }
+    };
+    let detail = match key {
+        "ban" => with_reason(format!("banned {user}")),
+        "unban" => format!("unbanned {user}"),
+        "timeout" => {
+            let length = object["expires_at"]
+                .as_str()
+                .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                .map(|t| {
+                    (t.with_timezone(&chrono::Utc) - chrono::Utc::now())
+                        .num_seconds()
+                        .max(0)
+                })
+                .map(|s| match s {
+                    0..=89 => format!("{s}s"),
+                    90..=5399 => format!("{}m", (s + 30) / 60),
+                    5400..=129_599 => format!("{}h", (s + 1800) / 3600),
+                    _ => format!("{}d", (s + 43_200) / 86_400),
+                });
+            with_reason(match length {
+                Some(l) => format!("timed out {user} for {l}"),
+                None => format!("timed out {user}"),
+            })
+        }
+        "untimeout" => format!("removed {user}'s timeout"),
+        "delete" => {
+            let body = text(&object["message_body"], 80);
+            if body.is_empty() {
+                format!("deleted a message from {user}")
+            } else {
+                format!("deleted {user}'s message: {body}")
+            }
+        }
+        "warn" => with_reason(format!("warned {user}")),
+        "clear" => "cleared chat".into(),
+        "emoteonly" => "turned on emote-only".into(),
+        "emoteonlyoff" => "turned off emote-only".into(),
+        "followers" => match object["follow_duration_minutes"].as_u64() {
+            Some(0) | None => "turned on followers-only".into(),
+            Some(m) => format!("turned on followers-only ({m}m)"),
+        },
+        "followersoff" => "turned off followers-only".into(),
+        "slow" => match object["wait_time_seconds"].as_u64() {
+            Some(s) => format!("turned on slow mode ({s}s)"),
+            None => "turned on slow mode".into(),
+        },
+        "slowoff" => "turned off slow mode".into(),
+        "subscribers" => "turned on subscribers-only".into(),
+        "subscribersoff" => "turned off subscribers-only".into(),
+        "uniquechat" => "turned on unique chat".into(),
+        "uniquechatoff" => "turned off unique chat".into(),
+        "vip" => format!("made {user} a VIP"),
+        "unvip" => format!("removed {user} as VIP"),
+        "mod" => format!("made {user} a moderator"),
+        "unmod" => format!("removed {user} as moderator"),
+        "raid" => format!("started a raid to {user}"),
+        "unraid" => "cancelled the raid".into(),
+        "add_blocked_term"
+        | "add_permitted_term"
+        | "remove_blocked_term"
+        | "remove_permitted_term" => {
+            let terms = e["automod_terms"]["terms"]
+                .as_array()
+                .map(|t| {
+                    t.iter()
+                        .filter_map(|t| t.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            format!("{} {}", key.replace('_', " "), terms)
+                .trim()
+                .to_owned()
+        }
+        "approve_unban_request" | "deny_unban_request" => {
+            let verb = if key.starts_with("approve") {
+                "approved"
+            } else {
+                "denied"
+            };
+            format!(
+                "{verb} {}'s unban request",
+                text(&e["unban_request"]["user_name"], 60)
+            )
+        }
+        other => other.replace('_', " "),
+    };
+    Some(if action.starts_with("shared_chat_") {
+        format!("{detail} (shared chat)")
+    } else {
+        detail
+    })
 }
 fn text(value: &Value, limit: usize) -> String {
     value
@@ -120,6 +236,15 @@ impl Feed {
                         format!("{reward} ({cost}) · {input}")
                     },
                 )
+            }
+            "channel.moderate" => {
+                return moderation(event).map(|detail| Item {
+                    at: chrono::Local::now(),
+                    kind: Kind::Moderation,
+                    source: "Twitch".into(),
+                    who: text(&event["moderator_user_name"], 60),
+                    detail,
+                });
             }
             _ => return None,
         };
@@ -268,5 +393,25 @@ mod tests {
         let value: Value = serde_json::from_str(r#"{"user_name":"Bob"}"#).unwrap();
         let item = Feed::from_eventsub("channel.follow", &value).unwrap();
         assert_eq!((item.kind, item.who.as_str()), (Kind::Follow, "Bob"));
+    }
+}
+
+#[cfg(test)]
+mod moderation_tests {
+    use serde_json::json;
+    #[test]
+    fn describes_actions() {
+        let ban = json!({"action":"ban","ban":{"user_name":"Bob","reason":"spam"}});
+        assert_eq!(super::moderation(&ban).as_deref(), Some("banned Bob: spam"));
+        let slow = json!({"action":"slow","slow":{"wait_time_seconds":30}});
+        assert_eq!(
+            super::moderation(&slow).as_deref(),
+            Some("turned on slow mode (30s)")
+        );
+        let shared = json!({"action":"shared_chat_delete","shared_chat_delete":{"user_name":"Ann","message_body":"hi"}});
+        assert_eq!(
+            super::moderation(&shared).as_deref(),
+            Some("deleted Ann's message: hi (shared chat)")
+        );
     }
 }

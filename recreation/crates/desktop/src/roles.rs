@@ -484,19 +484,21 @@ impl Workbench {
             Kind::Raid => I::Rocket,
             Kind::Redemption => I::Sparkles,
             Kind::Donation => I::HandCoins,
+            Kind::Moderation => I::Shield,
             Kind::Other => I::Activity,
         }
     }
     /// Activity tab: filter chips, then the newest-first feed.
     fn render_feed(&mut self, cx: &mut Context<Self>) -> AnyElement {
         use crate::activity_feed::Kind;
-        let filters: [(Option<Kind>, &str); 6] = [
+        let filters: [(Option<Kind>, &str); 7] = [
             (None, "All"),
             (Some(Kind::Follow), "Follows"),
             (Some(Kind::Subscription), "Subs"),
             (Some(Kind::Bits), "Bits"),
             (Some(Kind::Redemption), "Rewards"),
             (Some(Kind::Donation), "Tips"),
+            (Some(Kind::Moderation), "Mods"),
         ];
         let chips = div().h_flex().flex_wrap().gap_1().pt_3().children(
             filters

@@ -398,7 +398,7 @@ fn optional_kind(kind: &str) -> bool {
 }
 /// Extra, optional subscriptions for the signed-in broadcaster's own channel,
 /// feeding the Studio activity feed: (type, version).
-const OWN_KINDS: [(&str, &str); 5] = [
+const OWN_KINDS: [(&str, &str); 6] = [
     ("channel.follow", "2"),
     ("channel.channel_points_custom_reward_redemption.add", "1"),
     // AutoMod queue: held messages and their outcome.
@@ -406,6 +406,8 @@ const OWN_KINDS: [(&str, &str); 5] = [
     ("automod.message.update", "2"),
     // Monitored/restricted chatters and likely ban evaders.
     ("channel.suspicious_user.message", "1"),
+    // Moderator actions, for the mod log in Studio's Activity feed.
+    ("channel.moderate", "2"),
 ];
 /// EventSub allows 300 enabled subscriptions per WebSocket and three WebSockets
 /// per user token. One shard also carries the own channel's extras.
@@ -933,6 +935,7 @@ impl Step<'_> {
             let condition = if kind == "channel.follow"
                 || kind.starts_with("automod.")
                 || kind.starts_with("channel.suspicious_user.")
+                || kind == "channel.moderate"
             {
                 json!({"broadcaster_user_id":broadcaster,"moderator_user_id":self.identity.user_id})
             } else {

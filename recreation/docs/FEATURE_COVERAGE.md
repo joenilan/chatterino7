@@ -418,3 +418,10 @@ entitlement badges and paints are still separate unfinished features.
 
 Optional local timestamps now have Off/Hours-minutes/With-seconds appearance
 settings and date/offset hover; exact Linux build passed, native acceptance pending.
+
+## Security notes (2026-10-11)
+
+- **Sign-in code masked:** the Twitch device code shows as dots until you press the eye button (it
+  hides again for each new code). Copy and "Open Twitch authorization" still work. Twitch's page already
+  shows the code, so the usual step is just checking they match. This keeps the code out of a stream or screen share.
+

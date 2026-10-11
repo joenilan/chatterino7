@@ -55,3 +55,10 @@ Stream info dialog has them too.
 Evidence: saved, applied (status shown, no Twitch write) and removed in the owner's profile, and
 `stream_presets` went back to empty.
 
+## Mod log (2026-10-11)
+
+`channel.moderate` v2 (own-channel extra; subscription accepted live) adds a **Mods** chip to the
+Activity feed: "Mod: banned Bob: spam", "timed out Ann for 10m", "turned on slow mode (30s)",
+"deleted X's message: …", VIP/mod changes, raids, blocked terms, unban requests, and shared-chat
+variants. The moderator who acted is the entry's name. No live moderation has been observed in the feed yet.
+
