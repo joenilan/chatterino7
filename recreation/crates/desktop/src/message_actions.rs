@@ -215,6 +215,8 @@ pub enum Action {
     ModDelete,
     ModTimeout(u32),
     ModBan,
+    /// One of your own moderator buttons (command template).
+    ModCustom(String),
 }
 fn copy(text: String, window: &mut Window, cx: &mut App) {
     cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
@@ -445,6 +447,18 @@ impl ChannelPane {
             Action::ModDelete => cx.emit(moderate(crate::twitch_actions::Request::Delete {
                 message_id: message.id.clone(),
             })),
+            Action::ModCustom(template) => {
+                let (name, args) =
+                    crate::mod_buttons::expand(&template, &login, &message.id, &self.name);
+                match crate::twitch_actions::parse(&name, &args) {
+                    Some(Ok(request)) => cx.emit(moderate(request)),
+                    Some(Err(problem)) => window.push_notification(Notification::info(problem), cx),
+                    None => window.push_notification(
+                        Notification::info(format!("{name} isn't a command Jawjack can run.")),
+                        cx,
+                    ),
+                }
+            }
             Action::ModTimeout(seconds) => {
                 cx.emit(moderate(crate::twitch_actions::Request::Timeout {
                     login,

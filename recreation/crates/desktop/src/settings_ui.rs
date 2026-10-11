@@ -88,7 +88,7 @@ impl Workbench {
         }
         cx.notify();
     }
-    fn settings_page(&mut self, cx: &mut Context<Self>) -> Div {
+    fn settings_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let page = div().v_flex();
         match self.settings_section {
             0 => {
@@ -158,6 +158,7 @@ impl Workbench {
                         cx.notify();
                     })),
                 ))
+                .child(self.render_mod_button_editor(window, cx))
                 .child(row(
                     "Import from Chatterino",
                     "Brings in your Chatterino tabs, channels and highlights alongside what's here.",
@@ -456,7 +457,7 @@ impl Workbench {
                     }))
             }));
         let title = SECTIONS[self.settings_section.min(SECTIONS.len() - 1)].0;
-        let page = self.settings_page(cx);
+        let page = self.settings_page(window, cx);
         div()
             .id("settings-backdrop")
             .absolute()
@@ -539,5 +540,72 @@ impl Workbench {
                     ),
             )
             .into_any_element()
+    }
+}
+
+impl Workbench {
+    /// Settings > General: your own moderator buttons.
+    fn render_mod_button_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
+        if self.mod_button_inputs.is_none() {
+            let label = cx.new(|cx| InputState::new(window, cx).placeholder("Label, e.g. 1h"));
+            let command =
+                cx.new(|cx| InputState::new(window, cx).placeholder("/timeout {user} 3600 spam"));
+            self.mod_button_inputs = Some((label, command));
+        }
+        let (label, command) = self.mod_button_inputs.clone().expect("created above");
+        let buttons = self.custom_mod_buttons.clone();
+        div()
+            .v_flex()
+            .gap_1()
+            .py(px(10.))
+            .border_b_1()
+            .border_color(rgb(theme::BORDER))
+            .child(div().text_size(px(13.)).child("Your moderator buttons"))
+            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                "Shown after delete, timeout and ban in moderator mode. {user}, {msg-id} and {channel} are filled from the message. Moderation commands only.",
+            ))
+            .children(buttons.iter().enumerate().map(|(index, b)| {
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .text_size(px(12.))
+                    .child(div().w(px(60.)).font_weight(FontWeight::SEMIBOLD).child(b.label.clone()))
+                    .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(rgb(theme::MUTED)).child(b.command.clone()))
+                    .child(Button::new(("mod-button-remove", index)).xsmall().ghost().icon(IconName::Close).on_click(cx.listener(move |this, _, _, cx| {
+                        let mut list = (*this.custom_mod_buttons).clone();
+                        if index < list.len() {
+                            list.remove(index);
+                        }
+                        this.custom_mod_buttons = std::rc::Rc::new(list);
+                        this.schedule_save(cx);
+                        cx.notify();
+                    })))
+            }))
+            .when(buttons.len() < crate::mod_buttons::MAX, |el| {
+                el.child(
+                    div()
+                        .h_flex()
+                        .gap_1()
+                        .pt_1()
+                        .child(div().w(px(80.)).child(Input::new(&label).small()))
+                        .child(div().flex_1().child(Input::new(&command).small()))
+                        .child(Button::new("mod-button-add").small().label("Add").on_click(cx.listener(move |this, _, window, cx| {
+                            let (l, c) = (label.read(cx).value().to_string(), command.read(cx).value().to_string());
+                            match crate::mod_buttons::validate(&l, &c) {
+                                Ok(button) => {
+                                    let mut list = (*this.custom_mod_buttons).clone();
+                                    list.push(button);
+                                    this.custom_mod_buttons = std::rc::Rc::new(list);
+                                    label.update(cx, |i, cx| i.set_value("", window, cx));
+                                    command.update(cx, |i, cx| i.set_value("", window, cx));
+                                    this.schedule_save(cx);
+                                }
+                                Err(problem) => window.push_notification(Notification::info(problem), cx),
+                            }
+                            cx.notify();
+                        }))),
+                )
+            })
     }
 }

@@ -42,6 +42,7 @@ mod media;
 mod media_hover;
 mod message_actions;
 mod message_scroller;
+mod mod_buttons;
 mod name_paint;
 mod obs;
 mod owned_emotes;
@@ -221,6 +222,8 @@ struct ChannelPane {
     similar_mode: similarity::Mode,
     /// Inline delete/timeout/ban buttons (moderator mode), where you moderate.
     mod_buttons: bool,
+    /// Your own moderator buttons, shown after the built-in ones.
+    custom_mod_buttons: std::rc::Rc<Vec<mod_buttons::ModButton>>,
     /// Suspicious labels for messages that haven't arrived yet (by message ID).
     suspicious_pending: std::collections::HashMap<String, String>,
     send_as: Option<SharedString>,
@@ -318,6 +321,7 @@ impl ChannelPane {
             streamer_mode: false,
             similar_mode: Default::default(),
             mod_buttons: false,
+            custom_mod_buttons: Default::default(),
             suspicious_pending: Default::default(),
             send_as: None,
             media,
@@ -678,6 +682,7 @@ impl Render for ChannelPane {
         );
         let mod_buttons = self.mod_buttons && moderating;
         let own_user = self.attention.own_user().map(str::to_owned);
+        let custom_buttons = self.custom_mod_buttons.clone();
         // Scrollbar ticks: highlights in their colour, search hits in lilac.
         let markers = {
             let count = self.timeline.borrow().messages().len().max(1);
@@ -965,7 +970,21 @@ impl Render for ChannelPane {
                                     el.child(div().h_flex().flex_shrink_0().gap(px(1.))
                                         .child(tool("mod-delete", gpui_kit::assets::IconName::Trash, "Delete message", 0xF29D9D, message_actions::Action::ModDelete))
                                         .child(tool("mod-timeout", gpui_kit::assets::IconName::Clock, "Timeout 10 minutes", 0xE8C468, message_actions::Action::ModTimeout(600)))
-                                        .child(tool("mod-ban", gpui_kit::assets::IconName::Ban, "Ban…", 0xF07A7A, message_actions::Action::ModBan)))
+                                        .child(tool("mod-ban", gpui_kit::assets::IconName::Ban, "Ban…", 0xF07A7A, message_actions::Action::ModBan))
+                                        .children(custom_buttons.iter().enumerate().map(|(index, button)| {
+                                            let (owner, message_id, command, tip) = (menu_owner.clone(), message.id.clone(), button.command.clone(), button.command.clone());
+                                            div().id(SharedString::from(format!("mod-custom-{index}-{}", message.id))).h(first_line_height).px(px(3.)).flex_shrink_0().flex().items_center()
+                                                .rounded(px(3.)).text_size(px(10.)).text_color(rgb(theme::MUTED)).cursor_pointer()
+                                                .hover(|s| s.text_color(rgb(theme::TEXT)).bg(rgb(theme::HOVER)))
+                                                .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(w, cx))
+                                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                                .on_click(move |_, window, cx| {
+                                                    cx.stop_propagation();
+                                                    let action = message_actions::Action::ModCustom(command.clone());
+                                                    let _ = owner.update(cx, |p, cx| p.message_action(&message_id, action, window, cx));
+                                                })
+                                                .child(button.label.clone())
+                                        })))
                                 })
                                 .children(badge_images.into_iter().map(|(badge,image,background)|{
                                     div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(div().size(px(18.)).when_some(background,|el,color|el.bg(rgb(color))).child(emote_picker::icon(image,String::new(),18.,18.)))

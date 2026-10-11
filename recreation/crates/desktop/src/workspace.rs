@@ -211,6 +211,8 @@ pub struct Workbench {
     hide_blocked: bool,
     similar_mode: crate::similarity::Mode,
     mod_buttons: bool,
+    custom_mod_buttons: std::rc::Rc<Vec<crate::mod_buttons::ModButton>>,
+    mod_button_inputs: Option<(Entity<InputState>, Entity<InputState>)>,
     follows_live: crate::follows_live::FollowsLive,
     follows_open: bool,
     stream_presets: crate::studio::Presets,
@@ -603,6 +605,10 @@ impl Workbench {
             blocks: crate::blocks::Blocks::new(),
             hide_blocked: state["hide_blocked"].as_bool().unwrap_or(true),
             mod_buttons: state["mod_buttons"].as_bool().unwrap_or(false),
+            custom_mod_buttons: std::rc::Rc::new(crate::mod_buttons::load(
+                &state["custom_mod_buttons"],
+            )),
+            mod_button_inputs: None,
             follows_live: crate::follows_live::FollowsLive::new(),
             follows_open: state["follows_open"].as_bool().unwrap_or(true),
             stream_presets: crate::studio::load_presets(&state["stream_presets"]),
@@ -915,6 +921,13 @@ impl Workbench {
         // Keep each composer's "send as" picker in step with the signed-in accounts.
         let options = std::rc::Rc::new(self.send_as_options(cx));
         for pane in &panes {
+            if !std::rc::Rc::ptr_eq(&pane.read(cx).custom_mod_buttons, &self.custom_mod_buttons) {
+                let buttons = self.custom_mod_buttons.clone();
+                pane.update(cx, |p, cx| {
+                    p.custom_mod_buttons = buttons;
+                    cx.notify();
+                });
+            }
             if pane.read(cx).mod_buttons != self.mod_buttons {
                 let on = self.mod_buttons;
                 pane.update(cx, |p, cx| {
@@ -2205,6 +2218,7 @@ impl Workbench {
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
         value["mod_buttons"] = json!(self.mod_buttons);
+        value["custom_mod_buttons"] = crate::mod_buttons::json(&self.custom_mod_buttons);
         value["follows_open"] = json!(self.follows_open);
         value["stream_presets"] = crate::studio::presets_json(&self.stream_presets);
         value["obs"] = self.obs_json();
