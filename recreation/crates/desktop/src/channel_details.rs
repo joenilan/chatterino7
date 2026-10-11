@@ -1,15 +1,40 @@
 //! Compact on-demand metadata. Shares the existing stream-status request/cache.
 use super::*;
 impl Workbench {
-    pub(super) fn open_focused_channel_details(&mut self,window:&mut Window,cx:&mut Context<Self>){
-        let visible=self.visible_panes(cx);
-        let focused=visible.iter().find(|p|{let p=p.read(cx);p.focus.contains_focused(window,cx)||p.draft.read(cx).focus_handle(cx).is_focused(window)||p.search.input.read(cx).focus_handle(cx).is_focused(window)}).map(|p|p.read(cx).name.to_string());
-        let channel=focused.or_else(||self.selected_channel.clone().filter(|n|visible.iter().any(|p|p.read(cx).name.as_ref()==n))).or_else(||visible.first().map(|p|p.read(cx).name.to_string()));
-        if let Some(channel)=channel{self.open_channel_details(channel,window,cx);}
+    pub(super) fn open_focused_channel_details(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let visible = self.visible_panes(cx);
+        let focused = visible
+            .iter()
+            .find(|p| {
+                let p = p.read(cx);
+                p.focus.contains_focused(window, cx)
+                    || p.draft.read(cx).focus_handle(cx).is_focused(window)
+                    || p.search.input.read(cx).focus_handle(cx).is_focused(window)
+            })
+            .map(|p| p.read(cx).name.to_string());
+        let channel = focused
+            .or_else(|| {
+                self.selected_channel
+                    .clone()
+                    .filter(|n| visible.iter().any(|p| p.read(cx).name.as_ref() == n))
+            })
+            .or_else(|| visible.first().map(|p| p.read(cx).name.to_string()));
+        if let Some(channel) = channel {
+            self.open_channel_details(channel, window, cx);
+        }
     }
 
-    pub(super) fn open_channel_details(&mut self,channel:String,window:&mut Window,cx:&mut Context<Self>){
-        let owner=cx.entity().downgrade();
+    pub(super) fn open_channel_details(
+        &mut self,
+        channel: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let owner = cx.entity().downgrade();
         window.open_dialog(cx,move|dialog,window,cx|{
             let Some(view)=owner.upgrade()else{return dialog.title("Workspace closed");};
             let this=view.read(cx);

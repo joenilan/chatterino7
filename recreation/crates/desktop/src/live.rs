@@ -29,7 +29,7 @@ struct Config {
 pub enum Event {
     State(String, String, bool),
     Resolved(String, String),
-    RoomSettings(String,crate::room_settings::RoomSettings,bool),
+    RoomSettings(String, crate::room_settings::RoomSettings, bool),
     Chat(String, ChatEvent),
     Sent(u64, Result<(), String>),
 }
@@ -84,9 +84,17 @@ impl LiveChat {
         }
         false
     }
-    pub fn send(&self, request: u64, channel: String, text: String, reply_parent: Option<String>) -> Result<(), String> {
+    pub fn send(
+        &self,
+        request: u64,
+        channel: String,
+        text: String,
+        reply_parent: Option<String>,
+    ) -> Result<(), String> {
         if crate::commands::is_command(&text) {
-            return Err("Slash commands must be handled locally. Nothing was sent; draft kept.".into());
+            return Err(
+                "Slash commands must be handled locally. Nothing was sent; draft kept.".into(),
+            );
         }
         let Some(identity) = self.config.lock().ok().and_then(|c| c.identity.clone()) else {
             return Err("Account disconnected. Draft kept.".into());
@@ -128,7 +136,9 @@ impl LiveChat {
                 }
                 let mut request_body =
                     json!({"broadcaster_id":id,"sender_id":identity.user_id,"message":text});
-                if let Some(parent)=reply_parent {request_body["reply_parent_message_id"]=json!(parent);}
+                if let Some(parent) = reply_parent {
+                    request_body["reply_parent_message_id"] = json!(parent);
+                }
                 // Never retry a POST: a timeout may have happened after delivery.
                 let response = client
                     .post("https://api.twitch.tv/helix/chat/messages")
@@ -268,19 +278,49 @@ fn frame(socket: &mut Socket) -> Result<Option<Value>, String> {
         Err(_) => Err("Twitch connection interrupted".into()),
     }
 }
-struct RoomSnapshot { version:u64,identity:Identity,channel:String,id:String }
-fn room_snapshot_worker(tx:mpsc::SyncSender<(u64,Event)>,epoch:Arc<std::sync::atomic::AtomicU64>)->mpsc::SyncSender<RoomSnapshot>{
-    let(sender,jobs)=mpsc::sync_channel::<RoomSnapshot>(32);
-    std::thread::spawn(move||{
-        let Ok(client)=client()else{return;};
-        while let Ok(job)=jobs.recv(){
-            if epoch.load(Ordering::Relaxed)!=job.version{continue;}
-            if let Ok(response)=client.get("https://api.twitch.tv/helix/chat/settings").query(&[("broadcaster_id",job.id.as_str())]).header("Client-Id",CLIENT_ID).bearer_auth(&job.identity.access).send(){
-                if epoch.load(Ordering::Relaxed)!=job.version{continue;}
-                if let Ok((200,value))=response_json(response){if let Some(settings)=crate::room_settings::RoomSettings::parse(&value["data"][0]){let _=tx.send((job.version,Event::RoomSettings(job.channel,settings,true)));}}
+struct RoomSnapshot {
+    version: u64,
+    identity: Identity,
+    channel: String,
+    id: String,
+}
+fn room_snapshot_worker(
+    tx: mpsc::SyncSender<(u64, Event)>,
+    epoch: Arc<std::sync::atomic::AtomicU64>,
+) -> mpsc::SyncSender<RoomSnapshot> {
+    let (sender, jobs) = mpsc::sync_channel::<RoomSnapshot>(32);
+    std::thread::spawn(move || {
+        let Ok(client) = client() else {
+            return;
+        };
+        while let Ok(job) = jobs.recv() {
+            if epoch.load(Ordering::Relaxed) != job.version {
+                continue;
+            }
+            if let Ok(response) = client
+                .get("https://api.twitch.tv/helix/chat/settings")
+                .query(&[("broadcaster_id", job.id.as_str())])
+                .header("Client-Id", CLIENT_ID)
+                .bearer_auth(&job.identity.access)
+                .send()
+            {
+                if epoch.load(Ordering::Relaxed) != job.version {
+                    continue;
+                }
+                if let Ok((200, value)) = response_json(response) {
+                    if let Some(settings) =
+                        crate::room_settings::RoomSettings::parse(&value["data"][0])
+                    {
+                        let _ = tx.send((
+                            job.version,
+                            Event::RoomSettings(job.channel, settings, true),
+                        ));
+                    }
+                }
             }
         }
-    });sender
+    });
+    sender
 }
 fn subscribe(
     c: Config,
@@ -289,7 +329,7 @@ fn subscribe(
     epoch: Arc<std::sync::atomic::AtomicU64>,
     version: u64,
     map: Arc<Mutex<HashMap<String, String>>>,
-    snapshots:mpsc::SyncSender<RoomSnapshot>,
+    snapshots: mpsc::SyncSender<RoomSnapshot>,
 ) {
     std::thread::spawn(move || {
         let Some(identity) = c.identity else { return };
@@ -301,7 +341,7 @@ fn subscribe(
             if epoch.load(Ordering::Relaxed) != version {
                 break;
             }
-            let mut notices_unavailable=false;
+            let mut notices_unavailable = false;
             let result: Result<(), String> = (|| {
                 let id = resolve(&client, &identity, &channel)?;
                 if let Ok(mut names) = map.lock() {
@@ -320,35 +360,63 @@ fn subscribe(
                         return Err("Channel subscription cancelled".into());
                     }
                     let body = json!({"type":kind,"version":"1","condition":{"broadcaster_user_id":id,"user_id":identity.user_id},"transport":{"method":"websocket","session_id":session}});
-                    let subscription = (|| { response_json(
-                        client
-                            .post("https://api.twitch.tv/helix/eventsub/subscriptions")
-                            .header("Client-Id", CLIENT_ID)
-                            .bearer_auth(&identity.access)
-                            .header("Content-Type", "application/json")
-                            .body(body.to_string())
-                            .send()
-                            .map_err(|_| "Twitch subscription request interrupted")?,
-                    ) })();
-                    let (status,response)=match subscription {
-                        Ok(value)=>value,
-                        Err(_) if matches!(kind,"channel.chat.notification"|"channel.chat_settings.update")=>{notices_unavailable=true;continue;},
-                        Err(error)=>return Err(error),
+                    let subscription = (|| {
+                        response_json(
+                            client
+                                .post("https://api.twitch.tv/helix/eventsub/subscriptions")
+                                .header("Client-Id", CLIENT_ID)
+                                .bearer_auth(&identity.access)
+                                .header("Content-Type", "application/json")
+                                .body(body.to_string())
+                                .send()
+                                .map_err(|_| "Twitch subscription request interrupted")?,
+                        )
+                    })();
+                    let (status, response) = match subscription {
+                        Ok(value) => value,
+                        Err(_)
+                            if matches!(
+                                kind,
+                                "channel.chat.notification" | "channel.chat_settings.update"
+                            ) =>
+                        {
+                            notices_unavailable = true;
+                            continue;
+                        }
+                        Err(error) => return Err(error),
                     };
                     if status != 202 || response["data"][0]["status"].as_str() != Some("enabled") {
-                        if matches!(kind,"channel.chat.notification"|"channel.chat_settings.update"){notices_unavailable=true;continue;}
+                        if matches!(
+                            kind,
+                            "channel.chat.notification" | "channel.chat_settings.update"
+                        ) {
+                            notices_unavailable = true;
+                            continue;
+                        }
                         return Err(format!("Chat subscription failed (HTTP {status})"));
                     }
                 }
                 // Bounded independent worker: metadata cannot delay chat readiness.
-                let _=snapshots.try_send(RoomSnapshot{version,identity:identity.clone(),channel:channel.clone(),id});
+                let _ = snapshots.try_send(RoomSnapshot {
+                    version,
+                    identity: identity.clone(),
+                    channel: channel.clone(),
+                    id,
+                });
                 Ok(())
             })();
             if epoch.load(Ordering::Relaxed) != version {
                 break;
             }
             let (message, ready) = match result {
-                Ok(()) => (if notices_unavailable{"Connected · Some room events unavailable until reconnect".into()}else{"Connected".into()}, true),
+                Ok(()) => (
+                    if notices_unavailable {
+                        "Connected · Some room events unavailable until reconnect".into()
+                    } else {
+                        "Connected".into()
+                    },
+                    true,
+                ),
                 Err(e) => (e, false),
             };
             if tx
@@ -379,7 +447,7 @@ fn run(
     tx: mpsc::SyncSender<(u64, Event)>,
     epoch: Arc<std::sync::atomic::AtomicU64>,
 ) {
-    let snapshots=room_snapshot_worker(tx.clone(),epoch.clone());
+    let snapshots = room_snapshot_worker(tx.clone(), epoch.clone());
     let mut dedup = HashSet::new();
     let mut order = VecDeque::new();
     let mut retry = 1;
@@ -549,37 +617,101 @@ fn deliver(
     let Some(channel) = map.lock().ok().and_then(|m| m.get(id).cloned()) else {
         return;
     };
-    if v["payload"]["subscription"]["type"]=="channel.chat_settings.update" {
-        if let Some(settings)=crate::room_settings::RoomSettings::parse(e){let _=tx.send((version,Event::RoomSettings(channel,settings,false)));}
+    if v["payload"]["subscription"]["type"] == "channel.chat_settings.update" {
+        if let Some(settings) = crate::room_settings::RoomSettings::parse(e) {
+            let _ = tx.send((version, Event::RoomSettings(channel, settings, false)));
+        }
         return;
     }
     let text = |key: &str| e[key].as_str().unwrap_or("").to_owned();
     let event = match v["payload"]["subscription"]["type"].as_str().unwrap_or("") {
         "channel.chat.message" | "channel.chat.notification" => ChatEvent::Message(Message {
-            sent_at: v["metadata"]["message_timestamp"].as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok()).map(|time|time.timestamp()),
-            id: if text("message_id").is_empty() { envelope.to_owned() } else { text("message_id") },
+            sent_at: v["metadata"]["message_timestamp"]
+                .as_str()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|time| time.timestamp()),
+            id: if text("message_id").is_empty() {
+                envelope.to_owned()
+            } else {
+                text("message_id")
+            },
             channel_id: channel.clone(),
             user_id: text("chatter_user_id"),
-            display_name: if e["chatter_is_anonymous"].as_bool()==Some(true) { "Anonymous".into() } else if text("chatter_user_name").is_empty() { "Twitch".into() } else { text("chatter_user_name") },
+            display_name: if e["chatter_is_anonymous"].as_bool() == Some(true) {
+                "Anonymous".into()
+            } else if text("chatter_user_name").is_empty() {
+                "Twitch".into()
+            } else {
+                text("chatter_user_name")
+            },
             login: chat_core::twitch_login(&text("chatter_user_login")),
-            replyable: v["payload"]["subscription"]["type"]=="channel.chat.message" && e["source_broadcaster_user_id"].as_str().is_none_or(|source|source==id),
+            replyable: v["payload"]["subscription"]["type"] == "channel.chat.message"
+                && e["source_broadcaster_user_id"]
+                    .as_str()
+                    .is_none_or(|source| source == id),
             reply: parse_reply(&e["reply"]),
-            mentions: e["message"]["fragments"].as_array().into_iter().flatten().filter(|f|f["type"]=="mention").filter_map(|f|f["mention"]["user_id"].as_str()).filter(|s|!s.is_empty()&&s.len()<=255&&!s.chars().any(char::is_control)).take(64).map(str::to_owned).collect(),
-            name_color: e["color"].as_str().and_then(|s| s.strip_prefix('#'))
+            mentions: e["message"]["fragments"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|f| f["type"] == "mention")
+                .filter_map(|f| f["mention"]["user_id"].as_str())
+                .filter(|s| !s.is_empty() && s.len() <= 255 && !s.chars().any(char::is_control))
+                .take(64)
+                .map(str::to_owned)
+                .collect(),
+            name_color: e["color"]
+                .as_str()
+                .and_then(|s| s.strip_prefix('#'))
                 .filter(|s| s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit()))
                 .and_then(|s| u32::from_str_radix(s, 16).ok()),
-            badges: e["badges"].as_array().into_iter().flatten().take(8).filter_map(|b|{Some(chat_core::Badge{set_id:b["set_id"].as_str()?.chars().take(128).collect(),id:b["id"].as_str()?.chars().take(128).collect()})}).collect(),
+            badges: e["badges"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .take(8)
+                .filter_map(|b| {
+                    Some(chat_core::Badge {
+                        set_id: b["set_id"].as_str()?.chars().take(128).collect(),
+                        id: b["id"].as_str()?.chars().take(128).collect(),
+                    })
+                })
+                .collect(),
             fragments: twitch_fragments(&e["message"]),
             presentation: chat_core::MessagePresentation {
-                local_alias:None,local_color:None,
-                kind: e["message_type"].as_str().unwrap_or("text").chars().take(80).collect(),
+                local_alias: None,
+                local_color: None,
+                kind: e["message_type"]
+                    .as_str()
+                    .unwrap_or("text")
+                    .chars()
+                    .take(80)
+                    .collect(),
                 bits: e["cheer"]["bits"].as_u64().unwrap_or(0),
-                reward_id: e["channel_points_custom_reward_id"].as_str().map(|s|s.chars().take(128).collect()),
-                notice_type: e["notice_type"].as_str().map(|s|s.chars().take(80).collect()),
-                notice: e["system_message"].as_str().filter(|s|!s.is_empty()).map(|s|s.chars().take(1200).collect()),
+                reward_id: e["channel_points_custom_reward_id"]
+                    .as_str()
+                    .map(|s| s.chars().take(128).collect()),
+                notice_type: e["notice_type"]
+                    .as_str()
+                    .map(|s| s.chars().take(80).collect()),
+                notice: e["system_message"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.chars().take(1200).collect()),
                 // Provenance follows the source ID even when its optional display
                 // name is unavailable, so destination-room cosmetics stay suppressed.
-                source: e["source_broadcaster_user_id"].as_str().filter(|source|!source.is_empty()&&*source!=id).map(|_|e["source_broadcaster_user_name"].as_str().filter(|s|!s.is_empty()).unwrap_or("Shared Chat").chars().take(80).collect()),
+                source: e["source_broadcaster_user_id"]
+                    .as_str()
+                    .filter(|source| !source.is_empty() && *source != id)
+                    .map(|_| {
+                        e["source_broadcaster_user_name"]
+                            .as_str()
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or("Shared Chat")
+                            .chars()
+                            .take(80)
+                            .collect()
+                    }),
             },
             deleted: false,
         }),
@@ -601,58 +733,151 @@ fn deliver(
 
 fn twitch_fragments(message: &Value) -> Vec<Fragment> {
     let original = message["text"].as_str().unwrap_or("");
-    let raw: Vec<_> = message["fragments"].as_array().into_iter().flatten().take(256).collect();
-    let joined: String = raw.iter().filter_map(|f|f["text"].as_str()).collect();
-    let mut fragments: Vec<_> = raw.into_iter().map(|fragment| {
-        let text = fragment["text"].as_str().unwrap_or("").to_owned();
-        match fragment["type"].as_str().unwrap_or("text") {
-            "emote" => {
-                if let Some(id) = fragment["emote"]["id"].as_str().filter(|id|crate::media::EmoteKey::twitch(id,false).is_some()) {
-                    return Fragment::Emote { provider: "twitch".into(), id: id.into(), label: text, overlay: false, asset: None,
-                        animated: fragment["emote"]["format"].as_array().is_some_and(|formats| formats.iter().any(|f| f == "animated")) };
+    let raw: Vec<_> = message["fragments"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .take(256)
+        .collect();
+    let joined: String = raw.iter().filter_map(|f| f["text"].as_str()).collect();
+    let mut fragments: Vec<_> = raw
+        .into_iter()
+        .map(|fragment| {
+            let text = fragment["text"].as_str().unwrap_or("").to_owned();
+            match fragment["type"].as_str().unwrap_or("text") {
+                "emote" => {
+                    if let Some(id) = fragment["emote"]["id"]
+                        .as_str()
+                        .filter(|id| crate::media::EmoteKey::twitch(id, false).is_some())
+                    {
+                        return Fragment::Emote {
+                            provider: "twitch".into(),
+                            id: id.into(),
+                            label: text,
+                            overlay: false,
+                            asset: None,
+                            animated: fragment["emote"]["format"]
+                                .as_array()
+                                .is_some_and(|formats| formats.iter().any(|f| f == "animated")),
+                        };
+                    }
+                }
+                "gif" => {
+                    let gif = &fragment["gif"];
+                    return Fragment::Gif {
+                        id: gif["id"]
+                            .as_str()
+                            .or_else(|| gif["gif_id"].as_str())
+                            .unwrap_or("")
+                            .chars()
+                            .take(128)
+                            .collect(),
+                        url: gif["url"]
+                            .as_str()
+                            .filter(|u| u.len() <= 4096)
+                            .unwrap_or("")
+                            .into(),
+                        label: if text.is_empty() {
+                            "[GIF]".into()
+                        } else {
+                            text
+                        },
+                    };
+                }
+                "cheermote" => {
+                    let c = &fragment["cheermote"];
+                    return Fragment::Cheer {
+                        prefix: c["prefix"]
+                            .as_str()
+                            .unwrap_or("")
+                            .chars()
+                            .take(64)
+                            .collect(),
+                        bits: c["bits"].as_u64().unwrap_or(0),
+                        tier: c["tier"].as_u64().unwrap_or(0),
+                        label: if text.is_empty() {
+                            format!("{} Bits", c["bits"].as_u64().unwrap_or(0))
+                        } else {
+                            text
+                        },
+                        asset: None,
+                    };
+                }
+                "mention" => {
+                    let mention = &fragment["mention"];
+                    let id = mention["user_id"].as_str().filter(|id| {
+                        !id.is_empty() && id.len() <= 255 && !id.chars().any(char::is_control)
+                    });
+                    let login = mention["user_login"]
+                        .as_str()
+                        .and_then(chat_core::twitch_login);
+                    let name = mention["user_name"].as_str().filter(|name| {
+                        !name.is_empty() && name.len() <= 400 && !name.chars().any(char::is_control)
+                    });
+                    if let (Some(id), Some(login), Some(name)) = (id, login, name) {
+                        return Fragment::Mention {
+                            user_id: id.into(),
+                            login,
+                            display_name: name.into(),
+                            label: text,
+                        };
+                    }
+                }
+                "text" => return Fragment::Text(text),
+                kind => {
+                    return Fragment::Unknown {
+                        kind: kind.chars().take(64).collect(),
+                        label: if text.is_empty() {
+                            "[Unsupported content]".into()
+                        } else {
+                            text
+                        },
+                    };
                 }
             }
-            "gif" => {
-                let gif=&fragment["gif"];
-                return Fragment::Gif { id: gif["id"].as_str().or_else(||gif["gif_id"].as_str()).unwrap_or("").chars().take(128).collect(),
-                    url: gif["url"].as_str().filter(|u|u.len()<=4096).unwrap_or("").into(),
-                    label: if text.is_empty(){"[GIF]".into()}else{text} };
-            }
-            "cheermote" => {
-                let c=&fragment["cheermote"];
-                return Fragment::Cheer {prefix:c["prefix"].as_str().unwrap_or("").chars().take(64).collect(),bits:c["bits"].as_u64().unwrap_or(0),tier:c["tier"].as_u64().unwrap_or(0),label:if text.is_empty(){format!("{} Bits",c["bits"].as_u64().unwrap_or(0))}else{text},asset:None};
-            }
-            "mention" => {
-                let mention=&fragment["mention"];
-                let id=mention["user_id"].as_str().filter(|id|!id.is_empty()&&id.len()<=255&&!id.chars().any(char::is_control));
-                let login=mention["user_login"].as_str().and_then(chat_core::twitch_login);
-                let name=mention["user_name"].as_str().filter(|name|!name.is_empty()&&name.len()<=400&&!name.chars().any(char::is_control));
-                if let (Some(id),Some(login),Some(name))=(id,login,name){
-                    return Fragment::Mention{user_id:id.into(),login,display_name:name.into(),label:text};
-                }
-            }
-            "text" => return Fragment::Text(text),
-            kind => return Fragment::Unknown {kind:kind.chars().take(64).collect(),label:if text.is_empty(){"[Unsupported content]".into()}else{text}},
-        }
-        Fragment::Text(text)
-    }).collect();
+            Fragment::Text(text)
+        })
+        .collect();
     if joined != original || fragments.is_empty() {
         // Keep rich content even if Twitch's fallback text differs from fragment text.
-        fragments.retain(|f|matches!(f,Fragment::Gif{..}|Fragment::Unknown{..}));
-        if !original.is_empty(){
-            for fragment in &mut fragments {match fragment {Fragment::Gif{label,..}|Fragment::Unknown{label,..}=>label.clear(),_=>{}}}
-            fragments.insert(0,Fragment::Text(original.into()));
+        fragments.retain(|f| matches!(f, Fragment::Gif { .. } | Fragment::Unknown { .. }));
+        if !original.is_empty() {
+            for fragment in &mut fragments {
+                match fragment {
+                    Fragment::Gif { label, .. } | Fragment::Unknown { label, .. } => label.clear(),
+                    _ => {}
+                }
+            }
+            fragments.insert(0, Fragment::Text(original.into()));
         }
     }
     fragments
 }
 
-fn parse_reply(value:&Value)->Option<chat_core::Reply>{
-    let id=value["parent_message_id"].as_str()?.to_owned();
-    if id.is_empty()||id.len()>128{return None;}
-    Some(chat_core::Reply{parent_id:id.clone(),
-        parent_user_id:value["parent_user_id"].as_str().unwrap_or("").chars().take(128).collect(),
-        parent_name:value["parent_user_name"].as_str().unwrap_or("Chatter").chars().take(100).collect(),
-        thread_id:value["thread_message_id"].as_str().filter(|s|!s.is_empty()&&s.len()<=128).unwrap_or(&id).to_owned(),
-        parent_deleted:false})
+fn parse_reply(value: &Value) -> Option<chat_core::Reply> {
+    let id = value["parent_message_id"].as_str()?.to_owned();
+    if id.is_empty() || id.len() > 128 {
+        return None;
+    }
+    Some(chat_core::Reply {
+        parent_id: id.clone(),
+        parent_user_id: value["parent_user_id"]
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .take(128)
+            .collect(),
+        parent_name: value["parent_user_name"]
+            .as_str()
+            .unwrap_or("Chatter")
+            .chars()
+            .take(100)
+            .collect(),
+        thread_id: value["thread_message_id"]
+            .as_str()
+            .filter(|s| !s.is_empty() && s.len() <= 128)
+            .unwrap_or(&id)
+            .to_owned(),
+        parent_deleted: false,
+    })
 }

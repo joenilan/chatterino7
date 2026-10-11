@@ -7,25 +7,43 @@ use std::{
     sync::mpsc,
     time::{Duration, Instant},
 };
-#[derive(Clone,Copy,PartialEq,Eq,Default)]
-pub enum LoadState { #[default] Loading, Ready, Failed }
-impl LoadState { pub fn label(self)->&'static str {match self {Self::Loading=>"loading",Self::Ready=>"loaded",Self::Failed=>"unavailable"}} }
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum LoadState {
+    #[default]
+    Loading,
+    Ready,
+    Failed,
+}
+impl LoadState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Loading => "loading",
+            Self::Ready => "loaded",
+            Self::Failed => "unavailable",
+        }
+    }
+}
 pub type Emotes = HashMap<String, Fragment>;
 #[derive(Default)]
 pub struct Set {
     pub bttv: Emotes,
     pub ffz: Emotes,
-    pub roles:crate::ffz_role_badges::Roles,
-    pub ffz_room_id:String,
+    pub roles: crate::ffz_role_badges::Roles,
+    pub ffz_room_id: String,
 }
 pub struct Community {
     pub global: Set,
     pub global_bttv_state: LoadState,
     pub global_ffz_state: LoadState,
     pub channels: HashMap<String, Set>,
-    requested: HashMap<String, (String,Instant)>,
+    requested: HashMap<String, (String, Instant)>,
     tx: mpsc::SyncSender<(String, String)>,
-    rx: mpsc::Receiver<(String, String, Option<Emotes>, Option<(Emotes,crate::ffz_role_badges::Roles)>)>,
+    rx: mpsc::Receiver<(
+        String,
+        String,
+        Option<Emotes>,
+        Option<(Emotes, crate::ffz_role_badges::Roles)>,
+    )>,
 }
 impl Community {
     pub fn new() -> Self {
@@ -58,12 +76,20 @@ impl Community {
                         format!("https://api.frankerfacez.com/v1/room/id/{id}")
                     },
                 )
-                .and_then(|v|{
-                    if !id.is_empty()&&!v.is_null(){
-                        let returned=v["room"]["twitch_id"].as_u64().map(|id|id.to_string()).or_else(||v["room"]["twitch_id"].as_str().map(str::to_owned));
-                        if returned.as_deref()!=Some(id.as_str()){return None;}
+                .and_then(|v| {
+                    if !id.is_empty() && !v.is_null() {
+                        let returned = v["room"]["twitch_id"]
+                            .as_u64()
+                            .map(|id| id.to_string())
+                            .or_else(|| v["room"]["twitch_id"].as_str().map(str::to_owned));
+                        if returned.as_deref() != Some(id.as_str()) {
+                            return None;
+                        }
                     }
-                    Some((parse_ffz(&v,id.is_empty()),crate::ffz_role_badges::Roles::parse(&v)))
+                    Some((
+                        parse_ffz(&v, id.is_empty()),
+                        crate::ffz_role_badges::Roles::parse(&v),
+                    ))
                 });
                 if results.send((channel, id, bttv, ffz)).is_err() {
                     break;
@@ -72,7 +98,8 @@ impl Community {
         });
         Self {
             global: Set::default(),
-            global_bttv_state:LoadState::Loading,global_ffz_state:LoadState::Loading,
+            global_bttv_state: LoadState::Loading,
+            global_ffz_state: LoadState::Loading,
             channels: HashMap::new(),
             requested: HashMap::new(),
             tx,
@@ -91,29 +118,51 @@ impl Community {
             if self
                 .requested
                 .get(channel)
-                .is_some_and(|(requested_id,at)| requested_id==id && at.elapsed() < Duration::from_secs(300))
+                .is_some_and(|(requested_id, at)| {
+                    requested_id == id && at.elapsed() < Duration::from_secs(300)
+                })
             {
                 continue;
             }
             if self.tx.try_send((channel.into(), id.into())).is_ok() {
-                self.requested.insert(channel.into(), (id.into(),Instant::now()));
+                self.requested
+                    .insert(channel.into(), (id.into(), Instant::now()));
             }
         }
         let mut changed = false;
-        for set in self.channels.values_mut(){
-            if set.roles.grants_loaded.is_some_and(|at|at.elapsed()>=Duration::from_secs(1800)){
-                changed|=!set.roles.grants.is_empty();set.roles.grants.clear();set.roles.grants_loaded=None;
+        for set in self.channels.values_mut() {
+            if set
+                .roles
+                .grants_loaded
+                .is_some_and(|at| at.elapsed() >= Duration::from_secs(1800))
+            {
+                changed |= !set.roles.grants.is_empty();
+                set.roles.grants.clear();
+                set.roles.grants_loaded = None;
             }
         }
         while let Ok((channel, id, bttv, ffz)) = self.rx.try_recv() {
-            if !channel.is_empty() && !channels.get(&channel).is_some_and(|(current,_)|current==&id) {
+            if !channel.is_empty()
+                && !channels
+                    .get(&channel)
+                    .is_some_and(|(current, _)| current == &id)
+            {
                 continue;
             }
-            if channel.is_empty(){
-                let bs=if bttv.is_some(){LoadState::Ready}else{LoadState::Failed};
-                let fs=if ffz.is_some(){LoadState::Ready}else{LoadState::Failed};
-                changed|=self.global_bttv_state!=bs||self.global_ffz_state!=fs;
-                self.global_bttv_state=bs;self.global_ffz_state=fs;
+            if channel.is_empty() {
+                let bs = if bttv.is_some() {
+                    LoadState::Ready
+                } else {
+                    LoadState::Failed
+                };
+                let fs = if ffz.is_some() {
+                    LoadState::Ready
+                } else {
+                    LoadState::Failed
+                };
+                changed |= self.global_bttv_state != bs || self.global_ffz_state != fs;
+                self.global_bttv_state = bs;
+                self.global_ffz_state = fs;
             }
             let set = if channel.is_empty() {
                 &mut self.global
@@ -124,16 +173,22 @@ impl Community {
                 set.bttv = emotes;
                 changed = true;
             }
-            if let Some((emotes,roles)) = ffz {
-                set.ffz = emotes;set.roles=roles;set.ffz_room_id=id;
+            if let Some((emotes, roles)) = ffz {
+                set.ffz = emotes;
+                set.roles = roles;
+                set.ffz_room_id = id;
                 changed = true;
             }
         }
         changed
     }
-    pub fn retry_global(&mut self){
-        if self.global_bttv_state!=LoadState::Loading && self.global_ffz_state!=LoadState::Loading {
-            self.requested.remove("");self.global_bttv_state=LoadState::Loading;self.global_ffz_state=LoadState::Loading;
+    pub fn retry_global(&mut self) {
+        if self.global_bttv_state != LoadState::Loading
+            && self.global_ffz_state != LoadState::Loading
+        {
+            self.requested.remove("");
+            self.global_bttv_state = LoadState::Loading;
+            self.global_ffz_state = LoadState::Loading;
         }
     }
     pub fn inspection(&self) -> Value {

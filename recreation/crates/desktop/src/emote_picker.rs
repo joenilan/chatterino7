@@ -13,16 +13,28 @@ use gpui_kit::{
     prelude::FluentBuilder,
     *,
 };
-use std::{ops::Range, sync::Arc, time::{Duration, Instant}, rc::Rc, cell::Cell, collections::HashMap};
+use std::{
+    cell::Cell,
+    collections::HashMap,
+    ops::Range,
+    rc::Rc,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 // Track visible popup bounds across panes so transcript capture handlers respect overlays.
 #[derive(Default)]
 struct BrowserOverlays(Vec<(WeakEntity<ChannelPane>, WindowId, Bounds<Pixels>)>);
 impl Global for BrowserOverlays {}
 pub fn covers(position: Point<Pixels>, window: &Window, cx: &App) -> bool {
-    cx.try_global::<BrowserOverlays>().is_some_and(|overlays| overlays.0.iter().any(|(owner, id, bounds)| {
-        *id == window.window_handle().window_id() && bounds.contains(&position)
-            && owner.upgrade().is_some_and(|pane| pane.read(cx).picker.open)
-    }))
+    cx.try_global::<BrowserOverlays>().is_some_and(|overlays| {
+        overlays.0.iter().any(|(owner, id, bounds)| {
+            *id == window.window_handle().window_id()
+                && bounds.contains(&position)
+                && owner
+                    .upgrade()
+                    .is_some_and(|pane| pane.read(cx).picker.open)
+        })
+    })
 }
 #[derive(Clone)]
 pub struct BrowserChoice {
@@ -61,14 +73,20 @@ pub struct Picker {
     hover_text: String,
     scroll: UniformListScrollHandle,
     tabs_scroll: ScrollHandle,
-    reveals: HashMap<usize,Rc<Cell<Option<Instant>>>>,
-    last_warm: Option<(Range<usize>,Instant)>,
+    reveals: HashMap<usize, Rc<Cell<Option<Instant>>>>,
+    last_warm: Option<(Range<usize>, Instant)>,
     last_visible: Vec<crate::media::EmoteKey>,
-    row_reveals: HashMap<usize,(Option<Instant>,bool)>,
+    row_reveals: HashMap<usize, (Option<Instant>, bool)>,
 }
 impl Picker {
-    pub fn visible_media(&self)->&[crate::media::EmoteKey] {&self.last_visible}
-    fn top_row(&self)->usize {(-f32::from(self.scroll.0.borrow().base_handle.offset().y)/44.).floor().max(0.)as usize}
+    pub fn visible_media(&self) -> &[crate::media::EmoteKey] {
+        &self.last_visible
+    }
+    fn top_row(&self) -> usize {
+        (-f32::from(self.scroll.0.borrow().base_handle.offset().y) / 44.)
+            .floor()
+            .max(0.) as usize
+    }
 
     pub fn inspection(&self) -> serde_json::Value {
         serde_json::json!({"open":self.open,"collection":self.collection,"service":self.service,"matches":self.items.len(),"columns":self.columns,"virtual_rows":self.rows.len(),"selected":self.current,"visible_row":self.top_row(),"reveal_entries":self.reveals.len(),"active_reveals":self.reveals.values().filter(|at|at.get().is_some_and(|at|at.elapsed()<Duration::from_millis(240))).count(),"collections":self.collections.iter().map(|c|serde_json::json!({"id":c.id,"title":c.title,"emotes":c.items.len()})).collect::<Vec<_>>()})
@@ -85,15 +103,33 @@ pub fn icon(
 ) -> AnyElement {
     smooth_icon(image, label, width, height, true, None)
 }
-fn loading_icon(index:usize,reduced:bool)->AnyElement {
-    let placeholder=div().size(px(34.)).flex().items_center().justify_center()
+fn loading_icon(index: usize, reduced: bool) -> AnyElement {
+    let placeholder = div()
+        .size(px(34.))
+        .flex()
+        .items_center()
+        .justify_center()
         .child(div().size(px(20.)).rounded(px(5.)).bg(rgb(theme::HOVER)));
-    if reduced {placeholder.into_any_element()} else {
-        placeholder.with_animation(("emote-loading",index),Animation::new(Duration::from_millis(900)).repeat(),
-            |el,p|el.opacity(0.55+0.35*(std::f32::consts::PI*p).sin())).into_any_element()
+    if reduced {
+        placeholder.into_any_element()
+    } else {
+        placeholder
+            .with_animation(
+                ("emote-loading", index),
+                Animation::new(Duration::from_millis(900)).repeat(),
+                |el, p| el.opacity(0.55 + 0.35 * (std::f32::consts::PI * p).sin()),
+            )
+            .into_any_element()
     }
 }
-fn smooth_icon(image: Option<Arc<DecodedMedia>>, label: String, width: f32, height: f32, reduced: bool, shown: Option<Rc<Cell<Option<Instant>>>>) -> AnyElement {
+fn smooth_icon(
+    image: Option<Arc<DecodedMedia>>,
+    label: String,
+    width: f32,
+    height: f32,
+    reduced: bool,
+    shown: Option<Rc<Cell<Option<Instant>>>>,
+) -> AnyElement {
     if let Some(media) = image {
         let reveal = shown.clone();
         let first_paint = shown.clone();
@@ -101,9 +137,17 @@ fn smooth_icon(image: Option<Arc<DecodedMedia>>, label: String, width: f32, heig
         let element = canvas(
             move |bounds, window, cx| {
                 if bounds.intersects(&window.content_mask().bounds) {
-                    if let Some(first)=&first_paint {
-                        if first.get().is_none(){first.set(Some(Instant::now()));}
-                        if !cx.reduce_motion() && first.get().is_some_and(|at|at.elapsed()<Duration::from_millis(240)){window.request_animation_frame();}
+                    if let Some(first) = &first_paint {
+                        if first.get().is_none() {
+                            first.set(Some(Instant::now()));
+                        }
+                        if !cx.reduce_motion()
+                            && first
+                                .get()
+                                .is_some_and(|at| at.elapsed() < Duration::from_millis(240))
+                        {
+                            window.request_animation_frame();
+                        }
                     }
                 }
                 bounds
@@ -126,22 +170,59 @@ fn smooth_icon(image: Option<Arc<DecodedMedia>>, label: String, width: f32, heig
         )
         .w(px(width))
         .h(px(height));
-        if !reduced && reveal.as_ref().is_some_and(|v|v.get().is_none_or(|at|at.elapsed()<Duration::from_millis(240))) {
+        if !reduced
+            && reveal.as_ref().is_some_and(|v| {
+                v.get()
+                    .is_none_or(|at| at.elapsed() < Duration::from_millis(240))
+            })
+        {
             // Canvas Style::paint does not apply opacity in GPUI 0.3.8; Div does.
-            let placeholder_reveal=reveal.clone();
-            div().relative().w(px(width)).h(px(height))
-                .child(div().absolute().inset_0().flex().items_center().justify_center()
-                    .child(div().size(px(20.)).rounded(px(5.)).bg(rgb(theme::HOVER)))
-                    .with_animation(("emote-placeholder-out",image_id),Animation::new(Duration::from_millis(280)),move|el,_|{
-                        let alpha=placeholder_reveal.as_ref().and_then(|v|v.get()).map_or(0.,|at|(at.elapsed().as_secs_f32()/0.24).min(1.));
-                        el.opacity(1.-alpha)
-                    }))
-                .child(div().w(px(width)).h(px(height)).child(element)
-                    .with_animation(("emote-arrival", image_id), Animation::new(Duration::from_millis(280)), move |el,_| {
-                        let alpha=reveal.as_ref().and_then(|v|v.get()).map_or(0.,|at|(at.elapsed().as_secs_f32()/0.24).min(1.));
-                        el.opacity(alpha)
-                    })).into_any_element()
-        } else { element.into_any_element() }
+            let placeholder_reveal = reveal.clone();
+            div()
+                .relative()
+                .w(px(width))
+                .h(px(height))
+                .child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(div().size(px(20.)).rounded(px(5.)).bg(rgb(theme::HOVER)))
+                        .with_animation(
+                            ("emote-placeholder-out", image_id),
+                            Animation::new(Duration::from_millis(280)),
+                            move |el, _| {
+                                let alpha = placeholder_reveal
+                                    .as_ref()
+                                    .and_then(|v| v.get())
+                                    .map_or(0., |at| (at.elapsed().as_secs_f32() / 0.24).min(1.));
+                                el.opacity(1. - alpha)
+                            },
+                        ),
+                )
+                .child(
+                    div()
+                        .w(px(width))
+                        .h(px(height))
+                        .child(element)
+                        .with_animation(
+                            ("emote-arrival", image_id),
+                            Animation::new(Duration::from_millis(280)),
+                            move |el, _| {
+                                let alpha = reveal
+                                    .as_ref()
+                                    .and_then(|v| v.get())
+                                    .map_or(0., |at| (at.elapsed().as_secs_f32() / 0.24).min(1.));
+                                el.opacity(alpha)
+                            },
+                        ),
+                )
+                .into_any_element()
+        } else {
+            element.into_any_element()
+        }
     } else {
         div()
             .w(px(width))
@@ -156,15 +237,23 @@ fn smooth_icon(image: Option<Arc<DecodedMedia>>, label: String, width: f32, heig
     }
 }
 impl ChannelPane {
-    pub fn prepare_picker_media(&mut self,cx:&mut Context<Self>){
-        if !self.picker.open {self.refresh_picker(cx);}
-        let start=self.picker.top_row().min(self.picker.rows.len());
-        self.warm_picker_rows(start..(start+6).min(self.picker.rows.len()),cx);
+    pub fn prepare_picker_media(&mut self, cx: &mut Context<Self>) {
+        if !self.picker.open {
+            self.refresh_picker(cx);
+        }
+        let start = self.picker.top_row().min(self.picker.rows.len());
+        self.warm_picker_rows(start..(start + 6).min(self.picker.rows.len()), cx);
     }
-    fn warm_picker_rows(&mut self,range:Range<usize>,cx:&mut Context<Self>){
-        for row in range {if let Some(GridRow::Cells(indices))=self.picker.rows.get(row) {
-            for index in indices.clone(){if let Some(key)=&self.picker.items[index].choice.key{self.media.borrow_mut().prefetch(key,cx);}}
-        }}
+    fn warm_picker_rows(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
+        for row in range {
+            if let Some(GridRow::Cells(indices)) = self.picker.rows.get(row) {
+                for index in indices.clone() {
+                    if let Some(key) = &self.picker.items[index].choice.key {
+                        self.media.borrow_mut().prefetch(key, cx);
+                    }
+                }
+            }
+        }
     }
     pub fn refresh_picker(&mut self, cx: &mut Context<Self>) {
         self.picker.collections = self.catalog.borrow_mut().browser_collections(&self.name);
@@ -205,13 +294,15 @@ impl ChannelPane {
             })
             .cloned()
             .collect();
-        if self.picker.collection!="recent" {self.picker.items.sort_by(|a, b| {
-            (a.choice.provider, &a.origin, a.choice.label.to_lowercase()).cmp(&(
-                b.choice.provider,
-                &b.origin,
-                b.choice.label.to_lowercase(),
-            ))
-        });}
+        if self.picker.collection != "recent" {
+            self.picker.items.sort_by(|a, b| {
+                (a.choice.provider, &a.origin, a.choice.label.to_lowercase()).cmp(&(
+                    b.choice.provider,
+                    &b.origin,
+                    b.choice.label.to_lowercase(),
+                ))
+            });
+        }
         self.picker.row_reveals.clear();
         self.picker.last_visible.clear();
         self.picker.rows.clear();
@@ -221,14 +312,24 @@ impl ChannelPane {
             let first = &self.picker.items[start];
             let mut end = start + 1;
             while end < self.picker.items.len()
-                && (self.picker.collection=="recent" || (self.picker.items[end].choice.provider == first.choice.provider
-                && self.picker.items[end].origin == first.origin))
+                && (self.picker.collection == "recent"
+                    || (self.picker.items[end].choice.provider == first.choice.provider
+                        && self.picker.items[end].origin == first.origin))
             {
                 end += 1;
             }
-            self.picker.rows.push(GridRow::Heading(if self.picker.collection=="recent" {format!("Recently sent · newest first · {}",end-start)}else{format!(
-                "{} · {} · {}",first.choice.provider,first.origin,end-start
-            )}));
+            self.picker
+                .rows
+                .push(GridRow::Heading(if self.picker.collection == "recent" {
+                    format!("Recently sent · newest first · {}", end - start)
+                } else {
+                    format!(
+                        "{} · {} · {}",
+                        first.choice.provider,
+                        first.origin,
+                        end - start
+                    )
+                }));
             for row in (start..end).step_by(columns) {
                 self.picker
                     .rows
@@ -249,7 +350,7 @@ impl ChannelPane {
                             i.choice.provider,
                             i.origin.clone(),
                             i.choice.key.clone(),
-                i.saved_key.clone(),
+                            i.saved_key.clone(),
                         ) == key
                     })
                     .unwrap_or(usize::MAX)
@@ -257,7 +358,9 @@ impl ChannelPane {
             .unwrap_or(0)
         };
         if reset {
-            self.picker.last_warm=None;self.picker.last_visible.clear();self.picker.row_reveals.clear();
+            self.picker.last_warm = None;
+            self.picker.last_visible.clear();
+            self.picker.row_reveals.clear();
             self.picker.hover_text.clear();
             self.picker
                 .scroll
@@ -352,11 +455,18 @@ impl ChannelPane {
         cx.notify();
         true
     }
-    fn toggle_browser_favorite(&mut self, item: &BrowserChoice, window: &mut Window, cx: &mut Context<Self>) {
+    fn toggle_browser_favorite(
+        &mut self,
+        item: &BrowserChoice,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let result = if let Some(key) = &item.saved_key {
             self.catalog.borrow_mut().remove_saved_favorite(key);
             Ok(false)
-        } else { self.catalog.borrow_mut().toggle_favorite(&item.choice) };
+        } else {
+            self.catalog.borrow_mut().toggle_favorite(&item.choice)
+        };
         let message = match result {
             Ok(true) => format!("{} added to favorites", item.choice.label),
             Ok(false) => format!("{} removed from favorites", item.choice.label),
@@ -366,7 +476,12 @@ impl ChannelPane {
             self.refresh_picker(cx);
             cx.emit(PaneEvent::EmotePreferencesChanged);
         }
-        window.push_notification(Notification::info(message).id::<ComposerFeedback>().delivery(NotificationDelivery::InApp),cx);
+        window.push_notification(
+            Notification::info(message)
+                .id::<ComposerFeedback>()
+                .delivery(NotificationDelivery::InApp),
+            cx,
+        );
         cx.notify();
     }
     fn insert_browser_item(
@@ -375,12 +490,13 @@ impl ChannelPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let current = item.saved_key.is_none() && self
-            .catalog
-            .borrow()
-            .choices(&self.name, &item.choice.label, usize::MAX)
-            .into_iter()
-            .any(|c| c.label == item.choice.label && c.key == item.choice.key);
+        let current = item.saved_key.is_none()
+            && self
+                .catalog
+                .borrow()
+                .choices(&self.name, &item.choice.label, usize::MAX)
+                .into_iter()
+                .any(|c| c.label == item.choice.label && c.key == item.choice.key);
         if current {
             self.insert_emote(&item.choice, false, window, cx);
         } else {
@@ -410,12 +526,37 @@ impl ChannelPane {
             .map_or(0, |(i, c)| i + c.len_utf8());
         let raw = &value[start..range.end];
         if value[..start].trim().is_empty() && raw.starts_with('/') {
-            if value[range.end..].chars().next().is_some_and(|c|!c.is_whitespace()){return;}
-            let query=raw.to_ascii_lowercase();
-            self.picker.suggestions=crate::commands::COMMANDS.iter().filter(|c|c.name.starts_with(&query))
-                .map(|c|Choice{label:c.name.into(),provider:c.description,key:None}).collect();
-            self.picker.suggestions.extend(self.custom_commands.borrow().keys().filter(|name|format!("/{name}").starts_with(&query)).map(|name|Choice{label:format!("/{name}"),provider:"Custom command · prepares a draft",key:None}));
-            if !self.picker.suggestions.is_empty(){self.picker.token=Some((start..range.end,raw.into()));}
+            if value[range.end..]
+                .chars()
+                .next()
+                .is_some_and(|c| !c.is_whitespace())
+            {
+                return;
+            }
+            let query = raw.to_ascii_lowercase();
+            self.picker.suggestions = crate::commands::COMMANDS
+                .iter()
+                .filter(|c| c.name.starts_with(&query))
+                .map(|c| Choice {
+                    label: c.name.into(),
+                    provider: c.description,
+                    key: None,
+                })
+                .collect();
+            self.picker.suggestions.extend(
+                self.custom_commands
+                    .borrow()
+                    .keys()
+                    .filter(|name| format!("/{name}").starts_with(&query))
+                    .map(|name| Choice {
+                        label: format!("/{name}"),
+                        provider: "Custom command · prepares a draft",
+                        key: None,
+                    }),
+            );
+            if !self.picker.suggestions.is_empty() {
+                self.picker.token = Some((start..range.end, raw.into()));
+            }
             return;
         }
         if raw.is_empty() || (!forced && !raw.starts_with(':') && !raw.starts_with('@')) {
@@ -607,15 +748,33 @@ impl ChannelPane {
                             .cursor_pointer()
                             .when(i == self.picker.selected, |el| el.bg(rgb(theme::HOVER)))
                             .hover(|s| s.bg(rgb(theme::HOVER)))
-                            .when(!choice.label.starts_with('/'), |el|el.child(preview(image, choice.label.clone())))
+                            .when(!choice.label.starts_with('/'), |el| {
+                                el.child(preview(image, choice.label.clone()))
+                            })
                             .child(
                                 div()
-                                    .flex_1().min_w_0().v_flex()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .v_flex()
                                     .text_size(px(12.))
                                     .child(choice.label.clone())
-                                    .when(choice.label.starts_with('/'),|el|el.child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(choice.provider))),
+                                    .when(choice.label.starts_with('/'), |el| {
+                                        el.child(
+                                            div()
+                                                .text_size(px(10.))
+                                                .text_color(rgb(theme::MUTED))
+                                                .child(choice.provider),
+                                        )
+                                    }),
                             )
-                            .when(!choice.label.starts_with('/'),|el|el.child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(choice.provider)))
+                            .when(!choice.label.starts_with('/'), |el| {
+                                el.child(
+                                    div()
+                                        .text_size(px(10.))
+                                        .text_color(rgb(theme::MUTED))
+                                        .child(choice.provider),
+                                )
+                            })
                             .on_mouse_down(MouseButton::Left, |_, window, cx| {
                                 window.prevent_default();
                                 cx.stop_propagation();
@@ -628,13 +787,27 @@ impl ChannelPane {
             .into_any_element()
     }
     pub fn render_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let selected_item=self.picker.items.get(self.picker.current).cloned();
-        let selected_favorite=selected_item.as_ref().is_some_and(|i|i.saved_key.is_some() || self.catalog.borrow().is_favorite(&i.choice));
+        let selected_item = self.picker.items.get(self.picker.current).cloned();
+        let selected_favorite = selected_item
+            .as_ref()
+            .is_some_and(|i| i.saved_key.is_some() || self.catalog.borrow().is_favorite(&i.choice));
         let reduced = cx.reduce_motion();
-        let owned_status=self.catalog.borrow().owned.status.clone();
-        let provider_status=self.catalog.borrow().browser_status(&self.picker.service);
-        let can_retry=self.catalog.borrow().can_retry_public();
-        let empty_message=if self.picker.collection=="recent" && self.emote_search.read(cx).value().trim().is_empty(){"Emotes from successfully sent messages appear here, newest first. This session only; only emotes available in this channel are shown.".to_owned()}else if self.picker.collection=="favorites" && self.emote_search.read(cx).value().trim().is_empty(){"Right-click an emote to favorite it, or select one and use the star button. Unavailable saved entries can still be removed. Channel availability always applies.".to_owned()}else if !self.emote_search.read(cx).value().trim().is_empty(){"No matching emotes. Try a different search or service.".to_owned()}else{provider_status};
+        let owned_status = self.catalog.borrow().owned.status.clone();
+        let provider_status = self.catalog.borrow().browser_status(&self.picker.service);
+        let can_retry = self.catalog.borrow().can_retry_public();
+        let empty_message = if self.picker.collection == "recent"
+            && self.emote_search.read(cx).value().trim().is_empty()
+        {
+            "Emotes from successfully sent messages appear here, newest first. This session only; only emotes available in this channel are shown.".to_owned()
+        } else if self.picker.collection == "favorites"
+            && self.emote_search.read(cx).value().trim().is_empty()
+        {
+            "Right-click an emote to favorite it, or select one and use the star button. Unavailable saved entries can still be removed. Channel availability always applies.".to_owned()
+        } else if !self.emote_search.read(cx).value().trim().is_empty() {
+            "No matching emotes. Try a different search or service.".to_owned()
+        } else {
+            provider_status
+        };
         let height = (f32::from(window.viewport_size().height) - 70.).clamp(180., 390.);
         let width = self
             .viewport
@@ -647,22 +820,33 @@ impl ChannelPane {
         let owner = cx.entity().downgrade();
         let popup_owner = owner.clone();
         let columns = self.picker.columns;
-        let top=self.picker.top_row();
-        let visible_end=(top+((height-125.)/44.).ceil()as usize+1).min(self.picker.rows.len());
-        let mut visible_keys=Vec::new();
+        let top = self.picker.top_row();
+        let visible_end =
+            (top + ((height - 125.) / 44.).ceil() as usize + 1).min(self.picker.rows.len());
+        let mut visible_keys = Vec::new();
         for row in top..visible_end {
-            if let GridRow::Cells(indices)=self.picker.rows[row].clone(){for index in indices {
-                if let Some(key)=&self.picker.items[index].choice.key {
-                    visible_keys.push(key.clone());
-                    if key.animated && self.media.borrow().failed(key) {let mut fallback=key.clone();fallback.animated=false;visible_keys.push(fallback);}
+            if let GridRow::Cells(indices) = self.picker.rows[row].clone() {
+                for index in indices {
+                    if let Some(key) = &self.picker.items[index].choice.key {
+                        visible_keys.push(key.clone());
+                        if key.animated && self.media.borrow().failed(key) {
+                            let mut fallback = key.clone();
+                            fallback.animated = false;
+                            visible_keys.push(fallback);
+                        }
+                    }
                 }
-            }}
+            }
         }
-        if visible_keys!=self.picker.last_visible {
-            self.picker.last_visible=visible_keys.clone();
+        if visible_keys != self.picker.last_visible {
+            self.picker.last_visible = visible_keys.clone();
         }
-        self.picker.row_reveals.retain(|row,_|*row>=top.saturating_sub(2)&&*row<visible_end+2);
-        for key in &visible_keys {self.media.borrow_mut().get_picker(key,cx);}
+        self.picker
+            .row_reveals
+            .retain(|row, _| *row >= top.saturating_sub(2) && *row < visible_end + 2);
+        for key in &visible_keys {
+            self.media.borrow_mut().get_picker(key, cx);
+        }
         let mut tabs = Vec::new();
         for collection in self
             .picker
@@ -687,7 +871,7 @@ impl ChannelPane {
             let image = avatar
                 .as_ref()
                 .and_then(|key| self.media.borrow().peek(key));
-            let avatar_owner=owner.clone();
+            let avatar_owner = owner.clone();
             let fallback = match collection.id.as_str() {
                 "all" => "All".into(),
                 "global" => "◎".into(),
@@ -731,8 +915,21 @@ impl ChannelPane {
                     .tooltip(move |w, cx| {
                         gpui_kit::component::tooltip::Tooltip::new(title.clone()).build(w, cx)
                     })
-                    .on_prepaint(move|bounds,window,cx|{
-                        if bounds.intersects(&window.content_mask().bounds){if let Some(key)=avatar.clone(){let owner=avatar_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|p,cx|{if p.picker.open{let mut media=p.media.borrow_mut();media.touch(&key);media.prefetch(&key,cx);}});});}}
+                    .on_prepaint(move |bounds, window, cx| {
+                        if bounds.intersects(&window.content_mask().bounds) {
+                            if let Some(key) = avatar.clone() {
+                                let owner = avatar_owner.clone();
+                                cx.defer(move |cx| {
+                                    let _ = owner.update(cx, |p, cx| {
+                                        if p.picker.open {
+                                            let mut media = p.media.borrow_mut();
+                                            media.touch(&key);
+                                            media.prefetch(&key, cx);
+                                        }
+                                    });
+                                });
+                            }
+                        }
                     })
                     .child(icon(image, fallback, 30., 30.))
                     .on_mouse_down(MouseButton::Left, |_, w, cx| {
@@ -741,7 +938,9 @@ impl ChannelPane {
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.picker.collection = id.clone();
-                        if let Some(user)=&profile_user {this.catalog.borrow_mut().profiles.request(user);}
+                        if let Some(user) = &profile_user {
+                            this.catalog.borrow_mut().profiles.request(user);
+                        }
                         this.rebuild_browser(true, cx);
                         cx.notify();
                     })),

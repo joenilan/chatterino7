@@ -21,7 +21,7 @@ pub struct Badge {
 #[derive(Default, Clone)]
 pub struct Assets {
     loaded: u8,
-    pub cheers: HashMap<(String,u64), chat_core::EmoteAsset>,
+    pub cheers: HashMap<(String, u64), chat_core::EmoteAsset>,
     pub emotes: Vec<Choice>,
     pub badges: HashMap<(String, String), Badge>,
 }
@@ -124,12 +124,23 @@ impl TwitchAssets {
             }
             if let Some(mut data) = data {
                 if data.loaded != 7 {
-                    self.requested.insert(channel.clone(),Instant::now()-Duration::from_secs(540));
-                    let old=if channel.is_empty(){Some(&self.global)}else{self.channels.get(&channel)};
-                    if let Some(old)=old{
-                        if data.loaded&1==0 {data.badges=old.badges.clone();}
-                        if data.loaded&2==0 {data.cheers=old.cheers.clone();}
-                        if data.loaded&4==0 {data.emotes=old.emotes.clone();}
+                    self.requested
+                        .insert(channel.clone(), Instant::now() - Duration::from_secs(540));
+                    let old = if channel.is_empty() {
+                        Some(&self.global)
+                    } else {
+                        self.channels.get(&channel)
+                    };
+                    if let Some(old) = old {
+                        if data.loaded & 1 == 0 {
+                            data.badges = old.badges.clone();
+                        }
+                        if data.loaded & 2 == 0 {
+                            data.cheers = old.cheers.clone();
+                        }
+                        if data.loaded & 4 == 0 {
+                            data.emotes = old.emotes.clone();
+                        }
                     }
                 }
                 if channel.is_empty() {
@@ -146,9 +157,12 @@ impl TwitchAssets {
         }
         changed
     }
-    pub fn cheer(&self,channel:&str,prefix:&str,tier:u64)->Option<&chat_core::EmoteAsset>{
-        let key=(prefix.to_lowercase(),tier);
-        self.channels.get(channel).and_then(|a|a.cheers.get(&key)).or_else(||self.global.cheers.get(&key))
+    pub fn cheer(&self, channel: &str, prefix: &str, tier: u64) -> Option<&chat_core::EmoteAsset> {
+        let key = (prefix.to_lowercase(), tier);
+        self.channels
+            .get(channel)
+            .and_then(|a| a.cheers.get(&key))
+            .or_else(|| self.global.cheers.get(&key))
     }
     pub fn badge(&self, channel: &str, set: &str, id: &str) -> Option<&Badge> {
         let k = (set.to_owned(), id.to_owned());
@@ -190,9 +204,13 @@ fn load(client: &reqwest::blocking::Client, identity: &Identity, id: &str) -> Op
     };
     let badges = get(client, identity, &format!("chat/badges{suffix}"));
     let mut result = Assets::default();
-    if badges.is_some(){result.loaded|=1;}
-    if !id.is_empty(){result.loaded|=4;}
-    let badges=badges.unwrap_or(Value::Null);
+    if badges.is_some() {
+        result.loaded |= 1;
+    }
+    if !id.is_empty() {
+        result.loaded |= 4;
+    }
+    let badges = badges.unwrap_or(Value::Null);
     for set in badges["data"].as_array().into_iter().flatten().take(1024) {
         let Some(set_id) = set["set_id"].as_str().filter(|s| s.len() <= 128) else {
             continue;
@@ -215,17 +233,39 @@ fn load(client: &reqwest::blocking::Client, identity: &Identity, id: &str) -> Op
                 .insert((set_id.into(), id.into()), Badge { title, key });
         }
     }
-    let cheer_path=if id.is_empty(){"bits/cheermotes".into()}else{format!("bits/cheermotes?broadcaster_id={id}")};
-    if let Some(cheers)=get(client,identity,&cheer_path){
-        result.loaded|=2;
-        for cheer in cheers["data"].as_array().into_iter().flatten().take(256){
-            let Some(prefix)=cheer["prefix"].as_str().filter(|s|!s.is_empty()&&s.len()<=64&&s.bytes().all(|b|b.is_ascii_alphanumeric())) else{continue};
-            for tier in cheer["tiers"].as_array().into_iter().flatten().take(32){
-                let Some(id)=tier["id"].as_str().and_then(|s|s.parse::<u64>().ok()) else{continue};
-                let images=&tier["images"]["dark"];
-                let Some(static_url)=images["static"]["2"].as_str() else{continue};
-                let asset=chat_core::EmoteAsset{url:images["animated"]["2"].as_str().unwrap_or(static_url).into(),static_url:static_url.into(),width:56,height:56};
-                if EmoteKey::cheer(prefix,true,&asset).is_some(){result.cheers.insert((prefix.to_lowercase(),id),asset);}
+    let cheer_path = if id.is_empty() {
+        "bits/cheermotes".into()
+    } else {
+        format!("bits/cheermotes?broadcaster_id={id}")
+    };
+    if let Some(cheers) = get(client, identity, &cheer_path) {
+        result.loaded |= 2;
+        for cheer in cheers["data"].as_array().into_iter().flatten().take(256) {
+            let Some(prefix) = cheer["prefix"].as_str().filter(|s| {
+                !s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_alphanumeric())
+            }) else {
+                continue;
+            };
+            for tier in cheer["tiers"].as_array().into_iter().flatten().take(32) {
+                let Some(id) = tier["id"].as_str().and_then(|s| s.parse::<u64>().ok()) else {
+                    continue;
+                };
+                let images = &tier["images"]["dark"];
+                let Some(static_url) = images["static"]["2"].as_str() else {
+                    continue;
+                };
+                let asset = chat_core::EmoteAsset {
+                    url: images["animated"]["2"]
+                        .as_str()
+                        .unwrap_or(static_url)
+                        .into(),
+                    static_url: static_url.into(),
+                    width: 56,
+                    height: 56,
+                };
+                if EmoteKey::cheer(prefix, true, &asset).is_some() {
+                    result.cheers.insert((prefix.to_lowercase(), id), asset);
+                }
             }
         }
     }
@@ -233,7 +273,7 @@ fn load(client: &reqwest::blocking::Client, identity: &Identity, id: &str) -> Op
     // need ownership information before inclusion; never imply an entitlement.
     if id.is_empty() {
         if let Some(emotes) = get(client, identity, "chat/emotes/global") {
-            result.loaded|=4;
+            result.loaded |= 4;
             for v in emotes["data"].as_array().into_iter().flatten().take(2000) {
                 let Some(label) = v["name"].as_str().filter(|s| {
                     !s.is_empty() && s.len() <= 128 && !s.chars().any(char::is_whitespace)

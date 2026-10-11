@@ -14,10 +14,28 @@ pub struct EmoteAsset {
 pub enum Fragment {
     Text(String),
     /// Provider-authored identity; label retains the exact source text.
-    Mention { user_id: String, login: String, display_name: String, label: String },
-    Gif { id: String, url: String, label: String },
-    Cheer { prefix: String, bits: u64, tier: u64, label: String, asset: Option<EmoteAsset> },
-    Unknown { kind: String, label: String },
+    Mention {
+        user_id: String,
+        login: String,
+        display_name: String,
+        label: String,
+    },
+    Gif {
+        id: String,
+        url: String,
+        label: String,
+    },
+    Cheer {
+        prefix: String,
+        bits: u64,
+        tier: u64,
+        label: String,
+        asset: Option<EmoteAsset>,
+    },
+    Unknown {
+        kind: String,
+        label: String,
+    },
     Emote {
         provider: String,
         id: String,
@@ -31,13 +49,20 @@ impl Fragment {
     pub fn copy_text(&self) -> &str {
         match self {
             Self::Text(text) => text,
-            Self::Mention { label, .. } | Self::Emote { label, .. } | Self::Gif { label, .. } | Self::Cheer { label, .. } | Self::Unknown { label, .. } => label,
+            Self::Mention { label, .. }
+            | Self::Emote { label, .. }
+            | Self::Gif { label, .. }
+            | Self::Cheer { label, .. }
+            | Self::Unknown { label, .. } => label,
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Badge { pub set_id: String, pub id: String }
+pub struct Badge {
+    pub set_id: String,
+    pub id: String,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reply {
@@ -77,14 +102,24 @@ pub struct Message {
     pub deleted: bool,
 }
 impl Message {
-    pub fn author_label(&self)->&str {self.presentation.local_alias.as_deref().filter(|s|!s.is_empty()).unwrap_or(&self.display_name)}
-    pub fn author_color(&self)->Option<u32> {self.presentation.local_color.or(self.name_color)}
+    pub fn author_label(&self) -> &str {
+        self.presentation
+            .local_alias
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&self.display_name)
+    }
+    pub fn author_color(&self) -> Option<u32> {
+        self.presentation.local_color.or(self.name_color)
+    }
     pub fn body(&self) -> String {
         if self.deleted {
             return "[message deleted]".into();
         }
         if self.fragments.is_empty() {
-            if let Some(notice)=&self.presentation.notice { return notice.clone(); }
+            if let Some(notice) = &self.presentation.notice {
+                return notice.clone();
+            }
         }
         self.fragments.iter().map(Fragment::copy_text).collect()
     }
@@ -126,15 +161,23 @@ pub struct Timeline {
 }
 impl Timeline {
     /// Restyle authors without touching identity, body or deletion state.
-    pub fn update_author_appearance(&mut self, mut lookup:impl FnMut(&str,Option<u32>)->(Option<String>,Option<u32>)) {
+    pub fn update_author_appearance(
+        &mut self,
+        mut lookup: impl FnMut(&str, Option<u32>) -> (Option<String>, Option<u32>),
+    ) {
         for message in &mut self.messages {
-            let (alias,color)=lookup(&message.user_id,message.name_color);
-            message.presentation.local_alias=alias;message.presentation.local_color=color;
+            let (alias, color) = lookup(&message.user_id, message.name_color);
+            message.presentation.local_alias = alias;
+            message.presentation.local_color = color;
         }
     }
 
     pub fn enrich(&mut self, mut apply: impl FnMut(&mut Message)) {
-        for message in &mut self.messages { if !message.deleted { apply(message); } }
+        for message in &mut self.messages {
+            if !message.deleted {
+                apply(message);
+            }
+        }
     }
 
     pub fn new(channel_id: impl Into<String>, capacity: usize) -> Self {
@@ -145,12 +188,18 @@ impl Timeline {
             ids: HashSet::new(),
         }
     }
-    pub fn capacity(&self) -> usize { self.capacity }
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
     /// Return the removed front-row count so the viewport owner can retain its anchor.
     pub fn set_capacity(&mut self, capacity: usize) -> usize {
-        self.capacity=capacity.max(1);
-        let removed=self.messages.len().saturating_sub(self.capacity);
-        for _ in 0..removed {if let Some(message)=self.messages.pop_front(){self.ids.remove(&message.id);}}
+        self.capacity = capacity.max(1);
+        let removed = self.messages.len().saturating_sub(self.capacity);
+        for _ in 0..removed {
+            if let Some(message) = self.messages.pop_front() {
+                self.ids.remove(&message.id);
+            }
+        }
         self.messages.shrink_to_fit();
         self.ids.shrink_to_fit();
         removed
@@ -179,27 +228,32 @@ impl Timeline {
                 channel_id,
                 message_id,
             } => {
-                let quotes=self.redact_quotes(&channel_id, |r| r.parent_id == message_id);
-                let body=self.redact(&channel_id, |m| m.id == message_id);
-                if quotes {Change::Updated}else{body}
-            },
+                let quotes = self.redact_quotes(&channel_id, |r| r.parent_id == message_id);
+                let body = self.redact(&channel_id, |m| m.id == message_id);
+                if quotes { Change::Updated } else { body }
+            }
             Event::ClearUser {
                 channel_id,
                 user_id,
             } => {
-                let quotes=self.redact_quotes(&channel_id, |r| r.parent_user_id == user_id);
-                let body=self.redact(&channel_id, |m| m.user_id == user_id);
-                if quotes {Change::Updated}else{body}
-            },
+                let quotes = self.redact_quotes(&channel_id, |r| r.parent_user_id == user_id);
+                let body = self.redact(&channel_id, |m| m.user_id == user_id);
+                if quotes { Change::Updated } else { body }
+            }
             Event::ClearChannel { channel_id } => self.redact(&channel_id, |_| true),
         }
     }
     fn redact_quotes(&mut self, channel: &str, matches: impl Fn(&Reply) -> bool) -> bool {
-        if channel != self.channel_id {return false;}
-        let mut changed=false;
+        if channel != self.channel_id {
+            return false;
+        }
+        let mut changed = false;
         for message in &mut self.messages {
-            if let Some(reply)=&mut message.reply {
-                if matches(reply)&&!reply.parent_deleted {reply.parent_deleted=true;changed=true;}
+            if let Some(reply) = &mut message.reply {
+                if matches(reply) && !reply.parent_deleted {
+                    reply.parent_deleted = true;
+                    changed = true;
+                }
             }
         }
         changed
@@ -214,11 +268,13 @@ impl Timeline {
                 message.deleted = true;
                 message.fragments.clear();
                 message.presentation = MessagePresentation {
-                    local_alias:message.presentation.local_alias.take(),
-                    local_color:message.presentation.local_color,
+                    local_alias: message.presentation.local_alias.take(),
+                    local_color: message.presentation.local_color,
                     ..MessagePresentation::default()
                 };
-                if let Some(reply)=&mut message.reply {reply.parent_deleted=true;}
+                if let Some(reply) = &mut message.reply {
+                    reply.parent_deleted = true;
+                }
                 changed = true;
             }
         }
@@ -362,5 +418,8 @@ mod tests {
 
 /// Only server-provided Twitch logins may become profile or mention targets.
 pub fn twitch_login(raw: &str) -> Option<String> {
-    (!raw.is_empty() && raw.len()<=25 && raw.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'_')).then(||raw.to_ascii_lowercase())
+    (!raw.is_empty()
+        && raw.len() <= 25
+        && raw.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_'))
+    .then(|| raw.to_ascii_lowercase())
 }

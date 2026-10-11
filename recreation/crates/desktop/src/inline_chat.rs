@@ -7,12 +7,16 @@ use chat_core::{
 use gpui_kit::*;
 use std::{cell::RefCell, ops::Range, rc::Rc, sync::Arc};
 
-fn media_width(layers:&[(EmoteKey,Option<Arc<DecodedMedia>>)]) -> f32 {
-    let (key,image)=&layers[0];
-    image.as_ref().map_or_else(||key.width(),|media|{
-        let size=media.image.size(0);
-        (28. * u32::from(size.width) as f32 / (u32::from(size.height) as f32).max(1.)).clamp(8.,112.)
-    })
+fn media_width(layers: &[(EmoteKey, Option<Arc<DecodedMedia>>)]) -> f32 {
+    let (key, image) = &layers[0];
+    image.as_ref().map_or_else(
+        || key.width(),
+        |media| {
+            let size = media.image.size(0);
+            (28. * u32::from(size.width) as f32 / (u32::from(size.height) as f32).max(1.))
+                .clamp(8., 112.)
+        },
+    )
 }
 #[derive(Clone)]
 struct Span {
@@ -22,7 +26,7 @@ struct Span {
 }
 #[derive(Clone)]
 struct Piece {
-    author:bool,
+    author: bool,
     range: Range<usize>,
     bounds: Bounds<Pixels>,
     text: Option<ShapedLine>,
@@ -36,9 +40,17 @@ struct Layout {
     origin: Point<Pixels>,
 }
 impl Layout {
-    fn exact_text_hit(&self,point:Point<Pixels>)->Option<usize>{
-        let point=point-self.origin;
-        self.pieces.iter().find(|p|p.text.is_some()&&p.bounds.contains(&point)).and_then(|p|p.text.as_ref()?.index_for_x(point.x-p.bounds.left()).map(|index|p.range.start+index))
+    fn exact_text_hit(&self, point: Point<Pixels>) -> Option<usize> {
+        let point = point - self.origin;
+        self.pieces
+            .iter()
+            .find(|p| p.text.is_some() && p.bounds.contains(&point))
+            .and_then(|p| {
+                p.text
+                    .as_ref()?
+                    .index_for_x(point.x - p.bounds.left())
+                    .map(|index| p.range.start + index)
+            })
     }
 
     fn hit(&self, point: Point<Pixels>) -> (usize, Option<Range<usize>>) {
@@ -80,7 +92,7 @@ pub struct InlineChat {
     text: SharedString,
     spans: Vec<Span>,
     name_color: u32,
-    paint:Option<crate::name_paint::Request>,
+    paint: Option<crate::name_paint::Request>,
     emote_size: f32,
     interaction: Option<crate::message_actions::Interaction>,
     selection: Rc<RefCell<Selection>>,
@@ -89,15 +101,29 @@ pub struct InlineChat {
     layout: Rc<RefCell<Layout>>,
 }
 impl InlineChat {
-    pub fn line_height(window: &Window, message: &Message) -> Pixels { window.line_height().max(px(if message.presentation.kind=="power_ups_gigantified_emote" {58.}else{30.})) }
+    pub fn line_height(window: &Window, message: &Message) -> Pixels {
+        window.line_height().max(px(
+            if message.presentation.kind == "power_ups_gigantified_emote" {
+                58.
+            } else {
+                30.
+            },
+        ))
+    }
 
-    pub fn with_interaction(mut self, interaction:crate::message_actions::Interaction)->Self{self.interaction=Some(interaction);self}
+    pub fn with_interaction(mut self, interaction: crate::message_actions::Interaction) -> Self {
+        self.interaction = Some(interaction);
+        self
+    }
 
-    pub fn with_search(mut self, ranges:Vec<std::ops::Range<usize>>)->Self{self.search=ranges;self}
+    pub fn with_search(mut self, ranges: Vec<std::ops::Range<usize>>) -> Self {
+        self.search = ranges;
+        self
+    }
 
     pub fn new(
         message: &Message,
-        paint:Option<crate::name_paint::Request>,
+        paint: Option<crate::name_paint::Request>,
         row: u64,
         media: &mut MediaCache,
         selection: Rc<RefCell<Selection>>,
@@ -106,10 +132,12 @@ impl InlineChat {
         cx: &mut App,
     ) -> Option<Self> {
         if message.deleted
-            || !message
-                .fragments
-                .iter()
-                .any(|f| matches!(f, Fragment::Emote { .. } | Fragment::Cheer { asset: Some(_), .. }))
+            || !message.fragments.iter().any(|f| {
+                matches!(
+                    f,
+                    Fragment::Emote { .. } | Fragment::Cheer { asset: Some(_), .. }
+                )
+            })
         {
             return None;
         }
@@ -139,12 +167,14 @@ impl InlineChat {
                     let key = if layer.provider == "twitch" {
                         EmoteKey::twitch(&layer.id, animated)
                     } else if layer.provider == "twitch-cheer" {
-                        layer.asset.as_ref().and_then(|a|EmoteKey::cheer(&layer.id,animated,a))
-                    } else if matches!(layer.provider.as_str(), "7tv" | "bttv" | "ffz") {
                         layer
                             .asset
                             .as_ref()
-                            .and_then(|a| EmoteKey::community(&layer.provider, &layer.id, animated, a))
+                            .and_then(|a| EmoteKey::cheer(&layer.id, animated, a))
+                    } else if matches!(layer.provider.as_str(), "7tv" | "bttv" | "ffz") {
+                        layer.asset.as_ref().and_then(|a| {
+                            EmoteKey::community(&layer.provider, &layer.id, animated, a)
+                        })
                     } else {
                         None
                     };
@@ -155,10 +185,18 @@ impl InlineChat {
                             continue;
                         }
                     };
-                    let mut image = if index == 0 { media.get_layout(&key, cx) } else { media.get(&key, cx) };
+                    let mut image = if index == 0 {
+                        media.get_layout(&key, cx)
+                    } else {
+                        media.get(&key, cx)
+                    };
                     if image.is_none() && media.failed(&key) && key.animated {
                         key.animated = false;
-                        image = if index == 0 { media.get_layout(&key, cx) } else { media.get(&key, cx) };
+                        image = if index == 0 {
+                            media.get_layout(&key, cx)
+                        } else {
+                            media.get(&key, cx)
+                        };
                     }
                     if image.is_none() && media.failed(&key) && index == 0 {
                         break;
@@ -190,7 +228,11 @@ impl InlineChat {
             spans,
             name_color: message.author_color().unwrap_or(crate::theme::MUTED),
             paint,
-            emote_size: if message.presentation.kind=="power_ups_gigantified_emote" {56.}else{28.},
+            emote_size: if message.presentation.kind == "power_ups_gigantified_emote" {
+                56.
+            } else {
+                28.
+            },
             interaction: None,
             selection,
             focus,
@@ -226,8 +268,8 @@ impl Element for InlineChat {
         let layout = self.layout.clone();
         let style = window.text_style();
         let font_size = style.font_size.to_pixels(window.rem_size());
-        let emote_size=self.emote_size;
-        let line_height = window.line_height().max(px(emote_size+2.));
+        let emote_size = self.emote_size;
+        let line_height = window.line_height().max(px(emote_size + 2.));
         let name_color = self.name_color;
         let id = window.request_measured_layout(
             Default::default(),
@@ -255,7 +297,10 @@ impl Element for InlineChat {
                         .iter()
                         .map(|s| {
                             if let Some(media) = &s.media {
-                                LineFragment::element(px(media_width(media)*emote_size/28.).min(width), s.range.len())
+                                LineFragment::element(
+                                    px(media_width(media) * emote_size / 28.).min(width),
+                                    s.range.len(),
+                                )
                             } else {
                                 LineFragment::text(&text[s.range.clone()])
                             }
@@ -284,7 +329,7 @@ impl Element for InlineChat {
                                 (
                                     None,
                                     layers.iter().map(|(_, image)| image.clone()).collect(),
-                                    px(media_width(layers)*emote_size/28.).min(width),
+                                    px(media_width(layers) * emote_size / 28.).min(width),
                                 )
                             } else {
                                 let mut run_style = style.clone();
@@ -302,7 +347,7 @@ impl Element for InlineChat {
                                 (Some(shaped), Vec::new(), w)
                             };
                             result.pieces.push(Piece {
-                                author:span.author,
+                                author: span.author,
                                 range: a..b,
                                 bounds: Bounds::new(point(x, y), size(w, line_height)),
                                 text: shaped,
@@ -363,30 +408,89 @@ impl Element for InlineChat {
                 ),
             )
         });
-        let hitbox=window.insert_hitbox(hit, HitboxBehavior::Normal);
-        let mut regions=Vec::new();
+        let hitbox = window.insert_hitbox(hit, HitboxBehavior::Normal);
+        let mut regions = Vec::new();
         if !self.selection.borrow().dragging {
-            for (index,piece) in self.layout.borrow().pieces.iter().enumerate(){
-                if piece.text.is_none(){
-                    let slot=Bounds::new(bounds.origin+piece.bounds.origin+point(px(0.),(piece.bounds.size.height-px(self.emote_size))/2.),size(piece.bounds.size.width,px(self.emote_size)));
-                    let slot=slot.intersect(&hit);
-                    if slot.size.width<=px(0.)||slot.size.height<=px(0.){continue;}
-                    let source=self.spans.iter().find(|s|s.range.start<=piece.range.start&&s.range.end>=piece.range.end).and_then(|s|s.media.as_ref()).and_then(|m|m.first()).map(|(key,_)|crate::media_hover::source(key.provider())).unwrap_or("Emote");
-                    regions.push(crate::media_hover::region(format!("emote-hover-{}-{index}",self.row),slot,crate::media_hover::Content::Emote{label:self.text[piece.range.clone()].into(),source:source.into(),images:piece.media.iter().flatten().cloned().collect()},window,cx));
-                }else if let (Some(text),Some(interaction))=(&piece.text,&self.interaction){
-                    let mut targets=vec![(0..interaction.author_len,"Ctrl+click to inspect this chatter".to_owned())];
-                    targets.extend(interaction.links.iter().map(|link|(link.range.clone(),"Ctrl+click to open link · Right-click for actions".into())));
-            targets.extend(interaction.mentions.iter().map(|mention|(mention.range.clone(),"Ctrl+click to inspect mentioned chatter".into())));
-                    for (target,(range,hint)) in targets.into_iter().enumerate(){
-                        let a=range.start.max(piece.range.start);let b=range.end.min(piece.range.end);if a>=b{continue;}
-                        let left=text.x_for_index(a-piece.range.start);let right=text.x_for_index(b-piece.range.start);
-                        let slot=Bounds::new(bounds.origin+piece.bounds.origin+point(left,px(0.)),size(right-left,piece.bounds.size.height)).intersect(&hit);
-                        if slot.size.width>px(0.)&&slot.size.height>px(0.){regions.push(crate::media_hover::region(format!("text-hover-{}-{index}-{target}",self.row),slot,crate::media_hover::Content::Hint(hint),window,cx));}
+            for (index, piece) in self.layout.borrow().pieces.iter().enumerate() {
+                if piece.text.is_none() {
+                    let slot = Bounds::new(
+                        bounds.origin
+                            + piece.bounds.origin
+                            + point(
+                                px(0.),
+                                (piece.bounds.size.height - px(self.emote_size)) / 2.,
+                            ),
+                        size(piece.bounds.size.width, px(self.emote_size)),
+                    );
+                    let slot = slot.intersect(&hit);
+                    if slot.size.width <= px(0.) || slot.size.height <= px(0.) {
+                        continue;
+                    }
+                    let source = self
+                        .spans
+                        .iter()
+                        .find(|s| {
+                            s.range.start <= piece.range.start && s.range.end >= piece.range.end
+                        })
+                        .and_then(|s| s.media.as_ref())
+                        .and_then(|m| m.first())
+                        .map(|(key, _)| crate::media_hover::source(key.provider()))
+                        .unwrap_or("Emote");
+                    regions.push(crate::media_hover::region(
+                        format!("emote-hover-{}-{index}", self.row),
+                        slot,
+                        crate::media_hover::Content::Emote {
+                            label: self.text[piece.range.clone()].into(),
+                            source: source.into(),
+                            images: piece.media.iter().flatten().cloned().collect(),
+                        },
+                        window,
+                        cx,
+                    ));
+                } else if let (Some(text), Some(interaction)) = (&piece.text, &self.interaction) {
+                    let mut targets = vec![(
+                        0..interaction.author_len,
+                        "Ctrl+click to inspect this chatter".to_owned(),
+                    )];
+                    targets.extend(interaction.links.iter().map(|link| {
+                        (
+                            link.range.clone(),
+                            "Ctrl+click to open link · Right-click for actions".into(),
+                        )
+                    }));
+                    targets.extend(interaction.mentions.iter().map(|mention| {
+                        (
+                            mention.range.clone(),
+                            "Ctrl+click to inspect mentioned chatter".into(),
+                        )
+                    }));
+                    for (target, (range, hint)) in targets.into_iter().enumerate() {
+                        let a = range.start.max(piece.range.start);
+                        let b = range.end.min(piece.range.end);
+                        if a >= b {
+                            continue;
+                        }
+                        let left = text.x_for_index(a - piece.range.start);
+                        let right = text.x_for_index(b - piece.range.start);
+                        let slot = Bounds::new(
+                            bounds.origin + piece.bounds.origin + point(left, px(0.)),
+                            size(right - left, piece.bounds.size.height),
+                        )
+                        .intersect(&hit);
+                        if slot.size.width > px(0.) && slot.size.height > px(0.) {
+                            regions.push(crate::media_hover::region(
+                                format!("text-hover-{}-{index}-{target}", self.row),
+                                slot,
+                                crate::media_hover::Content::Hint(hint),
+                                window,
+                                cx,
+                            ));
+                        }
                     }
                 }
             }
         }
-        crate::media_hover::HoverState{hitbox,regions}
+        crate::media_hover::HoverState { hitbox, regions }
     }
     fn paint(
         &mut self,
@@ -398,22 +502,66 @@ impl Element for InlineChat {
         window: &mut Window,
         cx: &mut App,
     ) {
-        for region in &mut state.regions {region.paint(window,cx);}
-        let hitbox=&mut state.hitbox;
+        for region in &mut state.regions {
+            region.paint(window, cx);
+        }
+        let hitbox = &mut state.hitbox;
         let selected = self.selection.borrow().range_for(self.row, &self.text);
-        if let Some(interaction)=&self.interaction{
-            for piece in &self.layout.borrow().pieces{if let Some(text)=&piece.text{for (range,color) in interaction.links.iter().map(|link|(&link.range,0x91C7E8)).chain(interaction.mentions.iter().map(|mention|(&mention.range,0xB6A9E6))){
-                let a=range.start.max(piece.range.start);let b=range.end.min(piece.range.end);
-                if a<b{let left=text.x_for_index(a-piece.range.start);let right=text.x_for_index(b-piece.range.start);
-                    window.paint_quad(fill(Bounds::new(bounds.origin+piece.bounds.origin+point(left,piece.bounds.size.height-px(3.)),size((right-left).max(px(1.)),px(1.))),rgb(color)));}
-            }}}
-            if hitbox.is_hovered(window)&&window.modifiers().control&&self.layout.borrow().exact_text_hit(window.mouse_position()).is_some_and(|b|interaction.target(b).is_some()){window.set_cursor_style(CursorStyle::PointingHand,hitbox);}
+        if let Some(interaction) = &self.interaction {
+            for piece in &self.layout.borrow().pieces {
+                if let Some(text) = &piece.text {
+                    for (range, color) in interaction
+                        .links
+                        .iter()
+                        .map(|link| (&link.range, 0x91C7E8))
+                        .chain(
+                            interaction
+                                .mentions
+                                .iter()
+                                .map(|mention| (&mention.range, 0xB6A9E6)),
+                        )
+                    {
+                        let a = range.start.max(piece.range.start);
+                        let b = range.end.min(piece.range.end);
+                        if a < b {
+                            let left = text.x_for_index(a - piece.range.start);
+                            let right = text.x_for_index(b - piece.range.start);
+                            window.paint_quad(fill(
+                                Bounds::new(
+                                    bounds.origin
+                                        + piece.bounds.origin
+                                        + point(left, piece.bounds.size.height - px(3.)),
+                                    size((right - left).max(px(1.)), px(1.)),
+                                ),
+                                rgb(color),
+                            ));
+                        }
+                    }
+                }
+            }
+            if hitbox.is_hovered(window)
+                && window.modifiers().control
+                && self
+                    .layout
+                    .borrow()
+                    .exact_text_hit(window.mouse_position())
+                    .is_some_and(|b| interaction.target(b).is_some())
+            {
+                window.set_cursor_style(CursorStyle::PointingHand, hitbox);
+            }
         }
 
-        let mut highlights=self.search.iter().cloned().map(|r|(r,0x66502D)).collect::<Vec<_>>();
-        if let Some(range)=selected.clone(){highlights.push((range,0x315166));}
+        let mut highlights = self
+            .search
+            .iter()
+            .cloned()
+            .map(|r| (r, 0x66502D))
+            .collect::<Vec<_>>();
+        if let Some(range) = selected.clone() {
+            highlights.push((range, 0x315166));
+        }
         for piece in &self.layout.borrow().pieces {
-            for (range,color) in &highlights {
+            for (range, color) in &highlights {
                 let a = range.start.max(piece.range.start);
                 let b = range.end.min(piece.range.end);
                 if a < b {
@@ -438,8 +586,22 @@ impl Element for InlineChat {
                 }
             }
             if let Some(text) = &piece.text {
-                if piece.author&&piece.range.start==0&&self.spans.first().is_some_and(|s|s.range==piece.range)
-                    &&self.paint.as_ref().is_some_and(|paint|paint.draw(text,bounds.origin+piece.bounds.origin,piece.bounds.size.height,self.name_color,window,cx)){continue;}
+                if piece.author
+                    && piece.range.start == 0
+                    && self.spans.first().is_some_and(|s| s.range == piece.range)
+                    && self.paint.as_ref().is_some_and(|paint| {
+                        paint.draw(
+                            text,
+                            bounds.origin + piece.bounds.origin,
+                            piece.bounds.size.height,
+                            self.name_color,
+                            window,
+                            cx,
+                        )
+                    })
+                {
+                    continue;
+                }
                 let _ = text.paint(
                     bounds.origin + piece.bounds.origin,
                     piece.bounds.size.height,
@@ -473,7 +635,10 @@ impl Element for InlineChat {
             let slot = Bounds::new(
                 bounds.origin
                     + piece.bounds.origin
-                    + point(px(0.), (piece.bounds.size.height - px(self.emote_size)) / 2.),
+                    + point(
+                        px(0.),
+                        (piece.bounds.size.height - px(self.emote_size)) / 2.,
+                    ),
                 size(piece.bounds.size.width, px(self.emote_size)),
             );
             let clip = self.viewport.borrow().map_or(slot, |v| slot.intersect(&v));
@@ -496,7 +661,7 @@ impl Element for InlineChat {
                 );
             }
         }
-        for (range,color) in &highlights {
+        for (range, color) in &highlights {
             for piece in &self.layout.borrow().pieces {
                 if piece.text.is_none()
                     && range.start < piece.range.end
@@ -516,13 +681,34 @@ impl Element for InlineChat {
         let focus = self.focus.clone();
         let hitbox = hitbox.clone();
         let row = self.row;
-        let down_interaction=self.interaction.clone();
-        if let Some(interaction)=self.interaction.clone(){let up_layout=layout.clone();let up_hitbox=hitbox.clone();window.on_mouse_event(move|event:&MouseUpEvent,phase,w,cx|{if phase.bubble(){let byte=up_hitbox.is_hovered(w).then(||up_layout.borrow().exact_text_hit(event.position)).flatten();interaction.up(event,byte,w,cx);}});}
+        let down_interaction = self.interaction.clone();
+        if let Some(interaction) = self.interaction.clone() {
+            let up_layout = layout.clone();
+            let up_hitbox = hitbox.clone();
+            window.on_mouse_event(move |event: &MouseUpEvent, phase, w, cx| {
+                if phase.bubble() {
+                    let byte = up_hitbox
+                        .is_hovered(w)
+                        .then(|| up_layout.borrow().exact_text_hit(event.position))
+                        .flatten();
+                    interaction.up(event, byte, w, cx);
+                }
+            });
+        }
         window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
             if !phase.bubble() || event.button != MouseButton::Left || !hitbox.is_hovered(window) {
                 return;
             }
-            if down_interaction.as_ref().is_some_and(|i|i.down(event,layout.borrow().exact_text_hit(event.position),&selection.borrow())){cx.stop_propagation();return;}
+            if down_interaction.as_ref().is_some_and(|i| {
+                i.down(
+                    event,
+                    layout.borrow().exact_text_hit(event.position),
+                    &selection.borrow(),
+                )
+            }) {
+                cx.stop_propagation();
+                return;
+            }
             let (byte, emote) = layout.borrow().hit(event.position);
             focus.focus(window, cx);
             let mut selection = selection.borrow_mut();

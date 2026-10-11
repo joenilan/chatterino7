@@ -4,7 +4,7 @@ use image::{AnimationDecoder, ImageDecoder, ImageFormat};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     io::{Cursor, Read},
-    sync::{Arc, Mutex, Condvar, mpsc},
+    sync::{Arc, Condvar, Mutex, mpsc},
     time::{Duration, Instant},
 };
 
@@ -33,24 +33,99 @@ pub fn valid_seven_url(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'.'))
 }
 impl EmoteKey {
-    pub fn ffz_badge(id:u64,value:&str)->Option<Self>{
-        let url=reqwest::Url::parse(value).ok()?;
-        if id==0||value.len()>2048||url.scheme()!="https"||url.host_str()!=Some("cdn.frankerfacez.com")||!url.username().is_empty()||url.password().is_some()||url.port().is_some_and(|p|p!=443)||url.query().is_some()||url.fragment().is_some()||!url.path().starts_with(&format!("/badge/{id}/"))||url.path().contains("..")||!url.path().bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'/'|b'_'|b'-'|b'.')){return None;}
-        Some(Self{id:format!("ffz-badge:{id}"),animated:false,external:Some(chat_core::EmoteAsset{url:value.into(),static_url:value.into(),width:18,height:18})})
-    }
-    pub fn ffz_role_badge(role:&str,value:&str)->Option<Self>{
-        if !matches!(role,"mod"|"vip"){return None;}
-        let url=reqwest::Url::parse(value).ok()?;
-        if value.len()>2048||url.scheme()!="https"||url.host_str()!=Some("cdn.frankerfacez.com")||!url.username().is_empty()||url.password().is_some()||url.port().is_some_and(|p|p!=443)||url.query().is_some()||url.fragment().is_some()||!url.path().starts_with(&format!("/room-badge/{role}/"))||url.path().contains("..")||!url.path().bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'/'|b'_'|b'-'|b'.')){return None;}
-        Some(Self{id:format!("ffz-role:{role}:{}",url.path()),animated:false,external:Some(chat_core::EmoteAsset{url:value.into(),static_url:value.into(),width:18,height:18})})
-    }
-    pub fn seven_badge(id:&str,animated:bool,asset:&chat_core::EmoteAsset)->Option<Self>{
-        for value in [&asset.url,&asset.static_url]{
-            let url=reqwest::Url::parse(value).ok()?;
-            if value.len()>2048||url.scheme()!="https"||url.host_str()!=Some("cdn.7tv.app")||!url.username().is_empty()||url.password().is_some()||url.port().is_some_and(|p|p!=443)||url.query().is_some()||url.fragment().is_some()||!url.path().starts_with("/badge/")||url.path().contains("..")||!url.path().bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'/'|b'_'|b'-'|b'.')){return None;}
+    pub fn ffz_badge(id: u64, value: &str) -> Option<Self> {
+        let url = reqwest::Url::parse(value).ok()?;
+        if id == 0
+            || value.len() > 2048
+            || url.scheme() != "https"
+            || url.host_str() != Some("cdn.frankerfacez.com")
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.port().is_some_and(|p| p != 443)
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || !url.path().starts_with(&format!("/badge/{id}/"))
+            || url.path().contains("..")
+            || !url
+                .path()
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'.'))
+        {
+            return None;
         }
-        if asset.width==0||asset.height==0||asset.width>256||asset.height>256{return None;}
-        Some(Self{id:format!("7tv-badge:{id}"),animated,external:Some(asset.clone())})
+        Some(Self {
+            id: format!("ffz-badge:{id}"),
+            animated: false,
+            external: Some(chat_core::EmoteAsset {
+                url: value.into(),
+                static_url: value.into(),
+                width: 18,
+                height: 18,
+            }),
+        })
+    }
+    pub fn ffz_role_badge(role: &str, value: &str) -> Option<Self> {
+        if !matches!(role, "mod" | "vip") {
+            return None;
+        }
+        let url = reqwest::Url::parse(value).ok()?;
+        if value.len() > 2048
+            || url.scheme() != "https"
+            || url.host_str() != Some("cdn.frankerfacez.com")
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.port().is_some_and(|p| p != 443)
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || !url.path().starts_with(&format!("/room-badge/{role}/"))
+            || url.path().contains("..")
+            || !url
+                .path()
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'.'))
+        {
+            return None;
+        }
+        Some(Self {
+            id: format!("ffz-role:{role}:{}", url.path()),
+            animated: false,
+            external: Some(chat_core::EmoteAsset {
+                url: value.into(),
+                static_url: value.into(),
+                width: 18,
+                height: 18,
+            }),
+        })
+    }
+    pub fn seven_badge(id: &str, animated: bool, asset: &chat_core::EmoteAsset) -> Option<Self> {
+        for value in [&asset.url, &asset.static_url] {
+            let url = reqwest::Url::parse(value).ok()?;
+            if value.len() > 2048
+                || url.scheme() != "https"
+                || url.host_str() != Some("cdn.7tv.app")
+                || !url.username().is_empty()
+                || url.password().is_some()
+                || url.port().is_some_and(|p| p != 443)
+                || url.query().is_some()
+                || url.fragment().is_some()
+                || !url.path().starts_with("/badge/")
+                || url.path().contains("..")
+                || !url
+                    .path()
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'.'))
+            {
+                return None;
+            }
+        }
+        if asset.width == 0 || asset.height == 0 || asset.width > 256 || asset.height > 256 {
+            return None;
+        }
+        Some(Self {
+            id: format!("7tv-badge:{id}"),
+            animated,
+            external: Some(asset.clone()),
+        })
     }
     pub fn seven(id: &str, animated: bool, asset: &chat_core::EmoteAsset) -> Option<Self> {
         if !valid_seven_url(&asset.url)
@@ -68,53 +143,201 @@ impl EmoteKey {
             external: Some(asset.clone()),
         })
     }
-    pub fn community(provider:&str,id:&str,animated:bool,asset:&chat_core::EmoteAsset)->Option<Self> {
-        if provider=="7tv" {return Self::seven(id,animated,asset);}
-        let(host,prefixes)=match provider {"bttv"=>("cdn.betterttv.net",vec!["/emote/"]),"ffz"=>("cdn.frankerfacez.com",vec!["/emote/","/emoticon/"]),_=>return None};
-        for value in [&asset.url,&asset.static_url] {
-            let url=reqwest::Url::parse(value).ok()?;
-            if url.scheme()!="https"||url.host_str()!=Some(host)||!url.username().is_empty()||url.password().is_some()||url.port().is_some_and(|p|p!=443)||url.query().is_some()||url.fragment().is_some()||!prefixes.iter().any(|p|url.path().starts_with(p))||url.path().contains("..")||!url.path().bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'/'|b'_'|b'-'|b'.')){return None;}
+    pub fn community(
+        provider: &str,
+        id: &str,
+        animated: bool,
+        asset: &chat_core::EmoteAsset,
+    ) -> Option<Self> {
+        if provider == "7tv" {
+            return Self::seven(id, animated, asset);
         }
-        if asset.width==0||asset.height==0||asset.width>256||asset.height>256{return None;}
-        Some(Self{id:id.into(),animated,external:Some(asset.clone())})
+        let (host, prefixes) = match provider {
+            "bttv" => ("cdn.betterttv.net", vec!["/emote/"]),
+            "ffz" => ("cdn.frankerfacez.com", vec!["/emote/", "/emoticon/"]),
+            _ => return None,
+        };
+        for value in [&asset.url, &asset.static_url] {
+            let url = reqwest::Url::parse(value).ok()?;
+            if url.scheme() != "https"
+                || url.host_str() != Some(host)
+                || !url.username().is_empty()
+                || url.password().is_some()
+                || url.port().is_some_and(|p| p != 443)
+                || url.query().is_some()
+                || url.fragment().is_some()
+                || !prefixes.iter().any(|p| url.path().starts_with(p))
+                || url.path().contains("..")
+                || !url
+                    .path()
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'.'))
+            {
+                return None;
+            }
+        }
+        if asset.width == 0 || asset.height == 0 || asset.width > 256 || asset.height > 256 {
+            return None;
+        }
+        Some(Self {
+            id: id.into(),
+            animated,
+            external: Some(asset.clone()),
+        })
     }
-    pub fn avatar(value:&str)->Option<Self>{
-        let url=reqwest::Url::parse(value).ok()?;
-        if value.len()>2048||url.scheme()!="https"||url.host_str()!=Some("static-cdn.jtvnw.net")||!url.path().starts_with("/jtv_user_pictures/")||!url.username().is_empty()||url.password().is_some()||url.port().is_some_and(|p|p!=443)||url.query().is_some()||url.fragment().is_some(){return None;}
-        Some(Self{id:format!("avatar:{}",url.path()),animated:false,external:Some(chat_core::EmoteAsset{url:value.into(),static_url:value.into(),width:48,height:48})})
+    pub fn avatar(value: &str) -> Option<Self> {
+        let url = reqwest::Url::parse(value).ok()?;
+        if value.len() > 2048
+            || url.scheme() != "https"
+            || url.host_str() != Some("static-cdn.jtvnw.net")
+            || !url.path().starts_with("/jtv_user_pictures/")
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.port().is_some_and(|p| p != 443)
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return None;
+        }
+        Some(Self {
+            id: format!("avatar:{}", url.path()),
+            animated: false,
+            external: Some(chat_core::EmoteAsset {
+                url: value.into(),
+                static_url: value.into(),
+                width: 48,
+                height: 48,
+            }),
+        })
     }
     pub fn gif(id: &str, value: &str, animated: bool) -> Option<Self> {
-        let url=reqwest::Url::parse(value).ok()?;
+        let url = reqwest::Url::parse(value).ok()?;
         // Known GIPHY delivery hosts from Twitch's documented integration. Unknown
         // origins retain their readable message fallback; never fetch arbitrary URLs.
-        if value.len()>4096 || url.scheme()!="https" || !matches!(url.host_str(),Some("media.giphy.com"|"media0.giphy.com"|"media1.giphy.com"|"media2.giphy.com"|"media3.giphy.com"|"media4.giphy.com")) || !url.username().is_empty() || url.password().is_some() || url.port().is_some_and(|p|p!=443) || url.fragment().is_some() || !url.path().starts_with("/media/") {return None;}
-        Some(Self{id:format!("gif:{id}"),animated,external:Some(chat_core::EmoteAsset{url:value.into(),static_url:value.into(),width:160,height:100})})
-    }
-    pub fn cheer(id:&str,animated:bool,asset:&chat_core::EmoteAsset)->Option<Self>{
-        for value in [&asset.url,&asset.static_url] {
-            let url=reqwest::Url::parse(value).ok()?;
-            if url.scheme()!="https" || !matches!(url.host_str(),Some("d3aqoihi2n8ty8.cloudfront.net"|"static-cdn.jtvnw.net")) || !url.path().starts_with("/actions/") || !url.username().is_empty() || url.password().is_some() || url.port().is_some_and(|p|p!=443) || url.fragment().is_some() || url.query().is_some() {return None;}
+        if value.len() > 4096
+            || url.scheme() != "https"
+            || !matches!(
+                url.host_str(),
+                Some(
+                    "media.giphy.com"
+                        | "media0.giphy.com"
+                        | "media1.giphy.com"
+                        | "media2.giphy.com"
+                        | "media3.giphy.com"
+                        | "media4.giphy.com"
+                )
+            )
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.port().is_some_and(|p| p != 443)
+            || url.fragment().is_some()
+            || !url.path().starts_with("/media/")
+        {
+            return None;
         }
-        Some(Self{id:format!("cheer:{id}"),animated,external:Some(asset.clone())})
+        Some(Self {
+            id: format!("gif:{id}"),
+            animated,
+            external: Some(chat_core::EmoteAsset {
+                url: value.into(),
+                static_url: value.into(),
+                width: 160,
+                height: 100,
+            }),
+        })
     }
-    pub fn provider(&self)->&'static str {
-        if self.id.starts_with("ffz-badge:"){return "ffz_badge";}
-        if self.id.starts_with("ffz-role:"){return "ffz_role_badge";}
-        if self.id.starts_with("7tv-badge:"){return "7tv_badge";}
-        if self.id.starts_with("avatar:"){return "twitch_avatar";}
-        if self.id.starts_with("gif:"){return "twitch_gif";}
-        if self.id.starts_with("cheer:"){return "twitch_cheer";}
-        if self.id.starts_with("badge:"){return "twitch_badge";}
-        match self.external.as_ref().and_then(|a|reqwest::Url::parse(&a.url).ok()).and_then(|u|u.host_str().map(str::to_owned)).as_deref(){Some("cdn.betterttv.net")=>"bttv",Some("cdn.frankerfacez.com")=>"ffz",Some("cdn.7tv.app")=>"7tv",_=>"twitch"}
+    pub fn cheer(id: &str, animated: bool, asset: &chat_core::EmoteAsset) -> Option<Self> {
+        for value in [&asset.url, &asset.static_url] {
+            let url = reqwest::Url::parse(value).ok()?;
+            if url.scheme() != "https"
+                || !matches!(
+                    url.host_str(),
+                    Some("d3aqoihi2n8ty8.cloudfront.net" | "static-cdn.jtvnw.net")
+                )
+                || !url.path().starts_with("/actions/")
+                || !url.username().is_empty()
+                || url.password().is_some()
+                || url.port().is_some_and(|p| p != 443)
+                || url.fragment().is_some()
+                || url.query().is_some()
+            {
+                return None;
+            }
+        }
+        Some(Self {
+            id: format!("cheer:{id}"),
+            animated,
+            external: Some(asset.clone()),
+        })
+    }
+    pub fn provider(&self) -> &'static str {
+        if self.id.starts_with("ffz-badge:") {
+            return "ffz_badge";
+        }
+        if self.id.starts_with("ffz-role:") {
+            return "ffz_role_badge";
+        }
+        if self.id.starts_with("7tv-badge:") {
+            return "7tv_badge";
+        }
+        if self.id.starts_with("avatar:") {
+            return "twitch_avatar";
+        }
+        if self.id.starts_with("gif:") {
+            return "twitch_gif";
+        }
+        if self.id.starts_with("cheer:") {
+            return "twitch_cheer";
+        }
+        if self.id.starts_with("badge:") {
+            return "twitch_badge";
+        }
+        match self
+            .external
+            .as_ref()
+            .and_then(|a| reqwest::Url::parse(&a.url).ok())
+            .and_then(|u| u.host_str().map(str::to_owned))
+            .as_deref()
+        {
+            Some("cdn.betterttv.net") => "bttv",
+            Some("cdn.frankerfacez.com") => "ffz",
+            Some("cdn.7tv.app") => "7tv",
+            _ => "twitch",
+        }
     }
     pub fn badge(value: &str) -> Option<Self> {
-        let url=reqwest::Url::parse(value).ok()?;
-        let path=url.path();
-        if url.scheme()!="https" || url.host_str()!=Some("static-cdn.jtvnw.net") || !url.username().is_empty() || url.password().is_some() || url.port().is_some_and(|p|p!=443) || url.query().is_some() || url.fragment().is_some() || !path.starts_with("/badges/v1/") || path.contains("..") || !path.bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'/'|b'-')) {return None;}
-        Some(Self{id:format!("badge:{path}"),animated:false,external:Some(chat_core::EmoteAsset{url:value.into(),static_url:value.into(),width:18,height:18})})
+        let url = reqwest::Url::parse(value).ok()?;
+        let path = url.path();
+        if url.scheme() != "https"
+            || url.host_str() != Some("static-cdn.jtvnw.net")
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.port().is_some_and(|p| p != 443)
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || !path.starts_with("/badges/v1/")
+            || path.contains("..")
+            || !path
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'-'))
+        {
+            return None;
+        }
+        Some(Self {
+            id: format!("badge:{path}"),
+            animated: false,
+            external: Some(chat_core::EmoteAsset {
+                url: value.into(),
+                static_url: value.into(),
+                width: 18,
+                height: 18,
+            }),
+        })
     }
     pub fn width(&self) -> f32 {
-        if self.id.starts_with("badge:") {return 20.;}
+        if self.id.starts_with("badge:") {
+            return 20.;
+        }
         self.external.as_ref().map_or(28., |a| {
             (28. * a.width as f32 / a.height as f32).clamp(8., 112.)
         })
@@ -161,20 +384,44 @@ enum Entry {
     Failed(Instant, MediaFailure),
 }
 #[derive(Clone, Copy)]
-enum MediaFailure { Transport, Timeout, Http(u16), WireLimit, Format, Decode, Dimensions, FrameLimit, DecodedLimit, CacheBudget }
+enum MediaFailure {
+    Transport,
+    Timeout,
+    Http(u16),
+    WireLimit,
+    Format,
+    Decode,
+    Dimensions,
+    FrameLimit,
+    DecodedLimit,
+    CacheBudget,
+}
 impl MediaFailure {
-    fn label(self) -> String { match self {
-        Self::Transport => "transport".into(), Self::Timeout => "timeout".into(),
-        Self::Http(status) => format!("http_{status}"), Self::WireLimit => "wire_limit".into(),
-        Self::Format => "unsupported_format".into(), Self::Decode => "decode".into(),
-        Self::Dimensions => "dimensions".into(), Self::FrameLimit => "frame_limit".into(),
-        Self::DecodedLimit => "decoded_limit".into(), Self::CacheBudget => "cache_budget".into(),
-    }}
+    fn label(self) -> String {
+        match self {
+            Self::Transport => "transport".into(),
+            Self::Timeout => "timeout".into(),
+            Self::Http(status) => format!("http_{status}"),
+            Self::WireLimit => "wire_limit".into(),
+            Self::Format => "unsupported_format".into(),
+            Self::Decode => "decode".into(),
+            Self::Dimensions => "dimensions".into(),
+            Self::FrameLimit => "frame_limit".into(),
+            Self::DecodedLimit => "decoded_limit".into(),
+            Self::CacheBudget => "cache_budget".into(),
+        }
+    }
 }
 type Download = (EmoteKey, Result<(Arc<DecodedMedia>, usize), MediaFailure>);
-struct QueuedDownload { key: EmoteKey, priority: u8 }
+struct QueuedDownload {
+    key: EmoteKey,
+    priority: u8,
+}
 #[derive(Default)]
-struct DownloadQueue { jobs: VecDeque<QueuedDownload>, closed: bool }
+struct DownloadQueue {
+    jobs: VecDeque<QueuedDownload>,
+    closed: bool,
+}
 type SharedQueue = Arc<(Mutex<DownloadQueue>, Condvar)>;
 pub struct MediaCache {
     entries: HashMap<EmoteKey, Entry>,
@@ -205,12 +452,21 @@ impl MediaCache {
                 };
                 loop {
                     let (lock, wake) = &*jobs;
-                    let Ok(mut queue) = lock.lock() else { return; };
+                    let Ok(mut queue) = lock.lock() else {
+                        return;
+                    };
                     while queue.jobs.is_empty() && !queue.closed {
-                        queue = match wake.wait(queue) { Ok(queue) => queue, Err(_) => return };
+                        queue = match wake.wait(queue) {
+                            Ok(queue) => queue,
+                            Err(_) => return,
+                        };
                     }
-                    if queue.closed { return; }
-                    let Some(job) = queue.jobs.pop_front() else { continue; };
+                    if queue.closed {
+                        return;
+                    }
+                    let Some(job) = queue.jobs.pop_front() else {
+                        continue;
+                    };
                     drop(queue);
                     let key = job.key;
                     let result = download(&client, &key);
@@ -235,25 +491,39 @@ impl MediaCache {
     pub fn inspection(&self) -> serde_json::Value {
         // Aggregate fixed categories only: no credentials, request URLs or raw errors.
         let mut failure_reasons = std::collections::BTreeMap::<String, usize>::new();
-        for entry in self.entries.values() { if let Entry::Failed(_, reason) = entry {
-            *failure_reasons.entry(reason.label()).or_default() += 1;
-        }}
+        for entry in self.entries.values() {
+            if let Entry::Failed(_, reason) = entry {
+                *failure_reasons.entry(reason.label()).or_default() += 1;
+            }
+        }
         serde_json::json!({"failure_reasons":failure_reasons,"decoded_bytes":self.bytes,"entries":self.entries.len(),"pending":self.entries.values().filter(|e|matches!(e,Entry::Pending)).count(),"failed":self.entries.values().filter(|e|matches!(e,Entry::Failed(..))).count(),"assets":self.entries.iter().filter_map(|(key,entry)| {
             if let Entry::Ready{image,..}=entry { Some(serde_json::json!({"id":key.id,"provider":key.provider(),"animated_requested":key.animated,"frames":image.image.frame_count(),"frame_now":image.frame(false)})) } else {None}
         }).collect::<Vec<_>>()})
     }
-    pub fn peek(&self,key:&EmoteKey)->Option<Arc<DecodedMedia>> {
-        match self.entries.get(key){Some(Entry::Ready{image,..})=>Some(image.clone()),_=>None}
+    pub fn peek(&self, key: &EmoteKey) -> Option<Arc<DecodedMedia>> {
+        match self.entries.get(key) {
+            Some(Entry::Ready { image, .. }) => Some(image.clone()),
+            _ => None,
+        }
     }
-    pub fn touch(&mut self,key:&EmoteKey){
-        self.used=self.used.wrapping_add(1);
-        if let Some(Entry::Ready{used,..})=self.entries.get_mut(key){*used=self.used;}
+    pub fn touch(&mut self, key: &EmoteKey) {
+        self.used = self.used.wrapping_add(1);
+        if let Some(Entry::Ready { used, .. }) = self.entries.get_mut(key) {
+            *used = self.used;
+        }
     }
-    pub fn failure_label(&self,key:&EmoteKey)->Option<String>{match self.entries.get(key){Some(Entry::Failed(_,reason))=>Some(reason.label()),_=>None}}
+    pub fn failure_label(&self, key: &EmoteKey) -> Option<String> {
+        match self.entries.get(key) {
+            Some(Entry::Failed(_, reason)) => Some(reason.label()),
+            _ => None,
+        }
+    }
     pub fn failed(&self, key: &EmoteKey) -> bool {
         matches!(self.entries.get(key), Some(Entry::Failed(at, _)) if at.elapsed() < Duration::from_secs(60))
     }
-    pub fn get(&mut self, key: &EmoteKey, cx: &mut App) -> Option<Arc<DecodedMedia>> { self.request(key, 0, cx) }
+    pub fn get(&mut self, key: &EmoteKey, cx: &mut App) -> Option<Arc<DecodedMedia>> {
+        self.request(key, 0, cx)
+    }
     fn request(&mut self, key: &EmoteKey, priority: u8, cx: &mut App) -> Option<Arc<DecodedMedia>> {
         self.used = self.used.wrapping_add(1);
         match self.entries.get_mut(key) {
@@ -262,67 +532,115 @@ impl MediaCache {
                 return Some(image.clone());
             }
             Some(Entry::Pending) => {
-                if let Ok(mut queue)=self.jobs.0.lock() {
-                    if let Some(job)=queue.jobs.iter_mut().find(|job|&job.key==key) {job.priority=job.priority.min(priority);}
-                    queue.jobs.make_contiguous().sort_by_key(|job|job.priority);
+                if let Ok(mut queue) = self.jobs.0.lock() {
+                    if let Some(job) = queue.jobs.iter_mut().find(|job| &job.key == key) {
+                        job.priority = job.priority.min(priority);
+                    }
+                    queue.jobs.make_contiguous().sort_by_key(|job| job.priority);
                 }
                 return None;
-            },
+            }
             Some(Entry::Failed(at, _)) if at.elapsed() < Duration::from_secs(60) => return None,
             _ => {}
         }
         // Expired failure changes the inline fallback from text back to an image
         // reservation, even if a full queue defers the actual retry.
-        if (self.layout_keys.contains(key) || self.conservative_layout) && matches!(self.entries.get(key), Some(Entry::Failed(..))) {
+        if (self.layout_keys.contains(key) || self.conservative_layout)
+            && matches!(self.entries.get(key), Some(Entry::Failed(..)))
+        {
             self.layout_dirty = true;
         }
         // Only this UI owner enqueues; workers can only free queue slots.
-        let has_room=self.jobs.0.lock().is_ok_and(|queue|!queue.closed && queue.jobs.len()<32);
-        if !has_room {return None;}
-        if !self.entries.contains_key(key) && self.entries.len() >= 512 && !self.evict(cx, false) { return None; }
-        let queued = if let Ok(mut queue)=self.jobs.0.lock() {
-            if queue.closed || queue.jobs.len()>=32 {false} else {
-                queue.jobs.push_back(QueuedDownload{key:key.clone(),priority});
-                queue.jobs.make_contiguous().sort_by_key(|job|job.priority);
-                self.jobs.1.notify_one(); true
+        let has_room = self
+            .jobs
+            .0
+            .lock()
+            .is_ok_and(|queue| !queue.closed && queue.jobs.len() < 32);
+        if !has_room {
+            return None;
+        }
+        if !self.entries.contains_key(key) && self.entries.len() >= 512 && !self.evict(cx, false) {
+            return None;
+        }
+        let queued = if let Ok(mut queue) = self.jobs.0.lock() {
+            if queue.closed || queue.jobs.len() >= 32 {
+                false
+            } else {
+                queue.jobs.push_back(QueuedDownload {
+                    key: key.clone(),
+                    priority,
+                });
+                queue.jobs.make_contiguous().sort_by_key(|job| job.priority);
+                self.jobs.1.notify_one();
+                true
             }
-        } else {false};
+        } else {
+            false
+        };
         if queued {
             // A full queue must not evict usable images on every paint.
-            self.entries
-                .insert(key.clone(), Entry::Pending);
+            self.entries.insert(key.clone(), Entry::Pending);
         }
         None
     }
     /// On a viewport change, abandon queued offscreen picker/look-ahead work.
     /// In-flight downloads and chat requests remain intact; visible rows retain order.
     pub fn prioritize_picker(&mut self, visible: &[EmoteKey], cx: &mut App) {
-        if self.picker_view==visible {return;}
-        self.picker_view=visible.to_vec();
-        let mut removed=Vec::new();
-        if let Ok(mut queue)=self.jobs.0.lock() {
-            queue.jobs.retain(|job|{
-                let keep=job.priority==0 || self.layout_keys.contains(&job.key) || visible.contains(&job.key);
-                if !keep {removed.push(job.key.clone());} keep
+        if self.picker_view == visible {
+            return;
+        }
+        self.picker_view = visible.to_vec();
+        let mut removed = Vec::new();
+        if let Ok(mut queue) = self.jobs.0.lock() {
+            queue.jobs.retain(|job| {
+                let keep = job.priority == 0
+                    || self.layout_keys.contains(&job.key)
+                    || visible.contains(&job.key);
+                if !keep {
+                    removed.push(job.key.clone());
+                }
+                keep
             });
             queue.jobs.make_contiguous().sort_by_key(|job| {
-                if job.priority==0 {(0,0)} else {(1,visible.iter().position(|key|key==&job.key).unwrap_or(usize::MAX))}
+                if job.priority == 0 {
+                    (0, 0)
+                } else {
+                    (
+                        1,
+                        visible
+                            .iter()
+                            .position(|key| key == &job.key)
+                            .unwrap_or(usize::MAX),
+                    )
+                }
             });
         }
-        for key in removed {self.remove(&key,cx);}
+        for key in removed {
+            self.remove(&key, cx);
+        }
     }
     /// Picker cells use the static asset when animation is missing or over budget.
     /// A failed animated request must not strand an otherwise usable emote.
-    pub fn get_picker(&mut self, key: &EmoteKey, cx: &mut App) -> (Option<Arc<DecodedMedia>>, bool) {
+    pub fn get_picker(
+        &mut self,
+        key: &EmoteKey,
+        cx: &mut App,
+    ) -> (Option<Arc<DecodedMedia>>, bool) {
         let mut requested = key.clone();
         let mut image = self.request(&requested, 1, cx);
         if image.is_none() && requested.animated {
-            let failed=self.failed(&requested);
-            let mut fallback=requested.clone(); fallback.animated=false;
+            let failed = self.failed(&requested);
+            let mut fallback = requested.clone();
+            fallback.animated = false;
             // Keep an already usable static image visible during animation retries.
-            image=self.peek(&fallback);
-            if image.is_some(){self.touch(&fallback);}
-            if image.is_none() && failed {requested=fallback;image=self.request(&requested,1,cx);}
+            image = self.peek(&fallback);
+            if image.is_some() {
+                self.touch(&fallback);
+            }
+            if image.is_none() && failed {
+                requested = fallback;
+                image = self.request(&requested, 1, cx);
+            }
         }
         let loading = image.is_none() && !self.failed(&requested);
         (image, loading)
@@ -335,37 +653,76 @@ impl MediaCache {
         let image = self.get(key, cx);
         if self.layout_keys.len() < 1024 || self.layout_keys.contains(key) {
             self.layout_keys.insert(key.clone());
-        } else { self.conservative_layout = true; }
+        } else {
+            self.conservative_layout = true;
+        }
         image
     }
-    pub fn take_layout_dirty(&mut self) -> bool { std::mem::take(&mut self.layout_dirty) }
+    pub fn take_layout_dirty(&mut self) -> bool {
+        std::mem::take(&mut self.layout_dirty)
+    }
     /// Low-priority look-ahead never fills the queue ahead of visible chat.
     pub fn prefetch(&mut self, key: &EmoteKey, cx: &mut App) {
-        if matches!(self.entries.get(key),Some(Entry::Ready{..}|Entry::Pending))
-            || matches!(self.entries.get(key),Some(Entry::Failed(at, _)) if at.elapsed()<Duration::from_secs(60))
-            || self.entries.values().filter(|e| matches!(e, Entry::Pending)).count() >= 12 { return; }
+        if matches!(
+            self.entries.get(key),
+            Some(Entry::Ready { .. } | Entry::Pending)
+        ) || matches!(self.entries.get(key),Some(Entry::Failed(at, _)) if at.elapsed()<Duration::from_secs(60))
+            || self
+                .entries
+                .values()
+                .filter(|e| matches!(e, Entry::Pending))
+                .count()
+                >= 12
+        {
+            return;
+        }
         self.request(key, 2, cx);
     }
     /// Keep the current picker viewport resident. Evicting its images on every
     /// completion causes an endless download/evict loop in animation-heavy sets.
     fn evict(&mut self, cx: &mut App, bytes_only: bool) -> bool {
-        let key = self.entries.iter()
-            .filter(|(key, entry)| !matches!(entry, Entry::Pending)
-                && (!bytes_only || matches!(entry, Entry::Ready{..}))
-                && !self.picker_view.iter().any(|visible| visible == *key
-                    || (visible.animated && !key.animated && visible.id == key.id && visible.external == key.external)))
+        let key = self
+            .entries
+            .iter()
+            .filter(|(key, entry)| {
+                !matches!(entry, Entry::Pending)
+                    && (!bytes_only || matches!(entry, Entry::Ready { .. }))
+                    && !self.picker_view.iter().any(|visible| {
+                        visible == *key
+                            || (visible.animated
+                                && !key.animated
+                                && visible.id == key.id
+                                && visible.external == key.external)
+                    })
+            })
             .min_by_key(|(_, entry)| match entry {
                 Entry::Ready { used, .. } => *used,
                 _ => 0,
-            }).map(|(key, _)| key.clone());
-        if let Some(key) = key { self.remove(&key, cx); true } else { false }
+            })
+            .map(|(key, _)| key.clone());
+        if let Some(key) = key {
+            self.remove(&key, cx);
+            true
+        } else {
+            false
+        }
     }
     /// Retry failures without discarding usable images or duplicating active jobs.
     pub fn retry_images(&mut self, keys: &[EmoteKey], cx: &mut App) {
-        let failed=self.entries.iter().filter(|(key,entry)| matches!(entry,Entry::Failed(..))
-            && keys.iter().any(|wanted|wanted.id==key.id && wanted.external==key.external))
-            .map(|(key,_)|key.clone()).collect::<Vec<_>>();
-        for key in failed {self.remove(&key,cx);}
+        let failed = self
+            .entries
+            .iter()
+            .filter(|(key, entry)| {
+                matches!(entry, Entry::Failed(..))
+                    && keys
+                        .iter()
+                        .any(|wanted| wanted.id == key.id && wanted.external == key.external)
+            })
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        for key in failed {
+            self.remove(&key, cx);
+        }
     }
     fn remove(&mut self, key: &EmoteKey, cx: &mut App) {
         self.layout_dirty |= self.layout_keys.remove(key) || self.conservative_layout;
@@ -383,24 +740,41 @@ impl MediaCache {
             self.layout_dirty |= self.layout_keys.contains(&key) || self.conservative_layout;
             match result {
                 Ok((mut image, bytes)) => {
-                    if let Some(decoded) = Arc::get_mut(&mut image) { decoded.epoch = Instant::now(); }
+                    if let Some(decoded) = Arc::get_mut(&mut image) {
+                        decoded.epoch = Instant::now();
+                    }
                     // Large visible GIFs must not evict and redownload one another
                     // continuously. Reject excess animation for one cooldown; the
                     // renderer requests the bounded static variant instead.
-                    if key.id.starts_with("gif:") && key.animated && self.bytes + bytes > 40 * 1024 * 1024 {
-                        self.entries.insert(key,Entry::Failed(Instant::now(), MediaFailure::CacheBudget));
-                        changed=true;
+                    if key.id.starts_with("gif:")
+                        && key.animated
+                        && self.bytes + bytes > 40 * 1024 * 1024
+                    {
+                        self.entries.insert(
+                            key,
+                            Entry::Failed(Instant::now(), MediaFailure::CacheBudget),
+                        );
+                        changed = true;
                         continue;
                     }
                     // Reserve room for small static fallbacks instead of letting
                     // animated cells consume the complete residency budget.
-                    let budget = if key.animated {40 * 1024 * 1024} else {48 * 1024 * 1024};
+                    let budget = if key.animated {
+                        40 * 1024 * 1024
+                    } else {
+                        48 * 1024 * 1024
+                    };
                     while self.bytes + bytes > budget && self.bytes > 0 {
-                        if !self.evict(cx, true) {break;}
+                        if !self.evict(cx, true) {
+                            break;
+                        }
                     }
                     if self.bytes + bytes > budget {
-                        self.entries.insert(key,Entry::Failed(Instant::now(),MediaFailure::CacheBudget));
-                        changed=true;
+                        self.entries.insert(
+                            key,
+                            Entry::Failed(Instant::now(), MediaFailure::CacheBudget),
+                        );
+                        changed = true;
                         continue;
                     }
                     self.used = self.used.wrapping_add(1);
@@ -415,7 +789,8 @@ impl MediaCache {
                     );
                 }
                 Err(reason) => {
-                    self.entries.insert(key, Entry::Failed(Instant::now(), reason));
+                    self.entries
+                        .insert(key, Entry::Failed(Instant::now(), reason));
                 }
             }
             changed = true;
@@ -424,7 +799,13 @@ impl MediaCache {
     }
 }
 impl Drop for MediaCache {
-    fn drop(&mut self) { if let Ok(mut queue)=self.jobs.0.lock() {queue.closed=true;queue.jobs.clear();self.jobs.1.notify_all();} }
+    fn drop(&mut self) {
+        if let Ok(mut queue) = self.jobs.0.lock() {
+            queue.closed = true;
+            queue.jobs.clear();
+            self.jobs.1.notify_all();
+        }
+    }
 }
 fn download(
     client: &reqwest::blocking::Client,
@@ -447,14 +828,34 @@ fn download(
                 key.id
             )
         });
-    let response = client.get(url).send().map_err(|e| if e.is_timeout() {MediaFailure::Timeout} else {MediaFailure::Transport})?;
+    let response = client.get(url).send().map_err(|e| {
+        if e.is_timeout() {
+            MediaFailure::Timeout
+        } else {
+            MediaFailure::Transport
+        }
+    })?;
     if !response.status().is_success() {
         return Err(MediaFailure::Http(response.status().as_u16()));
     }
-    let rich_gif=key.id.starts_with("gif:");
-    let max_wire: usize = if rich_gif { 12 * 1024 * 1024 } else { 2 * 1024 * 1024 };
-    let max_dimension = if rich_gif {1024} else if key.id.starts_with("avatar:") { 512 } else { 256 };
-    let max_decoded = if rich_gif { 24 * 1024 * 1024 } else { 8 * 1024 * 1024 };
+    let rich_gif = key.id.starts_with("gif:");
+    let max_wire: usize = if rich_gif {
+        12 * 1024 * 1024
+    } else {
+        2 * 1024 * 1024
+    };
+    let max_dimension = if rich_gif {
+        1024
+    } else if key.id.starts_with("avatar:") {
+        512
+    } else {
+        256
+    };
+    let max_decoded = if rich_gif {
+        24 * 1024 * 1024
+    } else {
+        8 * 1024 * 1024
+    };
     if response
         .content_length()
         .is_some_and(|n| n > max_wire as u64)
@@ -472,18 +873,24 @@ fn download(
     let format = image::guess_format(&bytes).map_err(|_| MediaFailure::Format)?;
     let mut frames = Vec::new();
     let mut decoded = 0usize;
-    let mut rich_frames=crate::gif_frames::Frames::default();
+    let mut rich_frames = crate::gif_frames::Frames::default();
     let mut push = |mut frame: image::Frame| -> Result<(), MediaFailure> {
         let (w, h) = frame.buffer().dimensions();
         if w == 0 || h == 0 || w > max_dimension || h > max_dimension {
             return Err(MediaFailure::Dimensions);
         }
         if rich_gif {
-            rich_frames.push(frame).map_err(|_|MediaFailure::FrameLimit)?;
+            rich_frames
+                .push(frame)
+                .map_err(|_| MediaFailure::FrameLimit)?;
             return Ok(());
         }
-        if frames.len() >= 120 { return Err(MediaFailure::FrameLimit); }
-        decoded = decoded.checked_add(w as usize * h as usize * 4).ok_or(MediaFailure::DecodedLimit)?;
+        if frames.len() >= 120 {
+            return Err(MediaFailure::FrameLimit);
+        }
+        decoded = decoded
+            .checked_add(w as usize * h as usize * 4)
+            .ok_or(MediaFailure::DecodedLimit)?;
         if decoded > max_decoded {
             return Err(MediaFailure::DecodedLimit);
         }
@@ -495,15 +902,17 @@ fn download(
     };
     match format {
         ImageFormat::Gif => {
-            let mut decoder =
-                image::codecs::gif::GifDecoder::new(Cursor::new(&bytes)).map_err(|_| MediaFailure::Decode)?;
+            let mut decoder = image::codecs::gif::GifDecoder::new(Cursor::new(&bytes))
+                .map_err(|_| MediaFailure::Decode)?;
             let (w, h) = decoder.dimensions();
             if w > max_dimension || h > max_dimension {
                 return Err(MediaFailure::Dimensions);
             }
             let mut limits = image::Limits::default();
             limits.max_alloc = Some(max_decoded as u64);
-            decoder.set_limits(limits).map_err(|_| MediaFailure::Decode)?;
+            decoder
+                .set_limits(limits)
+                .map_err(|_| MediaFailure::Decode)?;
             for frame in decoder.into_frames() {
                 push(frame.map_err(|_| MediaFailure::Decode)?)?;
                 if !key.animated {
@@ -512,15 +921,17 @@ fn download(
             }
         }
         ImageFormat::WebP if key.animated => {
-            let mut decoder =
-                image::codecs::webp::WebPDecoder::new(Cursor::new(&bytes)).map_err(|_| MediaFailure::Decode)?;
+            let mut decoder = image::codecs::webp::WebPDecoder::new(Cursor::new(&bytes))
+                .map_err(|_| MediaFailure::Decode)?;
             let (w, h) = decoder.dimensions();
             if w > max_dimension || h > max_dimension {
                 return Err(MediaFailure::Dimensions);
             }
             let mut limits = image::Limits::default();
             limits.max_alloc = Some(max_decoded as u64);
-            decoder.set_limits(limits).map_err(|_| MediaFailure::Decode)?;
+            decoder
+                .set_limits(limits)
+                .map_err(|_| MediaFailure::Decode)?;
             for frame in decoder.into_frames() {
                 push(frame.map_err(|_| MediaFailure::Decode)?)?;
             }
@@ -533,15 +944,25 @@ fn download(
             limits.max_alloc = Some(max_decoded as u64);
             reader.limits(limits);
             push(image::Frame::new(
-                reader.decode().map_err(|_| MediaFailure::Decode)?.into_rgba8(),
+                reader
+                    .decode()
+                    .map_err(|_| MediaFailure::Decode)?
+                    .into_rgba8(),
             ))?;
         }
         _ => return Err(MediaFailure::Format),
     }
-    if rich_gif{
-        decoded=rich_frames.bytes;frames=rich_frames.frames;
-        if decoded>max_decoded{return Err(MediaFailure::DecodedLimit);}
-        for frame in &mut frames{for pixel in frame.buffer_mut().chunks_exact_mut(4){pixel.swap(0,2);}}
+    if rich_gif {
+        decoded = rich_frames.bytes;
+        frames = rich_frames.frames;
+        if decoded > max_decoded {
+            return Err(MediaFailure::DecodedLimit);
+        }
+        for frame in &mut frames {
+            for pixel in frame.buffer_mut().chunks_exact_mut(4) {
+                pixel.swap(0, 2);
+            }
+        }
     }
     if frames.is_empty() {
         return Err(MediaFailure::Decode);
@@ -552,7 +973,7 @@ fn download(
     for index in 0..image.frame_count() {
         let delay = Duration::from(image.delay(index))
             .as_millis()
-            .clamp(20, if rich_gif{6_000_000}else{10_000}) as u64;
+            .clamp(20, if rich_gif { 6_000_000 } else { 10_000 }) as u64;
         cycle_ms += delay;
         ends_ms.push(cycle_ms);
     }

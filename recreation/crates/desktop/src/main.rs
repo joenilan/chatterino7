@@ -1,64 +1,84 @@
 use gpui_kit::prelude::FluentBuilder;
-mod auth;
-mod commands;
-mod custom_commands;
-mod owned_emotes;
-mod chat_text;
-mod chat_search;
-mod message_actions;
-mod replies;
-mod rich_messages;
 mod attention;
-mod highlight_rules;
+mod attention_navigation;
+mod auth;
+mod catalog;
+mod chat_pause;
+mod chat_search;
+mod chat_text;
 mod chatter_appearance;
 mod chatter_notes;
+mod commands;
+mod community;
 mod control;
+mod custom_commands;
+mod dock;
+mod emote_picker;
+mod ffz_badges;
+mod ffz_role_badges;
+mod gif_frames;
+mod highlight_rules;
+mod inline_chat;
+mod input_history;
 mod live;
 mod media;
-mod gif_frames;
 mod media_hover;
-mod catalog;
-mod community;
-mod ffz_role_badges;
-mod ffz_badges;
-mod twitch_assets;
-mod emote_picker;
-mod inline_chat;
-mod storage;
-mod theme;
-mod workspace;
-mod dock;
-mod stream_status;
-mod room_settings;
-mod profiles;
-mod seven_events;
-mod seven_entitlements;
-mod seven_badges;
-mod seven_paints;
-mod name_paint;
+mod message_actions;
 mod message_scroller;
-mod chat_pause;
-mod attention_navigation;
-mod input_history;
+mod name_paint;
+mod owned_emotes;
+mod profiles;
+mod replies;
+mod rich_messages;
+mod room_settings;
+mod seven_badges;
+mod seven_entitlements;
+mod seven_events;
+mod seven_paints;
+mod storage;
+mod stream_status;
+mod theme;
+mod twitch_assets;
+mod workspace;
 use workspace::Workbench;
 
 use chat_core::{Timeline, selection::Selection};
 use chat_text::ChatText;
 use gpui_kit::base::ElementExt as _;
 use gpui_kit::component::{
-    menu::ContextMenuExt,
     Disableable, Icon, IconName, Sizable, StyledExt, WindowExt,
     button::Button,
     input::{InputEvent, Textarea, TextareaState},
+    menu::ContextMenuExt,
     notification::{Notification, NotificationDelivery},
 };
 use gpui_kit::*;
-use message_scroller::{MessageScroller,MessageScrollerState};
-use std::{cell::{Cell, RefCell}, rc::Rc, time::{Duration, Instant}};
+use message_scroller::{MessageScroller, MessageScrollerState};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 gpui_kit::actions!(
     chat_workbench,
-    [CopyChatSelection, ClearChatSelection, SelectAllChat, CompleteEmote, FindChat, NextChatMatch, PreviousChatMatch, PreviousInput, NextInput, ToggleChatPause, ResumeChat, SentHistory, CatchUpChat, PreviousHighlight, NextHighlight]
+    [
+        CopyChatSelection,
+        ClearChatSelection,
+        SelectAllChat,
+        CompleteEmote,
+        FindChat,
+        NextChatMatch,
+        PreviousChatMatch,
+        PreviousInput,
+        NextInput,
+        ToggleChatPause,
+        ResumeChat,
+        SentHistory,
+        CatchUpChat,
+        PreviousHighlight,
+        NextHighlight
+    ]
 );
 
 #[derive(Clone)]
@@ -103,7 +123,11 @@ fn twitch_message_text(text: &str) -> String {
 #[derive(Clone)]
 enum PaneEvent {
     DragStarted,
-    Send { request: u64, text: String, reply_parent: Option<String> },
+    Send {
+        request: u64,
+        text: String,
+        reply_parent: Option<String>,
+    },
     Close,
     RequestClose,
     DraftChanged,
@@ -127,8 +151,8 @@ struct ChannelPane {
     input_history: input_history::History,
     reply_target: Option<replies::Target>,
     attention: attention::Attention,
-    attention_cursor:Option<u64>,
-    jump_pulse:Option<(u64,Instant)>,
+    attention_cursor: Option<u64>,
+    jump_pulse: Option<(u64, Instant)>,
     read_eligible: Rc<Cell<bool>>,
     presented_row: Rc<Cell<Option<u64>>>,
     send_status: String,
@@ -141,10 +165,10 @@ struct ChannelPane {
     focus: FocusHandle,
     draft: Entity<TextareaState>,
     font_size: f32,
-    timestamps:u8,
-    pause_mode:u8,
-    transcript_hover:bool,
-    transcript_available:bool,
+    timestamps: u8,
+    pause_mode: u8,
+    transcript_hover: bool,
+    transcript_available: bool,
     picker: emote_picker::Picker,
     search: chat_search::Search,
     link_press: message_actions::PressState,
@@ -177,15 +201,29 @@ impl ChannelPane {
         });
         cx.subscribe_in(&draft, window, |this: &mut Self, _, event, _window, cx| {
             match event {
-                InputEvent::Change => { this.compose_revision=this.compose_revision.wrapping_add(1); this.complete_query(false,cx); cx.emit(PaneEvent::DraftChanged); },
+                InputEvent::Change => {
+                    this.compose_revision = this.compose_revision.wrapping_add(1);
+                    this.complete_query(false, cx);
+                    cx.emit(PaneEvent::DraftChanged);
+                }
                 _ => {}
             }
             cx.notify();
         })
         .detach();
-        let emote_search=cx.new(|cx|TextareaState::new(window,cx).auto_grow(1,1).placeholder("Search emotes…"));
-        cx.subscribe_in(&emote_search,window,|this:&mut Self,_,event,_,cx|{if matches!(event,InputEvent::Change){this.reset_browser_search(cx);cx.notify();}}).detach();
-        let search=chat_search::create(window,cx);
+        let emote_search = cx.new(|cx| {
+            TextareaState::new(window, cx)
+                .auto_grow(1, 1)
+                .placeholder("Search emotes…")
+        });
+        cx.subscribe_in(&emote_search, window, |this: &mut Self, _, event, _, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.reset_browser_search(cx);
+                cx.notify();
+            }
+        })
+        .detach();
+        let search = chat_search::create(window, cx);
         let scroller = cx.new(|cx| MessageScrollerState::new(timeline.messages().len(), cx));
         cx.observe(&scroller, |_, _, cx| cx.notify()).detach();
         Self {
@@ -200,8 +238,8 @@ impl ChannelPane {
             pending: None,
             reply_target: None,
             attention: Default::default(),
-            attention_cursor:None,
-            jump_pulse:None,
+            attention_cursor: None,
+            jump_pulse: None,
             read_eligible: Rc::new(Cell::new(false)),
             presented_row: Rc::new(Cell::new(None)),
             compose_revision: 0,
@@ -212,10 +250,10 @@ impl ChannelPane {
             focus: cx.focus_handle(),
             draft,
             font_size,
-            timestamps:0,
-            pause_mode:0,
-            transcript_hover:false,
-            transcript_available:false,
+            timestamps: 0,
+            pause_mode: 0,
+            transcript_hover: false,
+            transcript_available: false,
             picker: emote_picker::Picker::default(),
             emote_search,
             search,
@@ -228,17 +266,25 @@ impl ChannelPane {
         }
     }
     fn change_history_limit(&mut self, limit: usize, cx: &mut Context<Self>) {
-        self.search.dirty=true;
-        let removed=self.timeline.borrow_mut().set_capacity(limit);
-        if removed>0 {
-            let first=(self.next_id-self.timeline.borrow().messages().len()) as u64;
-            let mut selection=self.selection.borrow_mut();
-            if selection.anchor.is_some_and(|p|p.row<first)||selection.head.is_some_and(|p|p.row<first){selection.clear();}
+        self.search.dirty = true;
+        let removed = self.timeline.borrow_mut().set_capacity(limit);
+        if removed > 0 {
+            let first = (self.next_id - self.timeline.borrow().messages().len()) as u64;
+            let mut selection = self.selection.borrow_mut();
+            if selection.anchor.is_some_and(|p| p.row < first)
+                || selection.head.is_some_and(|p| p.row < first)
+            {
+                selection.clear();
+            }
             drop(selection);
-            self.entrances.retain(|e|e.row>=first);
-            self.scroller.update(cx,|s,cx|s.splice(0..removed,0,cx));
+            self.entrances.retain(|e| e.row >= first);
+            self.scroller
+                .update(cx, |s, cx| s.splice(0..removed, 0, cx));
         }
-        self.attention.reconcile(&self.timeline.borrow(),(self.next_id-self.timeline.borrow().messages().len()) as u64);
+        self.attention.reconcile(
+            &self.timeline.borrow(),
+            (self.next_id - self.timeline.borrow().messages().len()) as u64,
+        );
         cx.notify();
     }
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -246,7 +292,9 @@ impl ChannelPane {
             return;
         }
         let text = twitch_message_text(&self.draft.read(cx).value());
-        if self.route_command(&text, window, cx) { return; }
+        if self.route_command(&text, window, cx) {
+            return;
+        }
         if !self.connected || text.trim().is_empty() || text.chars().count() > 500 {
             window.push_notification(
                 Notification::info(if !self.connected {
@@ -262,22 +310,38 @@ impl ChannelPane {
         }
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let request = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if self.reply_target.as_ref().is_some_and(|target| target.deleted) {
+        if self
+            .reply_target
+            .as_ref()
+            .is_some_and(|target| target.deleted)
+        {
             window.push_notification(Notification::info("The reply target was deleted. Cancel the reply or choose another message; your draft is kept."),cx);
             return;
         }
-        let reply_parent=self.reply_target.as_ref().map(|target|target.id.clone());
-        self.pending = Some((request, text.clone(), reply_parent.clone(), self.compose_revision));
+        let reply_parent = self.reply_target.as_ref().map(|target| target.id.clone());
+        self.pending = Some((
+            request,
+            text.clone(),
+            reply_parent.clone(),
+            self.compose_revision,
+        ));
         self.send_status = "Sending…".into();
-        cx.emit(PaneEvent::Send { request, text, reply_parent });
+        cx.emit(PaneEvent::Send {
+            request,
+            text,
+            reply_parent,
+        });
         cx.notify();
     }
     fn received(&mut self, mut event: chat_core::Event, cx: &mut Context<Self>) {
         if let chat_core::Event::Message(message) = &mut event {
-            message.fragments = self.catalog.borrow().expand(&self.name, &message.user_id, &message.fragments);
-            chatter_appearance::apply(&self.chatter_appearance,message);
+            message.fragments =
+                self.catalog
+                    .borrow()
+                    .expand(&self.name, &message.user_id, &message.fragments);
+            chatter_appearance::apply(&self.chatter_appearance, message);
         }
-        self.observe_reply_redaction(&event,cx);
+        self.observe_reply_redaction(&event, cx);
         let change = self.timeline.borrow_mut().apply(event);
         match change {
             chat_core::Change::Appended { evicted } => {
@@ -286,7 +350,9 @@ impl ChannelPane {
                 if self.scroller.read(cx).is_following_tail() && !cx.reduce_motion() {
                     // Keep animating the newest visible arrivals even in busy chat.
                     // Retire the oldest effect rather than disabling all motion.
-                    if self.entrances.len() >= 12 { self.entrances.remove(0); }
+                    if self.entrances.len() >= 12 {
+                        self.entrances.remove(0);
+                    }
                     self.entrances.push(MessageEntrance {
                         row: self.next_id as u64,
                         received: now,
@@ -294,8 +360,16 @@ impl ChannelPane {
                     });
                 }
                 self.next_id += 1;
-                { let timeline=self.timeline.borrow();
-                  if let Some(message)=timeline.messages().back(){let first=(self.next_id-timeline.messages().len()) as u64;self.search.appended(message,(self.next_id-1) as u64,first);self.attention.appended(message,(self.next_id-1) as u64,first);} }
+                {
+                    let timeline = self.timeline.borrow();
+                    if let Some(message) = timeline.messages().back() {
+                        let first = (self.next_id - timeline.messages().len()) as u64;
+                        self.search
+                            .appended(message, (self.next_id - 1) as u64, first);
+                        self.attention
+                            .appended(message, (self.next_id - 1) as u64, first);
+                    }
+                }
 
                 self.scroller.update(cx, |scroller, cx| {
                     if evicted {
@@ -305,8 +379,11 @@ impl ChannelPane {
                 });
             }
             chat_core::Change::Updated => {
-                self.attention.reconcile(&self.timeline.borrow(),(self.next_id-self.timeline.borrow().messages().len()) as u64);
-                self.search.dirty=true;
+                self.attention.reconcile(
+                    &self.timeline.borrow(),
+                    (self.next_id - self.timeline.borrow().messages().len()) as u64,
+                );
+                self.search.dirty = true;
                 self.selection.borrow_mut().clear();
                 self.scroller.update(cx, |s, cx| s.remeasure(cx));
             }
@@ -328,15 +405,28 @@ impl ChannelPane {
         if *pending != request {
             return;
         }
-        if result.is_ok() && current_session { self.input_history.record(text); self.catalog.borrow_mut().record_sent_emotes(&self.name,text); }
-        let clear_reply=result.is_ok() && current_session && self.compose_revision==*revision && twitch_message_text(&self.draft.read(cx).value()) == *text && self.reply_target.as_ref().map(|r|&r.id)==parent.as_ref();
-        if clear_reply {self.reply_target=None;}
+        if result.is_ok() && current_session {
+            self.input_history.record(text);
+            self.catalog
+                .borrow_mut()
+                .record_sent_emotes(&self.name, text);
+        }
+        let clear_reply = result.is_ok()
+            && current_session
+            && self.compose_revision == *revision
+            && twitch_message_text(&self.draft.read(cx).value()) == *text
+            && self.reply_target.as_ref().map(|r| &r.id) == parent.as_ref();
+        if clear_reply {
+            self.reply_target = None;
+        }
         if clear_reply {
             self.draft
                 .update(cx, |draft, cx| draft.set_value("", window, cx));
             cx.emit(PaneEvent::DraftChanged);
         }
-        if clear_reply {cx.emit(PaneEvent::DraftChanged);}
+        if clear_reply {
+            cx.emit(PaneEvent::DraftChanged);
+        }
         self.send_status = match result {
             Ok(()) => "Sent".into(),
             Err(e) => e.clone(),
@@ -359,10 +449,9 @@ impl ChannelPane {
                 .map(|(index, text)| ((first + index) as u64, text.as_str())),
         );
         text
-
     }
     fn copy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let text=self.selected_text();
+        let text = self.selected_text();
         if text.is_empty() {
             self.last_copy_result = Some("empty_selection");
             window.push_notification(
@@ -407,49 +496,78 @@ impl ChannelPane {
 }
 impl Render for ChannelPane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let channel_name=self.name.clone();
-        let picker = (self.picker.open&&!window.has_active_dialog(cx)).then(||{
-            let position=self.picker.button_bounds.get().map(|b|point(b.right(),b.origin.y-px(6.))).or_else(||self.viewport.borrow().map(|b|point(b.right(),b.bottom()))).unwrap_or(point(window.viewport_size().width-px(8.),window.viewport_size().height-px(60.)));
-            deferred(anchored().anchor(Anchor::BottomRight).position(position).snap_to_window_with_margin(px(8.)).child(self.render_picker(window,cx))).with_priority(1).into_any_element()
+        let channel_name = self.name.clone();
+        let picker = (self.picker.open && !window.has_active_dialog(cx)).then(|| {
+            let position = self
+                .picker
+                .button_bounds
+                .get()
+                .map(|b| point(b.right(), b.origin.y - px(6.)))
+                .or_else(|| self.viewport.borrow().map(|b| point(b.right(), b.bottom())))
+                .unwrap_or(point(
+                    window.viewport_size().width - px(8.),
+                    window.viewport_size().height - px(60.),
+                ));
+            deferred(
+                anchored()
+                    .anchor(Anchor::BottomRight)
+                    .position(position)
+                    .snap_to_window_with_margin(px(8.))
+                    .child(self.render_picker(window, cx)),
+            )
+            .with_priority(1)
+            .into_any_element()
         });
-        let suggestions = (!self.picker.suggestions.is_empty()&&!self.picker.open).then(||self.render_suggestions(cx));
-        let emote_button_bounds=self.picker.button_bounds.clone();
-        let emote_button_owner=cx.entity().downgrade();
-        let emote_picker_open=self.picker.open;
-        let catalog=self.catalog.clone();
-        let appearance=self.chatter_appearance.clone();
-        let timestamps=self.timestamps;
+        let suggestions = (!self.picker.suggestions.is_empty() && !self.picker.open)
+            .then(|| self.render_suggestions(cx));
+        let emote_button_bounds = self.picker.button_bounds.clone();
+        let emote_button_owner = cx.entity().downgrade();
+        let emote_picker_open = self.picker.open;
+        let catalog = self.catalog.clone();
+        let appearance = self.chatter_appearance.clone();
+        let timestamps = self.timestamps;
         let timeline = self.timeline.clone();
         let media = self.media.clone();
         let retained = timeline.borrow().messages().len();
         let first_order = (self.next_id - retained) as u64;
-        self.search.refresh(&timeline.borrow(),first_order);
-        let search_hits=if self.search.open{self.search.hits.clone()}else{Rc::default()};
-        let read_boundary=self.attention.read_boundary;
-        let jump_pulse=self.jump_pulse;
-        let highlight_rows=self.attention.highlights.clone();
-        let highlight_colors=self.attention.colors.clone();
-        let presented_row=self.presented_row.clone();let read_eligible=self.read_eligible.clone();
-        let search_current=self.search.open.then_some(self.search.current).flatten();
-        let search_bar=self.search.open.then(||self.render_search(cx));
+        self.search.refresh(&timeline.borrow(), first_order);
+        let search_hits = if self.search.open {
+            self.search.hits.clone()
+        } else {
+            Rc::default()
+        };
+        let read_boundary = self.attention.read_boundary;
+        let jump_pulse = self.jump_pulse;
+        let highlight_rows = self.attention.highlights.clone();
+        let highlight_colors = self.attention.colors.clone();
+        let presented_row = self.presented_row.clone();
+        let read_eligible = self.read_eligible.clone();
+        let search_current = self.search.open.then_some(self.search.current).flatten();
+        let search_bar = self.search.open.then(|| self.render_search(cx));
         let selection = self.selection.clone();
         let focus = self.focus.clone();
         let viewport = self.viewport.clone();
         let viewport_layout = self.viewport.clone();
-        let picker_layout_owner=cx.entity().downgrade();let picker_is_open=self.picker.open;
+        let picker_layout_owner = cx.entity().downgrade();
+        let picker_is_open = self.picker.open;
         let finish = self.selection.clone();
         let copy_owner = cx.weak_entity();
         let menu_owner = cx.weak_entity();
-        let link_press=self.link_press.clone();
-        let finish_link=self.link_press.clone();
+        let link_press = self.link_press.clone();
+        let finish_link = self.link_press.clone();
         let copy_viewport = self.viewport.clone();
         let following = self.scroller.read(cx).is_following_tail();
-        let paused=self.scroller.read(cx).paused();
+        let paused = self.scroller.read(cx).paused();
         let now = Instant::now();
         self.entrances.retain(|entry| entry.active(now));
-        let entrances = if following && !cx.reduce_motion()
-            && { let selection = self.selection.borrow(); !selection.dragging && selection.anchor == selection.head }
-        { self.entrances.clone() } else { Vec::new() };
+        let entrances = if following && !cx.reduce_motion() && {
+            let selection = self.selection.borrow();
+            !selection.dragging && selection.anchor == selection.head
+        } {
+            self.entrances.clone()
+        } else {
+            Vec::new()
+        };
         div()
             .id("channel-pane")
             .key_context("JawjackChannel")

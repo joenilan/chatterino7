@@ -49,13 +49,23 @@ impl Drop for TwitchAccount {
     }
 }
 impl TwitchAccount {
-    pub fn label(&self)->String {self.account.as_ref().map(|a|a.login.clone()).unwrap_or_else(||"Sign in".into())}
+    pub fn label(&self) -> String {
+        self.account
+            .as_ref()
+            .map(|a| a.login.clone())
+            .unwrap_or_else(|| "Sign in".into())
+    }
     pub fn identity(&self) -> Option<crate::live::Identity> {
-        self.account.as_ref().filter(|a| Instant::now() < a.expires_at).map(|a| crate::live::Identity {
-            user_id: a.tokens["user_id"].as_str().unwrap_or("").into(),
-            access: a.tokens["access_token"].as_str().unwrap_or("").into(),
-            can_read_emotes: a.tokens["scopes"].as_array().is_some_and(|s|s.iter().any(|s|s=="user:read:emotes")),
-        })
+        self.account
+            .as_ref()
+            .filter(|a| Instant::now() < a.expires_at)
+            .map(|a| crate::live::Identity {
+                user_id: a.tokens["user_id"].as_str().unwrap_or("").into(),
+                access: a.tokens["access_token"].as_str().unwrap_or("").into(),
+                can_read_emotes: a.tokens["scopes"]
+                    .as_array()
+                    .is_some_and(|s| s.iter().any(|s| s == "user:read:emotes")),
+            })
     }
     pub fn new(cx: &mut Context<Self>) -> Self {
         let read = cx.read_credentials(VAULT);
@@ -88,7 +98,9 @@ impl TwitchAccount {
         }
     }
     fn start(&mut self, saved: Option<Value>, cx: &mut Context<Self>) {
-        if self.saving || self.renewing { return; }
+        if self.saving || self.renewing {
+            return;
+        }
         self.cancel.store(true, Ordering::Relaxed);
         self.cancel = Arc::new(AtomicBool::new(false));
         self.generation += 1;
@@ -98,7 +110,9 @@ impl TwitchAccount {
         self.code = None;
         self.copied_at = None;
         self.validating = saved.is_some() && self.account.is_some();
-        if !self.validating { self.account = None; }
+        if !self.validating {
+            self.account = None;
+        }
         self.status = if self.validating {
             "Checking your Twitch session… chat stays connected."
         } else if saved.is_some() {
@@ -178,7 +192,11 @@ impl TwitchAccount {
         self.renewing = false;
         // A routine validation of unchanged credentials must not interrupt live chat
         // or rewrite the credential vault every half hour.
-        if self.account.as_ref().is_some_and(|old| old.tokens == account.tokens) {
+        if self
+            .account
+            .as_ref()
+            .is_some_and(|old| old.tokens == account.tokens)
+        {
             self.account = Some(account);
             self.busy = false;
             self.validating = false;
@@ -212,15 +230,19 @@ impl TwitchAccount {
         }).detach();
     }
     fn schedule_validation(&self, generation: u64, cx: &mut Context<Self>) {
-        let delay = self.account.as_ref().map(|account| {
-            account.expires_at.saturating_duration_since(Instant::now())
-                .saturating_sub(Duration::from_secs(60))
-                .clamp(Duration::from_secs(1), Duration::from_secs(1800))
-        }).unwrap_or(Duration::from_secs(1800));
+        let delay = self
+            .account
+            .as_ref()
+            .map(|account| {
+                account
+                    .expires_at
+                    .saturating_duration_since(Instant::now())
+                    .saturating_sub(Duration::from_secs(60))
+                    .clamp(Duration::from_secs(1), Duration::from_secs(1800))
+            })
+            .unwrap_or(Duration::from_secs(1800));
         cx.spawn(async move |view, cx| {
-            cx.background_executor()
-                .timer(delay)
-                .await;
+            cx.background_executor().timer(delay).await;
             let _ = view.update(cx, |this, cx| {
                 if this.generation == generation && !this.busy {
                     if let Some(account) = &this.account {
@@ -243,11 +265,14 @@ impl TwitchAccount {
                     cx.notify();
                 }
             });
-        }).detach();
+        })
+        .detach();
         cx.notify();
     }
     fn retry_vault(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.saving || self.renewing { return; }
+        if self.busy || self.saving || self.renewing {
+            return;
+        }
         self.busy = true;
         self.generation += 1;
         let generation = self.generation;
@@ -450,7 +475,11 @@ fn connect(
     events: &mpsc::Sender<Event>,
 ) -> Result<Account, String> {
     // Older saved grants keep chat working until the owner signs in again.
-    let required_scopes = if saved.is_some() {EXISTING_CHAT_SCOPES} else {SCOPES};
+    let required_scopes = if saved.is_some() {
+        EXISTING_CHAT_SCOPES
+    } else {
+        SCOPES
+    };
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
@@ -544,13 +573,18 @@ fn connect(
         let _ = events.send(Event::Invalidated);
     }
     if status == 401 || (status == 200 && identity["expires_in"].as_u64().unwrap_or(0) < 3600) {
-        if cancel.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
+        if cancel.load(Ordering::Relaxed) {
+            return Err("Cancelled".into());
+        }
         // Commit the renewal transaction on the UI thread before rotating credentials.
         // A cancellation queued during validation cannot orphan a rotated refresh token.
         let (ready, wait) = mpsc::sync_channel(1);
-        events.send(Event::Renewing(ready)).map_err(|_| "Account window closed")?;
+        events
+            .send(Event::Renewing(ready))
+            .map_err(|_| "Account window closed")?;
         if !wait.recv_timeout(Duration::from_secs(30)).unwrap_or(false)
-            || cancel.load(Ordering::Relaxed) {
+            || cancel.load(Ordering::Relaxed)
+        {
             return Err("Session renewal cancelled before contacting Twitch".into());
         }
         let refresh = string(&tokens, "refresh_token")?;
@@ -592,7 +626,9 @@ fn connect(
     let user_id = string(&identity, "user_id")?;
     let access = string(&tokens, "access_token")?;
     let refresh = string(&tokens, "refresh_token")?;
-    let remaining = identity["expires_in"].as_u64().filter(|n| *n > 30 && *n <= 31_536_000)
+    let remaining = identity["expires_in"]
+        .as_u64()
+        .filter(|n| *n > 30 && *n <= 31_536_000)
         .ok_or("Twitch returned an expired or too-short session. Please sign in again")?;
     // Conservatively cover validation-request time and avoid exposing nearly expired tokens.
     let expires_at = Instant::now() + Duration::from_secs(remaining.saturating_sub(30));

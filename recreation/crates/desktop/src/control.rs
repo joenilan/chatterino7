@@ -113,9 +113,11 @@ pub fn start(name: &str) -> Result<Server, String> {
                 // Keep requests small while allowing bounded inspection metadata.
                 // An oversized result must still be a consumable response with the
                 // matching identity, rather than wedging every subsequent call.
-                let response=if response.to_string().len() as u64 > MAX_RESPONSE_BYTES {
+                let response = if response.to_string().len() as u64 > MAX_RESPONSE_BYTES {
                     json!({"session":response["session"],"id":response["id"],"result":{"error":"Inspection exceeds response budget; narrow the request"}})
-                } else {response};
+                } else {
+                    response
+                };
                 if publish(&directory.join("response.json"), &response).is_err() {
                     break;
                 }
@@ -249,23 +251,55 @@ pub fn dispatch(
         "drag" => {
             let from = request.get("from").ok_or("Missing from coordinates")?;
             let to = request.get("to").ok_or("Missing to coordinates")?;
-            let start=point(px(number(from,"x",16384.)?),px(number(from,"y",16384.)?));
-            let end=point(px(number(to,"x",16384.)?),px(number(to,"y",16384.)?));
-            let bounds=Bounds::new(Point::default(),window.viewport_size());
-            if !bounds.contains(&start)||!bounds.contains(&end){return Err("Drag endpoints must be inside the client area".into());}
+            let start = point(
+                px(number(from, "x", 16384.)?),
+                px(number(from, "y", 16384.)?),
+            );
+            let end = point(px(number(to, "x", 16384.)?), px(number(to, "y", 16384.)?));
+            let bounds = Bounds::new(Point::default(), window.viewport_size());
+            if !bounds.contains(&start) || !bounds.contains(&end) {
+                return Err("Drag endpoints must be inside the client area".into());
+            }
             // One synchronous gesture: never leave a button held between tool calls.
             // Refresh hit testing after each frame without allowing unrelated native events in.
-            view.update(cx,|view,_|view.control_pointer(true));
-            window.dispatch_event(MouseDownEvent{position:start,button:MouseButton::Left,modifiers:Modifiers::default(),click_count:1,first_mouse:false}.to_platform_input(),cx);
+            view.update(cx, |view, _| view.control_pointer(true));
+            window.dispatch_event(
+                MouseDownEvent {
+                    position: start,
+                    button: MouseButton::Left,
+                    modifiers: Modifiers::default(),
+                    click_count: 1,
+                    first_mouse: false,
+                }
+                .to_platform_input(),
+                cx,
+            );
             window.draw(cx).clear(cx);
             for step in 1..=8 {
-                let position=start+(end-start)*(step as f32/8.);
-                window.dispatch_event(MouseMoveEvent{position,pressed_button:Some(MouseButton::Left),modifiers:Modifiers::default()}.to_platform_input(),cx);
+                let position = start + (end - start) * (step as f32 / 8.);
+                window.dispatch_event(
+                    MouseMoveEvent {
+                        position,
+                        pressed_button: Some(MouseButton::Left),
+                        modifiers: Modifiers::default(),
+                    }
+                    .to_platform_input(),
+                    cx,
+                );
                 window.draw(cx).clear(cx);
             }
-            window.dispatch_event(MouseUpEvent{position:end,button:MouseButton::Left,modifiers:Modifiers::default(),click_count:1}.to_platform_input(),cx);
+            window.dispatch_event(
+                MouseUpEvent {
+                    position: end,
+                    button: MouseButton::Left,
+                    modifiers: Modifiers::default(),
+                    click_count: 1,
+                }
+                .to_platform_input(),
+                cx,
+            );
             cx.stop_active_drag(window);
-            view.update(cx,|view,_|view.control_pointer(false));
+            view.update(cx, |view, _| view.control_pointer(false));
             Ok(json!({"dispatched":true,"released":true,"workspace":view.read(cx).inspection(cx)}))
         }
         "pointer" => {
@@ -285,8 +319,11 @@ pub fn dispatch(
                 alt: request["alt"].as_bool().unwrap_or(false),
                 ..Default::default()
             };
-            let kind=request["kind"].as_str().filter(|k|matches!(*k,"move"|"down"|"up")).ok_or("Use down/move/up, one event per call")?;
-            view.update(cx,|view,_|view.control_pointer(true));
+            let kind = request["kind"]
+                .as_str()
+                .filter(|k| matches!(*k, "move" | "down" | "up"))
+                .ok_or("Use down/move/up, one event per call")?;
+            view.update(cx, |view, _| view.control_pointer(true));
             match kind {
                 "move" => {
                     window.dispatch_event(
@@ -329,7 +366,7 @@ pub fn dispatch(
                 }
                 _ => unreachable!(),
             }
-            view.update(cx,|view,_|view.control_pointer(false));
+            view.update(cx, |view, _| view.control_pointer(false));
             Ok(json!({"dispatched":true}))
         }
         "scroll" => {
@@ -345,7 +382,10 @@ pub fn dispatch(
                 ScrollWheelEvent {
                     position,
                     delta: ScrollDelta::Lines(point(0., lines as f32)),
-                    modifiers:Modifiers{control:request["control"].as_bool().unwrap_or(false),..Default::default()},
+                    modifiers: Modifiers {
+                        control: request["control"].as_bool().unwrap_or(false),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 }
                 .to_platform_input(),
@@ -357,13 +397,18 @@ pub fn dispatch(
             let width = number(request, "width", 8192.)?;
             let height = number(request, "height", 8192.)?;
             if width < crate::MIN_WINDOW_WIDTH || height < crate::MIN_WINDOW_HEIGHT {
-                return Err(format!("Minimum size is {} by {}",crate::MIN_WINDOW_WIDTH,crate::MIN_WINDOW_HEIGHT));
+                return Err(format!(
+                    "Minimum size is {} by {}",
+                    crate::MIN_WINDOW_WIDTH,
+                    crate::MIN_WINDOW_HEIGHT
+                ));
             }
             window.resize(size(px(width), px(height)));
             Ok(json!({"requested":true}))
         }
         _ => Err(
-            "Unknown method; supported: inspect, focus, key, text, pointer, drag, scroll, resize".into(),
+            "Unknown method; supported: inspect, focus, key, text, pointer, drag, scroll, resize"
+                .into(),
         ),
     }
 }
