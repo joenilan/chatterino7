@@ -905,8 +905,8 @@ impl Render for ChannelPane {
                     .when(retained == 0, |el| el.child(div().v_flex().p_6().gap_2().text_color(rgb(theme::MUTED))
                         .child(div().text_color(rgb(theme::TEXT)).text_size(px(16.)).child(format!("#{} is ready", combined::title(&self.name))))
                         .child(if self.connected { "Connected. Waiting for messages…".to_string() } else { self.connection.clone() })
-                        .when(youtube::is_youtube(&self.name) && self.connection.contains("API key"), |el| el.child(div().pt_2().child(
-                            Button::new("youtube-setup").small().primary().label("Set up YouTube…").on_click(cx.listener(|_, _, _, cx| cx.emit(PaneEvent::SetUpYouTube))))))))
+                        .when(youtube::is_youtube(&self.name) && self.connection.contains("Connect YouTube"), |el| el.child(div().pt_2().child(
+                            Button::new("youtube-setup").small().primary().label("Connect YouTube…").on_click(cx.listener(|_, _, _, cx| cx.emit(PaneEvent::SetUpYouTube))))))))
                     .child(
                         MessageScroller::new("chat", self.scroller.clone(), move |index, window, cx| {
                             let messages = timeline.borrow();

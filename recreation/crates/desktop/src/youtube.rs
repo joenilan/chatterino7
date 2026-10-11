@@ -147,17 +147,44 @@ impl IfEmpty for String {
     }
 }
 
-fn watch(name: String, key: String, stop: Arc<AtomicBool>, tx: mpsc::Sender<(String, Update)>) {
+/// How to read: a Google sign-in (preferred; it can also send) or an API key.
+#[derive(Default)]
+pub struct Auth {
+    pub key: Option<String>,
+    pub google: Option<(crate::google_auth::OAuthClient, crate::google_auth::Tokens)>,
+}
+impl Auth {
+    fn ready(&self) -> bool {
+        self.key.is_some() || self.google.is_some()
+    }
+}
+
+fn watch(
+    name: String,
+    auth: Arc<Mutex<Auth>>,
+    stop: Arc<AtomicBool>,
+    tx: mpsc::Sender<(String, Update)>,
+) {
     let send = |u: Update| tx.send((name.clone(), u)).is_ok();
     let Ok(client) = crate::live::client() else {
         return;
     };
     let video = name.trim_start_matches("yt:").to_owned();
     let get = |path: &str, query: &[(&str, &str)]| -> Result<Value, String> {
-        let response = client
-            .get(format!("{API}/{path}"))
-            .query(query)
-            .query(&[("key", key.as_str())])
+        let mut request = client.get(format!("{API}/{path}")).query(query);
+        {
+            let mut auth = auth
+                .lock()
+                .map_err(|_| "YouTube sign-in unavailable".to_owned())?;
+            if let Some((oauth, tokens)) = auth.google.as_mut() {
+                request = request.bearer_auth(crate::google_auth::access(oauth, tokens)?);
+            } else if let Some(key) = &auth.key {
+                request = request.query(&[("key", key.as_str())]);
+            } else {
+                return Err("Connect YouTube to read chat".into());
+            }
+        }
+        let response = request
             .send()
             .map_err(|_| "YouTube didn't answer".to_owned())?;
         let status = response.status().as_u16();
@@ -278,7 +305,7 @@ fn watch(name: String, key: String, stop: Arc<AtomicBool>, tx: mpsc::Sender<(Str
 /// One watcher thread per open YouTube pane.
 pub struct YouTube {
     watching: HashMap<String, Arc<AtomicBool>>,
-    key: Arc<Mutex<Option<String>>>,
+    auth: Arc<Mutex<Auth>>,
     tx: mpsc::Sender<(String, Update)>,
     rx: mpsc::Receiver<(String, Update)>,
 }
@@ -287,24 +314,42 @@ impl YouTube {
         let (tx, rx) = mpsc::channel();
         Self {
             watching: HashMap::new(),
-            key: Default::default(),
+            auth: Default::default(),
             tx,
             rx,
         }
     }
+    fn restart(&mut self) {
+        for (_, stop) in self.watching.drain() {
+            stop.store(true, Ordering::Relaxed);
+        }
+    }
     pub fn set_key(&mut self, key: Option<String>) {
-        if let Ok(mut k) = self.key.lock() {
-            if *k != key {
-                *k = key;
-                // Restart watchers with the new key.
-                for (_, stop) in self.watching.drain() {
-                    stop.store(true, Ordering::Relaxed);
-                }
-            }
+        let changed = self.auth.lock().map(|mut a| {
+            let changed = a.key != key;
+            a.key = key;
+            changed
+        });
+        if changed.unwrap_or(false) {
+            self.restart();
+        }
+    }
+    /// Read with this Google sign-in (None: signed out).
+    pub fn set_google(
+        &mut self,
+        google: Option<(crate::google_auth::OAuthClient, crate::google_auth::Tokens)>,
+    ) {
+        let changed = self.auth.lock().map(|mut a| {
+            let changed = a.google.is_some() != google.is_some();
+            a.google = google;
+            changed
+        });
+        if changed.unwrap_or(false) {
+            self.restart();
         }
     }
     pub fn has_key(&self) -> bool {
-        self.key.lock().map(|k| k.is_some()).unwrap_or(false)
+        self.auth.lock().map(|a| a.key.is_some()).unwrap_or(false)
     }
     /// Watch exactly `names` (open YouTube panes); returns new updates.
     pub fn pump(&mut self, names: &[String]) -> Vec<(String, Update)> {
@@ -315,28 +360,29 @@ impl YouTube {
             }
             keep
         });
-        let key = self.key.lock().ok().and_then(|k| k.clone());
+        let ready = self.auth.lock().map(|a| a.ready()).unwrap_or(false);
         let mut updates = Vec::new();
         for name in names {
             if self.watching.contains_key(name) {
                 continue;
             }
-            let Some(key) = key.clone() else {
+            if !ready {
                 updates.push((
                     name.clone(),
                     Update::Status {
                         connected: false,
-                        text: "Add a YouTube API key in Settings > Connections".into(),
+                        text: "Connect YouTube to read and chat here".into(),
                     },
                 ));
                 continue;
-            };
+            }
+            let auth = self.auth.clone();
             let stop = Arc::new(AtomicBool::new(false));
             self.watching.insert(name.clone(), stop.clone());
             let (name, tx) = (name.clone(), self.tx.clone());
             let _ = std::thread::Builder::new()
                 .name("jawjack-youtube".into())
-                .spawn(move || watch(name, key, stop, tx));
+                .spawn(move || watch(name, auth, stop, tx));
         }
         while let Ok(update) = self.rx.try_recv() {
             updates.push(update);

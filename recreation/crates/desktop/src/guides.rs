@@ -53,9 +53,20 @@ fn steps(guide: Guide) -> Vec<Step> {
         ],
         Guide::YouTubeChat => vec![
             Step {
-                title: "Same Google Cloud project as your YouTube key",
-                detail: "Make sure that project is selected at the top of the Google Cloud page. Google requires every app that signs you in to be registered there; this is that registration.",
-                link: None,
+                title: "Create (or pick) a Google Cloud project",
+                detail: "Free, no billing. Any name, e.g. \"Jawjack\". Keep it selected at the top of the Google Cloud page for the next steps.",
+                link: Some((
+                    "Open Google Cloud",
+                    "https://console.cloud.google.com/projectcreate",
+                )),
+            },
+            Step {
+                title: "Turn on the YouTube Data API v3",
+                detail: "Press Enable. This is what lets the app read and post YouTube chat.",
+                link: Some((
+                    "Open the YouTube API page",
+                    "https://console.cloud.google.com/apis/library/youtube.googleapis.com",
+                )),
             },
             Step {
                 title: "Tell Google about the app (one-time form)",
@@ -187,12 +198,12 @@ impl Workbench {
         let width = (f32::from(window.viewport_size().width) - 24.).clamp(280., 460.);
         let (title, intro) = match guide {
             Guide::YouTube => (
-                "Set up YouTube chat",
+                "YouTube API key (read-only)",
                 "Jawjack reads YouTube live chat through YouTube's official API with your own free key. About 3 minutes.",
             ),
             Guide::YouTubeChat => (
-                "Chat on YouTube",
-                "To send messages, sign in with Google using your own OAuth client, a one-time set-up of about 5 minutes.",
+                "Connect YouTube",
+                "Sign in with Google so Jawjack can read and send YouTube live chat. One-time set-up, about 5 minutes; Google requires each app to be registered in your own Google Cloud.",
             ),
             Guide::Obs => (
                 "Connect OBS",

@@ -1041,41 +1041,41 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> Div {
         let has = self.youtube.has_key();
+        let signed_in = self.google_tokens.is_some();
         page.child(settings_ui::heading("YouTube"))
             .child(settings_ui::row(
                 "YouTube live chat",
-                if has {
-                    "Key saved. Paste a YouTube live link into Add channel (Ctrl+K) to open its chat."
+                if signed_in {
+                    "Signed in with Google: YouTube tabs read and send chat. Paste a live link into Add channel (Ctrl+K)."
+                } else if has {
+                    "Reading with an API key (read-only). Connect with Google to chat too."
                 } else {
-                    "A free API key from Google, set up step by step (about 3 minutes)."
+                    "Sign in with Google to read and chat in YouTube streams. One-time set-up, about 5 minutes, step by step."
                 },
                 div()
                     .h_flex()
                     .gap_1()
-                    .child(Button::new("youtube-setup").small().when(!has, |b| b.primary()).label(if has { "Replace key…" } else { "Set up…" }).on_click(cx.listener(|this, _, w, cx| {
-                        this.settings = false;
-                        this.open_guide(guides::Guide::YouTube, w, cx)
-                    })))
+                    .child(
+                        Button::new("youtube-connect")
+                            .small()
+                            .when(!signed_in, |b| b.primary())
+                            .label(if signed_in { "Sign in again…" } else { "Connect…" })
+                            .on_click(cx.listener(|this, _, w, cx| {
+                                this.settings = false;
+                                this.open_guide(guides::Guide::YouTubeChat, w, cx)
+                            })),
+                    )
+                    .when(signed_in, |el| {
+                        el.child(Button::new("youtube-signout").small().ghost().label("Sign out").on_click(cx.listener(|this, _, _, cx| this.google_sign_out(cx))))
+                    })
+                    .when(!signed_in && !has, |el| {
+                        el.child(Button::new("youtube-key-instead").small().ghost().label("API key instead…").tooltip("Read-only: a YouTube Data API key without signing in").on_click(cx.listener(|this, _, w, cx| {
+                            this.settings = false;
+                            this.open_guide(guides::Guide::YouTube, w, cx)
+                        })))
+                    })
                     .when(has, |el| {
-                        el.child(Button::new("youtube-key-remove").small().ghost().label("Remove").on_click(cx.listener(|this, _, _, cx| this.save_youtube_key(String::new(), cx))))
-                    }),
-            ))
-            .child(settings_ui::row(
-                "Chat on YouTube",
-                if self.google_tokens.is_some() {
-                    "Signed in with Google: you can send in YouTube tabs."
-                } else {
-                    "Sign in with Google to send messages (your own OAuth client, set up step by step)."
-                },
-                div()
-                    .h_flex()
-                    .gap_1()
-                    .child(Button::new("youtube-chat-setup").small().label(if self.google_tokens.is_some() { "Sign in again…" } else { "Set up…" }).on_click(cx.listener(|this, _, w, cx| {
-                        this.settings = false;
-                        this.open_guide(guides::Guide::YouTubeChat, w, cx)
-                    })))
-                    .when(self.google_tokens.is_some(), |el| {
-                        el.child(Button::new("youtube-chat-signout").small().ghost().label("Sign out").on_click(cx.listener(|this, _, _, cx| this.google_sign_out(cx))))
+                        el.child(Button::new("youtube-key-remove").small().ghost().label("Remove key").on_click(cx.listener(|this, _, _, cx| this.save_youtube_key(String::new(), cx))))
                     }),
             ))
             .child(settings_ui::heading("OBS"))
@@ -1127,6 +1127,8 @@ impl Workbench {
                     access: String::new(),
                     expires: std::time::Instant::now(),
                 });
+                let google = this.google_client.clone().zip(this.google_tokens.clone());
+                this.youtube.set_google(google);
                 cx.notify();
             });
         })
@@ -1189,10 +1191,14 @@ impl Workbench {
                             })
                             .detach();
                         }
+                        this.youtube
+                            .set_google(Some((client.clone(), tokens.clone())));
                         this.google_client = Some(client);
                         this.google_tokens = Some(tokens);
-                        this.guide_status =
-                            Some((true, "Signed in. You can now chat in YouTube tabs.".into()));
+                        this.guide_status = Some((
+                            true,
+                            "Signed in. YouTube tabs can now read and send chat.".into(),
+                        ));
                     }
                     Err(e) => this.guide_status = Some((false, e)),
                 }
@@ -1204,6 +1210,7 @@ impl Workbench {
     }
     pub(super) fn google_sign_out(&mut self, cx: &mut Context<Self>) {
         self.google_tokens = None;
+        self.youtube.set_google(None);
         let delete = cx.delete_credentials(GOOGLE_TOKEN_VAULT);
         cx.spawn(async move |_, _| {
             let _ = delete.await;

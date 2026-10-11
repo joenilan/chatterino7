@@ -1982,7 +1982,7 @@ impl Workbench {
                 return;
             }
             if matches!(event, PaneEvent::SetUpYouTube) {
-                this.open_guide(guides::Guide::YouTube, window, cx);
+                this.open_guide(guides::Guide::YouTubeChat, window, cx);
                 return;
             }
             if matches!(event, PaneEvent::ViewFilterChanged) {

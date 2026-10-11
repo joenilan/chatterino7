@@ -28,3 +28,14 @@ Paste a YouTube live link into Add channel (Ctrl+K): `youtube.com/watch?v=…`, 
 Evidence (Windows, 2026-10-11): unit tests for URL parsing and message mapping. Live: a YouTube tab
 without a key shows "Add a YouTube API key in Settings > Connections", and all Twitch channels still connected.
 **Not yet tested with a real key or a live stream.**
+
+## One sign-in reads and sends (owner feedback, 2026-10-11)
+
+A Google sign-in (OAuth) can read chat as well as send it, so **Connect YouTube** (Settings → Connections,
+or the Connect YouTube… button in a YouTube tab) is the main path. It's a six-step guide: create or pick a
+project, enable the YouTube Data API v3, the one-time consent form, add your own account as a test
+user, create a Desktop-app client, then paste and Sign in with Google. Reading uses the sign-in's
+access token (refreshed automatically) and falls back to an API key. "API key instead…" remains for
+read-only use without signing in. The guide explains Google's terms ("test users" means the accounts
+allowed to sign in while an app is unverified).
+
