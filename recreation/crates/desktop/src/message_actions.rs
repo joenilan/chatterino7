@@ -4,7 +4,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     component::{
         Sizable, StyledExt, WindowExt,
-        button::Button,
+        button::{Button, ButtonVariants},
         menu::{PopupMenu, PopupMenuItem},
         notification::Notification,
     },
@@ -211,6 +211,10 @@ pub enum Action {
     Profile,
     OpenLink(String),
     CopyLink(String),
+    /// Moderator actions, checked again by the workspace before dispatch.
+    ModDelete,
+    ModTimeout(u32),
+    ModBan,
 }
 fn copy(text: String, window: &mut Window, cx: &mut App) {
     cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
@@ -315,6 +319,40 @@ pub fn menu(
             }
         }
     }
+    // Moderator actions appear only where the account moderates or owns the channel.
+    let moderates = owner.upgrade().is_some_and(|pane| {
+        matches!(
+            pane.read(cx).role,
+            Some(crate::capabilities::Role::Moderator | crate::capabilities::Role::Broadcaster)
+        )
+    });
+    if moderates && message.login.is_some() && !message.user_id.is_empty() {
+        menu = menu.separator();
+        // The broadcaster can't be timed out or banned in their own channel.
+        let broadcaster = owner
+            .upgrade()
+            .is_some_and(|pane| message.login.as_deref() == Some(pane.read(cx).name.as_ref()));
+        let mut actions = vec![
+            ("Timeout 1 minute", Action::ModTimeout(60)),
+            ("Timeout 10 minutes", Action::ModTimeout(600)),
+            ("Timeout 1 hour", Action::ModTimeout(3600)),
+            ("Timeout 1 day", Action::ModTimeout(86_400)),
+            ("Ban…", Action::ModBan),
+        ];
+        if broadcaster {
+            actions.clear();
+        }
+        if !message.deleted {
+            actions.insert(0, ("Delete message", Action::ModDelete));
+        }
+        for (label, action) in actions {
+            let owner = owner.clone();
+            let id = id.clone();
+            menu = menu.item(PopupMenuItem::new(label).on_click(move |_, w, cx| {
+                let _ = owner.update(cx, |p, cx| p.message_action(&id, action.clone(), w, cx));
+            }));
+        }
+    }
     for link in message_links(&message).into_iter().take(3) {
         let host = reqwest::Url::parse(&link.url)
             .ok()
@@ -367,7 +405,45 @@ impl ChannelPane {
             return;
         };
         let opening = matches!(&action, Action::OpenLink(_));
+        let login = message.login.clone().unwrap_or_default();
+        let moderate = |request| PaneEvent::TwitchCommand {
+            request,
+            draft: String::new(),
+        };
         match action {
+            Action::ModDelete => cx.emit(moderate(crate::twitch_actions::Request::Delete {
+                message_id: message.id.clone(),
+            })),
+            Action::ModTimeout(seconds) => {
+                cx.emit(moderate(crate::twitch_actions::Request::Timeout {
+                    login,
+                    seconds,
+                    reason: String::new(),
+                }))
+            }
+            Action::ModBan => {
+                // A ban is high impact: name the target and channel before acting.
+                let owner = cx.entity().downgrade();
+                let channel = self.name.to_string();
+                let label = message.author_label().to_owned();
+                window.open_dialog(cx, move |dialog, _, _| {
+                    let owner = owner.clone();
+                    let login = login.clone();
+                    dialog
+                        .title(format!("Ban {label} from #{channel}?"))
+                        .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(format!("@{login} will be banned until a moderator unbans them (/unban {login}).")))
+                        .footer(div().h_flex().justify_end().gap_2()
+                            .child(Button::new("ban-cancel").small().label("Cancel").on_click(|_, w, cx| w.close_dialog(cx)))
+                            .child(Button::new("ban-confirm").small().danger().label("Ban").on_click(move |_, w, cx| {
+                                w.close_dialog(cx);
+                                let login = login.clone();
+                                let _ = owner.update(cx, |_, cx| cx.emit(PaneEvent::TwitchCommand {
+                                    request: crate::twitch_actions::Request::Ban { login, reason: String::new() },
+                                    draft: String::new(),
+                                }));
+                            })))
+                });
+            }
             Action::Notes => {
                 if !message.user_id.is_empty() {
                     cx.emit(PaneEvent::EditChatterNote(

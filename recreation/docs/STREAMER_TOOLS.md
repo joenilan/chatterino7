@@ -53,10 +53,16 @@ title, marker, ad and raid always act on the signed-in channel). The
 draft is cleared only after Twitch confirms; refusals show Twitch's message and
 keep the draft. Custom commands with the same name take precedence, as in
 Chatterino. Typed moderation commands run without a review step (Chatterino parity);
-message-card buttons will add review for high-impact actions.
+right-clicking a message in a channel you moderate or own adds Delete message,
+Timeout (1 minute, 10 minutes, 1 hour, 1 day) and Ban…, which first asks for confirmation naming the
+user and channel. Timeout and ban are not offered on the broadcaster's own messages.
 
 ## Evidence (Windows, 2026-10-11)
 
+After the permission upgrade: 48 scopes granted, 53 moderated channels loaded,
+and all connections were kept. The moderation menu items appear in #dreadedzombie
+(Broadcaster) and not in #xqc (Viewer). Delete message on the owner's own test
+message in #dreadedzombie was confirmed by Twitch and redacted live.
 `/slow 10` in #xqc with the old grant: "You are not a moderator in this channel",
 nothing sent, draft kept.
 

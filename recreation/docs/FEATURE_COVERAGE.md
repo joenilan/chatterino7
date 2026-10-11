@@ -172,7 +172,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | MD02 | Full profile context | Part | Public Twitch created-at/avatar/bio/broadcaster role in compact card; avatar/date/bio/compact native accepted, role display untested. Follow/subscription data and moderation remain. | UserInfoPopup.cpp |
 | MD03 | Persistent notes | Backlog | Local notes editor/storage and streamer-mode redaction. | controllers/userdata; EditUserNotesDialog.cpp |
 | MD04 | Chatter list and roles | Backlog | Filtering/fetch limits, actual account permissions, distinguish chatters from viewers. | widgets/ChatterListWidget.cpp |
-| MD05 | Delete, timeout, ban and undo-family actions | Part | /ban, /timeout, /unban, /delete, /clear commands with role/scope checks; card buttons, review step and live acceptance remain. | controllers/moderationactions; builtin/twitch/Ban.cpp; Unban.cpp; DeleteMessages.cpp |
+| MD05 | Delete, timeout, ban and undo-family actions | Part | /ban, /timeout, /unban, /delete, /clear commands and message right-click actions (ban confirmation) with role/scope checks. Delete was accepted live; timeout and ban are unverified live. | controllers/moderationactions; builtin/twitch/Ban.cpp; Unban.cpp; DeleteMessages.cpp |
 | MD06 | Warnings and blocks | Part | /warn and /block, /unblock commands; block list sync and display remain. | builtin/twitch/Warn.cpp; Block.cpp |
 | MD07 | Moderator mode and custom buttons | Backlog | Compact optional actions, editable presets, keyboard equivalents and clear unavailable reasons. | settingspages/ModerationPage.cpp |
 | MD08 | Room mode management | Part | Room mode commands (/slow, /followers, /subscribers, /emoteonly, /uniquechat); header controls remain. | builtin/twitch/ChatSettings.cpp |
