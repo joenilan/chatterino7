@@ -42,6 +42,7 @@ mod seven_badges;
 mod seven_entitlements;
 mod seven_events;
 mod seven_paints;
+mod seven_presence;
 mod storage;
 mod stream_preview;
 mod stream_status;

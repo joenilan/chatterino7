@@ -123,6 +123,10 @@ impl Catalog {
     pub fn inspection(&self) -> Value {
         serde_json::json!({"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_owned_emotes":self.owned.items.len(),"twitch_owned_status":self.owned.status,"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"personal_emotes":self.personal.len(),"personal_catalog_loaded":self.personal_ready,"personal_scope":"owned set plus passive session grants","ffz_badges":self.ffz_badges.inspection(),"seventv_badges":self.badges.inspection(),"seventv_paints":self.paints.inspection(),"seventv_entitled_senders":self.entitlements.len(),"seventv_entitled_sets":self.entitled_sets.len(),"seventv_entitled_emotes":self.entitled_sets.values().map(HashMap::len).sum::<usize>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
     }
+    /// The resolved Twitch broadcaster ID for an open channel, if known.
+    pub fn channel_id(&self, name: &str) -> Option<String> {
+        self.requested.get(name).map(|(id, _)| id.clone())
+    }
     pub fn channel(&mut self, name: &str, id: &str) {
         if id.is_empty() || id.len() > 32 || !id.bytes().all(|b| b.is_ascii_digit()) {
             return;

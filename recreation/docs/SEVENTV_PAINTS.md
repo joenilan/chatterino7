@@ -101,3 +101,16 @@ ID before 7TV's subscription limit was applied, so visible channels could fall o
 Now channel changes subscribe and unsubscribe in place, and channels are taken in the same
 priority order as Twitch connections (visible panes first). After the fix, with
 82 channels open: 0 grants → 4 badges and 5 paints from 9 entitled senders within two minutes.
+
+## 7TV activity (2026-10-11)
+
+After a successful send, Jawjack posts a channel presence for the signed-in user's 7TV
+account (`POST 7tv.io/v3/users/{7tv id}/presences`, kind 1), at most once a minute
+per channel. That's what Chatterino7's "send activity" setting does. 7TV then broadcasts the user's
+entitlements, so other 7TV users, and Jawjack itself, see the paint, badge and
+personal emotes. It can be turned off under Appearance & memory → "Share 7TV activity".
+The 7TV account is looked up once from the Twitch ID. That response embeds emote sets and can
+exceed 1 MB, so it is read with a 4 MB cap. Control inspection reports `seventv_presence`.
+
+Evidence (Windows, 2026-10-11): after a send in #dreadedzombie, the result was "HTTP 200 for
+channel 32612328". After a fresh restart, the owner's own messages showed the 7TV badge and gold paint.

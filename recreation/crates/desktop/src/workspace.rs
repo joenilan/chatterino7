@@ -168,6 +168,7 @@ pub struct Workbench {
     chatters: crate::chatters::Chatters,
     recent: crate::recent_messages::RecentMessages,
     recent_enabled: bool,
+    presence: crate::seven_presence::Presence,
     recent_requested: std::collections::HashSet<String>,
     updates: crate::updates::Updates,
     announced_update: Option<String>,
@@ -294,7 +295,7 @@ impl Workbench {
         json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()})
     }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"capabilities":self.capabilities.inspection(),"roles":self.panes().iter().map(|p|{let p=p.read(cx);(p.name.to_string(),p.role.map(|r|r.label()))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
+        json!({"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"capabilities":self.capabilities.inspection(),"seventv_presence":self.presence.last.lock().map(|s|s.clone()).unwrap_or_default(),"roles":self.panes().iter().map(|p|{let p=p.read(cx);(p.name.to_string(),p.role.map(|r|r.label()))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
     }
     /// Channels to connect, highest priority first: visible panes, the rest of the
     /// active workspace, then other workspaces by most recent use. Beyond the
@@ -416,6 +417,9 @@ impl Workbench {
             chatters: crate::chatters::Chatters::new(),
             recent: crate::recent_messages::RecentMessages::new(),
             recent_enabled: state["recent_messages"].as_bool().unwrap_or(true),
+            presence: crate::seven_presence::Presence::new(
+                state["seventv_activity"].as_bool().unwrap_or(true),
+            ),
             recent_requested: Default::default(),
             updates: {
                 let mut updates = crate::updates::Updates::new();
@@ -842,6 +846,22 @@ impl Workbench {
                     }
                 }
                 crate::live::Event::Sent(request, result) => {
+                    // Share 7TV activity for the channel this send came from.
+                    if result.is_ok()
+                        && let Some(identity) = &identity
+                        && let Some(channel) = panes
+                            .iter()
+                            .find(|p| {
+                                p.read(cx)
+                                    .pending
+                                    .as_ref()
+                                    .is_some_and(|(r, ..)| *r == request)
+                            })
+                            .map(|p| p.read(cx).name.to_string())
+                        && let Some(channel_id) = self.catalog.borrow().channel_id(&channel)
+                    {
+                        self.presence.activity(&identity.user_id, &channel_id);
+                    }
                     for pane in panes
                         .iter()
                         .chain(self.closed_tabs.iter().flat_map(|t| t.panes.iter()))
@@ -1628,7 +1648,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"seventv_activity":self.presence.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
@@ -3232,6 +3252,9 @@ impl Render for Workbench {
                             .child(Button::new("recent-messages").small().label(if self.recent_enabled { "✓ Load recent messages" } else { "Load recent messages" }).selected(self.recent_enabled).when(self.recent_enabled,|b|b.primary())
                                 .on_click(cx.listener(|this,_,_,cx|{this.recent_enabled = !this.recent_enabled;this.schedule_save(cx);cx.notify();})))
                             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Shows recent chat when a channel opens, from {} (the service Chatterino uses). It receives the channel names you open.", crate::recent_messages::SERVICE)))
+                            .child(Button::new("seventv-activity").small().label(if self.presence.enabled { "✓ Share 7TV activity" } else { "Share 7TV activity" }).selected(self.presence.enabled).when(self.presence.enabled,|b|b.primary())
+                                .on_click(cx.listener(|this,_,_,cx|{this.presence.enabled = !this.presence.enabled;this.schedule_save(cx);cx.notify();})))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("After you chat, tells 7TV you're in that channel so other 7TV users see your paint, badge and personal emotes (as Chatterino7 does). At most once a minute per channel."))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Tabs, splits, channel drafts and appearance are saved locally."))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("Updates"))
                             .child(div().text_size(px(12.)).child(self.render_updates(cx)))
