@@ -26,6 +26,12 @@ and Scenes|Inputs|Outputs events. Jawjack polls GetStreamStatus and GetStats eve
 CurrentProgramSceneChanged, SceneListChanged, StreamStateChanged, RecordStateChanged and InputMuteStateChanged.
 A close code of 4009 means the password was refused.
 
-Evidence (Windows, 2026-10-11): with OBS closed, the card shows its not-set-up and "isn't running" states,
-and the network scan completes with "None found". Untested so far: a live connection, scenes, mic and health
-(the owner's OBS WebSocket server is off).
+**Divider scenes:** scenes named like `=====[ Live Scenes ]=====` or `--- Alerts ---` (three or more of
+`= - _ ~ — # * . |` at the start) are shown as full-width section labels, not buttons. The scene grid
+scrolls once it's taller than 300 px.
+
+Evidence (Windows, 2026-10-11): Find OBS located the owner's streaming PC at `192.168.1.157:4444` (the v5
+server on a custom port, confirmed by its Hello). It connected without a password and listed every scene with the
+on-air one ("Ending Soon") highlighted and the divider scenes as LIVE SCENES / NESTED SCENES headings,
+and it reconnected after an app restart. Not exercised, to avoid changing the owner's OBS: switching scenes, the mic
+toggle, and live health and uptime (OBS wasn't streaming).

@@ -21,6 +21,22 @@ pub(super) fn load_obs_settings(value: &Value) -> Settings {
     }
 }
 
+/// A scene used as a divider in OBS's list (e.g. "=====[ Live ]=====",
+/// "--- Alerts ---"): its label, or None for a real scene.
+pub(super) fn divider(scene: &str) -> Option<String> {
+    let fill = |c: char| matches!(c, '=' | '-' | '_' | '~' | '—' | '–' | '#' | '*' | '.' | '|');
+    if scene.chars().take_while(|c| fill(*c)).count() < 3 {
+        return None;
+    }
+    Some(
+        scene
+            .trim_matches(|c: char| {
+                fill(c) || c.is_whitespace() || matches!(c, '[' | ']' | '(' | ')')
+            })
+            .to_owned(),
+    )
+}
+
 fn clock(d: Duration) -> String {
     let s = d.as_secs();
     format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
@@ -336,27 +352,47 @@ impl Workbench {
                 )
             })
             .when(state.connected && !state.scenes.is_empty(), |el| {
-                el.child(div().h_flex().flex_wrap().gap_1().children(
-                    state.scenes.iter().enumerate().map(|(index, scene)| {
-                        let current = *scene == state.scene;
-                        let name = scene.clone();
-                        div().w(px(134.)).child(
-                            Button::new(("obs-scene", index))
-                                .small()
-                                .w_full()
-                                .when(current, |b| b.primary())
-                                .label(scene.clone())
-                                .tooltip(if current {
-                                    format!("“{scene}” is on air")
-                                } else {
-                                    format!("Switch to “{scene}”")
-                                })
-                                .on_click(cx.listener(move |this, _, _, _| {
-                                    this.obs.set_scene(name.clone())
-                                })),
-                        )
-                    }),
-                ))
+                el.child(
+                    div()
+                        .id("obs-scenes")
+                        .max_h(px(300.))
+                        .overflow_y_scroll()
+                        .child(div().h_flex().flex_wrap().gap_1().children(
+                            state.scenes.iter().enumerate().map(|(index, scene)| {
+                                // Divider scenes ("=====[ Live ]=====") become full-width section labels.
+                                if let Some(label) = divider(scene) {
+                                    return div()
+                                        .w_full()
+                                        .pt_1()
+                                        .text_size(px(10.))
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_color(rgb(theme::MUTED))
+                                        .child(label.to_uppercase())
+                                        .into_any_element();
+                                }
+                                let current = *scene == state.scene;
+                                let name = scene.clone();
+                                div()
+                                    .w(px(134.))
+                                    .child(
+                                        Button::new(("obs-scene", index))
+                                            .small()
+                                            .w_full()
+                                            .when(current, |b| b.primary())
+                                            .label(scene.clone())
+                                            .tooltip(if current {
+                                                format!("“{scene}” is on air")
+                                            } else {
+                                                format!("Switch to “{scene}”")
+                                            })
+                                            .on_click(cx.listener(move |this, _, _, _| {
+                                                this.obs.set_scene(name.clone())
+                                            })),
+                                    )
+                                    .into_any_element()
+                            }),
+                        )),
+                )
             })
             .child(
                 div().h_flex().justify_end().child(
