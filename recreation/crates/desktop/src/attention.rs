@@ -109,7 +109,14 @@ impl Attention {
         changed
     }
     pub fn appended(&mut self, message: &Message, row: u64, first: u64) {
-        self.unread.insert(row);
+        // Your own messages never need catching up on.
+        let own = self
+            .identity
+            .as_ref()
+            .is_some_and(|(user, _)| &message.user_id == user);
+        if !own {
+            self.unread.insert(row);
+        }
         self.arrivals.insert(row, Instant::now());
         if row >= self.since
             && let Some(color) = self.color(message)

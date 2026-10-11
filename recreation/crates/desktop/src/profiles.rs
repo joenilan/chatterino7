@@ -14,23 +14,35 @@ pub struct Profile {
     pub role: String,
     pub avatar: Option<crate::media::EmoteKey>,
 }
+/// Helix accepts up to 100 `id` parameters per users request.
+const BATCH: usize = 100;
+/// Pending lookups are bounded; the oldest interest is dropped first.
+const PENDING: usize = 512;
+/// Resolved or failed lookups are not repeated within this window.
+const REFRESH: Duration = Duration::from_secs(600);
+/// Failures retry sooner than successes refresh.
+const RETRY: Duration = Duration::from_secs(60);
 struct Job {
     epoch: u64,
     identity: Identity,
-    id: String,
+    ids: Vec<String>,
 }
+/// One batch result; `None` means the request itself failed.
+type Batch = (u64, Vec<String>, Option<HashMap<String, Profile>>);
 pub struct Profiles {
     identity: Option<Identity>,
     epoch: u64,
     requested: HashMap<String, Instant>,
+    pending: std::collections::VecDeque<String>,
+    in_flight: bool,
     values: HashMap<String, Profile>,
     tx: mpsc::SyncSender<Job>,
-    rx: mpsc::Receiver<(u64, String, Option<Profile>)>,
+    rx: mpsc::Receiver<Batch>,
 }
 impl Profiles {
     pub fn new() -> Self {
-        let (tx, jobs) = mpsc::sync_channel::<Job>(16);
-        let (results, rx) = mpsc::sync_channel(2);
+        let (tx, jobs) = mpsc::sync_channel::<Job>(1);
+        let (results, rx) = mpsc::sync_channel(1);
         std::thread::spawn(move || {
             let Ok(client) = reqwest::blocking::Client::builder()
                 .timeout(Duration::from_secs(10))
@@ -40,8 +52,8 @@ impl Profiles {
                 return;
             };
             while let Ok(job) = jobs.recv() {
-                let value = load(&client, &job.identity, &job.id);
-                if results.send((job.epoch, job.id, value)).is_err() {
+                let value = load(&client, &job.identity, &job.ids);
+                if results.send((job.epoch, job.ids, value)).is_err() {
                     break;
                 }
             }
@@ -50,6 +62,8 @@ impl Profiles {
             identity: None,
             epoch: 0,
             requested: HashMap::new(),
+            pending: Default::default(),
+            in_flight: false,
             values: HashMap::new(),
             tx,
             rx,
@@ -58,41 +72,21 @@ impl Profiles {
     pub fn get(&self, id: &str) -> Option<&Profile> {
         self.values.get(id)
     }
+    /// Record interest; `pump` sends queued IDs in batches.
     pub fn request(&mut self, id: &str) {
         if id.is_empty()
             || id.len() > 255
             || id.chars().any(char::is_control)
-            || self
-                .requested
-                .get(id)
-                .is_some_and(|at| at.elapsed() < Duration::from_secs(600))
+            || self.identity.is_none()
+            || self.requested.get(id).is_some_and(|at| at.elapsed() < REFRESH)
+            || self.pending.iter().any(|p| p == id)
         {
             return;
         }
-        let Some(identity) = &self.identity else {
-            return;
-        };
-        if self.requested.len() >= 128
-            && let Some(old) = self
-                .requested
-                .iter()
-                .min_by_key(|(_, at)| *at)
-                .map(|(id, _)| id.clone())
-        {
-            self.requested.remove(&old);
-            self.values.remove(&old);
+        if self.pending.len() >= PENDING {
+            self.pending.pop_front();
         }
-        if self
-            .tx
-            .try_send(Job {
-                epoch: self.epoch,
-                identity: identity.clone(),
-                id: id.into(),
-            })
-            .is_ok()
-        {
-            self.requested.insert(id.into(), Instant::now());
-        }
+        self.pending.push_back(id.into());
     }
     pub fn pump(&mut self, identity: Option<Identity>) -> bool {
         let mut changed = false;
@@ -100,28 +94,77 @@ impl Profiles {
             self.identity = identity;
             self.epoch += 1;
             self.requested.clear();
+            self.pending.clear();
             self.values.clear();
             changed = true;
         }
-        while let Ok((epoch, id, value)) = self.rx.try_recv() {
-            if epoch != self.epoch || !self.requested.contains_key(&id) {
+        while let Ok((epoch, ids, value)) = self.rx.try_recv() {
+            if epoch != self.epoch {
                 continue;
             }
-            if let Some(value) = value {
-                self.values.insert(id, value);
-            } else {
-                self.requested
-                    .insert(id, Instant::now() - Duration::from_secs(540));
+            self.in_flight = false;
+            let failed = value.is_none();
+            let mut found = value.unwrap_or_default();
+            for id in ids {
+                match found.remove(&id) {
+                    Some(profile) => {
+                        self.values.insert(id, profile);
+                        changed = true;
+                    }
+                    // Unknown or failed IDs retry after RETRY instead of REFRESH.
+                    None if failed => {
+                        self.requested.insert(id, Instant::now() - (REFRESH - RETRY));
+                    }
+                    None => {}
+                }
             }
-            changed = true;
+        }
+        if let Some(identity) = &self.identity
+            && !self.in_flight
+            && !self.pending.is_empty()
+        {
+            let take = self.pending.len().min(BATCH);
+            let ids: Vec<String> = self.pending.drain(..take).collect();
+            if self.requested.len() + ids.len() > 1024 {
+                // Bound memory: forget the oldest lookups and their values.
+                let mut by_age: Vec<_> = self.requested.iter().map(|(k, at)| (*at, k.clone())).collect();
+                by_age.sort();
+                for (_, old) in by_age.into_iter().take(ids.len()) {
+                    self.requested.remove(&old);
+                    self.values.remove(&old);
+                }
+            }
+            let now = Instant::now();
+            for id in &ids {
+                self.requested.insert(id.clone(), now);
+            }
+            let job = Job {
+                epoch: self.epoch,
+                identity: identity.clone(),
+                ids,
+            };
+            match self.tx.try_send(job) {
+                Ok(()) => self.in_flight = true,
+                Err(mpsc::TrySendError::Full(job) | mpsc::TrySendError::Disconnected(job)) => {
+                    for id in job.ids.into_iter().rev() {
+                        self.requested.remove(&id);
+                        self.pending.push_front(id);
+                    }
+                }
+            }
         }
         changed
     }
 }
-fn load(client: &reqwest::blocking::Client, identity: &Identity, id: &str) -> Option<Profile> {
+fn load(
+    client: &reqwest::blocking::Client,
+    identity: &Identity,
+    ids: &[String],
+) -> Option<HashMap<String, Profile>> {
+    let query: Vec<(&str, &str)> = ids.iter().map(|id| ("id", id.as_str())).collect();
     let response = client
         .get("https://api.twitch.tv/helix/users")
-        .query(&[("id", id)])
+        .query(&query)
         .header("Client-Id", CLIENT_ID)
         .bearer_auth(&identity.access)
         .send()
@@ -130,16 +173,23 @@ fn load(client: &reqwest::blocking::Client, identity: &Identity, id: &str) -> Op
         return None;
     }
     let mut bytes = vec![];
-    response.take(128 * 1024 + 1).read_to_end(&mut bytes).ok()?;
-    if bytes.len() > 128 * 1024 {
+    response.take(1024 * 1024 + 1).read_to_end(&mut bytes).ok()?;
+    if bytes.len() > 1024 * 1024 {
         return None;
     }
     let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    let user = value["data"].as_array()?.first()?;
-    if user["id"].as_str() != Some(id) {
-        return None;
+    let mut found = HashMap::new();
+    for user in value["data"].as_array()? {
+        // Only accept identities that were actually requested.
+        let Some(id) = user["id"].as_str().filter(|id| ids.iter().any(|r| r == id)) else {
+            continue;
+        };
+        found.insert(id.to_owned(), parse(user));
     }
-    Some(Profile {
+    Some(found)
+}
+fn parse(user: &serde_json::Value) -> Profile {
+    Profile {
         display_name: user["display_name"]
             .as_str()
             .unwrap_or("")
@@ -168,5 +218,5 @@ fn load(client: &reqwest::blocking::Client, identity: &Identity, id: &str) -> Op
         avatar: user["profile_image_url"]
             .as_str()
             .and_then(crate::media::EmoteKey::avatar),
-    })
+    }
 }

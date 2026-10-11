@@ -642,7 +642,7 @@ impl Render for ChannelPane {
                     .id("transcript")
                     .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
                     .capture_any_mouse_down(cx.listener(|this,event:&MouseDownEvent,_,cx|{if event.button==MouseButton::Left{this.scroller.update(cx,|s,_|s.cancel_auto_resume());}}))
-                    .on_hover(cx.listener(|this,over,w,cx|{this.transcript_hover=*over;this.update_hover_pause(w,cx);}))
+                    .on_hover(cx.listener(|this,over,w,cx|{this.transcript_hover = *over;this.update_hover_pause(w,cx);}))
                     .on_modifiers_changed(cx.listener(|this,_,w,cx|this.update_hover_pause(w,cx)))
                     .flex_1()
                     .min_h_0()
