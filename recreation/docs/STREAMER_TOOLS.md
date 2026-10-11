@@ -38,7 +38,28 @@ second Save. After a write the result is read back and reported as confirmed or
 still propagating. Errors keep the edits. Without `channel:manage:broadcast` the
 button opens the account dialog instead.
 
+## Twitch commands (`twitch_actions.rs`)
+
+Chatterino's Helix-backed commands, listed under /help: /ban, /timeout (`10m`,
+`1h`, `1d`, `1w`; default 10 minutes), /unban and /untimeout, /warn, /delete,
+/clear, /slow and /slowoff, /followers and /followersoff, /subscribers and
+/subscribersoff, /emoteonly and /emoteonlyoff, /uniquechat and /uniquechatoff,
+/announce (plus blue, green, orange and purple), /shoutout, /mod and /unmod, /vip and /unvip,
+/color, /w, /block and /unblock, /settitle, /setgame, /marker, /commercial, /raid and /unraid.
+
+Each command is checked against the channel role and its scope before running
+(moderator commands in moderated or own channels; /mod and /vip only as broadcaster;
+title, marker, ad and raid always act on the signed-in channel). The
+draft is cleared only after Twitch confirms; refusals show Twitch's message and
+keep the draft. Custom commands with the same name take precedence, as in
+Chatterino. Typed moderation commands run without a review step (Chatterino parity);
+message-card buttons will add review for high-impact actions.
+
 ## Evidence (Windows, 2026-10-11)
+
+`/slow 10` in #xqc with the old grant: "You are not a moderator in this channel",
+nothing sent, draft kept.
+
 
 Twitch accepted the full scope list (device code issued). Update → code → Cancel
 kept the account signed in and both visible panes connected. Owner's channel

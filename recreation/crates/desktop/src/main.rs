@@ -42,7 +42,9 @@ mod storage;
 mod stream_status;
 mod studio;
 mod theme;
+mod twitch_actions;
 mod twitch_assets;
+mod updates;
 mod workspace;
 use workspace::Workbench;
 
@@ -139,6 +141,11 @@ enum PaneEvent {
     EmoteRecentsChanged,
     OpenAccount,
     OpenStreamInfo,
+    /// A parsed Twitch command; `draft` is cleared only once Twitch confirms.
+    TwitchCommand {
+        request: twitch_actions::Request,
+        draft: String,
+    },
     OpenCommands(String),
     EditChatter(chatter_appearance::Target),
     EditChatterNote(chatter_appearance::Target),

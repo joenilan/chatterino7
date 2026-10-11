@@ -482,3 +482,107 @@ states around those consequences. References:
 The experience plan organizes the same roadmap into daily workflows. No existing
 parity row becomes complete merely because a preset, drawer or permission prompt
 has been added.
+
+## 18. Feature catalogue per role (owner request, 2026-10-11)
+
+Candidate features, beyond Chatterino parity, so each role has what it needs close at hand.
+Each item notes where its platform data or API comes from. **T** = Twitch, **Y** =
+YouTube, **K** = Kick. Write actions on Y/K depend on what each platform's official
+API allows (see MULTIPLATFORM.md). None of these are implemented unless
+STREAMER_TOOLS.md or FEATURE_COVERAGE.md says so.
+
+### Streamer
+- **Studio drawer** beside the pinned own chat: title, category, tags, language,
+  content labels, branded content (T; Y title/description; K title/category).
+  ✅ title/category editor exists (T).
+- **Stream presets:** saved title + category + tags combinations, applied
+  with one click and a review step ("Just Chatting evening", "Ranked grind").
+- **Live strip:** live/offline, uptime, viewers (hideable), followers today,
+  subs today, current hype train level, ad countdown (T `channel:read:ads`).
+- **Ad manager:** snooze the next ad, run a commercial of chosen length, and an
+  "ad in 2 min" chat notice preset (T).
+- **Polls and predictions:** create from templates, live results in the drawer,
+  end/lock/resolve with review (T; Y polls if the API allows).
+- **Raid/host flow:** search live channels you follow, preview their title and category,
+  start the raid, and cancel during the countdown. Pending and completed raids are shown as
+  separate states (T).
+- **Shoutout button** on a user card: `/shoutout` plus an optional custom message
+  template with their last category (T).
+- **Channel point rewards:** pause/enable rewards, a redemption queue with
+  fulfil/refund for rewards Jawjack created (T).
+- **Audience event feed:** follows, subs, gifts, Bits, raids, hype train,
+  charity and goals in one filterable column. The streamer can pin it as a split (T; Y Super Chat /
+  memberships; K subs/gifts).
+- **First-time chatter spotlight:** a subtle marker and quick "welcome" macro (T
+  first-message flag).
+- **Stream markers / clip:** one key creates a marker or clip with a note (T).
+- **Multistream desk:** one pinned own-chat per platform or a merged own-chat
+  with an explicit send destination. "Send to all my chats" is a deliberate
+  opt-in with per-platform results.
+- **Go-live checklist:** title/category set, ads snoozed, rewards on, mod
+  online. Purely local and dismissible.
+- **Moderators online:** who of your mods/VIPs is chatting right now (T).
+
+### Moderator
+- **Moderation / Viewing toggle** per channel, verified against the moderated-
+  channel list (T; Y/K via their mod roles).
+- **Hover/keyboard quick actions:** delete, timeout presets (1m/10m/1h/1d),
+  ban, warn, with reason templates. Bound to stable message and user IDs.
+- **User mod card:** account age, follow age, sub status, previous names, your
+  channel's mod log for them, private mod notes, recent messages in this
+  session (gaps labelled).
+- **AutoMod queue:** held messages with allow/deny and the reason category (T).
+- **Unban request queue:** approve/deny with resolution text (T).
+- **Suspicious users:** monitored/restricted flags and their messages
+  highlighted for mods only (T).
+- **Room mode controls:** slow, followers, sub-only, emote-only, unique chat,
+  Shield Mode, with current values shown (T; K slow/sub/emote modes).
+- **Blocked terms** editor (T) and local "watch words" that highlight for mods.
+- **Mod action log:** who did what (from `channel.moderate`), filterable by
+  moderator and action (T).
+- **Raid protection:** one-click "lockdown" (followers-only + slow + Shield
+  Mode) with a timed auto-revert you confirm (T).
+- **Multi-channel mod view:** a workspace preset that opens every moderated
+  channel that is live, with combined AutoMod/unban queues.
+- **Chat velocity and spam detection:** messages/min sparkline; repeated
+  message/link clusters with "select similar" for deliberate bulk delete.
+- **Mod chat:** quick switch to a private mods-only channel or Discord link
+  (local preference).
+
+### Viewer
+- **Live-follows sidebar:** followed channels that are live, sorted by viewers or
+  recency, with one click to open (T `user:read:follows`; Y subscriptions; K
+  follows).
+- **Go-live notifications** for chosen channels (desktop toast + sound).
+- **Watch-together layouts:** saved multi-channel views for events (e.g. a
+  tournament with 4 POV channels).
+- **Emote favourites and recents** across services, plus "emote only this
+  channel can use" hints (T/7TV/BTTV/FFZ; K emotes).
+- **Mention inbox** across all channels and platforms, with jump-to-context.
+- **Personal highlights and nicknames** for friends; friend list with "chatting now"
+  marker.
+- **Whispers** panel (T `user:read:whispers`/`user:manage:whispers`).
+- **Channel points balance and predictions** participation where the API allows it.
+- **Translate message** (local or opt-in service) and per-message
+  **copy/quote/reply**.
+- **Chat replay/search** within retained history; export a conversation.
+- **Readable mode:** larger text, reduced motion, emote size, hide noisy events.
+
+### Cross-role, platform-wide
+- **Connections page:** Twitch, YouTube and Kick accounts, each with its granted
+  permissions, an "update permissions" button and health.
+- **Merged feeds:** any channels from any platform in one view, with platform badges and
+  explicit send destination.
+- **Per-role quick bar** in the channel header: Viewer (emotes, search),
+  Moderator (shield, modes, queue counts), Streamer (Studio, ads, raid).
+
+### Integrations
+- **Streamer.bot** (owner request 2026-10-11): connect to Streamer.bot's local
+  WebSocket server (default `ws://127.0.0.1:8080/`; optional password).
+  - List actions and run them from buttons in Studio, from a chat command
+    alias or from a message card. Arguments carry the message and user.
+  - Subscribe to its events for the audience event feed. This includes YouTube and Kick
+    events Streamer.bot already handles, which could bridge platforms before Jawjack
+    has native adapters.
+  - Local only, explicit opt-in, and the connection status is shown. Do it after the Studio drawer.
+- **OBS WebSocket** (later): scene switching and stream/record state in Studio.

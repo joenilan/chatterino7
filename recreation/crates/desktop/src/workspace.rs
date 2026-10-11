@@ -147,6 +147,8 @@ pub struct Workbench {
     live: crate::live::LiveChat,
     streams: crate::stream_status::Streams,
     capabilities: crate::capabilities::Capabilities,
+    updates: crate::updates::Updates,
+    announced_update: Option<String>,
     live_workspaces: bool,
     live_channels: bool,
     catalog: std::rc::Rc<std::cell::RefCell<crate::catalog::Catalog>>,
@@ -191,6 +193,8 @@ pub struct Workbench {
     /// Nicknames from a Chatterino import awaiting login-to-ID lookup.
     /// A short-lived status message that takes precedence over save status.
     notice: Option<(String, std::time::Instant)>,
+    /// Missing-permission count already announced this run.
+    announced_missing_scopes: usize,
     pending_nicknames: Option<std::sync::mpsc::Receiver<Vec<crate::chatterino_import::Nickname>>>,
     chatter_editor: Option<Entity<crate::chatter_appearance::Editor>>,
     chatter_notes: crate::chatter_notes::Notes,
@@ -359,6 +363,7 @@ impl Workbench {
             ignores_editor: None,
             pending_nicknames: None,
             notice: None,
+            announced_missing_scopes: 0,
             chatter_editor: None,
             chatter_notes: crate::chatter_notes::load(&state["chatter_notes"]),
             notes_editor: None,
@@ -371,6 +376,12 @@ impl Workbench {
             live: crate::live::LiveChat::new(),
             streams: crate::stream_status::Streams::new(),
             capabilities: crate::capabilities::Capabilities::new(),
+            updates: {
+                let mut updates = crate::updates::Updates::new();
+                updates.enabled = state["update_checks"].as_bool().unwrap_or(true);
+                updates
+            },
+            announced_update: None,
             live_workspaces: state["live_workspaces"].as_bool().unwrap_or(false),
             live_channels: state["live_channels"].as_bool().unwrap_or(false),
             catalog: std::rc::Rc::new(std::cell::RefCell::new(crate::catalog::Catalog::new())),
@@ -549,6 +560,33 @@ impl Workbench {
             cx.notify();
         }
         self.pump_imported_nicknames(cx);
+        if self.updates.auto_check_due() {
+            self.updates.check();
+        }
+        if self.updates.poll() {
+            if let Some(version) = self.updates.available()
+                && self.announced_update.as_ref() != Some(&version)
+            {
+                self.notice = Some((
+                    format!("Jawjack {version} is available. Workspaces sidebar → update."),
+                    std::time::Instant::now(),
+                ));
+                self.announced_update = Some(version);
+            }
+            cx.notify();
+        }
+        // A newer Jawjack may need permissions an older saved grant lacks.
+        let missing = self.account.read(cx).missing_scopes().len();
+        if identity.is_some() && missing > self.announced_missing_scopes {
+            self.announced_missing_scopes = missing;
+            self.notice = Some((
+                format!(
+                    "This version can use {missing} Twitch permissions your login hasn't granted yet. Account menu → Update Twitch permissions."
+                ),
+                std::time::Instant::now(),
+            ));
+            cx.notify();
+        }
         let login = self.account.read(cx).login();
         if self.capabilities.pump(identity.clone(), login) {
             cx.notify();
@@ -1164,6 +1202,17 @@ impl Workbench {
                 this.confirm_close_channel(channel.clone(), window, cx);
                 return;
             }
+            if let PaneEvent::TwitchCommand { request, draft } = event {
+                this.run_twitch_command(
+                    pane.clone(),
+                    channel.clone(),
+                    request.clone(),
+                    draft.clone(),
+                    window,
+                    cx,
+                );
+                return;
+            }
             if matches!(event, PaneEvent::OpenStreamInfo) {
                 this.open_stream_info(channel.clone(), window, cx);
                 return;
@@ -1238,6 +1287,132 @@ impl Workbench {
         .detach();
         pane
     }
+    /// Download the published installer, or start it once verified.
+    fn update_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.updates.ready() {
+            match self.updates.install() {
+                // The installer waits for Jawjack to close; save first.
+                Ok(_) => {
+                    let _ = storage::save(&self.snapshot(cx));
+                    cx.quit();
+                }
+                Err(e) => window.push_notification(Notification::info(e), cx),
+            }
+        } else {
+            self.updates.start_download();
+        }
+        cx.notify();
+    }
+    fn render_updates(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let available = self.updates.available();
+        div()
+            .v_flex()
+            .gap_1()
+            .child(
+                div()
+                    .h_flex()
+                    .gap_1()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_color(rgb(if available.is_some() {
+                                theme::STREAM_LIVE
+                            } else {
+                                theme::MUTED
+                            }))
+                            .child(format!("v{}", self.updates.current_version())),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .child(self.updates.status_label()),
+                    )
+                    .child(
+                        Button::new("update-check")
+                            .ghost()
+                            .xsmall()
+                            .label("⟳")
+                            .tooltip(if self.updates.checking() {
+                                "Checking for updates…"
+                            } else {
+                                "Check for updates"
+                            })
+                            .disabled(self.updates.busy())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.updates.check();
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .when_some(
+                self.updates.install_label().filter(|_| available.is_some()),
+                |el, label| {
+                    el.child(
+                        Button::new("update-install")
+                            .small()
+                            .when(self.updates.ready(), |b| b.primary())
+                            .disabled(self.updates.busy())
+                            .label(label)
+                            .on_click(cx.listener(|this, _, w, cx| this.update_action(w, cx))),
+                    )
+                },
+            )
+            .when(available.is_some(), |el| {
+                el.child(
+                    Button::new("update-notes")
+                        .ghost()
+                        .xsmall()
+                        .label("Release notes")
+                        .on_click(|_, _, cx| cx.open_url(crate::updates::RELEASE_PAGE)),
+                )
+            })
+    }
+    /// Run a Twitch command after checking role and permission again.
+    fn run_twitch_command(
+        &mut self,
+        pane: Entity<ChannelPane>,
+        channel: String,
+        request: crate::twitch_actions::Request,
+        draft: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let check = self.capabilities.check(&channel, request.action());
+        let identity = self.account.read(cx).identity();
+        let (Some(identity), true) = (identity, check.available()) else {
+            pane.update(cx, |p, cx| {
+                p.command_feedback(
+                    format!("{} Your draft is kept.", check.reason()),
+                    window,
+                    cx,
+                )
+            });
+            return;
+        };
+        let task = cx.background_spawn(async move {
+            crate::twitch_actions::run(&identity, &channel, &request)
+        });
+        cx.spawn_in(window, async move |_, cx| {
+            let result = task.await;
+            let _ = pane.update_in(cx, |p, window, cx| match result {
+                Ok(done) => {
+                    if p.draft.read(cx).value().as_ref() == draft {
+                        p.command_draft("", window, cx);
+                    }
+                    p.command_feedback(done, window, cx);
+                }
+                Err(error) => {
+                    p.command_feedback(format!("{error} Your draft is kept."), window, cx)
+                }
+            });
+        })
+        .detach();
+    }
     /// Streamer tool: edit the own channel's title and category.
     fn open_stream_info(&mut self, channel: String, window: &mut Window, cx: &mut Context<Self>) {
         let check = self
@@ -1286,7 +1461,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
@@ -2600,8 +2775,7 @@ impl Workbench {
                     .border_color(rgb(theme::BORDER))
                     .text_size(px(11.))
                     .text_color(rgb(theme::MUTED))
-                    .child("LOCAL WORKSPACES")
-                    .child("Channels and drafts stay on this PC."),
+                    .child(self.render_updates(cx)),
             )
             .into_any_element()
     }
@@ -2843,6 +3017,12 @@ impl Render for Workbench {
                             )))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Image cache is separately bounded to 48 MiB. Visible chat rows are drawn on demand."))
                             .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Tabs, splits, channel drafts and appearance are saved locally."))
+                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Updates"))
+                            .child(div().text_size(px(12.)).child(self.render_updates(cx)))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(self.updates.detail()))
+                            .child(Button::new("update-auto").small().label(if self.updates.enabled { "✓ Check automatically" } else { "Check automatically" }).selected(self.updates.enabled).when(self.updates.enabled,|b|b.primary())
+                                .on_click(cx.listener(|this,_,_,cx|{this.updates.enabled = !this.updates.enabled;this.schedule_save(cx);cx.notify();})))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Checks apps.zombie.digital shortly after launch and every 6 hours. Nothing installs without your click."))
                             ))))))
             .child(div().h_flex().h(px(20.)).flex_shrink_0().px_2().gap_2().border_t_1().border_color(rgb(theme::BORDER)).text_size(px(10.)).text_color(rgb(theme::MUTED))
                 .child(div().flex_1().min_w_0().overflow_hidden().child(live_status)).child(self.notice.as_ref().filter(|(_, at)| at.elapsed() < Duration::from_secs(12)).map(|(text, _)| text.clone()).unwrap_or_else(|| self.save_status.clone())))

@@ -31,24 +31,61 @@ impl Role {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Action {
+    // Moderator or broadcaster in the target channel.
+    Ban,
+    Warn,
+    DeleteMessages,
+    ManageRoom,
+    Announce,
+    Shoutout,
+    // Broadcaster of the target channel.
+    ManageModerators,
+    ManageVips,
+    // Always the signed-in account's own channel.
     EditStreamInfo,
+    Marker,
+    Commercial,
+    Raid,
+    // Account-level, any channel.
+    ChatColor,
+    Whisper,
+    Block,
+}
+enum Needs {
+    Moderator,
+    Broadcaster,
+    OwnChannel,
+    Account,
 }
 impl Action {
     fn scopes(self) -> &'static [&'static str] {
+        use Action::*;
         match self {
-            Action::EditStreamInfo => &["channel:manage:broadcast"],
+            Ban => &["moderator:manage:banned_users"],
+            Warn => &["moderator:manage:warnings"],
+            DeleteMessages => &["moderator:manage:chat_messages"],
+            ManageRoom => &["moderator:manage:chat_settings"],
+            Announce => &["moderator:manage:announcements"],
+            Shoutout => &["moderator:manage:shoutouts"],
+            ManageModerators => &["channel:manage:moderators"],
+            ManageVips => &["channel:manage:vips"],
+            EditStreamInfo | Marker => &["channel:manage:broadcast"],
+            Commercial => &["channel:edit:commercial"],
+            Raid => &["channel:manage:raids"],
+            ChatColor => &["user:manage:chat_color"],
+            Whisper => &["user:manage:whispers"],
+            Block => &["user:manage:blocked_users"],
         }
     }
-    fn allowed(self, role: Role) -> bool {
+    fn needs(self) -> Needs {
+        use Action::*;
         match self {
-            Action::EditStreamInfo => role == Role::Broadcaster,
-        }
-    }
-    fn needs(self) -> &'static str {
-        match self {
-            Action::EditStreamInfo => "Only the broadcaster can edit this channel's stream info.",
+            Ban | Warn | DeleteMessages | ManageRoom | Announce | Shoutout => Needs::Moderator,
+            ManageModerators | ManageVips => Needs::Broadcaster,
+            EditStreamInfo | Marker | Commercial | Raid => Needs::OwnChannel,
+            ChatColor | Whisper | Block => Needs::Account,
         }
     }
 }
@@ -206,14 +243,28 @@ impl Capabilities {
         let Some(identity) = &self.identity else {
             return Check::SignedOut;
         };
-        // The broadcaster role is known locally even while the list loads.
-        let role = match self.role(channel) {
-            Some(role) => role,
-            None if !identity.has("user:read:moderated_channels") => Role::Viewer,
-            None => return Check::Checking,
-        };
-        if !action.allowed(role) {
-            return Check::NeedsRole(action.needs());
+        match action.needs() {
+            // These act on the signed-in account itself, whatever channel is open.
+            Needs::OwnChannel | Needs::Account => {}
+            needs => {
+                // The broadcaster role is known locally even while the list loads.
+                let role = match self.role(channel) {
+                    Some(role) => role,
+                    None if !identity.has("user:read:moderated_channels") => Role::Viewer,
+                    None => return Check::Checking,
+                };
+                match (needs, role) {
+                    (_, Role::Broadcaster) | (Needs::Moderator, Role::Moderator) => {}
+                    (Needs::Moderator, _) => {
+                        return Check::NeedsRole("You are not a moderator in this channel.");
+                    }
+                    _ => {
+                        return Check::NeedsRole(
+                            "Only the broadcaster can do this in this channel.",
+                        );
+                    }
+                }
+            }
         }
         if action.scopes().iter().all(|s| identity.has(s)) {
             Check::Available

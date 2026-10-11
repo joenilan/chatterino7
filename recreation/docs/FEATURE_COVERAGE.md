@@ -121,8 +121,8 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | IN05 | Command routing | Next | Prevent unsupported slash commands being mistaken for working moderator commands; deliberate literal-text behavior. | controllers/commands/CommandController.cpp |
 | IN06 | Custom command editor | Backlog | Aliases, parameters/context variables, multiword expansion and validation. | controllers/commands/CommandModel.cpp; settingspages/CommandPage.cpp |
 | IN07 | Command completion | Backlog | Discover supported built-in/custom actions with permission-aware hints. | controllers/completion; controllers/commands |
-| IN08 | Utility commands | Backlog | /me, usercard/chatters/mods/VIPs, copy/clear, reply/whisper, stream/popout and related utilities. | controllers/commands/builtin/Misc.cpp; builtin/twitch |
-| IN09 | Broadcaster commands | Backlog | Clip/marker, title/game/color, announcements and engagement commands as supported by current APIs. | controllers/commands/builtin/twitch |
+| IN08 | Utility commands | Part | Twitch utility commands (/w, /color, /block) via Helix ([details](STREAMER_TOOLS.md)); /me, chatters/mods/VIP lists, popout remain. | controllers/commands/builtin/Misc.cpp; builtin/twitch |
+| IN09 | Broadcaster commands | Part | /settitle, /setgame, /marker, /commercial, /raid, /announce, /shoutout via Helix with capability checks; /clip and live acceptance remain. | controllers/commands/builtin/twitch |
 | IN10 | Configurable hotkeys | Part | Fixed shortcuts exist; action registry/editor, conflicts, contexts, arguments and import/export remain. | controllers/hotkeys; settingspages/KeyboardSettingsPage.cpp |
 | IN11 | Spellcheck | Backlog | Optional dictionaries/languages/suggestions with editable-input integration. | controllers/spellcheck |
 | IN12 | Font and input QoL | Part | Native font controls/reset and saved-setting persistence observed. Continue feedback/focus/cancellation polish. | widgets/splits/SplitInput.cpp; Jawjack workspace.rs |
@@ -172,14 +172,14 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | MD02 | Full profile context | Part | Public Twitch created-at/avatar/bio/broadcaster role in compact card; avatar/date/bio/compact native accepted, role display untested. Follow/subscription data and moderation remain. | UserInfoPopup.cpp |
 | MD03 | Persistent notes | Backlog | Local notes editor/storage and streamer-mode redaction. | controllers/userdata; EditUserNotesDialog.cpp |
 | MD04 | Chatter list and roles | Backlog | Filtering/fetch limits, actual account permissions, distinguish chatters from viewers. | widgets/ChatterListWidget.cpp |
-| MD05 | Delete, timeout, ban and undo-family actions | Backlog | Target/reason/duration, channel role/scopes, result handling; receiving redaction is not action support. | controllers/moderationactions; builtin/twitch/Ban.cpp; Unban.cpp; DeleteMessages.cpp |
-| MD06 | Warnings and blocks | Backlog | Explicit warnings/block/unblock semantics and proper permissions. | builtin/twitch/Warn.cpp; Block.cpp |
+| MD05 | Delete, timeout, ban and undo-family actions | Part | /ban, /timeout, /unban, /delete, /clear commands with role/scope checks; card buttons, review step and live acceptance remain. | controllers/moderationactions; builtin/twitch/Ban.cpp; Unban.cpp; DeleteMessages.cpp |
+| MD06 | Warnings and blocks | Part | /warn and /block, /unblock commands; block list sync and display remain. | builtin/twitch/Warn.cpp; Block.cpp |
 | MD07 | Moderator mode and custom buttons | Backlog | Compact optional actions, editable presets, keyboard equivalents and clear unavailable reasons. | settingspages/ModerationPage.cpp |
-| MD08 | Room mode management | Backlog | Slow/follower/subscriber/emote-only/unique-chat display and authorized changes. | builtin/twitch/ChatSettings.cpp |
+| MD08 | Room mode management | Part | Room mode commands (/slow, /followers, /subscribers, /emoteonly, /uniquechat); header controls remain. | builtin/twitch/ChatSettings.cpp |
 | MD09 | AutoMod and blocked terms | Backlog | Held queue, approve/deny, reasons/categories, state updates and privacy of blocked terms. | providers/twitch/eventsub; messages/MessageBuilder.cpp |
 | MD10 | Suspicious users | Backlog | Monitored/restricted state, annotations and capability-gated management. | builtin/twitch/LowTrust.cpp |
-| MD11 | Roles and Shield Mode | Backlog | Mod/VIP lists/changes, Shield status/control and exact permission errors. | builtin/twitch/AddModerator.cpp; AddVIP.cpp; ShieldMode.cpp |
-| MD12 | Announcements and shoutouts | Backlog | Authenticated per-channel actions, display variants and results. | builtin/twitch/Announce.cpp; Shoutout.cpp |
+| MD11 | Roles and Shield Mode | Part | /mod, /unmod, /vip and /unvip commands (broadcaster); lists and Shield Mode remain. | builtin/twitch/AddModerator.cpp; AddVIP.cpp; ShieldMode.cpp |
+| MD12 | Announcements and shoutouts | Part | /announce (colours) and /shoutout commands; display variants remain. | builtin/twitch/Announce.cpp; Shoutout.cpp |
 | MD13 | Raids, ads, polls and predictions | Research | Verify each current endpoint, role and consequential-action flow; do not blindly port old commands. | builtin/twitch/Raid.cpp; StartCommercial.cpp; Poll.cpp; Prediction.cpp |
 | MD14 | Pins | Research | Current privileged APIs and ordinary-viewer limitations are documented in TW10/11. | builtin/twitch/Pin.cpp |
 
@@ -197,7 +197,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | PF08 | Browser integration | Research | Native messaging, approved extension IDs, watching feed and attached-window behavior. | singletons/NativeMessaging; widgets/AttachedWindow |
 | PF09 | Plugins | Research | Decide Lua compatibility or replacement; bounded commands/events/network/files and migration strategy. | controllers/plugins; docs/lua-meta; widgets/PluginRepl.cpp |
 | PF10 | Settings backup/recovery | Part | Atomic versioned JSON/prior backup exists; user-facing restore/import/export/profiles/portable paths and migration UX remain. | RestoreBackupsDialog.cpp; Jawjack storage.rs |
-| PF11 | Packaging, update and rollback | Backlog | Installer/signing/update strategy, crash recovery, licensing and ownership-safe rollout. | singletons/Updates; LastRunCrashDialog.cpp |
+| PF11 | Packaging, update and rollback | Part | Haiwire-style update check/download/verify/launch ([details](UPDATES.md)); installer, publishing and signing remain. | singletons/Updates; LastRunCrashDialog.cpp |
 | PF12 | Generic IRC | Research | Explicit legacy parity item; select supported scope and release placement rather than silently dropping it. | providers/irc |
 | PF13 | Kick | Research | Original experimental transport/features need a current official-provider audit; no parity claim from source alone. | providers/kick; builtin/kick; KickLoginPage.cpp |
 | PF14 | YouTube and other providers | Backlog | New scope, separately tracked in MULTIPLATFORM.md; viewer feeds and explicit combined-feed destinations. TikTok later. | MULTIPLATFORM.md |

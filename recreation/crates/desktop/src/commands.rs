@@ -61,7 +61,7 @@ fn split(value: &str) -> (&str, &str) {
         .map_or((value, ""), |at| (&value[..at], value[at..].trim()))
 }
 impl ChannelPane {
-    fn command_feedback(
+    pub(crate) fn command_feedback(
         &mut self,
         text: impl Into<SharedString>,
         window: &mut Window,
@@ -77,7 +77,12 @@ impl ChannelPane {
             cx,
         );
     }
-    fn command_draft(&mut self, value: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn command_draft(
+        &mut self,
+        value: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.compose_revision = self.compose_revision.wrapping_add(1);
         self.draft.update(cx, |input, cx| {
             input.set_value(value.to_owned(), window, cx);
@@ -209,7 +214,27 @@ impl ChannelPane {
                     .borrow()
                     .get(name.trim_start_matches('/'))
                     .cloned();
-                if let Some(template) = template {
+                let twitch = if template.is_none() {
+                    crate::twitch_actions::parse(&name, args)
+                } else {
+                    None
+                };
+                if let Some(parsed) = twitch {
+                    match parsed {
+                        Ok(request) => {
+                            self.command_feedback("Asking Twitch…", window, cx);
+                            cx.emit(PaneEvent::TwitchCommand {
+                                request,
+                                draft: text.to_owned(),
+                            });
+                        }
+                        Err(error) => self.command_feedback(
+                            format!("{error} Your draft is kept."),
+                            window,
+                            cx,
+                        ),
+                    }
+                } else if let Some(template) = template {
                     match crate::custom_commands::expand(&template, &self.name, args) {
                         Ok(value) => {
                             self.command_draft(&value, window, cx);
@@ -222,7 +247,7 @@ impl ChannelPane {
                         Err(error) => self.command_feedback(error, window, cx),
                     }
                 } else {
-                    self.command_feedback(format!("{name} isn't supported here yet. Nothing was sent; your draft is kept. Use /help for local commands."),window,cx);
+                    self.command_feedback(format!("{name} isn't supported here yet. Nothing was sent; your draft is kept. Use /help for available commands."),window,cx);
                 }
             }
         }
@@ -235,8 +260,17 @@ impl ChannelPane {
             let height=(f32::from(window.viewport_size().height)-160.).clamp(60.,440.);
             dialog.w(px(width)).title("Composer commands")
                 .child(div().id("composer-command-list").v_flex().gap_2().max_h(px(height)).overflow_y_scroll()
-                    .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("These commands act locally. Choosing one inserts it; Enter runs it. Moderation, whispers and other unsupported commands are blocked rather than posted to chat."))
+                    .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Choosing a command inserts it; Enter runs it. Twitch commands run only where your role and permissions allow; unknown commands are never posted to chat."))
                     .children(COMMANDS.iter().map(|command| {
+                        let owner=owner.clone(); let name=command.name;
+                        div().v_flex().gap_1().p_2().bg(rgb(theme::CONTROL)).rounded(px(4.))
+                            .child(Button::new(SharedString::from(format!("command-{name}"))).small().label(command.usage).on_click(move|_,w,cx| {
+                                w.close_dialog(cx); let _=owner.update(cx,|p,cx|p.command_draft(&format!("{name} "),w,cx));
+                            }))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(command.description))
+                    }))
+                    .child(div().pt_2().font_weight(FontWeight::SEMIBOLD).text_size(px(12.)).child("Twitch"))
+                    .children(crate::twitch_actions::COMMANDS.iter().map(|command| {
                         let owner=owner.clone(); let name=command.name;
                         div().v_flex().gap_1().p_2().bg(rgb(theme::CONTROL)).rounded(px(4.))
                             .child(Button::new(SharedString::from(format!("command-{name}"))).small().label(command.usage).on_click(move|_,w,cx| {
