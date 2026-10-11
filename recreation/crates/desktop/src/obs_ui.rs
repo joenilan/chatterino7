@@ -979,11 +979,17 @@ impl Workbench {
             return;
         }
         let panes = self.panes();
-        let names: Vec<String> = panes
+        // YouTube streams open on their own or inside combined feeds.
+        let mut names: Vec<String> = Vec::new();
+        for source in panes
             .iter()
-            .map(|p| p.read(cx).name.to_string())
+            .flat_map(|p| crate::combined::sources(&p.read(cx).name))
             .filter(|n| crate::youtube::is_youtube(n))
-            .collect();
+        {
+            if !names.contains(&source) {
+                names.push(source);
+            }
+        }
         for (name, update) in self.youtube.pump(&names) {
             if let crate::youtube::Update::ChatId(chat) = &update {
                 self.youtube_chats.insert(name.clone(), chat.clone());
@@ -993,6 +999,36 @@ impl Workbench {
                 .filter(|p| p.read(cx).name.as_ref() == name)
                 .cloned()
                 .collect();
+            if let crate::youtube::Update::Status { connected, .. } = &update {
+                self.channel_ready.insert(name.clone(), *connected);
+            }
+            // Combined feeds: messages tagged with their source; a live source connects the feed.
+            let combined: Vec<_> = panes
+                .iter()
+                .filter(|p| {
+                    let pane_name = p.read(cx).name.to_string();
+                    crate::combined::is_combined(&pane_name)
+                        && crate::combined::sources(&pane_name).contains(&name)
+                })
+                .cloned()
+                .collect();
+            for pane in combined {
+                pane.update(cx, |p, cx| match &update {
+                    crate::youtube::Update::Message(m) => {
+                        let mut m = m.clone();
+                        m.presentation.origin = Some(name.clone());
+                        p.received(chat_core::Event::Message(m), cx);
+                    }
+                    crate::youtube::Update::Status {
+                        connected: true, ..
+                    } if !p.connected => {
+                        p.connected = true;
+                        p.connection = "Connected".into();
+                        cx.notify();
+                    }
+                    _ => {}
+                });
+            }
             for pane in targets {
                 pane.update(cx, |p, cx| {
                     match &update {

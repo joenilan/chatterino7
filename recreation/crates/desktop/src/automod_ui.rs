@@ -313,6 +313,49 @@ impl ChannelPane {
         focus.update(cx, |i, cx| i.focus(window, cx));
     }
     /// "Filtered: is:mod ×" in the header while a view filter is on.
+    /// Show or hide one platform in a combined feed (at least one stays shown).
+    pub fn toggle_platform(&mut self, platform: crate::combined::Platform, cx: &mut Context<Self>) {
+        if let Some(at) = self.hidden_platforms.iter().position(|p| *p == platform) {
+            self.hidden_platforms.remove(at);
+        } else if crate::combined::platforms(&self.name)
+            .iter()
+            .any(|p| *p != platform && !self.hidden_platforms.contains(p))
+        {
+            self.hidden_platforms.push(platform);
+        }
+        self.scroller.update(cx, |s, cx| s.remeasure(cx));
+        cx.emit(PaneEvent::ViewFilterChanged);
+        cx.notify();
+    }
+    /// Twitch / YouTube chips on a combined feed that mixes platforms.
+    pub fn render_platform_toggles(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let platforms = crate::combined::platforms(&self.name);
+        if platforms.len() < 2 {
+            return None;
+        }
+        Some(
+            div()
+                .h_flex()
+                .gap_1()
+                .children(platforms.into_iter().map(|platform| {
+                    let shown = !self.hidden_platforms.contains(&platform);
+                    Button::new(SharedString::from(format!("platform-{}", platform.key())))
+                        .xsmall()
+                        .label(platform.label())
+                        .when(shown, |b| b.primary())
+                        .when(!shown, |b| b.ghost())
+                        .tooltip(if shown {
+                            format!("Showing {} chat · click to hide it", platform.label())
+                        } else {
+                            format!("{} chat hidden · click to show it", platform.label())
+                        })
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| this.toggle_platform(platform, cx)),
+                        )
+                }))
+                .into_any_element(),
+        )
+    }
     pub fn render_filter_chip(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let (query, _) = self.view_filter.as_ref()?;
         Some(

@@ -239,6 +239,8 @@ struct ChannelPane {
     spelling: Vec<(String, Vec<String>)>,
     /// View filter (search syntax): only matching messages are shown; nothing is dropped.
     view_filter: Option<(String, std::rc::Rc<chat_search::Query>)>,
+    /// Combined feeds: platforms whose messages are hidden here.
+    pub(crate) hidden_platforms: Vec<combined::Platform>,
     /// A friendlier title than the pane name (YouTube: "Channel · Stream title").
     display_title: Option<String>,
     /// Suspicious labels for messages that haven't arrived yet (by message ID).
@@ -347,6 +349,7 @@ impl ChannelPane {
             spellcheck: false,
             spelling: Vec::new(),
             view_filter: None,
+            hidden_platforms: Vec::new(),
             display_title: None,
             suspicious_pending: Default::default(),
             send_as: None,
@@ -709,6 +712,7 @@ impl Render for ChannelPane {
         let highlight_rows = self.attention.highlights.clone();
         let highlight_colors = self.attention.colors.clone();
         let view_filter = self.view_filter.as_ref().map(|(_, q)| q.clone());
+        let hidden_platforms = self.hidden_platforms.clone();
         let moderating = matches!(
             self.role,
             Some(capabilities::Role::Moderator | capabilities::Role::Broadcaster)
@@ -837,6 +841,7 @@ impl Render for ChannelPane {
                             }),
                     )
                     .children(self.render_filter_chip(cx))
+                    .children(self.render_platform_toggles(cx))
                     .child(
                         div()
                             .min_w_0()
@@ -914,7 +919,8 @@ impl Render for ChannelPane {
                                 return div().into_any_element();
                             };
                             // A filtered-out row draws nothing (rows have no padding of their own).
-                            if view_filter.as_ref().is_some_and(|q| q.matches(message).is_none()) {
+                            if view_filter.as_ref().is_some_and(|q| q.matches(message).is_none())
+                                || message.presentation.origin.as_deref().is_some_and(|o| hidden_platforms.contains(&combined::Platform::of(o))) {
                                 return div().into_any_element();
                             }
                             let row = first_order + index as u64;
@@ -1035,7 +1041,7 @@ impl Render for ChannelPane {
                                     let hue = origin.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32)) as usize % highlight_rules::COLORS.len();
                                     let (_, accent, background) = highlight_rules::COLORS[hue];
                                     el.child(div().h(first_line_height).flex().items_center().flex_shrink_0()
-                                        .child(div().px(px(4.)).rounded(px(3.)).bg(rgb(background)).text_color(rgb(accent)).text_size(px(10.)).child(format!("#{origin}"))))
+                                        .child(div().px(px(4.)).rounded(px(3.)).bg(rgb(background)).text_color(rgb(accent)).text_size(px(10.)).child(combined::label(&origin))))
                                 })
                                 .children(badge_images.into_iter().map(|(badge,image,background)|{
                                     div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(div().size(px(18.)).when_some(background,|el,color|el.bg(rgb(color))).child(emote_picker::icon(image,String::new(),18.,18.)))
@@ -1136,11 +1142,11 @@ impl Render for ChannelPane {
                         // Combined feed: one explicit destination, never all of them.
                         let sources = combined::sources(&self.name);
                         let owner = cx.entity().downgrade();
-                        el.child(Button::new("send-to").ghost().xsmall().label(format!("to #{current}")).tooltip("Which channel your messages go to")
+                        el.child(Button::new("send-to").ghost().xsmall().label(format!("to {}", combined::label(&current))).tooltip("Where your messages go: one channel or stream, never all of them")
                             .dropdown_menu(move |mut menu, _, _| {
                                 for source in &sources {
                                     let (owner, source) = (owner.clone(), source.clone());
-                                    menu = menu.item(gpui_kit::component::menu::PopupMenuItem::new(format!("#{source}"))
+                                    menu = menu.item(gpui_kit::component::menu::PopupMenuItem::new(combined::label(&source))
                                         .checked(source == current)
                                         .on_click(move |_, _, cx| { let _ = owner.update(cx, |p, cx| { p.send_to = Some(source.clone()); cx.notify(); }); }));
                                 }

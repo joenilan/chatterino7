@@ -215,6 +215,8 @@ pub struct Workbench {
     spellcheck: bool,
     /// Saved view filters by "{tab id}:{channel}".
     view_filters: std::collections::HashMap<String, String>,
+    /// Combined feeds: hidden platforms per "tab:pane".
+    platform_filters: std::collections::HashMap<String, Vec<String>>,
     mod_buttons: bool,
     custom_mod_buttons: std::rc::Rc<Vec<crate::mod_buttons::ModButton>>,
     mod_button_inputs: Option<(Entity<InputState>, Entity<InputState>)>,
@@ -673,6 +675,22 @@ impl Workbench {
             shouted: Default::default(),
             obs_found: None,
             spellcheck: state["spellcheck"].as_bool().unwrap_or(false),
+            platform_filters: state["platform_filters"]
+                .as_object()
+                .map(|o| {
+                    o.iter()
+                        .map(|(k, v)| {
+                            let keys = v
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|k| k.as_str().map(str::to_owned))
+                                .collect();
+                            (k.clone(), keys)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             view_filters: state["view_filters"]
                 .as_object()
                 .map(|o| {
@@ -1894,6 +1912,13 @@ impl Workbench {
                 let _ = p.set_view_filter(&query, cx);
             });
         }
+        if let Some(hidden) = self.platform_filters.get(&key) {
+            let hidden: Vec<_> = hidden
+                .iter()
+                .filter_map(|k| crate::combined::Platform::from_key(k))
+                .collect();
+            pane.update(cx, |p, _| p.hidden_platforms = hidden);
+        }
         if let Some(target) = self
             .reply_drafts
             .get(&key)
@@ -1909,10 +1934,11 @@ impl Workbench {
                 reply_parent,
             } = event
             {
-                if crate::youtube::is_youtube(&channel) {
+                let destination = this.destination(pane, reply_parent.as_deref(), &channel, cx);
+                if crate::youtube::is_youtube(&destination) {
                     this.send_youtube(
                         pane.clone(),
-                        channel.clone(),
+                        destination,
                         *request,
                         text.clone(),
                         window,
@@ -1920,7 +1946,6 @@ impl Workbench {
                     );
                     return;
                 }
-                let destination = this.destination(pane, reply_parent.as_deref(), &channel, cx);
                 let as_identity = this.send_as_identity(&destination, cx);
                 if let Err(error) = this.live.send(
                     *request,
@@ -2381,6 +2406,19 @@ impl Workbench {
             }
         }
         value["view_filters"] = Value::Object(filters);
+        let mut platforms = serde_json::Map::new();
+        for tab in &self.tabs {
+            for pane in &tab.panes {
+                let hidden = &pane.read(cx).hidden_platforms;
+                if !hidden.is_empty() {
+                    platforms.insert(
+                        format!("{}:{}", tab.id, pane.read(cx).name),
+                        json!(hidden.iter().map(|p| p.key()).collect::<Vec<_>>()),
+                    );
+                }
+            }
+        }
+        value["platform_filters"] = Value::Object(platforms);
         value["mod_buttons"] = json!(self.mod_buttons);
         value["custom_mod_buttons"] = crate::mod_buttons::json(&self.custom_mod_buttons);
         value["follows_open"] = json!(self.follows_open);
@@ -2644,6 +2682,42 @@ impl Workbench {
             .or_else(|| p.send_to.clone())
             .unwrap_or_else(|| crate::combined::sources(channel)[0].clone())
     }
+    /// One chat for every channel and stream in a workspace (Twitch and YouTube),
+    /// added as a tab there; platforms can then be shown or hidden in its header.
+    fn combine_workspace(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.select_tab_id(id, cx);
+        let mut sources: Vec<String> = Vec::new();
+        for source in self.tabs[self.active]
+            .panes
+            .iter()
+            .flat_map(|p| crate::combined::sources(&p.read(cx).name))
+        {
+            if !sources.contains(&source) {
+                sources.push(source);
+            }
+        }
+        if sources.len() < 2 {
+            window.push_notification(
+                Notification::info("Add at least two channels or streams to this workspace first."),
+                cx,
+            );
+            return;
+        }
+        sources.truncate(8);
+        let name = format!("+{}", sources.join(","));
+        if !self.tabs[self.active]
+            .panes
+            .iter()
+            .any(|p| p.read(cx).name.as_ref() == name)
+        {
+            self.add_channel_to_active(name.clone(), window, cx);
+        }
+        if let Some(dock) = self.tabs[self.active].dock.as_mut() {
+            dock.select(&name);
+        }
+        self.schedule_save(cx);
+        cx.notify();
+    }
     /// Add a channel as a tab in the active workspace (Add channel, live follows).
     fn add_channel_to_active(
         &mut self,
@@ -2714,7 +2788,9 @@ impl Workbench {
                 return;
             }
             self.add_channel_to_active(video, window, cx);
-        } else if let Some(combined) = crate::combined::parse(&value, valid_channel) {
+        } else if let Some(combined) = crate::combined::parse(&value, |s| {
+            valid_channel(s).or_else(|| crate::youtube::parse(s))
+        }) {
             if self.tabs[self.active]
                 .panes
                 .iter()
@@ -3146,7 +3222,13 @@ impl Workbench {
             let dismiss = owner.clone();
             let pane = pane.clone();
             dialog
-                .title(format!("Close #{name}?"))
+                .title(
+                    if crate::youtube::is_youtube(&name) || crate::combined::is_combined(&name) {
+                        format!("Close {}?", crate::combined::title(&name))
+                    } else {
+                        format!("Close #{name}?")
+                    },
+                )
                 .close_button(false)
                 .child("Your draft stays saved. Other channel tabs and splits remain open.")
                 .on_ok(|_, _, _| true)
@@ -4032,6 +4114,9 @@ impl Workbench {
                                             this.open_add(true, w, cx);
                                         },
                                     )))
+                                    .item(PopupMenuItem::new("Combine into one chat").on_click(
+                                        act(|this, id, w, cx| this.combine_workspace(id, w, cx)),
+                                    ))
                                     .item(PopupMenuItem::new("Move up").disabled(ix == 0).on_click(
                                         act(|this, id, _, cx| {
                                             this.select_tab_id(id, cx);
