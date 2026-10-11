@@ -24,7 +24,7 @@ again on dispatch. Switching setups keeps channels, drafts and layouts.
 
 ## Studio panel (right side)
 
-Toggle it with the titlebar button (`◂ Studio` when hidden, a highlighted `Studio ▸` when shown),
+Toggle it with the panel icon right of the settings gear (panel-right open/close),
 **Ctrl+Shift+S**, or gear menu → "Studio panel". The choice is saved.
 
 - Live/offline, uptime, viewers and category for your channel, plus its chat connection.
