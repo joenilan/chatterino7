@@ -313,6 +313,12 @@ impl StreamEditor {
         self.snapshot = Some(info);
         cx.notify();
     }
+    /// The saved title and category name on Twitch (None until loaded).
+    pub fn saved(&self) -> Option<(String, String)> {
+        self.snapshot
+            .as_ref()
+            .map(|s| (s.title.clone(), s.game_name.clone()))
+    }
     fn wanted(&self, cx: &App) -> Info {
         Info {
             title: self.title.read(cx).value().trim().to_owned(),

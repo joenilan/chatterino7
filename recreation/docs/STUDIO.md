@@ -90,3 +90,18 @@ starts appear at their next progress event (Get Creator Goals at startup is stil
 280 subscriptions for channels (20 reserved for moderated AutoMod), the own channel costs 6 + 17, and the cap is
 3 × 46 − 3 = 135 channels. Verified: all 81 live channels connected.
 
+## Go-live checklist (2026-10-11)
+
+Top of Studio → Stream, shown before going live and for the first 10 minutes of a stream (×
+hides it until the next stream). Automatic checks:
+- title & category set (from Twitch, with the category name)
+- OBS connected (only if the OBS connection is set up)
+- mic on (from OBS)
+- a moderator chatted in your channel in the last 15 min
+
+Plus up to 12 of your own items (Enter adds one, a click ticks it, × removes it). Ticks reset when a stream ends, and
+the items are saved with the workspace. "Live" means Twitch reports it or OBS is streaming.
+
+Evidence: shown with title/category, OBS and mic ticked from live data and the mod check amber. A
+custom item was added, ticked and removed, and the saved list went back to empty.
+

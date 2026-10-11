@@ -207,6 +207,15 @@ pub struct Workbench {
     obs_tick: u64,
     ads: crate::ads::Ads,
     hype: crate::hype::Hype,
+    /// Go-live checklist: your own items, which are ticked this stream, and whether
+    /// it was dismissed for this stream.
+    checklist_items: Vec<String>,
+    checklist_done: std::collections::BTreeSet<String>,
+    checklist_dismissed: bool,
+    checklist_input: Option<Entity<InputState>>,
+    /// When the own channel was last seen going live (for the 10-minute window).
+    went_live_at: Option<std::time::Instant>,
+    was_live: bool,
     /// "Find OBS": None = not searched, Some(None) = searching, Some(Some(ips)) = done.
     obs_found: Option<Option<Vec<crate::obs::Found>>>,
     /// Optional chat logs (off by default).
@@ -574,6 +583,19 @@ impl Workbench {
             obs_tick: 0,
             ads: crate::ads::Ads::new(),
             hype: Default::default(),
+            checklist_items: state["checklist"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str())
+                .map(|v| v.chars().filter(|c| !c.is_control()).take(60).collect())
+                .take(12)
+                .collect(),
+            checklist_done: Default::default(),
+            checklist_dismissed: false,
+            checklist_input: None,
+            went_live_at: None,
+            was_live: false,
             obs_found: None,
             similar_mode: crate::similarity::Mode::from_key(
                 state["similar_messages"].as_str().unwrap_or(""),
@@ -824,6 +846,16 @@ impl Workbench {
         }
         self.pump_obs(cx);
         self.pump_ads(identity.as_ref(), window, cx);
+        // A new stream starts a fresh checklist.
+        let live = self.own_live(cx);
+        if live && !self.was_live {
+            self.went_live_at = Some(std::time::Instant::now());
+        }
+        if !live && self.was_live {
+            self.checklist_done.clear();
+            self.checklist_dismissed = false;
+        }
+        self.was_live = live;
         self.pump_engagement(window, cx);
         if !self.setup_offered && identity.is_some() {
             self.setup_offered = true;
@@ -2079,6 +2111,7 @@ impl Workbench {
         value["follows_open"] = json!(self.follows_open);
         value["stream_presets"] = crate::studio::presets_json(&self.stream_presets);
         value["obs"] = self.obs_json();
+        value["checklist"] = json!(self.checklist_items);
         value["logs"] =
             json!({"enabled": self.logs_enabled, "folder": self.logs_folder.display().to_string()});
         value["streamer_mode"] =

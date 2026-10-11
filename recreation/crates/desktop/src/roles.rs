@@ -670,6 +670,7 @@ impl Workbench {
         &mut self,
         pane: Option<Entity<ChannelPane>>,
         own: String,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let owner = cx.entity().downgrade();
@@ -722,6 +723,7 @@ impl Workbench {
         };
         div()
             .v_flex()
+            .children(self.render_checklist(&own, window, cx))
             .child(Self::studio_section("OBS"))
             .child(self.render_obs_card(cx))
             .child(Self::studio_section("Stream info"))
@@ -1025,7 +1027,7 @@ impl Workbench {
             (self.studio_tab_switched.elapsed().as_secs_f32() / 0.15).clamp(0., 1.)
         };
         let body = match self.studio_tab {
-            1 => self.render_stream_tab(pane.clone(), own.clone(), cx),
+            1 => self.render_stream_tab(pane.clone(), own.clone(), window, cx),
             2 => self.render_tools_tab(pane.clone(), own.clone(), live, window, cx),
             _ => self.render_feed(cx),
         };

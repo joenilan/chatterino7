@@ -613,3 +613,221 @@ impl Workbench {
         strip
     }
 }
+
+impl Workbench {
+    /// Whether a moderator (not you) chatted in your channel in the last 15 minutes.
+    fn mod_recently(&self, own: &str, cx: &App) -> bool {
+        let since = chrono::Utc::now().timestamp() - 15 * 60;
+        self.tab_panes()
+            .iter()
+            .filter(|p| p.read(cx).name.as_ref() == own)
+            .any(|p| {
+                p.read(cx)
+                    .timeline
+                    .borrow()
+                    .messages()
+                    .iter()
+                    .rev()
+                    .take(500)
+                    .any(|m| {
+                        m.sent_at.is_some_and(|t| t >= since)
+                            && m.badges
+                                .iter()
+                                .any(|b| b.set_id == "moderator" || b.set_id == "lead_moderator")
+                    })
+            })
+    }
+    /// Go-live checklist at the top of Studio > Stream: before going live and for
+    /// the first 10 minutes, unless dismissed for this stream.
+    pub(super) fn render_checklist(
+        &mut self,
+        own: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Div> {
+        let live = self.own_live(cx);
+        let early = self
+            .went_live_at
+            .is_some_and(|t| t.elapsed() < Duration::from_secs(600));
+        if self.checklist_dismissed || (live && !early) {
+            return None;
+        }
+        if self.checklist_input.is_none() {
+            let input = cx.new(|cx| {
+                InputState::new(window, cx).placeholder("Add your own item, e.g. Lights on")
+            });
+            cx.subscribe_in(
+                &input,
+                window,
+                |this: &mut Self, input, event, window, cx| {
+                    if let InputEvent::PressEnter { .. } = event {
+                        let text: String = input.read(cx).value().trim().chars().take(60).collect();
+                        if !text.is_empty()
+                            && this.checklist_items.len() < 12
+                            && !this.checklist_items.contains(&text)
+                        {
+                            this.checklist_items.push(text);
+                            input.update(cx, |i, cx| i.set_value("", window, cx));
+                            this.schedule_save(cx);
+                            cx.notify();
+                        }
+                    }
+                },
+            )
+            .detach();
+            self.checklist_input = Some(input);
+        }
+        let saved = self.studio_editor.as_ref().and_then(|e| e.read(cx).saved());
+        let obs = &self.obs.state;
+        let mic = obs.mic.as_ref().map(|(_, muted)| !*muted);
+        // (ok, label, hint when not ok); None = can't tell, shown neutral.
+        let auto: Vec<(Option<bool>, String, &str)> = vec![
+            (
+                saved.as_ref().map(|(t, c)| !t.is_empty() && !c.is_empty()),
+                match &saved {
+                    Some((t, c)) if !t.is_empty() && !c.is_empty() => {
+                        format!("Title & category · {c}")
+                    }
+                    _ => "Title & category".into(),
+                },
+                "set below",
+            ),
+            (
+                self.obs_settings.enabled.then_some(obs.connected),
+                "OBS connected".into(),
+                "not connected",
+            ),
+            (
+                mic.filter(|_| obs.connected),
+                "Mic on".into(),
+                "muted in OBS",
+            ),
+            (
+                Some(self.mod_recently(own, cx)),
+                "A moderator is around".into(),
+                "none in 15 min",
+            ),
+        ];
+        let check = |state: Option<bool>| {
+            let (icon, color) = match state {
+                Some(true) => (IconName::Check, theme::STREAM_LIVE),
+                Some(false) => (IconName::CircleX, 0xE8C468),
+                None => (IconName::Minus, theme::MUTED),
+            };
+            div()
+                .size(px(16.))
+                .flex_shrink_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_color(rgb(color))
+                .child(Icon::new(icon).xsmall())
+        };
+        let mut card = div()
+            .v_flex()
+            .gap_1()
+            .p_2()
+            .mb_2()
+            .rounded(px(8.))
+            .bg(rgb(theme::ELEVATED))
+            .border_1()
+            .border_color(rgb(theme::BORDER))
+            .child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_size(px(12.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(if live {
+                                "Just went live"
+                            } else {
+                                "Before you go live"
+                            }),
+                    )
+                    .child(
+                        Button::new("checklist-dismiss")
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::Close)
+                            .tooltip("Hide until the next stream")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.checklist_dismissed = true;
+                                cx.notify();
+                            })),
+                    ),
+            );
+        for (state, label, hint) in auto {
+            card = card.child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .text_size(px(11.))
+                    .child(check(state))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .child(label),
+                    )
+                    .when(state == Some(false), |el| {
+                        el.child(div().text_color(rgb(theme::MUTED)).child(hint))
+                    }),
+            );
+        }
+        for (index, item) in self.checklist_items.clone().into_iter().enumerate() {
+            let done = self.checklist_done.contains(&item);
+            let (toggle, remove) = (item.clone(), item.clone());
+            card = card.child(
+                div()
+                    .id(("checklist-item", index))
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .text_size(px(11.))
+                    .cursor_pointer()
+                    .child(check(Some(done)).when(!done, |el| el.text_color(rgb(theme::MUTED))))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .when(done, |el| el.text_color(rgb(theme::MUTED)))
+                            .child(item),
+                    )
+                    .child(
+                        div()
+                            .id(("checklist-remove", index))
+                            .px_1()
+                            .text_color(rgb(theme::MUTED))
+                            .hover(|s| s.text_color(rgb(theme::TEXT)))
+                            .child("×")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.checklist_items.retain(|i| *i != remove);
+                                this.checklist_done.remove(&remove);
+                                this.schedule_save(cx);
+                                cx.notify();
+                            })),
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if !this.checklist_done.remove(&toggle) {
+                            this.checklist_done.insert(toggle.clone());
+                        }
+                        cx.notify();
+                    })),
+            );
+        }
+        if let Some(input) = &self.checklist_input
+            && self.checklist_items.len() < 12
+        {
+            card = card.child(div().pt_1().child(Input::new(input).xsmall()));
+        }
+        Some(card)
+    }
+}
