@@ -16,6 +16,8 @@ mod pane_navigation;
 mod roles;
 #[path = "settings_ui.rs"]
 mod settings_ui;
+#[path = "sound_settings.rs"]
+mod sound_settings;
 #[path = "streamer_bot_ui.rs"]
 mod streamer_bot_ui;
 #[path = "whispers_ui.rs"]
@@ -174,6 +176,15 @@ pub struct Workbench {
     automod: std::collections::HashMap<String, std::rc::Rc<Vec<crate::automod::Held>>>,
     /// Own-channel extra subscriptions Twitch refused (None until the own channel connects).
     own_extras_refused: Option<Vec<&'static str>>,
+    /// Ping sounds (Chatterino defaults: mentions on, other highlights off,
+    /// silent while Jawjack is the active window).
+    sound_mentions: bool,
+    sound_highlights: bool,
+    sound_focused: bool,
+    sound_tone: crate::sound::Tone,
+    sound_volume: f32,
+    /// Message ids already pinged (the same channel can be open in several panes).
+    pinged: std::collections::VecDeque<String>,
     live: crate::live::LiveChat,
     streams: crate::stream_status::Streams,
     capabilities: crate::capabilities::Capabilities,
@@ -495,6 +506,16 @@ impl Workbench {
             account_focus: None,
             automod: Default::default(),
             own_extras_refused: None,
+            sound_mentions: state["sound"]["mentions"].as_bool().unwrap_or(true),
+            sound_highlights: state["sound"]["highlights"].as_bool().unwrap_or(false),
+            sound_focused: state["sound"]["focused"].as_bool().unwrap_or(false),
+            sound_tone: crate::sound::Tone::from_key(state["sound"]["tone"].as_str().unwrap_or("")),
+            sound_volume: state["sound"]["volume"]
+                .as_f64()
+                .map(|v| v as f32)
+                .filter(|v| (0.05..=1.).contains(v))
+                .unwrap_or(0.6),
+            pinged: Default::default(),
             send_as: state["send_as"]
                 .as_object()
                 .into_iter()
@@ -1534,6 +1555,10 @@ impl Workbench {
                 this.run_bot_action(action.clone(), args.clone(), cx);
                 return;
             }
+            if let PaneEvent::Ping(ping, id) = event {
+                this.ping(*ping, id, window);
+                return;
+            }
             if let PaneEvent::AutoMod(id, allow) = event {
                 this.resolve_automod(channel.clone(), id.clone(), *allow, window, cx);
                 return;
@@ -1879,6 +1904,13 @@ impl Workbench {
         value["accounts"] = accounts["accounts"].clone();
         value["active_account"] = accounts["active_account"].clone();
         value["send_as"] = json!(self.send_as);
+        value["sound"] = json!({
+            "mentions": self.sound_mentions,
+            "highlights": self.sound_highlights,
+            "focused": self.sound_focused,
+            "tone": self.sound_tone.key(),
+            "volume": self.sound_volume,
+        });
         value
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {

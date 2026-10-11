@@ -48,6 +48,7 @@ mod seven_events;
 mod seven_lookup;
 mod seven_paints;
 mod seven_presence;
+mod sound;
 mod storage;
 mod stream_preview;
 mod stream_status;
@@ -158,6 +159,8 @@ enum PaneEvent {
     OpenModTools,
     /// Choose which signed-in account sends from this pane (vault entry).
     SendAs(SharedString),
+    /// A new mention or highlight arrived (message id, for de-duplication across panes).
+    Ping(attention::Ping, String),
     /// Allow (true) or deny a held AutoMod message.
     AutoMod(String, bool),
     RunBotAction {
@@ -424,15 +427,19 @@ impl ChannelPane {
                     });
                 }
                 self.next_id += 1;
-                {
+                let ping = {
                     let timeline = self.timeline.borrow();
-                    if let Some(message) = timeline.messages().back() {
+                    timeline.messages().back().and_then(|message| {
                         let first = (self.next_id - timeline.messages().len()) as u64;
                         self.search
                             .appended(message, (self.next_id - 1) as u64, first);
                         self.attention
-                            .appended(message, (self.next_id - 1) as u64, first);
-                    }
+                            .appended(message, (self.next_id - 1) as u64, first)
+                            .map(|ping| (ping, message.id.clone()))
+                    })
+                };
+                if let Some((ping, id)) = ping {
+                    cx.emit(PaneEvent::Ping(ping, id));
                 }
 
                 self.scroller.update(cx, |scroller, cx| {

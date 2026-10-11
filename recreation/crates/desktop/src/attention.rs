@@ -21,6 +21,12 @@ pub struct Attention {
     events: crate::event_highlights::EventHighlights,
     raiders: crate::event_highlights::Raiders,
 }
+/// Why a new message deserves a sound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ping {
+    Mention,
+    Highlight,
+}
 pub fn terms(text: &str) -> Vec<String> {
     let mut result = Vec::new();
     for item in text.split(',').map(str::trim).filter(|s| !s.is_empty()) {
@@ -137,7 +143,41 @@ impl Attention {
         }
         changed
     }
-    pub fn appended(&mut self, message: &Message, row: u64, first: u64) {
+    /// Mention (your name, a reply to you) or a highlight rule/word; event kinds
+    /// such as subs and raids are colour only.
+    fn ping(&self, message: &Message) -> Option<Ping> {
+        let (user, login) = self.identity.as_ref()?;
+        if message.deleted || &message.user_id == user {
+            return None;
+        }
+        let text: String = message
+            .fragments
+            .iter()
+            .filter_map(|f| match f {
+                Fragment::Text(part) | Fragment::Mention { label: part, .. } => Some(part.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase();
+        if message.mentions.iter().any(|id| id == user)
+            || message
+                .reply
+                .as_ref()
+                .is_some_and(|r| &r.parent_user_id == user)
+            || crate::highlight_rules::normalized_match(&text, login, true)
+        {
+            return Some(Ping::Mention);
+        }
+        (crate::highlight_rules::first_color(&self.rules, message, &self.channel).is_some()
+            || self
+                .terms
+                .iter()
+                .any(|term| crate::highlight_rules::normalized_match(&text, term, true)))
+        .then_some(Ping::Highlight)
+    }
+    /// Records a new row; returns a ping for a fresh (not history) mention or highlight.
+    pub fn appended(&mut self, message: &Message, row: u64, first: u64) -> Option<Ping> {
         // Your own messages never need catching up on.
         let own = self
             .identity
@@ -149,13 +189,18 @@ impl Attention {
         }
         self.arrivals.insert(row, Instant::now());
         self.raiders.note(message);
+        let mut ping = None;
         if row >= self.since
             && let Some(color) = self.color(message)
         {
             Rc::make_mut(&mut self.highlights).insert(row);
             Rc::make_mut(&mut self.colors).insert(row, color);
+            if !message.presentation.historical {
+                ping = self.ping(message);
+            }
         }
         self.prune(first);
+        ping
     }
     fn prune(&mut self, first: u64) {
         if self.read_boundary.is_some_and(|row| row < first) {

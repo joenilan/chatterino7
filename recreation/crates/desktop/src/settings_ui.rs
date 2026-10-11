@@ -35,7 +35,7 @@ const SHORTCUTS: [(&str, &str); 18] = [
     ("Double-click a divider", "Make the splits equal"),
 ];
 
-fn row(
+pub(super) fn row(
     title: impl Into<SharedString>,
     detail: impl Into<SharedString>,
     control: impl IntoElement,
@@ -63,7 +63,7 @@ fn row(
         )
         .child(div().flex_shrink_0().child(control))
 }
-fn heading(text: &'static str) -> Div {
+pub(super) fn heading(text: &'static str) -> Div {
     div()
         .pt_4()
         .pb_1()
@@ -233,7 +233,9 @@ impl Workbench {
                     "Colors for mentions, raids, subs, first messages and more.",
                     open_button("settings-events", "Edit").on_click(cx.listener(|this, _, w, cx| this.open_event_highlights(w, cx))),
                 )),
-            4 => page
+            4 => self
+                .sound_rows(page, cx)
+                .child(heading("Alerts"))
                 .child(row(
                     "Live alerts for every channel",
                     format!(

@@ -156,12 +156,12 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | AT02 | Basic mentions and highlight words | Part | Native custom-word highlighting observed; natural own-mention/reply matching unverified. | controllers/highlights; settingspages/HighlightingPage.cpp |
 | AT03 | Advanced highlight rules | Part | Plain/regex, case, sender and channel rules with colors and priority exist; badge rules, exclusions, sounds remain. | controllers/highlights |
 | AT04 | Special-event highlight policies | Part | Event highlight colours for mentions, raids (and the raider for 30 min), subs/gifts, Bits, rewards, announcements and first-time chatters ([details](EVENT_HIGHLIGHTS.md)); whisper/AutoMod/thread rules remain. | singletons/Settings.hpp |
-| AT05 | Sounds, taskbar and attention preferences | Backlog | Per-rule/per-channel sound/mute, foreground behavior, duration and privacy controls. | controllers/pings; sound; highlights |
+| AT05 | Sounds, taskbar and attention preferences | Part | Mention/highlight ping with Chime/Soft/custom WAV, volume and focused-window policy ([details](SOUNDS.md)); per-rule/per-channel sounds and taskbar flash pending. | controllers/pings; sound; highlights |
 | AT06 | Local ignores and replacements | Part | Chatter and phrase/regex hide/replace implemented ([details](IGNORES.md)); exclusions and show-hidden display remain. | controllers/ignores; settingspages/IgnoresPage.cpp |
 | AT07 | Twitch blocks | Backlog | Approved account-backed block sync/actions, local visibility policy and clear distinction from local ignore. | controllers/ignores |
 | AT08 | Message filter language | Backlog | Named typed expressions, validation, per-view selection and regex limits. Live-only tab filtering is unrelated. | controllers/filters/lang; FilterSet.cpp |
 | AT09 | Similarity suppression | Backlog | Bounded threshold/window/user rules, dim/hide and highlight interaction. | messages/MessageBuilder.cpp; Settings.hpp |
-| AT10 | Local nicknames and colors | Backlog | Canonical identity remains intact under display aliases and per-user color overrides. | controllers/nicknames; userdata |
+| AT10 | Local nicknames and colors | Part | Local nicknames and per-user colours (Settings → Appearance), applied at render while the canonical login stays intact. | controllers/nicknames; userdata |
 | AT11 | Pronouns | Research | Provider contract/cache, opt-in display and privacy/preferences. | providers/pronouns |
 
 ### Usercards and moderation
@@ -170,7 +170,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | --- | --- | --- | --- | --- |
 | MD01 | Local chatter cards | V | Native retained-message card/copy/mention accepted; richer account data remains below. | widgets/dialogs/UserInfoPopup.cpp |
 | MD02 | Full profile context | Part | Public Twitch created-at/avatar/bio/broadcaster role in compact card; avatar/date/bio/compact native accepted, role display untested. Follow/subscription data and moderation remain. | UserInfoPopup.cpp |
-| MD03 | Persistent notes | Backlog | Local notes editor/storage and streamer-mode redaction. | controllers/userdata; EditUserNotesDialog.cpp |
+| MD03 | Persistent notes | Part | Private per-chatter notes editor stored locally; streamer-mode redaction pending. | controllers/userdata; EditUserNotesDialog.cpp |
 | MD04 | Chatter list and roles | Backlog | Filtering/fetch limits, actual account permissions, distinguish chatters from viewers. | widgets/ChatterListWidget.cpp |
 | MD05 | Delete, timeout, ban and undo-family actions | Part | /ban, /timeout, /unban, /delete, /clear commands and message right-click actions (ban confirmation) with role/scope checks. Delete was accepted live; timeout and ban are unverified live. | controllers/moderationactions; builtin/twitch/Ban.cpp; Unban.cpp; DeleteMessages.cpp |
 | MD06 | Warnings and blocks | Part | /warn and /block, /unblock commands; block list sync and display remain. | builtin/twitch/Warn.cpp; Block.cpp |
