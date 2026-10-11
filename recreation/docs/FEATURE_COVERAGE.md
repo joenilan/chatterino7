@@ -76,7 +76,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | AC09 | Shared Chat provenance | Part | Cross-source reply guard only; origin IDs, badges, source routing/dedup/moderation still missing. | providers/twitch/TwitchChannel.cpp; messages/MessageBuilder.cpp |
 | AC10 | Recent history/backfill | Research | Retained history exists; optional recent-message service, trust/privacy/source choice and prepend anchors do not. | providers/recentmessages |
 | AC11 | Bounded retention | Part | Native history cap/settings observed; day-long memory, selected/pruned rows and all duplicate-view edges remain. | common/Channel.cpp; widgets/helper/ChannelView.cpp |
-| AC12 | Room settings and capability state | Part | Public initial snapshot/live updates and compact hints implemented; native pending. Account role/exemption model remains. | providers/twitch/api; widgets/splits/SplitHeader.cpp |
+| AC12 | Room settings and capability state | Part | Public initial snapshot/live updates and compact hints implemented. Per-channel role (broadcaster/moderator/viewer) and scope checks exist ([details](STREAMER_TOOLS.md)); exemptions remain. | providers/twitch/api; widgets/splits/SplitHeader.cpp |
 
 ### Reading and navigation
 
@@ -102,7 +102,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | WS03 | Per-view composer and draft ownership | V | Native tab/group changes and reply-target persistence accepted; future account/provider changes must preserve it. | widgets/splits/SplitInput.cpp |
 | WS04 | Sidebar and live-only filters | Part | Existing user workflow; hidden unread discovery in new activity batch awaits native acceptance. | widgets/splits/SplitHeader.cpp |
 | WS05 | Broadcast status | Part | Native live/offline pastel markers observed; unknown/stale edges remain. Broadcast state must remain distinct from chat connection. | widgets/splits/SplitHeader.cpp |
-| WS06 | Stream title/game/viewers/uptime | Part | Ctrl+I/context-menu details, title/category/viewers/language/start timestamp implemented and native accepted. Live elapsed-uptime formatting remains. | widgets/splits/SplitHeader.cpp |
+| WS06 | Stream title/game/viewers/uptime | Part | Ctrl+I/context-menu details, title/category/viewers/language/start timestamp implemented and native accepted. Own-channel title/category editor with conflict check and readback ([details](STREAMER_TOOLS.md)); live save unverified. | widgets/splits/SplitHeader.cpp |
 | WS07 | Quick switcher and visit history | Part | Ctrl+P searches open channels/workspace names, including offline-hidden tabs; keyboard/click activates correct dock and composer; native keyboard/click/compact accepted. visit history/neighbor focus remain. | widgets/dialogs/switcher; Notebook |
 | WS08 | Multiple windows and popouts | Backlog | Independent windows, split/workspace popout, cross-window drag and persisted geometry. | widgets/Window.cpp; common/WindowDescriptors |
 | WS09 | Overlay and attached windows | Backlog | Always-on-top, transparency/click-through and deliberate interaction modes; browser attachment later. | widgets/OverlayWindow; AttachedWindow; FramelessEmbedWindow |

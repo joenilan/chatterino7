@@ -1,6 +1,9 @@
 //! Twitch public-client device login. Secrets remain in memory and the OS vault.
 use crate::theme;
-use gpui_kit::component::{Sizable, StyledExt, button::Button};
+use gpui_kit::component::{
+    Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+};
 use gpui_kit::{prelude::FluentBuilder, *};
 use serde_json::{Value, json};
 use std::{
@@ -15,8 +18,67 @@ use std::{
 
 pub const CLIENT_ID: &str = "cf1jr97a5fduscdul5yv9b5hnzm005";
 const VAULT: &str = "https://jawjack.zombie.digital/twitch/account-v1";
-const SCOPES: &str = "user:read:chat user:write:chat user:read:emotes";
-const EXISTING_CHAT_SCOPES: &str = "user:read:chat user:write:chat";
+/// Everything Jawjack's viewer, moderator and streamer tools use, requested
+/// together (owner decision, 2026-10-11). Twitch still grants moderator and
+/// broadcaster actions only where the account actually holds that role.
+pub const SCOPES: &[&str] = &[
+    // Chat and the account's own emotes, colour, whispers, blocks and follows.
+    "user:read:chat",
+    "user:write:chat",
+    "user:read:emotes",
+    "user:manage:chat_color",
+    "user:read:whispers",
+    "user:manage:whispers",
+    "user:read:blocked_users",
+    "user:manage:blocked_users",
+    "user:read:follows",
+    "user:read:subscriptions",
+    "user:read:moderated_channels",
+    // Moderation in channels where the account is a moderator.
+    "moderator:manage:banned_users",
+    "moderator:manage:chat_messages",
+    "moderator:manage:chat_settings",
+    "moderator:manage:announcements",
+    "moderator:manage:shoutouts",
+    "moderator:manage:warnings",
+    "moderator:manage:automod",
+    "moderator:manage:automod_settings",
+    "moderator:manage:blocked_terms",
+    "moderator:manage:unban_requests",
+    "moderator:manage:shield_mode",
+    "moderator:manage:suspicious_users",
+    "moderator:read:suspicious_users",
+    "moderator:read:chatters",
+    "moderator:read:followers",
+    "moderator:read:moderators",
+    "moderator:read:vips",
+    // Streamer tools on the account's own channel.
+    "channel:moderate",
+    "channel:manage:broadcast",
+    "channel:manage:moderators",
+    "channel:manage:vips",
+    "channel:manage:raids",
+    "channel:manage:polls",
+    "channel:read:polls",
+    "channel:manage:predictions",
+    "channel:read:predictions",
+    "channel:manage:redemptions",
+    "channel:read:redemptions",
+    "channel:read:subscriptions",
+    "channel:read:hype_train",
+    "channel:read:goals",
+    "channel:read:charity",
+    "channel:read:ads",
+    "channel:manage:ads",
+    "channel:edit:commercial",
+    "bits:read",
+    "clips:edit",
+];
+/// Older saved grants keep chat working until the owner updates permissions.
+const EXISTING_CHAT_SCOPES: &[&str] = &["user:read:chat", "user:write:chat"];
+fn requested_scopes() -> String {
+    SCOPES.join(" ")
+}
 struct Account {
     login: String,
     tokens: Value,
@@ -36,6 +98,8 @@ pub struct TwitchAccount {
     saving: bool,
     validating: bool,
     renewing: bool,
+    /// A new sign-in that keeps the current account active until it succeeds.
+    upgrading: bool,
     vault_unavailable: bool,
     code: Option<(String, String)>,
     copied_at: Option<Instant>,
@@ -55,6 +119,9 @@ impl TwitchAccount {
             .map(|a| a.login.clone())
             .unwrap_or_else(|| "Sign in".into())
     }
+    pub fn login(&self) -> Option<String> {
+        self.account.as_ref().map(|a| a.login.clone())
+    }
     pub fn identity(&self) -> Option<crate::live::Identity> {
         self.account
             .as_ref()
@@ -65,7 +132,20 @@ impl TwitchAccount {
                 can_read_emotes: a.tokens["scopes"]
                     .as_array()
                     .is_some_and(|s| s.iter().any(|s| s == "user:read:emotes")),
+                scopes: granted(&a.tokens).into(),
             })
+    }
+    /// Requested scopes the saved grant does not include yet.
+    pub fn missing_scopes(&self) -> Vec<&'static str> {
+        let Some(account) = &self.account else {
+            return Vec::new();
+        };
+        let granted = granted(&account.tokens);
+        SCOPES
+            .iter()
+            .copied()
+            .filter(|s| !granted.iter().any(|g| g == s))
+            .collect()
     }
     pub fn new(cx: &mut Context<Self>) -> Self {
         let read = cx.read_credentials(VAULT);
@@ -89,6 +169,7 @@ impl TwitchAccount {
             saving: false,
             validating: false,
             renewing: false,
+            upgrading: false,
             vault_unavailable: false,
             code: None,
             copied_at: None,
@@ -110,11 +191,14 @@ impl TwitchAccount {
         self.code = None;
         self.copied_at = None;
         self.validating = saved.is_some() && self.account.is_some();
-        if !self.validating {
+        self.upgrading = saved.is_none() && self.account.is_some();
+        if !self.validating && !self.upgrading {
             self.account = None;
         }
         self.status = if self.validating {
             "Checking your Twitch session… chat stays connected."
+        } else if self.upgrading {
+            "Requesting a Twitch code for the updated permissions… chat stays connected."
         } else if saved.is_some() {
             "Validating your Twitch account…"
         } else {
@@ -143,9 +227,10 @@ impl TwitchAccount {
                         let _ = view.update(cx, |this, cx| {
                             if this.generation != generation { return; }
                             match event {
-                                Event::Code(code, url) => { this.code = Some((code, url)); this.status = "Enter this code on Twitch and approve Jawjack. This code expires shortly.".into(); }
+                                Event::Code(code, url) => { this.code = Some((code, url)); this.status = if this.upgrading { "Enter this code on Twitch and approve the updated permissions. You stay signed in meanwhile." } else { "Enter this code on Twitch and approve Jawjack. This code expires shortly." }.into(); }
                                 Event::Renewing(ack) => { this.renewing = true; this.status = "Renewing Twitch session securely…".into(); let _ = ack.send(true); }
                                 Event::Invalidated => { this.account = None; this.status = "Renewing expired Twitch authorization…".into(); }
+                                Event::Error(message) if this.upgrading => this.keep_account(format!("Permissions were not updated: {message}"), cx),
                                 Event::Error(message) => { this.renewing = false; this.validating = false; this.busy = false; this.code = None; this.status = message; this.account = None; }
                                 Event::Ready(account) => this.persist(account, generation, cx),
                                 Event::Rotated(tokens, ack) => this.save_rotation(tokens, ack, generation, cx),
@@ -188,8 +273,17 @@ impl TwitchAccount {
         })
         .detach();
     }
+    /// End an abandoned permission update without disturbing the active account.
+    fn keep_account(&mut self, reason: String, cx: &mut Context<Self>) {
+        self.upgrading = false;
+        self.busy = false;
+        self.code = None;
+        self.status = format!("{reason} Still signed in as {}.", self.label());
+        self.schedule_validation(self.generation, cx);
+    }
     fn persist(&mut self, account: Account, generation: u64, cx: &mut Context<Self>) {
         self.renewing = false;
+        self.upgrading = false;
         // A routine validation of unchanged credentials must not interrupt live chat
         // or rewrite the credential vault every half hour.
         if self
@@ -312,6 +406,11 @@ impl TwitchAccount {
         }
         self.cancel.store(true, Ordering::Relaxed);
         self.generation += 1;
+        if self.upgrading {
+            self.keep_account("Permission update cancelled.".into(), cx);
+            cx.notify();
+            return;
+        }
         self.busy = false;
         self.code = None;
         self.status = "Sign-in cancelled. No account was connected.".into();
@@ -368,9 +467,12 @@ impl Render for TwitchAccount {
                             .text_size(px(12.))
                             .child(self.status.clone()),
                     )
-                    .when(!self.busy && self.account.is_some() && !self.identity().is_some_and(|i|i.can_read_emotes), |el|
+                    .when(!self.busy && !self.saving && self.account.is_some() && !self.missing_scopes().is_empty(), |el|
                         el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED))
-                            .child("This older login has chat-only permissions. Sign out and sign in again once; your subscription emotes will then load automatically.")))
+                            .child(format!("Your login is missing {} Twitch permissions Jawjack uses for subscription emotes, whispers, blocks, moderation and streamer tools (title, category, polls, raids). Updating keeps you signed in; Twitch only allows moderator and streamer actions where you hold that role.", self.missing_scopes().len())))
+                        .child(Button::new("twitch-update-scopes").small().primary()
+                            .label("Update Twitch permissions")
+                            .on_click(cx.listener(|this, _, _, cx| this.start(None, cx)))))
                     .when(self.vault_unavailable, |el| el.child(div().text_size(px(11.))
                         .text_color(rgb(theme::MUTED))
                         .child("Jawjack needs your operating system's secure credential storage to remember Twitch safely. Unlock it, then retry here.")))
@@ -439,6 +541,14 @@ impl Render for TwitchAccount {
     }
 }
 
+fn granted(tokens: &Value) -> Vec<String> {
+    tokens["scopes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| s.as_str().map(str::to_owned))
+        .collect()
+}
 fn string(value: &Value, key: &str) -> Result<String, String> {
     value[key]
         .as_str()
@@ -481,6 +591,7 @@ fn connect(
     } else {
         SCOPES
     };
+    let scopes = requested_scopes();
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
@@ -492,7 +603,7 @@ fn connect(
         let (status, value) = response(
             client
                 .post("https://id.twitch.tv/oauth2/device")
-                .form(&[("client_id", CLIENT_ID), ("scopes", SCOPES)])
+                .form(&[("client_id", CLIENT_ID), ("scopes", scopes.as_str())])
                 .send()
                 .map_err(|_| "Could not reach Twitch. Check your connection and retry.")?,
         )?;
@@ -538,7 +649,7 @@ fn connect(
                     .post("https://id.twitch.tv/oauth2/token")
                     .form(&[
                         ("client_id", CLIENT_ID),
-                        ("scopes", SCOPES),
+                        ("scopes", scopes.as_str()),
                         ("device_code", device.as_str()),
                         ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
                     ])
@@ -615,10 +726,10 @@ fn connect(
     if identity["client_id"].as_str() != Some(CLIENT_ID) {
         return Err("Saved authorization belongs to a different app. Sign in again.".into());
     }
-    for scope in required_scopes.split_whitespace() {
+    for scope in required_scopes {
         if !identity["scopes"]
             .as_array()
-            .is_some_and(|s| s.iter().any(|v| v.as_str() == Some(scope)))
+            .is_some_and(|s| s.iter().any(|v| v.as_str() == Some(*scope)))
         {
             return Err("Twitch authorization is missing chat permissions. Sign in again.".into());
         }

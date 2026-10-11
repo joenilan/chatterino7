@@ -2,6 +2,7 @@ use gpui_kit::prelude::FluentBuilder;
 mod attention;
 mod attention_navigation;
 mod auth;
+mod capabilities;
 mod catalog;
 mod chat_pause;
 mod chat_search;
@@ -39,6 +40,7 @@ mod seven_events;
 mod seven_paints;
 mod storage;
 mod stream_status;
+mod studio;
 mod theme;
 mod twitch_assets;
 mod workspace;
@@ -136,6 +138,7 @@ enum PaneEvent {
     EmotePreferencesChanged,
     EmoteRecentsChanged,
     OpenAccount,
+    OpenStreamInfo,
     OpenCommands(String),
     EditChatter(chatter_appearance::Target),
     EditChatterNote(chatter_appearance::Target),
@@ -145,6 +148,8 @@ impl EventEmitter<PaneEvent> for ChannelPane {}
 
 struct ChannelPane {
     name: SharedString,
+    /// The signed-in account's role here, when known.
+    role: Option<capabilities::Role>,
     connection: String,
     connected: bool,
     room_settings: Option<room_settings::RoomSettings>,
@@ -228,6 +233,7 @@ impl ChannelPane {
         cx.observe(&scroller, |_, _, cx| cx.notify()).detach();
         Self {
             name: name.to_owned().into(),
+            role: None,
             media,
             catalog,
             custom_commands: Default::default(),
@@ -648,6 +654,7 @@ impl Render for ChannelPane {
                             .text_color(rgb(theme::MUTED))
                             .child(if self.connected { if paused { "Paused".to_owned() } else if following { "Latest".to_owned() } else { format!("{retained}/{} · History", self.timeline.borrow().capacity()) } } else { self.connection.clone() }),
                     )
+                    .when(self.role == Some(capabilities::Role::Broadcaster), |el| el.child(Button::new("stream-info").xsmall().label("✎").tooltip("Edit stream title and category").on_click(cx.listener(|_,_,_,cx|cx.emit(PaneEvent::OpenStreamInfo)))))
                     .child(Button::new("pause-chat").xsmall().label(if paused{"▶"}else{"Ⅱ"}).tooltip(if paused{"Resume live chat · Ctrl+End"}else{"Pause scrolling · Ctrl+Space"}).on_click(cx.listener(|this,_,_,cx|{this.scroller.update(cx,|s,cx|{if s.paused(){s.scroll_to_end(cx);}else{s.toggle_pause(cx);}});})))
                     .child(Button::new("find-chat").xsmall().label("⌕").tooltip("Find in chat · Ctrl+F").on_click(cx.listener(|this,_,w,cx|this.open_search(w,cx))))
                     .child(Button::new("close-pane").xsmall().label("×").tooltip("Close this split…; keep draft")

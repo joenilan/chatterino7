@@ -10,7 +10,8 @@ connects at most **150 channels** at once (50 per socket).
   the rest of the active workspace, then other workspaces by most recent use.
   Channels beyond the cap show why they are not connected.
 - Adding or closing a channel subscribes or deletes only that channel; other
-  chats are not interrupted. Only an account change resets every connection.
+  chats are not interrupted. Only a change of signed-in user resets every
+  connection; token refresh and new scopes reuse existing subscriptions.
 - Requests are paced (110 ms) inside Helix's shared budget and back off on low
   `Ratelimit-Remaining` or HTTP 429. A fresh session with no subscription is
   served first, because Twitch closes it after ten seconds.

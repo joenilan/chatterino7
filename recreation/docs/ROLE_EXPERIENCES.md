@@ -57,6 +57,8 @@ must never make someone else's channel editable.
 4. **Preview the arrangement and enter chat.** Optional text-size and reduced-motion
    choices; defer advanced settings. No long feature tour before the app is usable.
 
+Superseded 2026-10-11 by owner decision: Jawjack requests all of its Twitch scopes
+in one grant (see [STREAMER_TOOLS.md](STREAMER_TOOLS.md)). Original text kept below.
 Onboarding never requests every eventual moderator/broadcaster scope. Enable an
 optional feature when the owner wants it and explain its actual added permission.
 A declined optional grant leaves ordinary chat usable.

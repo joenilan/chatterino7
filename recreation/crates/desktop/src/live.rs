@@ -21,6 +21,16 @@ pub struct Identity {
     pub user_id: String,
     pub access: String,
     pub can_read_emotes: bool,
+    /// Scopes Twitch reported for this token at its last validation.
+    pub scopes: Arc<[String]>,
+}
+impl Identity {
+    pub fn has(&self, scope: &str) -> bool {
+        self.scopes.iter().any(|s| s == scope)
+    }
+}
+fn user(identity: &Option<Identity>) -> Option<&str> {
+    identity.as_ref().map(|i| i.user_id.as_str())
 }
 #[derive(Clone, PartialEq, Eq, Default)]
 struct Config {
@@ -85,7 +95,9 @@ impl LiveChat {
         if let Ok(mut c) = self.config.lock()
             && *c != next
         {
-            let account_changed = c.identity != next.identity;
+            // A refreshed token or newly granted scopes keep existing subscriptions,
+            // which Twitch ties to the user's authorization, not the token string.
+            let account_changed = user(&c.identity) != user(&next.identity);
             *c = next;
             if account_changed {
                 self.epoch.fetch_add(1, Ordering::Relaxed);
@@ -184,14 +196,14 @@ impl LiveChat {
         Ok(())
     }
 }
-fn client() -> Result<reqwest::blocking::Client, String> {
+pub(crate) fn client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(10))
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| "Could not initialize Twitch networking".into())
 }
-fn response_json(response: reqwest::blocking::Response) -> Result<(u16, Value), String> {
+pub(crate) fn response_json(response: reqwest::blocking::Response) -> Result<(u16, Value), String> {
     let status = response.status().as_u16();
     let mut bytes = Vec::new();
     response
@@ -444,7 +456,7 @@ fn run(
     while !stop.load(Ordering::Relaxed) {
         let c = config.lock().map(|c| c.clone()).unwrap_or_default();
         let version = epoch.load(Ordering::Relaxed);
-        if c.identity != identity {
+        if user(&c.identity) != user(&identity) {
             // Account change: tear everything down; the UI already reset its panes.
             for shard in shards.iter_mut().filter_map(Option::take) {
                 shard.stop.store(true, Ordering::Relaxed);
@@ -455,8 +467,9 @@ fn run(
             if let Ok(mut names) = names.lock() {
                 names.clear();
             }
-            identity = c.identity.clone();
         }
+        // Always use the newest token for further requests.
+        identity = c.identity.clone();
         let Some(id) = identity.clone() else {
             std::thread::sleep(Duration::from_millis(200));
             continue;

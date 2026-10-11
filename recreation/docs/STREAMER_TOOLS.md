@@ -1,0 +1,47 @@
+# Twitch permissions, channel roles and streamer tools
+
+## Permissions (owner decision, 2026-10-11)
+
+Jawjack requests every Twitch scope its viewer, moderator and streamer tools use
+in one grant (`auth.rs::SCOPES`): Chatterino's list without the legacy IRC scopes,
+plus whispers, subscriptions, hype train, goals, charity, ads and Bits. This
+replaces the incremental per-feature grants proposed in ROLE_EXPERIENCES.md §3/§8;
+role authority still comes only from the account's real channel role.
+
+Saved logins with fewer scopes keep working. The account menu shows `login •`, and
+the account dialog explains what is missing and offers **Update Twitch
+permissions**: a new device sign-in while the current account stays active. Cancel
+or failure keeps the existing account and chat connections; success replaces the
+saved grant. Signing out is never needed.
+
+## Capability model (`capabilities.rs`)
+
+- `Role` per channel: Broadcaster (channel login is the signed-in login),
+  Moderator (Twitch's moderated-channel list, `user:read:moderated_channels`,
+  refreshed every 10 minutes) or Viewer. Unknown until the list loads.
+- `Check` for an `Action`: Available, SignedOut, Checking, NeedsRole(reason) or
+  NeedsPermission. Tools check when shown and again right before writing.
+- Control inspection reports `capabilities` (status, granted-scope count,
+  moderated channels) and per-pane `roles`.
+
+Token refresh or newly granted scopes no longer reset EventSub: connections are
+rebuilt only when the signed-in user changes.
+
+## Stream info editor
+
+The ✎ button in the own channel's header (Broadcaster role only) opens
+**Stream info**: current title and category are fetched first; categories come from
+Twitch's category search (no free-text game IDs). Save is explicit. Before writing
+Jawjack re-reads the channel; if the title or category changed elsewhere since the
+form loaded, nothing is written, the new values are shown and the edits stay for a
+second Save. After a write the result is read back and reported as confirmed or
+still propagating. Errors keep the edits. Without `channel:manage:broadcast` the
+button opens the account dialog instead.
+
+## Evidence (Windows, 2026-10-11)
+
+Twitch accepted the full scope list (device code issued). Update → code → Cancel
+kept the account signed in and both visible panes connected. Owner's channel
+reports Broadcaster; ✎ appears only there and, with the old 3-scope grant, explains
+the missing permission. Not yet exercised: completing the upgraded grant,
+moderated-channel loading, loading/saving stream info, conflict and failure paths.

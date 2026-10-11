@@ -146,6 +146,7 @@ pub struct Workbench {
     account: Entity<crate::auth::TwitchAccount>,
     live: crate::live::LiveChat,
     streams: crate::stream_status::Streams,
+    capabilities: crate::capabilities::Capabilities,
     live_workspaces: bool,
     live_channels: bool,
     catalog: std::rc::Rc<std::cell::RefCell<crate::catalog::Catalog>>,
@@ -266,7 +267,7 @@ impl Workbench {
         json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()})
     }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
+        json!({"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"capabilities":self.capabilities.inspection(),"roles":self.panes().iter().map(|p|{let p=p.read(cx);(p.name.to_string(),p.role.map(|r|r.label()))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
     }
     /// Channels to connect, highest priority first: visible panes, the rest of the
     /// active workspace, then other workspaces by most recent use. Beyond the
@@ -369,6 +370,7 @@ impl Workbench {
             zoom_accumulator: 0.,
             live: crate::live::LiveChat::new(),
             streams: crate::stream_status::Streams::new(),
+            capabilities: crate::capabilities::Capabilities::new(),
             live_workspaces: state["live_workspaces"].as_bool().unwrap_or(false),
             live_channels: state["live_channels"].as_bool().unwrap_or(false),
             catalog: std::rc::Rc::new(std::cell::RefCell::new(crate::catalog::Catalog::new())),
@@ -547,6 +549,19 @@ impl Workbench {
             cx.notify();
         }
         self.pump_imported_nicknames(cx);
+        let login = self.account.read(cx).login();
+        if self.capabilities.pump(identity.clone(), login) {
+            cx.notify();
+        }
+        for pane in &panes {
+            let role = self.capabilities.role(&pane.read(cx).name);
+            if pane.read(cx).role != role {
+                pane.update(cx, |p, cx| {
+                    p.role = role;
+                    cx.notify();
+                });
+            }
+        }
         let profiles_changed = self.catalog.borrow_mut().profiles.pump(identity.clone());
         if profiles_changed {
             for pane in &panes {
@@ -1149,6 +1164,10 @@ impl Workbench {
                 this.confirm_close_channel(channel.clone(), window, cx);
                 return;
             }
+            if matches!(event, PaneEvent::OpenStreamInfo) {
+                this.open_stream_info(channel.clone(), window, cx);
+                return;
+            }
             if matches!(event, PaneEvent::OpenAccount) {
                 let account = this.account.clone();
                 let width = (f32::from(window.viewport_size().width) - 24.).min(380.);
@@ -1218,6 +1237,36 @@ impl Workbench {
         })
         .detach();
         pane
+    }
+    /// Streamer tool: edit the own channel's title and category.
+    fn open_stream_info(&mut self, channel: String, window: &mut Window, cx: &mut Context<Self>) {
+        let check = self
+            .capabilities
+            .check(&channel, crate::capabilities::Action::EditStreamInfo);
+        if !check.available() {
+            window.push_notification(Notification::info(check.reason()), cx);
+            // A missing grant is fixed in the account dialog, so take the owner there.
+            if check == crate::capabilities::Check::NeedsPermission {
+                let account = self.account.clone();
+                let width = (f32::from(window.viewport_size().width) - 24.).min(380.);
+                window.open_dialog(cx, move |dialog, _, _| {
+                    dialog
+                        .w(px(width))
+                        .title("Twitch account")
+                        .child(account.clone())
+                });
+            }
+            return;
+        }
+        let account = self.account.clone();
+        let editor = cx.new(|cx| crate::studio::StreamEditor::new(account, window, cx));
+        let width = (f32::from(window.viewport_size().width) - 24.).min(420.);
+        window.open_dialog(cx, move |dialog, _, _| {
+            dialog
+                .w(px(width))
+                .title(format!("Stream info · #{channel}"))
+                .child(editor.clone())
+        });
     }
     fn snapshot(&self, cx: &App) -> Value {
         let mut drafts = self.drafts.clone();
@@ -2729,7 +2778,7 @@ impl Render for Workbench {
                     .child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(11.)).child("JAWJACK")))
                 .child(div().flex_1().min_w(px(8.)).h_full().window_control_area(WindowControlArea::Drag))
                 .child(Button::new("activity-menu").ghost().xsmall().label(if counts.1>0{format!("@{}",crate::attention::count(counts.1))}else if counts.0>0{format!("• {}",crate::attention::count(counts.0))}else{"@".into()}).tooltip("Highlights & unread · Ctrl+Shift+M").on_click(cx.listener(|this,_,w,cx|this.open_activity(w,cx))))
-                .child(Button::new("account-menu").ghost().xsmall().label(self.account.read(cx).label()).tooltip("Twitch account")
+                .child(Button::new("account-menu").ghost().xsmall().label(if self.account.read(cx).missing_scopes().is_empty(){self.account.read(cx).label()}else{format!("{} •",self.account.read(cx).label())}).tooltip(if self.account.read(cx).missing_scopes().is_empty(){"Twitch account"}else{"Twitch account · permissions can be updated"})
                     .on_click(cx.listener(|this,_,window,cx|{let account=this.account.clone();let width=(f32::from(window.viewport_size().width)-24.).min(380.);window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Twitch account").child(account.clone()));})))
                 .child(Button::new("settings-menu").ghost().small().label("⚙").tooltip("Settings and workspace actions").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
                     .menu("Switch channel · Ctrl+P",Box::new(SwitchChannel))
