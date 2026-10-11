@@ -197,3 +197,60 @@ mod tests {
         assert!(!apply(&mut h, "channel.follow", &json!({})));
     }
 }
+
+/// What's already running at sign-in, as events `apply` understands:
+/// creator goals, a charity campaign and Shield Mode (Helix).
+pub fn initial(identity: &crate::live::Identity) -> Vec<(String, Value)> {
+    let Ok(client) = crate::live::client() else {
+        return Vec::new();
+    };
+    let get = |url: &str, query: &[(&str, &str)]| {
+        client
+            .get(url)
+            .query(query)
+            .header("Client-Id", crate::auth::CLIENT_ID)
+            .bearer_auth(&identity.access)
+            .send()
+            .ok()
+            .and_then(|r| crate::live::response_json(r).ok())
+            .filter(|(status, _)| *status == 200)
+            .map(|(_, v)| v)
+    };
+    let me = identity.user_id.as_str();
+    let mut events = Vec::new();
+    if identity.has("channel:read:goals")
+        && let Some(v) = get(
+            "https://api.twitch.tv/helix/goals",
+            &[("broadcaster_id", me)],
+        )
+    {
+        for goal in v["data"].as_array().into_iter().flatten() {
+            events.push(("channel.goal.progress".to_owned(), goal.clone()));
+        }
+    }
+    if identity.has("channel:read:charity")
+        && let Some(v) = get(
+            "https://api.twitch.tv/helix/charity/campaigns",
+            &[("broadcaster_id", me)],
+        )
+        && let Some(campaign) = v["data"].as_array().and_then(|a| a.first())
+    {
+        events.push((
+            "channel.charity_campaign.progress".to_owned(),
+            campaign.clone(),
+        ));
+    }
+    if (identity.has("moderator:read:shield_mode") || identity.has("moderator:manage:shield_mode"))
+        && let Some(v) = get(
+            "https://api.twitch.tv/helix/moderation/shield_mode",
+            &[("broadcaster_id", me), ("moderator_id", me)],
+        )
+        && v["data"][0]["is_active"] == true
+    {
+        events.push((
+            "channel.shield_mode.begin".to_owned(),
+            serde_json::json!({"moderator_user_name": v["data"][0]["moderator_name"]}),
+        ));
+    }
+    events
+}

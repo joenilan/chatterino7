@@ -83,8 +83,7 @@ A card under the Studio header, shown only while something is happening:
 - **Charity** campaign: raised / target in its currency.
 
 Source: own-channel EventSub `channel.hype_train.*` v2, `channel.goal.*`, `channel.charity_campaign.*`
-and `channel.shield_mode.*` (all accepted live, `own_extras_refused: []`). Goals already running when Jawjack
-starts appear at their next progress event (Get Creator Goals at startup is still to do).
+and `channel.shield_mode.*` (all accepted live, `own_extras_refused: []`). At sign-in Jawjack also loads what's already running: Get Creator Goals, Get Charity Campaign and Get Shield Mode Status. Verified with the owner's sub goal (11/250) and follower goal (2453/3900).
 
 **Budget change:** only the socket carrying your own channel pays for its 17 extras. Each socket has
 280 subscriptions for channels (20 reserved for moderated AutoMod), the own channel costs 6 + 17, and the cap is

@@ -223,6 +223,8 @@ pub struct Workbench {
     obs_tick: u64,
     ads: crate::ads::Ads,
     hype: crate::hype::Hype,
+    /// The account whose running goals/charity/Shield Mode were loaded.
+    hype_loaded_for: Option<String>,
     /// Go-live checklist: your own items, which are ticked this stream, and whether
     /// it was dismissed for this stream.
     checklist_items: Vec<String>,
@@ -625,6 +627,7 @@ impl Workbench {
             obs_tick: 0,
             ads: crate::ads::Ads::new(),
             hype: Default::default(),
+            hype_loaded_for: None,
             checklist_items: state["checklist"]
                 .as_array()
                 .into_iter()
@@ -900,6 +903,24 @@ impl Workbench {
         self.pump_obs(cx);
         self.pump_ads(identity.as_ref(), window, cx);
         self.pump_rewards(identity.as_ref(), window, cx);
+        // Goals, charity and Shield Mode already running at sign-in.
+        if let Some(identity) = identity.clone()
+            && self.hype_loaded_for.as_deref() != Some(identity.user_id.as_str())
+        {
+            self.hype_loaded_for = Some(identity.user_id.clone());
+            self.hype = Default::default();
+            let task = cx.background_spawn(async move { crate::hype::initial(&identity) });
+            cx.spawn(async move |view, cx| {
+                let events = task.await;
+                let _ = view.update(cx, |this, cx| {
+                    for (kind, event) in events {
+                        crate::hype::apply(&mut this.hype, &kind, &event);
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
         // A new stream starts a fresh checklist.
         let live = self.own_live(cx);
         if live && !self.was_live {
