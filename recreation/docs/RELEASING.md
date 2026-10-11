@@ -14,8 +14,9 @@ requires open source.
   downloaded by Jawjack itself are not marked as internet files, so they skip the prompt.
 - Windows 11 **Smart App Control** (when enabled) blocks unsigned apps outright;
   mention it on the download page and link to the Store version once it exists.
-- Still to build: the installer (port of Haiwire's `apps/haiwire-setup`) and the
-  release package/publish scripts (Haiwire keeps these outside git in `.local-release/`).
+- Installer and packaging: built (`crates/setup`, `scripts/Package-Release.py`). See
+  [INSTALLER.md](INSTALLER.md). Publishing to the site is a manual owner step: upload the
+  setup, the zip and their `.sha256` files, with `latest.json` last.
 
 ## 2. Microsoft Store (when ready)
 

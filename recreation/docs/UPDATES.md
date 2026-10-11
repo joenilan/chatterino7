@@ -36,4 +36,6 @@ per launch; see [STREAMER_TOOLS.md](STREAMER_TOOLS.md).
 ## Evidence (Windows, 2026-10-11)
 
 The sidebar footer showed `v0.1.0 · No releases published yet` after the startup
-check, because the feed doesn't exist yet. Download and install have not been tested.
+check, because the feed doesn't exist yet. The installer and `latest.json` are now produced by
+`scripts/Package-Release.py` ([INSTALLER.md](INSTALLER.md)), but nothing is published, so the download → setup
+hand-off is still untested end to end.
