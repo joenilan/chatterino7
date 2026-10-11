@@ -149,7 +149,7 @@ impl Workbench {
                         .v_flex()
                         .gap_2()
                         .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!(
-                            "You moderate {} channels. Pick the ones to open in a new “Moderating” workspace. You can close or add channels anytime. Live ones have a green dot{}.",
+                            "You moderate {} channels. Each one you pick opens as a tab in one “Moderating” workspace (made once, then reused). You can close or add channels anytime. Live ones have a green dot{}.",
                             channels.len(),
                             if live.is_none() { " (checking…)" } else { "" }
                         )))
@@ -173,7 +173,7 @@ impl Workbench {
                             Button::new("mod-pick-create")
                                 .small()
                                 .primary()
-                                .label(format!("Create workspace ({count})"))
+                                .label(format!("Open {count} as tabs in “Moderating”"))
                                 .disabled(count == 0)
                                 .on_click(move |_, window, cx| {
                                     window.close_dialog(cx);
@@ -188,20 +188,34 @@ impl Workbench {
         if channels.is_empty() {
             return;
         }
-        let id = self.next_id;
-        self.next_id += 1;
-        self.tabs.push(WorkspaceTab {
-            id,
-            name: "Moderating".into(),
-            panes: vec![],
-            vertical: false,
-            sizes: vec![],
-            split: cx.new(|_| ResizableState::default()),
-            dock: None,
-            dock_states: BTreeMap::new(),
-            pinned: Vec::new(),
-        });
-        self.select_tab(self.tabs.len() - 1, cx);
+        // One "Moderating" workspace: reuse it if it exists, else make it.
+        if let Some(index) = self.tabs.iter().position(|t| t.name == "Moderating") {
+            self.select_tab(index, cx);
+        } else {
+            let id = self.next_id;
+            self.next_id += 1;
+            self.tabs.push(WorkspaceTab {
+                id,
+                name: "Moderating".into(),
+                panes: vec![],
+                vertical: false,
+                sizes: vec![],
+                split: cx.new(|_| ResizableState::default()),
+                dock: None,
+                dock_states: BTreeMap::new(),
+                pinned: Vec::new(),
+            });
+            self.select_tab(self.tabs.len() - 1, cx);
+        }
+        let existing: Vec<String> = self.tabs[self.active]
+            .panes
+            .iter()
+            .map(|p| p.read(cx).name.to_string())
+            .collect();
+        let channels: Vec<String> = channels
+            .into_iter()
+            .filter(|c| !existing.contains(c))
+            .collect();
         for channel in &channels {
             self.add_channel_to_active(channel.clone(), window, cx);
         }

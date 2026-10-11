@@ -68,7 +68,7 @@ happened during testing, so live items haven't been observed yet. Feed parsing i
 Choosing **Moderator** in "Choose your setup" (or Settings → General → Channels you moderate → Choose…)
 lists every channel you moderate (Helix moderated channels) with tick boxes. Channels already open are tagged
 and start unticked, and live channels get a green dot (Helix Get Streams, checked when the dialog opens).
-**All**, **Live only** (live and not yet open) and **None** shortcuts are there too. **Create workspace (N)** opens the ticked ones in a
-new "Moderating" workspace. Evidence: 53 moderated channels listed, 26 pre-ticked, Live only = 2. Create was not
+**All**, **Live only** (live and not yet open) and **None** shortcuts are there too. **Open N as tabs in “Moderating”** adds each ticked channel as a tab in one "Moderating"
+workspace, which is created the first time and reused after that (channels already in it are skipped). Evidence: 53 moderated channels listed, 26 pre-ticked, Live only = 2. Create was not
 pressed, to keep the owner's profile unchanged.
 

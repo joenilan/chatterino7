@@ -105,3 +105,10 @@ the items are saved with the workspace. "Live" means Twitch reports it or OBS is
 Evidence: shown with title/category, OBS and mic ticked from live data and the mod check amber. A
 custom item was added, ticked and removed, and the saved list went back to empty.
 
+## Stream recap (2026-10-11)
+
+When your stream ends (it must have run at least 5 minutes), a "Stream recap" window shows length, peak viewers,
+chat messages and unique chatters in your channel, activity counts (follows, subs, Bits, raids,
+rewards, tips), and the top five chatters. **Copy as text** is for Discord or notes. Peak viewers come from
+Twitch's stream status sampled while you're live. Unit tested, but not yet seen at the end of a real stream.
+

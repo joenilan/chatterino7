@@ -18,6 +18,8 @@ mod obs_ui;
 mod pane_navigation;
 #[path = "popout.rs"]
 mod popout;
+#[path = "recap.rs"]
+mod recap;
 #[path = "roles.rs"]
 mod roles;
 #[path = "settings_ui.rs"]
@@ -223,6 +225,8 @@ pub struct Workbench {
     /// When the own channel was last seen going live (for the 10-minute window).
     went_live_at: Option<std::time::Instant>,
     was_live: bool,
+    peak_viewers: u64,
+    last_stream_info: Option<(String, String)>,
     /// Latest incoming raid on your channel: (login, display name, viewers, when).
     last_raid: Option<(String, String, u64, std::time::Instant)>,
     shouted: std::collections::BTreeSet<String>,
@@ -615,6 +619,8 @@ impl Workbench {
             checklist_input: None,
             went_live_at: None,
             was_live: false,
+            peak_viewers: 0,
+            last_stream_info: None,
             last_raid: None,
             shouted: Default::default(),
             obs_found: None,
@@ -872,7 +878,11 @@ impl Workbench {
         if live && !self.was_live {
             self.went_live_at = Some(std::time::Instant::now());
         }
+        if live {
+            self.track_stream(cx);
+        }
         if !live && self.was_live {
+            self.show_recap(window, cx);
             self.checklist_done.clear();
             self.checklist_dismissed = false;
         }
