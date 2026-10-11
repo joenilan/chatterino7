@@ -134,6 +134,17 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "Channels you moderate",
+                    match self.capabilities.moderated() {
+                        Some(m) => format!("Open any of the {} channels you moderate in a new workspace.", m.len()),
+                        None => "Checking which channels you moderate…".into(),
+                    },
+                    open_button("settings-mod-channels", "Choose…").on_click(cx.listener(|this, _, w, cx| {
+                        this.settings = false;
+                        this.offer_moderated_channels(w, cx);
+                    })),
+                ))
+                .child(row(
                     "Twitch accounts",
                     format!("Active: {}. Add a bot or alt to send as it from any message box.", self.account.read(cx).label()),
                     open_button("settings-accounts", "Manage").on_click(cx.listener(|this, _, w, cx| this.open_accounts(w, cx))),

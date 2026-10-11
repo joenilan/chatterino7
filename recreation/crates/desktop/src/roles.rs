@@ -322,7 +322,14 @@ impl Workbench {
                                 .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(experience.description()))
                                 .on_click(move |_, window, cx| {
                                     window.close_dialog(cx);
-                                    let _ = owner.update(cx, |this, cx| this.set_experience(experience, cx));
+                                    let _ = owner.update(cx, |this, cx| {
+                                        let changed = this.experience != experience;
+                                        this.set_experience(experience, cx);
+                                        // New moderators are offered the channels they moderate.
+                                        if changed && experience == Experience::Moderator {
+                                            this.offer_moderated_channels(window, cx);
+                                        }
+                                    });
                                 })
                         })),
                 )

@@ -10,6 +10,8 @@ mod channel_details;
 mod channel_switcher;
 #[path = "engagement_ui.rs"]
 mod engagement_ui;
+#[path = "mod_onboarding.rs"]
+mod mod_onboarding;
 #[path = "obs_ui.rs"]
 mod obs_ui;
 #[path = "pane_navigation.rs"]
@@ -182,6 +184,9 @@ pub struct Workbench {
     own_extras_refused: Option<Vec<&'static str>>,
     /// Channels where you chose not to see AutoMod (not subscribed either).
     automod_hidden: std::collections::BTreeSet<String>,
+    /// Moderator onboarding: channels ticked, and which are live (None while checking).
+    mod_pick: std::collections::BTreeSet<String>,
+    mod_live: Option<std::collections::BTreeSet<String>>,
     /// Moderated channels with a live AutoMod queue subscription.
     mod_automod_channels: Vec<String>,
     /// Ping sounds (Chatterino defaults: mentions on, other highlights off,
@@ -564,6 +569,8 @@ impl Workbench {
             account_focus: None,
             automod: Default::default(),
             own_extras_refused: None,
+            mod_pick: Default::default(),
+            mod_live: None,
             automod_hidden: state["automod_hidden"]
                 .as_array()
                 .into_iter()

@@ -272,6 +272,10 @@ impl Capabilities {
             Check::NeedsPermission
         }
     }
+    /// Channels you moderate (lowercase logins), once known.
+    pub fn moderated(&self) -> Option<Vec<String>> {
+        self.moderated.as_ref().map(|m| m.iter().cloned().collect())
+    }
     pub fn inspection(&self) -> Value {
         let mut moderated: Vec<_> = self.moderated.iter().flatten().cloned().collect();
         moderated.sort();

@@ -62,3 +62,13 @@ events ([STREAMER_BOT.md](STREAMER_BOT.md)).
 Activity evidence (Windows, 2026-10-11): Streamer.bot accepted the event subscription
 ("Connected · events from YouTube, Kick, Ko-fi, …"). No follow, redemption or donation
 happened during testing, so live items haven't been observed yet. Feed parsing is unit-tested.
+
+## Moderator onboarding (owner idea, 2026-10-11)
+
+Choosing **Moderator** in "Choose your setup" (or Settings → General → Channels you moderate → Choose…)
+lists every channel you moderate (Helix moderated channels) with tick boxes. Channels already open are tagged
+and start unticked, and live channels get a green dot (Helix Get Streams, checked when the dialog opens).
+**All**, **Live only** (live and not yet open) and **None** shortcuts are there too. **Create workspace (N)** opens the ticked ones in a
+new "Moderating" workspace. Evidence: 53 moderated channels listed, 26 pre-ticked, Live only = 2. Create was not
+pressed, to keep the owner's profile unchanged.
+
