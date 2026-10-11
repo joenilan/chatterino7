@@ -35,6 +35,10 @@ new Studio feature has to fit this structure rather than add another card.
 - Motion: tab content fades in (150 ms); new feed items ease in (300 ms); the panel slides
   (200 ms). All of it respects reduced motion.
 
-Polls/predictions evidence (Windows, 2026-10-11): the Tools section renders, the read from Twitch
-succeeded (no eligibility error), and both create forms open and validate. No poll or prediction
-was started; that needs the owner's go-ahead.
+Polls/predictions evidence (Windows, 2026-10-11, in #dreadedzombie with the owner's go-ahead):
+- **Poll:** "Jawjack test poll" (Yes/No, 1 min) started ("Poll started", card counting down 0:55), then
+  End poll worked ("Poll ended", card showed Ended).
+- **Prediction:** "Jawjack test prediction" (Works/Broken, 2 min) started, Lock showed
+  "Locked · pick the winner" with per-outcome winner buttons, and Cancel & refund (confirmed) returned
+  "Prediction canceled; points refunded".
+- Resolving with a payout was not exercised.
