@@ -1408,6 +1408,7 @@ pub(crate) fn chat_message(
             historical: false,
             similar: false,
             suspicious: None,
+            origin: None,
         },
         deleted: false,
     }

@@ -89,6 +89,8 @@ pub struct MessagePresentation {
     pub similar: bool,
     /// Moderator-only suspicious-user label, e.g. "Suspicious · Monitored".
     pub suspicious: Option<String>,
+    /// In a combined feed: the channel this message came from.
+    pub origin: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
@@ -161,6 +163,8 @@ pub enum Change {
 #[derive(Debug)]
 pub struct Timeline {
     channel_id: String,
+    /// Further channels a combined feed accepts.
+    also: Vec<String>,
     capacity: usize,
     messages: VecDeque<Message>,
     ids: HashSet<String>,
@@ -189,10 +193,18 @@ impl Timeline {
     pub fn new(channel_id: impl Into<String>, capacity: usize) -> Self {
         Self {
             channel_id: channel_id.into(),
+            also: Vec::new(),
             capacity: capacity.max(1),
             messages: VecDeque::new(),
             ids: HashSet::new(),
         }
+    }
+    /// Accept messages from these channels too (a combined feed).
+    pub fn accept_channels(&mut self, channels: Vec<String>) {
+        self.also = channels;
+    }
+    fn accepts(&self, channel: &str) -> bool {
+        channel == self.channel_id || self.also.iter().any(|c| c == channel)
     }
     pub fn capacity(&self) -> usize {
         self.capacity
@@ -216,7 +228,7 @@ impl Timeline {
     pub fn apply(&mut self, event: Event) -> Change {
         match event {
             Event::Message(message) => {
-                if message.channel_id != self.channel_id
+                if !self.accepts(&message.channel_id)
                     || message.id.is_empty()
                     || self.ids.contains(&message.id)
                 {
@@ -250,7 +262,7 @@ impl Timeline {
         }
     }
     fn redact_quotes(&mut self, channel: &str, matches: impl Fn(&Reply) -> bool) -> bool {
-        if channel != self.channel_id {
+        if !self.accepts(channel) {
             return false;
         }
         let mut changed = false;
@@ -266,7 +278,7 @@ impl Timeline {
         changed
     }
     fn redact(&mut self, channel: &str, matches: impl Fn(&Message) -> bool) -> Change {
-        if channel != self.channel_id {
+        if !self.accepts(channel) {
             return Change::Ignored;
         }
         let mut changed = false;

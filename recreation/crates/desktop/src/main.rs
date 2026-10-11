@@ -20,6 +20,7 @@ mod chatter_notes;
 mod chatterino_import;
 mod chatters;
 mod chatters_ui;
+mod combined;
 mod commands;
 mod community;
 mod control;
@@ -224,6 +225,8 @@ struct ChannelPane {
     mod_buttons: bool,
     /// Your own moderator buttons, shown after the built-in ones.
     custom_mod_buttons: std::rc::Rc<Vec<mod_buttons::ModButton>>,
+    /// Combined feed: where messages typed here are sent (one of the sources).
+    send_to: Option<String>,
     /// Suspicious labels for messages that haven't arrived yet (by message ID).
     suspicious_pending: std::collections::HashMap<String, String>,
     send_as: Option<SharedString>,
@@ -275,7 +278,10 @@ impl ChannelPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let timeline = Timeline::new(name, history_limit);
+        let mut timeline = Timeline::new(name, history_limit);
+        if combined::is_combined(name) {
+            timeline.accept_channels(combined::sources(name));
+        }
         let draft = cx.new(|cx| {
             let mut input = TextareaState::new(window, cx)
                 .auto_grow(1, 4)
@@ -322,6 +328,7 @@ impl ChannelPane {
             similar_mode: Default::default(),
             mod_buttons: false,
             custom_mod_buttons: Default::default(),
+            send_to: combined::is_combined(name).then(|| combined::sources(name)[0].clone()),
             suspicious_pending: Default::default(),
             send_as: None,
             media,
@@ -435,10 +442,16 @@ impl ChannelPane {
             matches!(&event, chat_core::Event::Message(m) if m.presentation.historical);
         if let chat_core::Event::Message(message) = &mut event {
             self.catalog.borrow_mut().want_cosmetics(&message.user_id);
+            // In a combined feed, each message uses its own channel's emotes.
+            let emote_channel = message
+                .presentation
+                .origin
+                .clone()
+                .unwrap_or_else(|| self.name.to_string());
             message.fragments =
                 self.catalog
                     .borrow()
-                    .expand(&self.name, &message.user_id, &message.fragments);
+                    .expand(&emote_channel, &message.user_id, &message.fragments);
             if let ignores::Outcome::Hide = self.ignores.borrow().apply(message) {
                 return;
             }
@@ -797,7 +810,7 @@ impl Render for ChannelPane {
                                     cx.new(|cx| stream_preview::StreamPreview::new(channel, info, media, hide, cx)).into()
                                 }
                             })
-                            .child(format!("# {}", self.name)),
+                            .child(format!("# {}", combined::title(&self.name))),
                     )
                     .child(
                         div()
@@ -865,7 +878,7 @@ impl Render for ChannelPane {
                         if changed&&picker_is_open{let owner=picker_layout_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}
                     })
                     .when(retained == 0, |el| el.child(div().v_flex().p_6().gap_2().text_color(rgb(theme::MUTED))
-                        .child(div().text_color(rgb(theme::TEXT)).text_size(px(16.)).child(format!("#{} is ready", self.name)))
+                        .child(div().text_color(rgb(theme::TEXT)).text_size(px(16.)).child(format!("#{} is ready", combined::title(&self.name))))
                         .child(if self.connected { "Connected. Waiting for messages…".to_string() } else { self.connection.clone() })))
                     .child(
                         MessageScroller::new("chat", self.scroller.clone(), move |index, window, cx| {
@@ -986,6 +999,13 @@ impl Render for ChannelPane {
                                                 .child(button.label.clone())
                                         })))
                                 })
+                                // Combined feed: which channel this came from, colour-keyed per channel.
+                                .when_some(message.presentation.origin.clone(), |el, origin| {
+                                    let hue = origin.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32)) as usize % highlight_rules::COLORS.len();
+                                    let (_, accent, background) = highlight_rules::COLORS[hue];
+                                    el.child(div().h(first_line_height).flex().items_center().flex_shrink_0()
+                                        .child(div().px(px(4.)).rounded(px(3.)).bg(rgb(background)).text_color(rgb(accent)).text_size(px(10.)).child(format!("#{origin}"))))
+                                })
                                 .children(badge_images.into_iter().map(|(badge,image,background)|{
                                     div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(div().size(px(18.)).when_some(background,|el,color|el.bg(rgb(color))).child(emote_picker::icon(image,String::new(),18.,18.)))
                                 }).collect::<Vec<_>>())
@@ -1080,7 +1100,21 @@ impl Render for ChannelPane {
                         .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500", self.draft.read(cx).value().chars().count())))
                         .when(routine_status && !self.send_status.is_empty(), |el|el.child(self.send_status.clone())))
                     .when_some(self.room_settings.as_ref().filter(|r|!r.labels().is_empty()).map(|r|r.summary()),|el,summary|el.child(div().id("room-modes-hint").max_w(px(120.)).min_w_0().flex_shrink(1.).overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(rgb(0xC5B8E6)).tooltip({let summary=summary.clone();move|w,cx|gpui_kit::component::tooltip::Tooltip::new(format!("{summary}. Your role may grant exemptions; Twitch validates sending. Ctrl+I for channel details.")).build(w,cx)}).child(summary)))
-                    .child(div().h_flex().gap_2().when(self.send_as_options.len() > 1, |el| {
+                    .child(div().h_flex().gap_2().when_some(self.send_to.clone(), |el, current| {
+                        // Combined feed: one explicit destination, never all of them.
+                        let sources = combined::sources(&self.name);
+                        let owner = cx.entity().downgrade();
+                        el.child(Button::new("send-to").ghost().xsmall().label(format!("to #{current}")).tooltip("Which channel your messages go to")
+                            .dropdown_menu(move |mut menu, _, _| {
+                                for source in &sources {
+                                    let (owner, source) = (owner.clone(), source.clone());
+                                    menu = menu.item(gpui_kit::component::menu::PopupMenuItem::new(format!("#{source}"))
+                                        .checked(source == current)
+                                        .on_click(move |_, _, cx| { let _ = owner.update(cx, |p, cx| { p.send_to = Some(source.clone()); cx.notify(); }); }));
+                                }
+                                menu
+                            }))
+                    }).when(self.send_as_options.len() > 1, |el| {
                         let options = self.send_as_options.clone();
                         let current = self.send_as.clone().filter(|v| options.iter().any(|(o, _)| o == v)).unwrap_or_else(|| options[0].0.clone());
                         let login = options.iter().find(|(v, _)| *v == current).map(|(_, l)| l.clone()).unwrap_or_default();

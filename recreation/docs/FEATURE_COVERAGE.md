@@ -107,7 +107,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | WS08 | Multiple windows and popouts | Part | Channel popout windows (tab menu), same live connection, seeded history, restored on launch ([details](POPOUTS.md)); always-on-top, geometry, cross-window drag and workspace popouts pending. | widgets/Window.cpp; common/WindowDescriptors |
 | WS09 | Overlay and attached windows | Backlog | Always-on-top, transparency/click-through and deliberate interaction modes; browser attachment later. | widgets/OverlayWindow; AttachedWindow; FramelessEmbedWindow |
 | WS10 | Special channels | Part | New local activity dialog only; mentions, whispers, watching/live and AutoMod feeds need explicit models. | widgets/dialogs/SelectChannelDialog.cpp |
-| WS11 | Combined feeds | Backlog | Preserve per-message origin and an explicit destination composer; never broadcast by accident. | util/MultiChannel; SelectChannelDialog.cpp |
+| WS11 | Combined feeds | Part | Combined feed panes (a+b+c) with origin chips, per-origin emotes and an explicit send destination ([details](COMBINED_FEEDS.md)); verified with xqc+summit1g. Per-origin room modes/chatters pending. | util/MultiChannel; SelectChannelDialog.cpp |
 | WS12 | Split recovery and reset conveniences | Part | Double-click a divider to even out that split (eased), plus Equalize this/all splits; neighbour focus, close/reopen history and drag cancellation remain. | widgets/splits |
 
 ### Composer and commands

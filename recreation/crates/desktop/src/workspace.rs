@@ -233,6 +233,8 @@ pub struct Workbench {
     was_live: bool,
     peak_viewers: u64,
     stats_tick: u64,
+    /// Latest connection state per channel (for combined feeds).
+    channel_ready: std::collections::HashMap<String, bool>,
     rewards: crate::rewards::Rewards,
     last_stream_info: Option<(String, String)>,
     /// Latest incoming raid on your channel: (login, display name, viewers, when).
@@ -437,7 +439,11 @@ impl Workbench {
             .collect();
         others.sort_by_key(|t| rank(t.id));
         order.extend(others.iter().flat_map(|t| t.panes.iter().map(name)));
+        // Combined feeds stand for their source channels; repeats are dropped downstream.
         order
+            .iter()
+            .flat_map(|n| crate::combined::sources(n))
+            .collect()
     }
     /// Every pane fed by the live connection: workspace tabs and popouts.
     pub fn panes(&self) -> Vec<Entity<ChannelPane>> {
@@ -633,6 +639,7 @@ impl Workbench {
             was_live: false,
             peak_viewers: 0,
             stats_tick: 0,
+            channel_ready: Default::default(),
             rewards: crate::rewards::Rewards::new(),
             last_stream_info: None,
             last_raid: None,
@@ -745,11 +752,11 @@ impl Workbench {
                 let mut panes = Vec::new();
                 if let Some(channels) = item["channels"].as_array() {
                     for channel in channels.iter() {
-                        if let Some(name) = channel.as_str().and_then(valid_channel)
-                            && !panes.iter().any(|p: &Entity<ChannelPane>| {
-                                p.read(cx).name.as_ref() == name.as_str()
-                            })
-                        {
+                        if let Some(name) = channel.as_str().and_then(|n| {
+                            valid_channel(n).or_else(|| crate::combined::from_saved(n))
+                        }) && !panes.iter().any(|p: &Entity<ChannelPane>| {
+                            p.read(cx).name.as_ref() == name.as_str()
+                        }) {
                             panes.push(this.make_pane(id, &name, window, cx));
                         }
                     }
@@ -850,7 +857,10 @@ impl Workbench {
         self.sync_attention(window, cx);
         if self.streams.pump(
             identity.clone(),
-            panes.iter().map(|p| p.read(cx).name.to_string()).collect(),
+            panes
+                .iter()
+                .flat_map(|p| crate::combined::sources(&p.read(cx).name))
+                .collect(),
         ) {
             let visible = self.visible_panes(cx);
             for pane in &panes {
@@ -1027,6 +1037,28 @@ impl Workbench {
                         pane.update(cx, |p, _| p.chatter_list = list.clone());
                     }
                 }
+            }
+        }
+        // A combined feed is connected while any of its source channels is.
+        for pane in &panes {
+            let name = pane.read(cx).name.to_string();
+            if !crate::combined::is_combined(&name) {
+                continue;
+            }
+            let sources = crate::combined::sources(&name);
+            let any = sources
+                .iter()
+                .any(|s| self.channel_ready.get(s).copied().unwrap_or(false));
+            if pane.read(cx).connected != any {
+                pane.update(cx, |p, cx| {
+                    p.connected = any;
+                    p.connection = if any {
+                        "Connected".into()
+                    } else {
+                        "Connecting…".into()
+                    };
+                    cx.notify();
+                });
             }
         }
         for pane in &panes {
@@ -1225,7 +1257,21 @@ impl Workbench {
                     self.catalog.borrow_mut().channel(&channel, &id)
                 }
                 crate::live::Event::State(channel, status, ready) => {
+                    self.channel_ready.insert(channel.clone(), ready);
                     for pane in &panes {
+                        let name = pane.read(cx).name.to_string();
+                        if crate::combined::is_combined(&name)
+                            && crate::combined::sources(&name).contains(&channel)
+                        {
+                            if ready && !pane.read(cx).connected {
+                                pane.update(cx, |p, cx| {
+                                    p.connected = true;
+                                    p.connection = "Connected".into();
+                                    cx.notify();
+                                });
+                            }
+                            continue;
+                        }
                         if pane.read(cx).name.as_ref() == channel {
                             pane.update(cx, |p, cx| {
                                 p.connection = status.clone();
@@ -1282,7 +1328,19 @@ impl Workbench {
                             .flat_map(|tab| tab.panes.iter())
                             .filter(|_| moderation),
                     ) {
-                        if pane.read(cx).name.as_ref() == channel {
+                        let name = pane.read(cx).name.to_string();
+                        if crate::combined::is_combined(&name) {
+                            // Clearing one channel must not wipe the whole combined feed.
+                            if crate::combined::sources(&name).contains(&channel)
+                                && !matches!(event, chat_core::Event::ClearChannel { .. })
+                            {
+                                let mut tagged = event.clone();
+                                if let chat_core::Event::Message(m) = &mut tagged {
+                                    m.presentation.origin = Some(channel.clone());
+                                }
+                                pane.update(cx, |p, cx| p.received(tagged, cx));
+                            }
+                        } else if name == channel {
                             pane.update(cx, |p, cx| p.received(event.clone(), cx));
                         }
                     }
@@ -1776,10 +1834,11 @@ impl Workbench {
                 reply_parent,
             } = event
             {
-                let as_identity = this.send_as_identity(&channel, cx);
+                let destination = this.destination(pane, reply_parent.as_deref(), &channel, cx);
+                let as_identity = this.send_as_identity(&destination, cx);
                 if let Err(error) = this.live.send(
                     *request,
-                    channel.clone(),
+                    destination,
                     text.clone(),
                     reply_parent.clone(),
                     as_identity,
@@ -1817,9 +1876,10 @@ impl Workbench {
                 return;
             }
             if let PaneEvent::TwitchCommand { request, draft } = event {
+                let destination = this.destination(pane, None, &channel, cx);
                 this.run_twitch_command(
                     pane.clone(),
-                    channel.clone(),
+                    destination,
                     request.clone(),
                     draft.clone(),
                     window,
@@ -2354,7 +2414,7 @@ impl Workbench {
         let channels = tab
             .panes
             .iter()
-            .map(|p| format!("#{}", p.read(cx).name))
+            .map(|p| format!("#{}", crate::combined::title(&p.read(cx).name)))
             .collect::<Vec<_>>()
             .join(", ");
         let body = if channels.is_empty() {
@@ -2455,6 +2515,31 @@ impl Workbench {
         });
         cx.notify();
     }
+    /// Where a pane's messages and commands go: the pane's channel, or for a
+    /// combined feed the replied-to message's channel, else the chosen destination.
+    fn destination(
+        &self,
+        pane: &Entity<ChannelPane>,
+        reply_parent: Option<&str>,
+        channel: &str,
+        cx: &App,
+    ) -> String {
+        if !crate::combined::is_combined(channel) {
+            return channel.to_owned();
+        }
+        let p = pane.read(cx);
+        reply_parent
+            .and_then(|id| {
+                p.timeline
+                    .borrow()
+                    .messages()
+                    .iter()
+                    .find(|m| m.id == id)
+                    .and_then(|m| m.presentation.origin.clone())
+            })
+            .or_else(|| p.send_to.clone())
+            .unwrap_or_else(|| crate::combined::sources(channel)[0].clone())
+    }
     /// Add a channel as a tab in the active workspace (Add channel, live follows).
     fn add_channel_to_active(
         &mut self,
@@ -2514,6 +2599,17 @@ impl Workbench {
                 return;
             }
             self.tabs[self.active].name = value;
+        } else if let Some(combined) = crate::combined::parse(&value, valid_channel) {
+            if self.tabs[self.active]
+                .panes
+                .iter()
+                .any(|p| p.read(cx).name.as_ref() == combined)
+            {
+                self.add_error = Some("This combined view is already in the workspace".into());
+                cx.notify();
+                return;
+            }
+            self.add_channel_to_active(combined, window, cx);
         } else {
             let Some(channel) = valid_channel(&value) else {
                 self.add_error =
@@ -3060,7 +3156,7 @@ impl Workbench {
                                         .child(Icon::new(gpui_kit::assets::IconName::Pin).xsmall()),
                                 )
                             })
-                            .child(format!("#{channel}"))
+                            .child(format!("#{}", crate::combined::title(&channel)))
                             .when(counts.0 > 0, |el| {
                                 el.child(
                                     div()
