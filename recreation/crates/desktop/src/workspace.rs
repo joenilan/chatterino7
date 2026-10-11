@@ -12,6 +12,8 @@ mod engagement_ui;
 mod pane_navigation;
 #[path = "roles.rs"]
 mod roles;
+#[path = "settings_ui.rs"]
+mod settings_ui;
 #[path = "streamer_bot_ui.rs"]
 mod streamer_bot_ui;
 #[path = "whispers_ui.rs"]
@@ -26,7 +28,7 @@ use gpui_kit::component::{
     Disableable, Icon, IconName, Sizable, StyledExt, WindowExt,
     button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState},
-    menu::{ContextMenuExt, DropdownMenu, PopupMenuItem},
+    menu::{ContextMenuExt, PopupMenuItem},
     notification::Notification,
     resizable::{ResizableState, h_resizable, resizable_panel, v_resizable},
 };
@@ -230,6 +232,8 @@ pub struct Workbench {
     add_error: Option<String>,
     sidebar: bool,
     settings: bool,
+    settings_section: usize,
+    settings_opened: std::time::Instant,
     font_size: f32,
     timestamps: u8,
     pause_mode: u8,
@@ -520,6 +524,8 @@ impl Workbench {
             add_error: None,
             sidebar: state["sidebar"].as_bool().unwrap_or(false),
             settings: false,
+            settings_section: 0,
+            settings_opened: std::time::Instant::now(),
             font_size: state["font_size"]
                 .as_f64()
                 .filter(|n| n.is_finite())
@@ -1902,6 +1908,11 @@ impl Workbench {
             (ix + shown.len() - 1) % shown.len()
         };
         self.select_tab(shown[next], cx);
+    }
+    fn select_tab_id(&mut self, id: u64, cx: &mut Context<Self>) {
+        if let Some(ix) = self.tabs.iter().position(|t| t.id == id) {
+            self.select_tab(ix, cx);
+        }
     }
     fn select_tab(&mut self, ix: usize, cx: &mut Context<Self>) {
         if ix < self.tabs.len() {
@@ -3318,6 +3329,66 @@ impl Workbench {
                                         }
                                     )),
                             )
+                            .context_menu({
+                                let owner = cx.entity().downgrade();
+                                let (id, last) = (tab.id, self.tabs.len() - 1);
+                                let can_reopen = !self.closed_tabs.is_empty();
+                                let live_only = self.live_workspaces;
+                                move |menu, _, _| {
+                                    // Each action applies to the workspace that was right-clicked.
+                                    let act = |f: fn(
+                                        &mut Workbench,
+                                        u64,
+                                        &mut Window,
+                                        &mut Context<Workbench>,
+                                    )| {
+                                        let owner = owner.clone();
+                                        move |_: &ClickEvent, w: &mut Window, cx: &mut App| {
+                                            let _ = owner.update(cx, |this, cx| f(this, id, w, cx));
+                                        }
+                                    };
+                                    menu.item(PopupMenuItem::new("Rename workspace").on_click(act(
+                                        |this, id, w, cx| {
+                                            this.select_tab_id(id, cx);
+                                            this.open_add(true, w, cx);
+                                        },
+                                    )))
+                                    .item(PopupMenuItem::new("Move up").disabled(ix == 0).on_click(
+                                        act(|this, id, _, cx| {
+                                            this.select_tab_id(id, cx);
+                                            this.move_tab(-1, cx);
+                                        }),
+                                    ))
+                                    .item(
+                                        PopupMenuItem::new("Move down")
+                                            .disabled(ix == last)
+                                            .on_click(act(|this, id, _, cx| {
+                                                this.select_tab_id(id, cx);
+                                                this.move_tab(1, cx);
+                                            })),
+                                    )
+                                    .item(
+                                        PopupMenuItem::new("Only show live workspaces")
+                                            .checked(live_only)
+                                            .on_click(act(|this, _, _, cx| {
+                                                this.live_workspaces = !this.live_workspaces;
+                                                this.schedule_save(cx);
+                                                cx.notify();
+                                            })),
+                                    )
+                                    .separator()
+                                    .item(
+                                        PopupMenuItem::new("Reopen closed workspace")
+                                            .disabled(!can_reopen)
+                                            .on_click(act(|this, _, _, cx| this.reopen_tab(cx))),
+                                    )
+                                    .item(
+                                        PopupMenuItem::new("Close workspace…").on_click(act(
+                                            |this, id, w, cx| this.confirm_close_tab(id, w, cx),
+                                        )),
+                                    )
+                                }
+                            })
                     })),
             )
             .child(
@@ -3386,15 +3457,7 @@ impl Render for Workbench {
             "○ Live chat disconnected".to_owned()
         };
         let counts = self.attention_counts(reading_available, cx);
-        let view_focus = self.focus.clone();
         let pointer_guard = cx.entity().downgrade();
-        let live_workspaces = self.live_workspaces;
-        let live_channels = self.live_channels;
-        let studio = (self.experience == roles::Experience::Streamer).then_some(self.studio_open);
-        let can_reopen = !self.closed_tabs.is_empty();
-        let can_discard = self.close_failed;
-        let can_left = self.active > 0;
-        let can_right = self.active + 1 < self.tabs.len();
         let tab = &self.tabs[self.active];
         let dock = tab.dock.clone();
         self.dock_bounds.borrow_mut().clear();
@@ -3443,191 +3506,525 @@ impl Render for Workbench {
                 )
                 .into_any_element()
         };
-        div().id("workspace").relative().track_focus(&self.focus).key_context("ChatWorkspace").v_flex().size_full().font_family("Segoe UI").text_size(px(13.)).bg(rgb(theme::SHELL)).text_color(rgb(theme::TEXT))
-            .capture_any_mouse_down(cx.listener(|this,event:&MouseDownEvent,window,cx|{if event.button==MouseButton::Left{
-                cx.stop_active_drag(window); this.pointer_owner=Some(this.control_pointer_active); this.release_position=None;
-            }}))
-            .capture_any_mouse_up(cx.listener(|this,event:&MouseUpEvent,window,cx|{if event.button==MouseButton::Left{
-                let valid=this.pointer_owner.take()==Some(this.control_pointer_active);
-                this.release_position=valid.then_some(event.position);this.release_from_control=this.control_pointer_active;
-                if !valid{cx.stop_active_drag(window);this.drop_edge=None;this.drop_target=None;cx.notify();}
-            }}))
-            .child(canvas(|_,_,_|(),move|_,_,window,_|{
-                let zoom=pointer_guard.clone();
-                window.on_mouse_event(move|event:&ScrollWheelEvent,phase,window,cx|{
-                    if !phase.capture()||!event.modifiers.control||window.has_active_dialog(cx){return;}
-                    let delta=match event.delta{ScrollDelta::Lines(p)=>p.y.signum(),ScrollDelta::Pixels(p)=>f32::from(p.y)/40.};
-                    let _=zoom.update(cx,|this,cx|{this.zoom_accumulator+=delta;let steps=this.zoom_accumulator.trunc().clamp(-4.,4.);if steps!=0.{this.zoom_accumulator-=steps;this.font_feedback(steps,false,window,cx);}});
-                    window.prevent_default();cx.stop_propagation();
-                });
-                let owner=pointer_guard.clone();
-                window.on_mouse_event(move|event:&MouseMoveEvent,phase,window,cx|{
-                    if !phase.capture(){return;}
-                    let _=owner.update(cx,|this,cx|{
-                        let crossed=this.pointer_owner.is_some_and(|source|source!=this.control_pointer_active);
-                        if crossed || event.pressed_button!=Some(MouseButton::Left){
-                            this.pointer_owner=None;this.release_position=None;this.drop_edge=None;this.drop_target=None;
-                            if cx.stop_active_drag(window){cx.notify();}
-                            // Also clear a framework drag created later in this event from a stale down.
-                            window.defer(cx,|window,cx|{cx.stop_active_drag(window);});
-                        }
-                    });
-                });
-            }).absolute().size_0())
-            .on_action(cx.listener(|this,_:&crate::FindChat,w,cx|{let panes=this.visible_panes(cx);let selected=this.selected_channel.as_ref();if let Some(pane)=panes.iter().find(|p|Some(&p.read(cx).name.to_string())==selected).or(panes.first()){pane.update(cx,|p,cx|p.open_search(w,cx));}cx.stop_propagation();}))
-            .on_action(cx.listener(|this,_:&FocusNextPane,w,cx|this.cycle_pane(true,w,cx)))
-            .on_action(cx.listener(|this,_:&FocusPreviousPane,w,cx|this.cycle_pane(false,w,cx)))
-            .on_action(cx.listener(|this,_:&FocusPaneLeft,w,cx|this.focus_neighbor(-1,0,w,cx)))
-            .on_action(cx.listener(|this,_:&FocusPaneRight,w,cx|this.focus_neighbor(1,0,w,cx)))
-            .on_action(cx.listener(|this,_:&FocusPaneUp,w,cx|this.focus_neighbor(0,-1,w,cx)))
-            .on_action(cx.listener(|this,_:&FocusPaneDown,w,cx|this.focus_neighbor(0,1,w,cx)))
-            .on_action(cx.listener(|this,_:&EqualizeSplit,w,cx|this.equalize_panes(None,false,w,cx)))
-            .on_action(cx.listener(|this,_:&EqualizeAllSplits,w,cx|this.equalize_panes(None,true,w,cx)))
-            .on_action(cx.listener(|this,_:&EditChatterAppearance,w,cx|this.open_chatter_appearance(None,w,cx)))
-            .on_action(cx.listener(|this,_:&EditCustomCommands,w,cx|this.open_custom_commands(None,w,cx)))
-            .on_action(cx.listener(|this,_:&EditIgnores,w,cx|this.open_ignores(w,cx)))
-            .on_action(cx.listener(|this,_:&EditEventHighlights,w,cx|this.open_event_highlights(w,cx)))
-            .on_action(cx.listener(|this,_:&ChooseSetup,w,cx|this.open_setup(w,cx)))
-            .on_action(cx.listener(|this,_:&OpenWhispers,w,cx|this.open_whispers(None,w,cx)))
-            .on_action(cx.listener(|this,_:&ToggleStudio,_,cx|{this.studio_open = !this.studio_open;this.schedule_save(cx);cx.notify();}))
-            .on_action(cx.listener(|this,_:&ImportChatterino,w,cx|this.open_chatterino_import(w,cx)))
-            .on_action(cx.listener(|this,_:&SearchOpenChannels,w,cx|this.open_workspace_search(None,w,cx)))
-            .on_action(cx.listener(|this,_:&SwitchChannel,w,cx|this.open_switcher(w,cx)))
-            .on_action(cx.listener(|this,_:&ChannelDetails,w,cx|this.open_focused_channel_details(w,cx)))
-            .on_action(cx.listener(|this,_:&OpenActivity,w,cx|this.open_activity(w,cx)))
-            .on_action(cx.listener(|this,_:&MarkAllRead,_,cx|this.mark_all_read(cx)))
-            .on_action(cx.listener(|this,_:&FontLarger,w,cx|this.font_feedback(1.,false,w,cx)))
-            .on_action(cx.listener(|this,_:&FontSmaller,w,cx|this.font_feedback(-1.,false,w,cx)))
-            .on_action(cx.listener(|this,_:&ResetFont,w,cx|this.font_feedback(0.,true,w,cx)))
-            .on_action(cx.listener(|this,_:&NewTab,w,cx|this.new_tab(w,cx)))
-            .on_action(cx.listener(|this,_:&CloseTab,window,cx|{this.confirm_close_tab(this.tabs[this.active].id,window,cx);}))
-            .on_action(cx.listener(|this,_:&ReopenTab,window,cx|{this.reopen_tab(cx);this.focus.focus(window,cx);}))
-            .on_action(cx.listener(|this,_:&NextTab,w,cx|{this.cycle_tab(true,cx);this.focus.focus(w,cx);}))
-            .on_action(cx.listener(|this,_:&PreviousTab,w,cx|{this.cycle_tab(false,cx);this.focus.focus(w,cx);}))
-            .on_action(cx.listener(|this,_:&NextChannel,w,cx|this.cycle_channel(true,w,cx)))
-            .on_action(cx.listener(|this,_:&PreviousChannel,w,cx|this.cycle_channel(false,w,cx)))
-            .on_action(cx.listener(|this,_:&AddChannel,w,cx|this.open_add(false,w,cx)))
-            .on_action(cx.listener(|this,_:&RenameWorkspace,w,cx|this.open_add(true,w,cx)))
-            .on_action(cx.listener(|this,_:&MoveTabLeft,_,cx|this.move_tab(-1,cx)))
-            .on_action(cx.listener(|this,_:&MoveTabRight,_,cx|this.move_tab(1,cx)))
-            .on_action(cx.listener(|this,_:&ToggleSidebar,_,cx|{this.sidebar = !this.sidebar;this.schedule_save(cx);cx.notify();}))
-            .on_action(cx.listener(|this,_:&ToggleAppearance,_,cx|{this.settings = !this.settings;cx.notify();}))
-            .on_action(cx.listener(|this,_:&ToggleOrientation,_,cx|this.flip_split(cx)))
-            .on_action(cx.listener(|this,_:&ToggleLiveWorkspaces,_,cx|{this.live_workspaces = !this.live_workspaces;this.schedule_save(cx);cx.notify();}))
-            .on_action(cx.listener(|this,_:&ToggleLiveChannels,_,cx|{this.live_channels = !this.live_channels;this.schedule_save(cx);cx.notify();}))
-            .on_action(cx.listener(|this,_:&QuitWithoutSaving,_,cx|{if this.close_failed {cx.quit();}}))
-            .child(div().h_flex().h(px(32.)).flex_shrink_0().border_b_1().border_color(rgb(theme::BORDER))
-                .child(Button::new("sidebar").ghost().small().icon(if self.sidebar{IconName::PanelLeftClose}else{IconName::PanelLeftOpen}).tooltip("Workspaces").on_click(cx.listener(|this,_,_,cx|{this.sidebar = !this.sidebar;this.schedule_save(cx);cx.notify();})))
-                .child(div().h_flex().px_2().gap_1().window_control_area(WindowControlArea::Drag).child(div().text_color(rgb(0xA99CF4)).font_weight(FontWeight::BOLD).child("//"))
-                    .child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(11.)).child("JAWJACK")))
-                .child(div().flex_1().min_w(px(8.)).h_full().window_control_area(WindowControlArea::Drag))
-                .child({
-                    let unread = self.whispers.unread();
-                    Button::new("whispers-menu").ghost().xsmall()
-                        .icon(Icon::new(gpui_kit::assets::IconName::MessageCircle))
-                        .when(unread > 0, |b| b.label(crate::attention::count(unread)))
-                        .tooltip("Whispers")
-                        .on_click(cx.listener(|this, _, w, cx| this.open_whispers(None, w, cx)))
-                })
-                .child(Button::new("activity-menu").ghost().xsmall().icon(IconName::Bell).when(counts.1>0||counts.0>0,|b|b.label(if counts.1>0{format!("@{}",crate::attention::count(counts.1))}else{crate::attention::count(counts.0)})).tooltip("Highlights & unread · Ctrl+Shift+M").on_click(cx.listener(|this,_,w,cx|this.open_activity(w,cx))))
-                .child(Button::new("account-menu").ghost().xsmall().label(if self.account.read(cx).missing_scopes().is_empty(){self.account.read(cx).label()}else{format!("{} •",self.account.read(cx).label())}).tooltip(if self.account.read(cx).missing_scopes().is_empty(){"Twitch account"}else{"Twitch account · permissions can be updated"})
-                    .on_click(cx.listener(|this,_,window,cx|this.open_accounts(window,cx))))
-                .child(Button::new("settings-menu").ghost().small().icon(IconName::Settings).tooltip("Settings and workspace actions").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
-                    .menu("Switch channel · Ctrl+P",Box::new(SwitchChannel))
-                    .menu("Search open channels · Ctrl+Shift+F",Box::new(SearchOpenChannels))
-                    .menu("Highlights & unread",Box::new(OpenActivity))
-                    .menu("Mark all read",Box::new(MarkAllRead))
-                    .menu("Custom commands",Box::new(EditCustomCommands))
-                    .menu("Whispers",Box::new(OpenWhispers))
-                    .menu("Choose your setup…",Box::new(ChooseSetup))
-                    .menu("Event highlights",Box::new(EditEventHighlights))
-                    .menu("Ignores",Box::new(EditIgnores))
-                    .menu("Chatter nicknames & colors",Box::new(EditChatterAppearance))
-                    .menu("Appearance & memory",Box::new(ToggleAppearance))
-                    .menu_with_check("Only show live channel tabs",live_channels,Box::new(ToggleLiveChannels))
-                    .when_some(studio,|menu,open|menu.menu_with_check("Studio panel · Ctrl+Shift+S",open,Box::new(ToggleStudio)))
-                    .separator().menu("New workspace",Box::new(NewTab)).menu("Rename workspace",Box::new(RenameWorkspace))
-                    .menu("Close workspace…",Box::new(CloseTab)).menu_with_enable("Reopen workspace",Box::new(ReopenTab),can_reopen)
-                    .menu_with_enable("Move workspace up",Box::new(MoveTabLeft),can_left).menu_with_enable("Move workspace down",Box::new(MoveTabRight),can_right)
-                    .menu_with_check("Only show live workspaces",live_workspaces,Box::new(ToggleLiveWorkspaces))
-                    .separator().menu("Import from Chatterino…",Box::new(ImportChatterino))
-                    .when(can_discard,|menu|menu.separator().menu("Discard unsaved changes and quit",Box::new(QuitWithoutSaving)))))
-                .when(self.experience == roles::Experience::Streamer, |el| el.child(Button::new("studio-toggle").ghost().small()
-                    .icon(if self.studio_open { IconName::PanelRightClose } else { IconName::PanelRightOpen })
-                    .tooltip(if self.studio_open { "Hide Studio panel · Ctrl+Shift+S" } else { "Show Studio panel · Ctrl+Shift+S" })
-                    .on_click(cx.listener(|this,_,_,cx|{this.studio_open = !this.studio_open;this.schedule_save(cx);cx.notify();}))))
-                .child(caption_control("minimize",IconName::WindowMinimize,WindowControlArea::Min,false))
-                .child(caption_control("maximize",if window.is_maximized(){IconName::WindowRestore}else{IconName::WindowMaximize},WindowControlArea::Max,false))
-                .child(caption_control("close",IconName::WindowClose,WindowControlArea::Close,true)))
-            .child(div().h_flex().items_stretch().flex_1().min_h_0().overflow_hidden()
-                .when(sidebar_width > 0.1, |el| el.child(
-                    div().w(px(sidebar_width)).h_full().flex_shrink_0().overflow_hidden()
-                        .child(div().relative().left(px(sidebar_width - 190.)).w(px(190.)).h_full()
-                            .child(self.render_sidebar(reading_available,cx)))))
-                .child(div().v_flex().flex_1().h_full().min_w_0().min_h_0()
-                    .when(self.adding,|el|el.child(div().v_flex().p_3().gap_2().bg(rgb(theme::ELEVATED)).border_b_1().border_color(rgb(theme::BORDER))
-                        .child(div().text_size(px(12.)).child(if self.renaming{"Rename workspace"}else{"Add a Twitch channel to this workspace"}))
-                        .child(div().h_flex().gap_2().child(div().flex_1().child(Input::new(&self.channel_input)))
-                            .child(Button::new("accept-channel").label(if self.renaming{"Save"}else{"Add channel"}).on_click(cx.listener(|this,_,w,cx|this.accept_input(w,cx))))
-                            .child(Button::new("cancel-add").ghost().label("Cancel").on_click(cx.listener(|this,_,window,cx|{this.adding=false;this.focus.focus(window,cx);cx.notify();}))))
-                        .when_some(self.add_error.clone(),|el,error|el.child(div().text_size(px(12.)).text_color(rgb(0xF29D9D)).child(error)))))
-                    .child(div().h_flex().items_stretch().flex_1().min_h_0().overflow_hidden().p(px(2.)).child(div().id("channel-dock").relative().flex_1().h_full().min_w_0().min_h_0()
-                        .child(content)
+        div()
+            .id("workspace")
+            .relative()
+            .track_focus(&self.focus)
+            .key_context("ChatWorkspace")
+            .v_flex()
+            .size_full()
+            .font_family("Segoe UI")
+            .text_size(px(13.))
+            .bg(rgb(theme::SHELL))
+            .text_color(rgb(theme::TEXT))
+            .capture_any_mouse_down(cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                if event.button == MouseButton::Left {
+                    cx.stop_active_drag(window);
+                    this.pointer_owner = Some(this.control_pointer_active);
+                    this.release_position = None;
+                }
+            }))
+            .capture_any_mouse_up(cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                if event.button == MouseButton::Left {
+                    let valid = this.pointer_owner.take() == Some(this.control_pointer_active);
+                    this.release_position = valid.then_some(event.position);
+                    this.release_from_control = this.control_pointer_active;
+                    if !valid {
+                        cx.stop_active_drag(window);
+                        this.drop_edge = None;
+                        this.drop_target = None;
+                        cx.notify();
+                    }
+                }
+            }))
+            .child(
+                canvas(
+                    |_, _, _| (),
+                    move |_, _, window, _| {
+                        let zoom = pointer_guard.clone();
+                        window.on_mouse_event(
+                            move |event: &ScrollWheelEvent, phase, window, cx| {
+                                if !phase.capture()
+                                    || !event.modifiers.control
+                                    || window.has_active_dialog(cx)
+                                {
+                                    return;
+                                }
+                                let delta = match event.delta {
+                                    ScrollDelta::Lines(p) => p.y.signum(),
+                                    ScrollDelta::Pixels(p) => f32::from(p.y) / 40.,
+                                };
+                                let _ = zoom.update(cx, |this, cx| {
+                                    this.zoom_accumulator += delta;
+                                    let steps = this.zoom_accumulator.trunc().clamp(-4., 4.);
+                                    if steps != 0. {
+                                        this.zoom_accumulator -= steps;
+                                        this.font_feedback(steps, false, window, cx);
+                                    }
+                                });
+                                window.prevent_default();
+                                cx.stop_propagation();
+                            },
+                        );
+                        let owner = pointer_guard.clone();
+                        window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+                            if !phase.capture() {
+                                return;
+                            }
+                            let _ = owner.update(cx, |this, cx| {
+                                let crossed = this
+                                    .pointer_owner
+                                    .is_some_and(|source| source != this.control_pointer_active);
+                                if crossed || event.pressed_button != Some(MouseButton::Left) {
+                                    this.pointer_owner = None;
+                                    this.release_position = None;
+                                    this.drop_edge = None;
+                                    this.drop_target = None;
+                                    if cx.stop_active_drag(window) {
+                                        cx.notify();
+                                    }
+                                    // Also clear a framework drag created later in this event from a stale down.
+                                    window.defer(cx, |window, cx| {
+                                        cx.stop_active_drag(window);
+                                    });
+                                }
+                            });
+                        });
+                    },
+                )
+                .absolute()
+                .size_0(),
+            )
+            .on_action(cx.listener(|this, _: &crate::FindChat, w, cx| {
+                let panes = this.visible_panes(cx);
+                let selected = this.selected_channel.as_ref();
+                if let Some(pane) = panes
+                    .iter()
+                    .find(|p| Some(&p.read(cx).name.to_string()) == selected)
+                    .or(panes.first())
+                {
+                    pane.update(cx, |p, cx| p.open_search(w, cx));
+                }
+                cx.stop_propagation();
+            }))
+            .on_action(cx.listener(|this, _: &FocusNextPane, w, cx| this.cycle_pane(true, w, cx)))
+            .on_action(
+                cx.listener(|this, _: &FocusPreviousPane, w, cx| this.cycle_pane(false, w, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &FocusPaneLeft, w, cx| this.focus_neighbor(-1, 0, w, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &FocusPaneRight, w, cx| this.focus_neighbor(1, 0, w, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &FocusPaneUp, w, cx| this.focus_neighbor(0, -1, w, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &FocusPaneDown, w, cx| this.focus_neighbor(0, 1, w, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &EqualizeSplit, w, cx| {
+                    this.equalize_panes(None, false, w, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &EqualizeAllSplits, w, cx| {
+                this.equalize_panes(None, true, w, cx)
+            }))
+            .on_action(cx.listener(|this, _: &EditChatterAppearance, w, cx| {
+                this.open_chatter_appearance(None, w, cx)
+            }))
+            .on_action(cx.listener(|this, _: &EditCustomCommands, w, cx| {
+                this.open_custom_commands(None, w, cx)
+            }))
+            .on_action(cx.listener(|this, _: &EditIgnores, w, cx| this.open_ignores(w, cx)))
+            .on_action(
+                cx.listener(|this, _: &EditEventHighlights, w, cx| {
+                    this.open_event_highlights(w, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &ChooseSetup, w, cx| this.open_setup(w, cx)))
+            .on_action(cx.listener(|this, _: &OpenWhispers, w, cx| this.open_whispers(None, w, cx)))
+            .on_action(cx.listener(|this, _: &ToggleStudio, _, cx| {
+                this.studio_open = !this.studio_open;
+                this.schedule_save(cx);
+                cx.notify();
+            }))
+            .on_action(
+                cx.listener(|this, _: &ImportChatterino, w, cx| this.open_chatterino_import(w, cx)),
+            )
+            .on_action(cx.listener(|this, _: &SearchOpenChannels, w, cx| {
+                this.open_workspace_search(None, w, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SwitchChannel, w, cx| this.open_switcher(w, cx)))
+            .on_action(cx.listener(|this, _: &ChannelDetails, w, cx| {
+                this.open_focused_channel_details(w, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenActivity, w, cx| this.open_activity(w, cx)))
+            .on_action(cx.listener(|this, _: &MarkAllRead, _, cx| this.mark_all_read(cx)))
+            .on_action(
+                cx.listener(|this, _: &FontLarger, w, cx| this.font_feedback(1., false, w, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &FontSmaller, w, cx| this.font_feedback(-1., false, w, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ResetFont, w, cx| this.font_feedback(0., true, w, cx)),
+            )
+            .on_action(cx.listener(|this, _: &NewTab, w, cx| this.new_tab(w, cx)))
+            .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
+                this.confirm_close_tab(this.tabs[this.active].id, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ReopenTab, window, cx| {
+                this.reopen_tab(cx);
+                this.focus.focus(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &NextTab, w, cx| {
+                this.cycle_tab(true, cx);
+                this.focus.focus(w, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PreviousTab, w, cx| {
+                this.cycle_tab(false, cx);
+                this.focus.focus(w, cx);
+            }))
+            .on_action(cx.listener(|this, _: &NextChannel, w, cx| this.cycle_channel(true, w, cx)))
+            .on_action(
+                cx.listener(|this, _: &PreviousChannel, w, cx| this.cycle_channel(false, w, cx)),
+            )
+            .on_action(cx.listener(|this, _: &AddChannel, w, cx| this.open_add(false, w, cx)))
+            .on_action(cx.listener(|this, _: &RenameWorkspace, w, cx| this.open_add(true, w, cx)))
+            .on_action(cx.listener(|this, _: &MoveTabLeft, _, cx| this.move_tab(-1, cx)))
+            .on_action(cx.listener(|this, _: &MoveTabRight, _, cx| this.move_tab(1, cx)))
+            .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| {
+                this.sidebar = !this.sidebar;
+                this.schedule_save(cx);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ToggleAppearance, w, cx| this.toggle_settings(w, cx)))
+            // Esc closes Settings, unless an editor opened from it is on top.
+            .capture_key_down(cx.listener(|this, e: &KeyDownEvent, w, cx| {
+                if this.settings && e.keystroke.key == "escape" && !w.has_active_dialog(cx) {
+                    this.settings = false;
+                    this.focus.focus(w, cx);
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            }))
+            .on_action(cx.listener(|this, _: &ToggleOrientation, _, cx| this.flip_split(cx)))
+            .on_action(cx.listener(|this, _: &ToggleLiveWorkspaces, _, cx| {
+                this.live_workspaces = !this.live_workspaces;
+                this.schedule_save(cx);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ToggleLiveChannels, _, cx| {
+                this.live_channels = !this.live_channels;
+                this.schedule_save(cx);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &QuitWithoutSaving, _, cx| {
+                if this.close_failed {
+                    cx.quit();
+                }
+            }))
+            .child(
+                div()
+                    .h_flex()
+                    .h(px(32.))
+                    .flex_shrink_0()
+                    .border_b_1()
+                    .border_color(rgb(theme::BORDER))
+                    .child(
+                        Button::new("sidebar")
+                            .ghost()
+                            .small()
+                            .icon(if self.sidebar {
+                                IconName::PanelLeftClose
+                            } else {
+                                IconName::PanelLeftOpen
+                            })
+                            .tooltip("Workspaces")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.sidebar = !this.sidebar;
+                                this.schedule_save(cx);
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .h_flex()
+                            .px_2()
+                            .gap_1()
+                            .window_control_area(WindowControlArea::Drag)
+                            .child(
+                                div()
+                                    .text_color(rgb(0xA99CF4))
+                                    .font_weight(FontWeight::BOLD)
+                                    .child("//"),
+                            )
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_size(px(11.))
+                                    .child("JAWJACK"),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(8.))
+                            .h_full()
+                            .window_control_area(WindowControlArea::Drag),
+                    )
+                    .child({
+                        let unread = self.whispers.unread();
+                        Button::new("whispers-menu")
+                            .ghost()
+                            .xsmall()
+                            .icon(Icon::new(gpui_kit::assets::IconName::MessageCircle))
+                            .when(unread > 0, |b| b.label(crate::attention::count(unread)))
+                            .tooltip("Whispers")
+                            .on_click(cx.listener(|this, _, w, cx| this.open_whispers(None, w, cx)))
+                    })
+                    .child(
+                        Button::new("activity-menu")
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::Bell)
+                            .when(counts.1 > 0 || counts.0 > 0, |b| {
+                                b.label(if counts.1 > 0 {
+                                    format!("@{}", crate::attention::count(counts.1))
+                                } else {
+                                    crate::attention::count(counts.0)
+                                })
+                            })
+                            .tooltip("Highlights & unread · Ctrl+Shift+M")
+                            .on_click(cx.listener(|this, _, w, cx| this.open_activity(w, cx))),
+                    )
+                    .child(
+                        Button::new("account-menu")
+                            .ghost()
+                            .xsmall()
+                            .label(if self.account.read(cx).missing_scopes().is_empty() {
+                                self.account.read(cx).label()
+                            } else {
+                                format!("{} •", self.account.read(cx).label())
+                            })
+                            .tooltip(if self.account.read(cx).missing_scopes().is_empty() {
+                                "Twitch account"
+                            } else {
+                                "Twitch account · permissions can be updated"
+                            })
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.open_accounts(window, cx)),
+                            ),
+                    )
+                    .child(
+                        Button::new("settings-menu")
+                            .ghost()
+                            .small()
+                            .icon(IconName::Settings)
+                            .selected(self.settings)
+                            .tooltip("Settings")
+                            .on_click(cx.listener(|this, _, w, cx| this.toggle_settings(w, cx))),
+                    )
+                    .when(self.experience == roles::Experience::Streamer, |el| {
+                        el.child(
+                            Button::new("studio-toggle")
+                                .ghost()
+                                .small()
+                                .icon(if self.studio_open {
+                                    IconName::PanelRightClose
+                                } else {
+                                    IconName::PanelRightOpen
+                                })
+                                .tooltip(if self.studio_open {
+                                    "Hide Studio panel · Ctrl+Shift+S"
+                                } else {
+                                    "Show Studio panel · Ctrl+Shift+S"
+                                })
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.studio_open = !this.studio_open;
+                                    this.schedule_save(cx);
+                                    cx.notify();
+                                })),
                         )
-                        // Studio slides in from the right edge and fades with its width.
-                        .when(studio_width > 0.1, |el| el.child(
-                            div().w(px(studio_width)).h_full().flex_shrink_0().overflow_hidden()
-                                .opacity((studio_width / roles::STUDIO_WIDTH).clamp(0., 1.))
-                                .child(self.render_studio(window, cx))))
-                        .when(self.settings,|el|el.child(div().absolute().top(px(34.)).right(px(4.)).w(px((f32::from(window.viewport_size().width)-8.).min(300.))).max_h(px(f32::from(window.viewport_size().height)-60.)).id("settings-card").occlude().overflow_hidden().v_flex().bg(rgb(theme::PANEL)).border_1().border_color(rgb(theme::BORDER)).rounded(px(6.))
-                            .child(div().h_flex().flex_shrink_0().p_2().gap_2().border_b_1().border_color(rgb(theme::BORDER))
-                                .child(div().flex_1().font_weight(FontWeight::SEMIBOLD).child("Appearance & memory"))
-                                .child(Button::new("close-settings").ghost().small().label("Done").on_click(cx.listener(|this,_,w,cx|{this.settings=false;this.focus.focus(w,cx);cx.notify();}))))
-                            .child(div().id("settings-scroll").min_h_0().overflow_y_scroll().v_flex().p_3().gap_2()
-                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Dark Studio · Segoe UI"))
-                            .child(div().h_flex().gap_2().child(Button::new("font-minus").small().label("A−").on_click(cx.listener(|this,_,_,cx|this.change_font(-1.,cx))))
-                                .child(format!("{} px",self.font_size as u32)).child(Button::new("font-reset").small().label("Reset").tooltip("Ctrl+0").on_click(cx.listener(|this,_,w,cx|this.font_feedback(0.,true,w,cx)))).child(Button::new("font-plus").small().label("A+").on_click(cx.listener(|this,_,_,cx|this.change_font(1.,cx)))))
-                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Ctrl+wheel or Ctrl+plus/minus · Ctrl+0 resets"))
-                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Pause scrolling"))
-                            .child(div().h_flex().flex_wrap().gap_1().children([(0u8,"Manual"),(1,"On hover"),(2,"Alt + hover")].into_iter().map(|(mode,label)|Button::new(("pause-mode",mode as usize)).small().label(label).selected(self.pause_mode==mode).when(self.pause_mode==mode,|b|b.primary()).on_click(cx.listener(move|this,_,w,cx|this.change_pause_mode(mode,w,cx))))))
-                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Ctrl+Space toggles pause. Incoming chat keeps arriving. Scrolling up or selecting text keeps your reading position."))
-                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Timestamps"))
-                            .child(div().h_flex().flex_wrap().gap_1().children([(0u8,"Off"),(1,"Hours/minutes"),(2,"With seconds")].into_iter().map(|(mode,label)|Button::new(("timestamps",mode as usize)).small().label(label).selected(self.timestamps==mode).when(self.timestamps==mode,|b|b.primary()).on_click(cx.listener(move|this,_,_,cx|this.change_timestamps(mode,cx))))))
-                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Twitch event time in your local timezone. Hover for date and UTC offset."))
-                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Highlights"))
-                            .child(Input::new(&self.highlight_input).small())
-                            .child(Button::new("edit-highlight-rules").small().label("Manage highlight rules…").on_click(cx.listener(|this,_,w,cx|this.open_highlight_rules(w,cx))))
-                            .child(Button::new("edit-event-highlights").small().label("Event highlights (mentions, raids, subs…)").on_click(cx.listener(|this,_,w,cx|this.open_event_highlights(w,cx))))
-                            .child(Button::new("edit-ignores").small().label("Manage ignores…").on_click(cx.listener(|this,_,w,cx|this.open_ignores(w,cx))))
-                            .child(Button::new("import-chatterino").small().label("Import from Chatterino…").on_click(cx.listener(|this,_,w,cx|this.open_chatterino_import(w,cx))))
-                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Your mentions and replies are included. Add up to 8 words/phrases (40 characters each). Whole-word, case-insensitive; no alerts or sounds."))
-                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Chat memory"))
-                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Newest messages per channel. Older history is released; drafts stay saved."))
-                            .child(div().h_flex().flex_wrap().gap_1().children([500usize,1000,2000,5000,10_000].into_iter().map(|limit|
-                                Button::new(("history-limit",limit)).small().label(if limit<1000 {limit.to_string()}else{format!("{}k",limit/1000)})
-                                    .selected(limit==self.history_limit).when(limit==self.history_limit,|b|b.primary()).on_click(cx.listener(move|this,_,_,cx|this.change_history_limit(limit,cx)))
-                            )))
-                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Image cache is separately bounded to 48 MiB. Visible chat rows are drawn on demand."))
-                            .child(Button::new("recent-messages").small().label(if self.recent_enabled { "✓ Load recent messages" } else { "Load recent messages" }).selected(self.recent_enabled).when(self.recent_enabled,|b|b.primary())
-                                .on_click(cx.listener(|this,_,_,cx|{this.recent_enabled = !this.recent_enabled;this.schedule_save(cx);cx.notify();})))
-                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Shows recent chat when a channel opens, from {} (the service Chatterino uses). It receives the channel names you open.", crate::recent_messages::SERVICE)))
-                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Live alerts"))
-                            .child(Button::new("live-notify-all").small().label(if self.live_notify_all { "✓ Every open channel" } else { "Every open channel" }).selected(self.live_notify_all).when(self.live_notify_all,|b|b.primary())
-                                .on_click(cx.listener(|this,_,_,cx|{this.live_notify_all = !this.live_notify_all;this.schedule_save(cx);cx.notify();})))
-                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("A Windows notification when a channel goes live. Otherwise only channels set to Notify when live in their tab menu ({} now).", self.live_notify.len())))
-                            .child(Button::new("seventv-activity").small().label(if self.presence.enabled { "✓ Share 7TV activity" } else { "Share 7TV activity" }).selected(self.presence.enabled).when(self.presence.enabled,|b|b.primary())
-                                .on_click(cx.listener(|this,_,_,cx|{this.presence.enabled = !this.presence.enabled;this.schedule_save(cx);cx.notify();})))
-                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("After you chat, tells 7TV you're in that channel so other 7TV users see your paint, badge and personal emotes (as Chatterino7 does). At most once a minute per channel."))
-                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Tabs, splits, channel drafts and appearance are saved locally."))
-                            .child(div().font_weight(FontWeight::SEMIBOLD).child("Updates"))
-                            .child(div().text_size(px(12.)).child(self.render_updates(cx)))
-                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(self.updates.detail()))
-                            .child(Button::new("update-auto").small().label(if self.updates.enabled { "✓ Check automatically" } else { "Check automatically" }).selected(self.updates.enabled).when(self.updates.enabled,|b|b.primary())
-                                .on_click(cx.listener(|this,_,_,cx|{this.updates.enabled = !this.updates.enabled;this.schedule_save(cx);cx.notify();})))
-                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Checks apps.zombie.digital shortly after launch and every 6 hours. Nothing installs without your click."))
-                            ))))))
-            .child(div().h_flex().h(px(20.)).flex_shrink_0().px_2().gap_2().border_t_1().border_color(rgb(theme::BORDER)).text_size(px(10.)).text_color(rgb(theme::MUTED))
-                .child(div().flex_1().min_w_0().overflow_hidden().child(live_status)).child(self.notice.as_ref().filter(|(_, at)| at.elapsed() < Duration::from_secs(12)).map(|(text, _)| text.clone()).unwrap_or_else(|| self.save_status.clone())))
+                    })
+                    .child(caption_control(
+                        "minimize",
+                        IconName::WindowMinimize,
+                        WindowControlArea::Min,
+                        false,
+                    ))
+                    .child(caption_control(
+                        "maximize",
+                        if window.is_maximized() {
+                            IconName::WindowRestore
+                        } else {
+                            IconName::WindowMaximize
+                        },
+                        WindowControlArea::Max,
+                        false,
+                    ))
+                    .child(caption_control(
+                        "close",
+                        IconName::WindowClose,
+                        WindowControlArea::Close,
+                        true,
+                    )),
+            )
+            .child(
+                div()
+                    .h_flex()
+                    .items_stretch()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .when(sidebar_width > 0.1, |el| {
+                        el.child(
+                            div()
+                                .w(px(sidebar_width))
+                                .h_full()
+                                .flex_shrink_0()
+                                .overflow_hidden()
+                                .child(
+                                    div()
+                                        .relative()
+                                        .left(px(sidebar_width - 190.))
+                                        .w(px(190.))
+                                        .h_full()
+                                        .child(self.render_sidebar(reading_available, cx)),
+                                ),
+                        )
+                    })
+                    .child(
+                        div()
+                            .v_flex()
+                            .flex_1()
+                            .h_full()
+                            .min_w_0()
+                            .min_h_0()
+                            .when(self.adding, |el| {
+                                el.child(
+                                    div()
+                                        .v_flex()
+                                        .p_3()
+                                        .gap_2()
+                                        .bg(rgb(theme::ELEVATED))
+                                        .border_b_1()
+                                        .border_color(rgb(theme::BORDER))
+                                        .child(div().text_size(px(12.)).child(if self.renaming {
+                                            "Rename workspace"
+                                        } else {
+                                            "Add a Twitch channel to this workspace"
+                                        }))
+                                        .child(
+                                            div()
+                                                .h_flex()
+                                                .gap_2()
+                                                .child(
+                                                    div()
+                                                        .flex_1()
+                                                        .child(Input::new(&self.channel_input)),
+                                                )
+                                                .child(
+                                                    Button::new("accept-channel")
+                                                        .label(if self.renaming {
+                                                            "Save"
+                                                        } else {
+                                                            "Add channel"
+                                                        })
+                                                        .on_click(cx.listener(|this, _, w, cx| {
+                                                            this.accept_input(w, cx)
+                                                        })),
+                                                )
+                                                .child(
+                                                    Button::new("cancel-add")
+                                                        .ghost()
+                                                        .label("Cancel")
+                                                        .on_click(cx.listener(
+                                                            |this, _, window, cx| {
+                                                                this.adding = false;
+                                                                this.focus.focus(window, cx);
+                                                                cx.notify();
+                                                            },
+                                                        )),
+                                                ),
+                                        )
+                                        .when_some(self.add_error.clone(), |el, error| {
+                                            el.child(
+                                                div()
+                                                    .text_size(px(12.))
+                                                    .text_color(rgb(0xF29D9D))
+                                                    .child(error),
+                                            )
+                                        }),
+                                )
+                            })
+                            .child(
+                                div()
+                                    .h_flex()
+                                    .items_stretch()
+                                    .flex_1()
+                                    .min_h_0()
+                                    .overflow_hidden()
+                                    .p(px(2.))
+                                    .child(
+                                        div()
+                                            .id("channel-dock")
+                                            .relative()
+                                            .flex_1()
+                                            .h_full()
+                                            .min_w_0()
+                                            .min_h_0()
+                                            .child(content),
+                                    )
+                                    // Studio slides in from the right edge and fades with its width.
+                                    .when(studio_width > 0.1, |el| {
+                                        el.child(
+                                            div()
+                                                .w(px(studio_width))
+                                                .h_full()
+                                                .flex_shrink_0()
+                                                .overflow_hidden()
+                                                .opacity(
+                                                    (studio_width / roles::STUDIO_WIDTH)
+                                                        .clamp(0., 1.),
+                                                )
+                                                .child(self.render_studio(window, cx)),
+                                        )
+                                    }),
+                            ),
+                    ),
+            )
+            .when(self.settings, |el| {
+                el.child(self.render_settings(window, cx))
+            })
+            .child(
+                div()
+                    .h_flex()
+                    .h(px(20.))
+                    .flex_shrink_0()
+                    .px_2()
+                    .gap_2()
+                    .border_t_1()
+                    .border_color(rgb(theme::BORDER))
+                    .text_size(px(10.))
+                    .text_color(rgb(theme::MUTED))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .child(live_status),
+                    )
+                    .child(
+                        self.notice
+                            .as_ref()
+                            .filter(|(_, at)| at.elapsed() < Duration::from_secs(12))
+                            .map(|(text, _)| text.clone())
+                            .unwrap_or_else(|| self.save_status.clone()),
+                    ),
+            )
     }
 }
 

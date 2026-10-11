@@ -22,7 +22,15 @@ gpui_kit::assets::icon_assets!(
         ChartBar,
         Trophy,
         Lock,
-        MessageCircle
+        MessageCircle,
+        SlidersHorizontal,
+        MessageSquareText,
+        Highlighter,
+        BellRing,
+        Plug,
+        Keyboard,
+        Download,
+        Palette
     ]
 );
 
