@@ -268,6 +268,8 @@ pub struct MessageScroller {
     scrollbar: bool,
     jump_button: bool,
     jump_button_label: SharedString,
+    /// Ticks along the right edge: (position 0..1 down the list, colour).
+    markers: Vec<(f32, u32)>,
 }
 
 impl MessageScroller {
@@ -298,7 +300,15 @@ impl MessageScroller {
             scrollbar: true,
             jump_button: true,
             jump_button_label: "Jump to latest".into(),
+            markers: Vec::new(),
         }
+    }
+
+    /// Mark rows on the scrollbar track (mentions, highlights, search hits),
+    /// as fractions of the list from top (0) to bottom (1).
+    pub fn markers(mut self, markers: Vec<(f32, u32)>) -> Self {
+        self.markers = markers;
+        self
     }
 
     /// Enable or disable the virtual-list scrollbar.
@@ -499,6 +509,28 @@ impl RenderOnce for MessageScroller {
             // wheel events while the list can move and chains to the ancestor
             // only at the edges.
             .child(ScrollableMask::new(Axis::Vertical, &list_state).id(root_id.clone()))
+            // Thin ticks on the track; they don't take the pointer, so the scrollbar still works.
+            .when(!self.markers.is_empty(), |this| {
+                this.child(
+                    div()
+                        .absolute()
+                        .top(px(8.))
+                        .bottom(px(8.))
+                        .right(px(1.))
+                        .w(px(4.))
+                        .children(self.markers.iter().map(|(at, color)| {
+                            div()
+                                .absolute()
+                                .left_0()
+                                .right_0()
+                                .top(gpui_kit::relative(at.clamp(0., 1.)))
+                                .h(px(2.))
+                                .rounded(px(1.))
+                                .bg(gpui_kit::rgb(*color))
+                                .opacity(0.9)
+                        })),
+                )
+            })
             .when(self.jump_button && jump_button_visibility > 0., |this| {
                 let state = self.state.clone();
 

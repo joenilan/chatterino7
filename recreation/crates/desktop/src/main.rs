@@ -658,6 +658,33 @@ impl Render for ChannelPane {
         let jump_pulse = self.jump_pulse;
         let highlight_rows = self.attention.highlights.clone();
         let highlight_colors = self.attention.colors.clone();
+        // Scrollbar ticks: highlights in their colour, search hits in lilac.
+        let markers = {
+            let count = self.timeline.borrow().messages().len().max(1);
+            let first = (self.next_id - count.min(self.next_id)) as u64;
+            let at = |row: u64| (row.saturating_sub(first) as f32 + 0.5) / count as f32;
+            let mut markers: Vec<(f32, u32)> = highlight_rows
+                .iter()
+                .filter(|row| **row >= first)
+                .map(|row| {
+                    let color = highlight_colors.get(row).copied().unwrap_or(0);
+                    (at(*row), crate::highlight_rules::COLORS[color.min(5)].1)
+                })
+                .collect();
+            if self.search.open {
+                markers.extend(
+                    self.search
+                        .hits
+                        .keys()
+                        .filter(|row| **row >= first)
+                        .map(|row| (at(*row), theme::ACCENT)),
+                );
+            }
+            // A tall list can have thousands; keep the newest few hundred.
+            let excess = markers.len().saturating_sub(400);
+            markers.drain(..excess);
+            markers
+        };
         let presented_row = self.presented_row.clone();
         let read_eligible = self.read_eligible.clone();
         let search_current = self.search.open.then_some(self.search.current).flatten();
@@ -914,6 +941,7 @@ impl Render for ChannelPane {
                         })
                         .flex_1()
                         .min_h_0()
+                        .markers(markers)
                         .with_jump_button_renderer(move |button| {
                             // Show how much arrived below, like Chatterino's "more messages below".
                             if unread_below == 0 { button } else { button.label(format!("{} new", if unread_below > 999 { "999+".to_string() } else { unread_below.to_string() })) }

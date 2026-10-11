@@ -90,7 +90,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | RD06 | Advanced and global search | Part | Per-channel and all-open-channels search with from:/from-id:/badge:/has:link|emote|gif|bits|reply/is:deleted|notice|mod|vip|sub|broadcaster|first/subtier:1-3/regex:, negation and quoted phrases; Mods/Subs/First chips (is:mod verified: 41 matches in #3putt_). in:channel and closed-channel history pending. | messages/search |
 | RD07 | Replies and retained conversations | Part | Native target/cancel/persistence/dialog/jump accepted; actual send and retained-root/deletion edge acceptance remain. | messages/MessageThread; widgets/dialogs/ReplyThreadPopup.cpp |
 | RD08 | Followed or detached threads | Part | Retained reply conversations with Jump; follow/notify and pinned thread views pending. | messages/MessageThread; ReplyThreadPopup.cpp |
-| RD09 | Read markers and scrollbar annotations | Part | Last-read divider and Highlights & unread navigation; scrollbar markers pending. | widgets/Scrollbar.cpp; ChannelView.cpp |
+| RD09 | Read markers and scrollbar annotations | Done | Last-read divider, Highlights & unread navigation, and scrollbar ticks for highlights (their colour) and search hits (lilac), newest 400 (verified with is:mod in #3putt_). | widgets/Scrollbar.cpp; ChannelView.cpp |
 | RD10 | Moderated content policy | Part | Existing views resolve current data; future logs/previews/alerts must not resurrect deleted/private content. | messages/MessageFlag.hpp; ChannelView.cpp |
 
 ### Workspaces and windows
