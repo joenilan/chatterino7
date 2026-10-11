@@ -2,7 +2,10 @@
 use crate::{ChannelPane, theme};
 use chat_core::Timeline;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::{Disableable, Sizable, StyledExt, button::Button};
+use gpui_kit::component::{
+    Disableable, IconName, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+};
 use gpui_kit::*;
 use std::{collections::BTreeMap, ops::Range, rc::Rc};
 
@@ -395,7 +398,7 @@ impl ChannelPane {
             .capture_action(cx.listener(|this,_:&gpui_kit::base::input::Escape,w,cx|{this.close_search(w,cx);cx.stop_propagation();}))
             .child(div().h_flex().gap_1().min_w_0()
                 .child(div().flex_1().min_w_0().child(Input::new(&self.search.input).small()))
-                .child(Button::new("search-close").xsmall().label("×").tooltip("Close search · Escape").on_click(cx.listener(|this,_,w,cx|this.close_search(w,cx)))))
+                .child(Button::new("search-close").ghost().xsmall().icon(IconName::Close).tooltip("Close search · Escape").on_click(cx.listener(|this,_,w,cx|this.close_search(w,cx)))))
             .child(div().h_flex().flex_wrap().gap_1().children(filters)
                 .child(Button::new("search-all-channels").xsmall().label("All chats").tooltip("Search all open channels · Ctrl+Shift+F").on_click(cx.listener(|this,_,_,cx|cx.emit(crate::PaneEvent::SearchAll(this.search.query.clone())))))
                 .child(Button::new("search-help").xsmall().label("?").tooltip("Combine from:username, badge:moderator (Twitch), has:link/emote/reply/gif/bits, is:notice/deleted, quoted phrases and -excluded words. Search is local to retained chat.")))

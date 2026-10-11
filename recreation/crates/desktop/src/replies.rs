@@ -2,7 +2,11 @@
 use crate::{ChannelPane, PaneEvent, theme};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    component::{Sizable, StyledExt, WindowExt, button::Button, notification::Notification},
+    component::{
+        IconName, Sizable, StyledExt, WindowExt,
+        button::{Button, ButtonVariants},
+        notification::Notification,
+    },
     *,
 };
 use serde_json::{Value, json};
@@ -233,8 +237,9 @@ impl ChannelPane {
                 })
                 .child(
                     Button::new("reply-cancel")
+                        .ghost()
                         .xsmall()
-                        .label("×")
+                        .icon(IconName::Close)
                         .tooltip("Cancel reply; keep draft · Escape")
                         .on_click(cx.listener(|p, _, w, cx| p.cancel_reply(w, cx))),
                 )

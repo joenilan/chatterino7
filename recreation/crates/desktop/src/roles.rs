@@ -7,6 +7,8 @@
 use super::*;
 use crate::twitch_actions::Request;
 
+pub const STUDIO_WIDTH: f32 = 300.;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Experience {
     #[default]
@@ -354,13 +356,6 @@ impl Workbench {
         }
         let detail = self.streams.detail(&own).map(|(info, _)| info.clone());
         let owner = cx.entity().downgrade();
-        let section = |title: &'static str| {
-            div()
-                .pt_1()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_size(px(12.))
-                .child(title)
-        };
         let action = |id: &'static str,
                       label: &'static str,
                       request: Request,
@@ -429,74 +424,95 @@ impl Workbench {
         let raid_owner = owner.clone();
         let raid_pane = pane.clone();
         let raid_own = own.clone();
+        let card = |title: &'static str| {
+            div()
+                .v_flex()
+                .gap_2()
+                .p_2()
+                .rounded(px(8.))
+                .bg(rgb(theme::ELEVATED))
+                .border_1()
+                .border_color(rgb(theme::BORDER))
+                .child(
+                    div()
+                        .text_size(px(10.))
+                        .text_color(rgb(theme::MUTED))
+                        .child(title.to_uppercase()),
+                )
+        };
+        let live = detail.as_ref().is_some_and(|i| i.live);
+        let (pill_color, pill_text) = match &detail {
+            Some(info) if info.live => (
+                theme::STREAM_LIVE,
+                format!(
+                    "● LIVE{}",
+                    info.uptime().map(|u| format!(" · {u}")).unwrap_or_default()
+                ),
+            ),
+            Some(_) => (theme::STREAM_OFFLINE, "○ OFFLINE".into()),
+            None => (theme::STREAM_UNKNOWN, "◌ CHECKING".into()),
+        };
         div()
             .id("studio")
             .v_flex()
-            .w(px(300.))
+            .w(px(STUDIO_WIDTH))
             .h_full()
             .flex_shrink_0()
             .gap_2()
-            .p_3()
+            .p_2()
             .overflow_y_scroll()
             .bg(rgb(theme::PANEL))
             .border_l_1()
             .border_color(rgb(theme::BORDER))
             .child(
-                div().h_flex().items_center().gap_2()
-                    .child(div().flex_1().font_weight(FontWeight::SEMIBOLD).child(format!("Studio · #{own}")))
-                    .child(Button::new("studio-close").ghost().xsmall().label("×").tooltip("Hide Studio (titlebar button reopens)")
+                div().h_flex().items_center().gap_2().px_1()
+                    .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().font_weight(FontWeight::SEMIBOLD).child(format!("Studio · #{own}")))
+                    .child(Button::new("studio-close").ghost().xsmall().icon(IconName::PanelRightClose).tooltip("Hide Studio · Ctrl+Shift+S")
                         .on_click(cx.listener(|this, _, _, cx| { this.studio_open = false; this.schedule_save(cx); cx.notify(); }))),
             )
-            .child(div().text_size(px(12.)).child(match &detail {
-                Some(info) if info.live => format!(
-                    "● Live{} · {} viewers · {}",
-                    info.uptime().map(|u| format!(" {u}")).unwrap_or_default(),
-                    info.viewers,
-                    info.category
-                ),
-                Some(_) => "Offline".into(),
-                None => "Stream status loading…".into(),
-            }))
-            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
-                pane.as_ref().map(|p| format!("Chat · {}", p.read(cx).connection)).unwrap_or_default(),
-            ))
-            .child(section("Stream info"))
-            .children(self.studio_editor.clone())
-            .child(section("Chat modes"))
-            .child(match &pane {
+            .child(card("Broadcast status")
+                .child(div().h_flex().items_center().gap_2()
+                    .child(div().px_2().py(px(2.)).rounded(px(10.)).text_size(px(11.)).font_weight(FontWeight::SEMIBOLD).text_color(rgb(pill_color)).border_1().border_color(rgb(pill_color)).child(pill_text))
+                    .when_some(detail.as_ref().filter(|_| live), |el, info| el.child(div().text_size(px(12.)).child(format!("{} viewers", info.viewers)))))
+                .when_some(detail.as_ref().filter(|i| i.live && !i.category.is_empty()), |el, info| el.child(div().text_size(px(12.)).text_color(rgb(0xC5B8E6)).child(info.category.clone())))
+                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                    pane.as_ref().map(|p| format!("Chat · {}", p.read(cx).connection)).unwrap_or_default(),
+                )))
+            .child(card("Stream info").children(self.studio_editor.clone()))
+            .child(card("Chat modes").child(match &pane {
                 Some(pane) => mode_buttons(owner.clone(), pane.clone(), own.clone(), pane.read(cx).room_settings.clone()),
                 None => div(),
-            })
-            .child(section("Broadcast"))
-            .child(div().h_flex().flex_wrap().gap_1()
-                .child(action("studio-marker", "Add marker", Request::Marker { description: String::new() }, None))
-                .child(action("studio-ad-30", "Ad 30s", Request::Commercial { seconds: 30 }, Some("Run a 30-second ad now?".into())))
-                .child(action("studio-ad-60", "Ad 60s", Request::Commercial { seconds: 60 }, Some("Run a 60-second ad now?".into())))
-                .child(action("studio-ad-90", "Ad 90s", Request::Commercial { seconds: 90 }, Some("Run a 90-second ad now?".into()))))
-            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Markers and ads work while you're live."))
-            .child(div().h_flex().gap_1()
-                .child(div().flex_1().child(Input::new(&raid_input).small()))
-                .child(Button::new("studio-raid").xsmall().label("Raid…").on_click(move |_, window, cx| {
-                    let target = raid_input.read(cx).value().trim().trim_start_matches('@').to_ascii_lowercase();
-                    let Some(Ok(request)) = crate::twitch_actions::parse("/raid", &target) else {
-                        window.push_notification(Notification::info("Enter the channel to raid."), cx);
-                        return;
-                    };
-                    let (owner, pane, own) = (raid_owner.clone(), raid_pane.clone(), raid_own.clone());
-                    let Some(pane) = pane else { return };
-                    window.open_dialog(cx, move |dialog, _, _| {
-                        let (owner, pane, own, request) = (owner.clone(), pane.clone(), own.clone(), request.clone());
-                        dialog.title(format!("Raid #{target}?"))
-                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Twitch starts a countdown; you can cancel with /unraid until it ends."))
-                            .footer(div().h_flex().justify_end().gap_2()
-                                .child(Button::new("raid-cancel").small().label("Cancel").on_click(|_, w, cx| w.close_dialog(cx)))
-                                .child(Button::new("raid-confirm").small().primary().label("Start raid").on_click(move |_, w, cx| {
-                                    w.close_dialog(cx);
-                                    let (pane, own, request) = (pane.clone(), own.clone(), request.clone());
-                                    let _ = owner.update(cx, |this, cx| this.run_twitch_command(pane, own, request, String::new(), w, cx));
-                                })))
-                    });
-                })))
+            }))
+            .child(card("Broadcast")
+                .child(div().h_flex().flex_wrap().gap_1()
+                    .child(action("studio-marker", "Add marker", Request::Marker { description: String::new() }, None))
+                    .child(action("studio-ad-30", "Ad 30s", Request::Commercial { seconds: 30 }, Some("Run a 30-second ad now?".into())))
+                    .child(action("studio-ad-60", "Ad 60s", Request::Commercial { seconds: 60 }, Some("Run a 60-second ad now?".into())))
+                    .child(action("studio-ad-90", "Ad 90s", Request::Commercial { seconds: 90 }, Some("Run a 90-second ad now?".into()))))
+                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(if live { "Markers and ads apply to your current stream." } else { "Markers and ads work once you're live." }))
+                .child(div().h_flex().gap_1()
+                    .child(div().flex_1().child(Input::new(&raid_input).small()))
+                    .child(Button::new("studio-raid").xsmall().label("Raid…").on_click(move |_, window, cx| {
+                        let target = raid_input.read(cx).value().trim().trim_start_matches('@').to_ascii_lowercase();
+                        let Some(Ok(request)) = crate::twitch_actions::parse("/raid", &target) else {
+                            window.push_notification(Notification::info("Enter the channel to raid."), cx);
+                            return;
+                        };
+                        let (owner, pane, own) = (raid_owner.clone(), raid_pane.clone(), raid_own.clone());
+                        let Some(pane) = pane else { return };
+                        window.open_dialog(cx, move |dialog, _, _| {
+                            let (owner, pane, own, request) = (owner.clone(), pane.clone(), own.clone(), request.clone());
+                            dialog.title(format!("Raid #{target}?"))
+                                .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Twitch starts a countdown; you can cancel with /unraid until it ends."))
+                                .footer(div().h_flex().justify_end().gap_2()
+                                    .child(Button::new("raid-cancel").small().label("Cancel").on_click(|_, w, cx| w.close_dialog(cx)))
+                                    .child(Button::new("raid-confirm").small().primary().label("Start raid").on_click(move |_, w, cx| {
+                                        w.close_dialog(cx);
+                                        let (pane, own, request) = (pane.clone(), own.clone(), request.clone());
+                                        let _ = owner.update(cx, |this, cx| this.run_twitch_command(pane, own, request, String::new(), w, cx));
+                                    })))
+                        });
+                    }))))
             .into_any_element()
     }
 }

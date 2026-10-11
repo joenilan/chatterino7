@@ -5,8 +5,8 @@ use crate::{
 use gpui_kit::base::ElementExt;
 use gpui_kit::{
     component::{
-        Sizable, StyledExt, WindowExt,
-        button::Button,
+        IconName, Sizable, StyledExt, WindowExt,
+        button::{Button, ButtonVariants},
         input::Textarea,
         notification::{Notification, NotificationDelivery},
     },
@@ -1072,7 +1072,7 @@ impl ChannelPane {
                     this.picker.hover_text="Retrying failed images; loaded images are kept".into();
                     cx.notify();
                 })))
-                .child(Button::new("emotes-close").xsmall().label("×").tooltip("Close emotes · Esc").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
+                .child(Button::new("emotes-close").ghost().xsmall().icon(IconName::Close).tooltip("Close emotes · Esc").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
             .when(!self.emote_search.read(cx).value().trim().is_empty() || !self.picker.service.is_empty(),|el|el.child(
                 div().h_flex().gap_1().flex_shrink_0().child(div().flex_1().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(format!("Filtered · {} · {} matches",if self.picker.service.is_empty(){"All services"}else{&self.picker.service},self.picker.items.len())))
                 .child(Button::new("emotes-clear-filters").xsmall().label("Clear filters").on_click(cx.listener(|this,_,window,cx|{

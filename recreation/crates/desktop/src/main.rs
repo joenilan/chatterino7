@@ -1,4 +1,5 @@
 use gpui_kit::prelude::FluentBuilder;
+mod assets;
 mod attention;
 mod attention_navigation;
 mod auth;
@@ -57,7 +58,7 @@ use chat_text::ChatText;
 use gpui_kit::base::ElementExt as _;
 use gpui_kit::component::{
     Disableable, Icon, IconName, Sizable, StyledExt, WindowExt,
-    button::Button,
+    button::{Button, ButtonVariants},
     input::{InputEvent, Textarea, TextareaState},
     menu::ContextMenuExt,
     notification::{Notification, NotificationDelivery},
@@ -689,11 +690,11 @@ impl Render for ChannelPane {
                             .text_color(rgb(theme::MUTED))
                             .child(if self.connected { if paused { "Paused".to_owned() } else if following { "Latest".to_owned() } else { format!("{retained}/{} · History", self.timeline.borrow().capacity()) } } else { self.connection.clone() }),
                     )
-                    .when(self.mod_tools && matches!(self.role, Some(capabilities::Role::Moderator | capabilities::Role::Broadcaster)), |el| el.child(Button::new("mod-tools").xsmall().label("🛡").tooltip("Moderation: chat modes, clear chat").on_click(cx.listener(|_,_,_,cx|cx.emit(PaneEvent::OpenModTools)))))
-                    .when(self.role == Some(capabilities::Role::Broadcaster), |el| el.child(Button::new("stream-info").xsmall().label("✎").tooltip("Edit stream title and category").on_click(cx.listener(|_,_,_,cx|cx.emit(PaneEvent::OpenStreamInfo)))))
-                    .child(Button::new("pause-chat").xsmall().label(if paused{"▶"}else{"Ⅱ"}).tooltip(if paused{"Resume live chat · Ctrl+End"}else{"Pause scrolling · Ctrl+Space"}).on_click(cx.listener(|this,_,_,cx|{this.scroller.update(cx,|s,cx|{if s.paused(){s.scroll_to_end(cx);}else{s.toggle_pause(cx);}});})))
-                    .child(Button::new("find-chat").xsmall().label("⌕").tooltip("Find in chat · Ctrl+F").on_click(cx.listener(|this,_,w,cx|this.open_search(w,cx))))
-                    .child(Button::new("close-pane").xsmall().label("×").tooltip("Close this split…; keep draft")
+                    .when(self.mod_tools && matches!(self.role, Some(capabilities::Role::Moderator | capabilities::Role::Broadcaster)), |el| el.child(Button::new("mod-tools").ghost().xsmall().icon(Icon::new(gpui_kit::assets::IconName::Shield)).tooltip("Moderation: chat modes, clear chat").on_click(cx.listener(|_,_,_,cx|cx.emit(PaneEvent::OpenModTools)))))
+                    .when(self.role == Some(capabilities::Role::Broadcaster), |el| el.child(Button::new("stream-info").ghost().xsmall().icon(Icon::new(gpui_kit::assets::IconName::Pencil)).tooltip("Edit stream title and category").on_click(cx.listener(|_,_,_,cx|cx.emit(PaneEvent::OpenStreamInfo)))))
+                    .child(Button::new("pause-chat").ghost().xsmall().icon(if paused{IconName::Play}else{IconName::Pause}).tooltip(if paused{"Resume live chat · Ctrl+End"}else{"Pause scrolling · Ctrl+Space"}).on_click(cx.listener(|this,_,_,cx|{this.scroller.update(cx,|s,cx|{if s.paused(){s.scroll_to_end(cx);}else{s.toggle_pause(cx);}});})))
+                    .child(Button::new("find-chat").ghost().xsmall().icon(IconName::Search).tooltip("Find in chat · Ctrl+F").on_click(cx.listener(|this,_,w,cx|this.open_search(w,cx))))
+                    .child(Button::new("close-pane").ghost().xsmall().icon(IconName::Close).tooltip("Close this split…; keep draft")
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(PaneEvent::RequestClose)))),
             )
             .children(search_bar)
@@ -917,7 +918,7 @@ impl Render for ChannelPane {
                         .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500", self.draft.read(cx).value().chars().count())))
                         .when(routine_status && !self.send_status.is_empty(), |el|el.child(self.send_status.clone())))
                     .when_some(self.room_settings.as_ref().filter(|r|!r.labels().is_empty()).map(|r|r.summary()),|el,summary|el.child(div().id("room-modes-hint").max_w(px(120.)).min_w_0().flex_shrink(1.).overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(rgb(0xC5B8E6)).tooltip({let summary=summary.clone();move|w,cx|gpui_kit::component::tooltip::Tooltip::new(format!("{summary}. Your role may grant exemptions; Twitch validates sending. Ctrl+I for channel details.")).build(w,cx)}).child(summary)))
-                    .child(div().h_flex().gap_2().child(Button::new("sent-history").small().label("↶").tooltip("Sent message history · Ctrl+Shift+H").on_click(cx.listener(|this,_,w,cx|this.open_input_history(w,cx)))).child(div().id("emote-button-area").on_prepaint(move|bounds,_,cx|{if emote_button_bounds.replace(Some(bounds))!=Some(bounds)&&emote_picker_open{let owner=emote_button_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}}).on_hover(cx.listener(|this,over,_,cx|{if *over{this.prepare_picker_media(cx);}})).child(Button::new("emotes-toggle").small().label(":)").tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
+                    .child(div().h_flex().gap_2().child(Button::new("sent-history").ghost().small().icon(Icon::new(gpui_kit::assets::IconName::RotateCcwClock)).tooltip("Sent message history · Ctrl+Shift+H").on_click(cx.listener(|this,_,w,cx|this.open_input_history(w,cx)))).child(div().id("emote-button-area").on_prepaint(move|bounds,_,cx|{if emote_button_bounds.replace(Some(bounds))!=Some(bounds)&&emote_picker_open{let owner=emote_button_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}}).on_hover(cx.listener(|this,over,_,cx|{if *over{this.prepare_picker_media(cx);}})).child(Button::new("emotes-toggle").ghost().small().icon(Icon::new(gpui_kit::assets::IconName::Sticker)).tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
                     .child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else if commands::is_command(&self.draft.read(cx).value()) { "Run" } else { "Send" }).disabled(self.pending.is_some() || (!self.connected && !commands::is_command(&self.draft.read(cx).value()))).tooltip("Send a message or run a local /command").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx)))))))
             .child(
                 canvas(
@@ -1011,7 +1012,7 @@ fn main() {
     };
 
     gpui_kit::application()
-        .with_assets(gpui_kit::assets::Assets)
+        .with_assets(assets::Assets)
         .run(move |cx| {
             gpui_kit::init(cx);
             cx.set_app_identity("digital.zombie.jawjack", "Jawjack");

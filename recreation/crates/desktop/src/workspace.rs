@@ -394,7 +394,10 @@ impl Workbench {
             streams: crate::stream_status::Streams::new(),
             capabilities: crate::capabilities::Capabilities::new(),
             experience: roles::Experience::from_key(state["experience"].as_str().unwrap_or("")),
-            studio_open: state["studio_open"].as_bool().unwrap_or(false),
+            // Streamer starts with Studio open unless the owner closed it.
+            studio_open: state["studio_open"]
+                .as_bool()
+                .unwrap_or(state["experience"].as_str() == Some("streamer")),
             studio_editor: None,
             raid_input: None,
             setup_offered: state["setup_offered"].as_bool().unwrap_or(false),
@@ -1481,7 +1484,7 @@ impl Workbench {
                         Button::new("update-check")
                             .ghost()
                             .xsmall()
-                            .label("⟳")
+                            .icon(IconName::RefreshCw)
                             .tooltip(if self.updates.checking() {
                                 "Checking for updates…"
                             } else {
@@ -2898,7 +2901,7 @@ impl Workbench {
                                         Button::new(("close-sidebar-workspace", tab.id))
                                             .ghost()
                                             .xsmall()
-                                            .label("×")
+                                            .icon(IconName::Close)
                                             .tooltip("Close workspace · Middle-click / Ctrl+W")
                                             .on_click(cx.listener({
                                                 let id = tab.id;
@@ -2969,6 +2972,17 @@ impl Render for Workbench {
             "jawjack-sidebar-width",
             if self.sidebar { 190.0_f32 } else { 0.0_f32 },
             gpui_kit::base::motion::Transition::new(Duration::from_millis(180)),
+            window,
+            cx,
+        );
+        let studio_width = gpui_kit::base::motion::transition(
+            "jawjack-studio-width",
+            if self.studio_open && self.anchor(cx).is_some() {
+                roles::STUDIO_WIDTH
+            } else {
+                0.0_f32
+            },
+            gpui_kit::base::motion::Transition::new(Duration::from_millis(200)),
             window,
             cx,
         );
@@ -3114,14 +3128,14 @@ impl Render for Workbench {
             .on_action(cx.listener(|this,_:&ToggleLiveChannels,_,cx|{this.live_channels = !this.live_channels;this.schedule_save(cx);cx.notify();}))
             .on_action(cx.listener(|this,_:&QuitWithoutSaving,_,cx|{if this.close_failed {cx.quit();}}))
             .child(div().h_flex().h(px(32.)).flex_shrink_0().border_b_1().border_color(rgb(theme::BORDER))
-                .child(Button::new("sidebar").ghost().small().label("☰").tooltip("Workspaces").on_click(cx.listener(|this,_,_,cx|{this.sidebar = !this.sidebar;this.schedule_save(cx);cx.notify();})))
+                .child(Button::new("sidebar").ghost().small().icon(if self.sidebar{IconName::PanelLeftClose}else{IconName::PanelLeftOpen}).tooltip("Workspaces").on_click(cx.listener(|this,_,_,cx|{this.sidebar = !this.sidebar;this.schedule_save(cx);cx.notify();})))
                 .child(div().h_flex().px_2().gap_1().window_control_area(WindowControlArea::Drag).child(div().text_color(rgb(0xA99CF4)).font_weight(FontWeight::BOLD).child("//"))
                     .child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(11.)).child("JAWJACK")))
                 .child(div().flex_1().min_w(px(8.)).h_full().window_control_area(WindowControlArea::Drag))
-                .child(Button::new("activity-menu").ghost().xsmall().label(if counts.1>0{format!("@{}",crate::attention::count(counts.1))}else if counts.0>0{format!("• {}",crate::attention::count(counts.0))}else{"@".into()}).tooltip("Highlights & unread · Ctrl+Shift+M").on_click(cx.listener(|this,_,w,cx|this.open_activity(w,cx))))
+                .child(Button::new("activity-menu").ghost().xsmall().icon(IconName::Bell).when(counts.1>0||counts.0>0,|b|b.label(if counts.1>0{format!("@{}",crate::attention::count(counts.1))}else{crate::attention::count(counts.0)})).tooltip("Highlights & unread · Ctrl+Shift+M").on_click(cx.listener(|this,_,w,cx|this.open_activity(w,cx))))
                 .child(Button::new("account-menu").ghost().xsmall().label(if self.account.read(cx).missing_scopes().is_empty(){self.account.read(cx).label()}else{format!("{} •",self.account.read(cx).label())}).tooltip(if self.account.read(cx).missing_scopes().is_empty(){"Twitch account"}else{"Twitch account · permissions can be updated"})
                     .on_click(cx.listener(|this,_,window,cx|{let account=this.account.clone();let width=(f32::from(window.viewport_size().width)-24.).min(380.);window.open_dialog(cx,move|dialog,_,_|dialog.w(px(width)).title("Twitch account").child(account.clone()));})))
-                .child(Button::new("settings-menu").ghost().small().label("⚙").tooltip("Settings and workspace actions").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
+                .child(Button::new("settings-menu").ghost().small().icon(IconName::Settings).tooltip("Settings and workspace actions").dropdown_menu(move|menu,_,_|menu.action_context(view_focus.clone())
                     .menu("Switch channel · Ctrl+P",Box::new(SwitchChannel))
                     .menu("Search open channels · Ctrl+Shift+F",Box::new(SearchOpenChannels))
                     .menu("Highlights & unread",Box::new(OpenActivity))
@@ -3162,7 +3176,11 @@ impl Render for Workbench {
                     .child(div().h_flex().items_stretch().flex_1().min_h_0().overflow_hidden().p(px(2.)).child(div().id("channel-dock").relative().flex_1().h_full().min_w_0().min_h_0()
                         .child(content)
                         )
-                        .when(self.studio_open && self.anchor(cx).is_some(), |el| el.child(self.render_studio(window, cx)))
+                        // Studio slides in from the right edge and fades with its width.
+                        .when(studio_width > 0.1, |el| el.child(
+                            div().w(px(studio_width)).h_full().flex_shrink_0().overflow_hidden()
+                                .opacity((studio_width / roles::STUDIO_WIDTH).clamp(0., 1.))
+                                .child(self.render_studio(window, cx))))
                         .when(self.settings,|el|el.child(div().absolute().top(px(34.)).right(px(4.)).w(px((f32::from(window.viewport_size().width)-8.).min(300.))).max_h(px(f32::from(window.viewport_size().height)-60.)).id("settings-card").occlude().overflow_hidden().v_flex().bg(rgb(theme::PANEL)).border_1().border_color(rgb(theme::BORDER)).rounded(px(6.))
                             .child(div().h_flex().flex_shrink_0().p_2().gap_2().border_b_1().border_color(rgb(theme::BORDER))
                                 .child(div().flex_1().font_weight(FontWeight::SEMIBOLD).child("Appearance & memory"))
