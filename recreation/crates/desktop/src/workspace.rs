@@ -8,6 +8,8 @@ mod channel_switcher;
 mod pane_navigation;
 #[path = "roles.rs"]
 mod roles;
+#[path = "streamer_bot_ui.rs"]
+mod streamer_bot_ui;
 #[path = "workspace_search.rs"]
 mod workspace_search;
 use crate::dock::Dock;
@@ -154,6 +156,11 @@ pub struct Workbench {
     streams: crate::stream_status::Streams,
     capabilities: crate::capabilities::Capabilities,
     experience: roles::Experience,
+    streamer_bot: crate::streamer_bot::StreamerBot,
+    bot_settings: crate::streamer_bot::Settings,
+    bot_pinned: Vec<crate::streamer_bot::Action>,
+    bot_runs: std::collections::HashMap<u64, String>,
+    bot_started: bool,
     studio_open: bool,
     studio_editor: Option<Entity<crate::studio::StreamEditor>>,
     raid_input: Option<Entity<InputState>>,
@@ -394,6 +401,11 @@ impl Workbench {
             streams: crate::stream_status::Streams::new(),
             capabilities: crate::capabilities::Capabilities::new(),
             experience: roles::Experience::from_key(state["experience"].as_str().unwrap_or("")),
+            streamer_bot: crate::streamer_bot::StreamerBot::new(),
+            bot_settings: streamer_bot_ui::load_settings(&state["streamer_bot"]).0,
+            bot_pinned: streamer_bot_ui::load_settings(&state["streamer_bot"]).1,
+            bot_runs: Default::default(),
+            bot_started: false,
             // Streamer starts with Studio open unless the owner closed it.
             studio_open: state["studio_open"]
                 .as_bool()
@@ -609,6 +621,11 @@ impl Workbench {
         self.pump_imported_nicknames(cx);
         self.pump_recent_messages(cx);
         self.ensure_anchor(window, cx);
+        if !self.bot_started {
+            self.bot_started = true;
+            self.start_streamer_bot(cx);
+        }
+        self.pump_streamer_bot(window, cx);
         if !self.setup_offered && identity.is_some() {
             self.setup_offered = true;
             self.notice = Some((
@@ -1323,6 +1340,10 @@ impl Workbench {
                 );
                 return;
             }
+            if let PaneEvent::RunBotAction { action, args } = event {
+                this.run_bot_action(action.clone(), args.clone(), cx);
+                return;
+            }
             if matches!(event, PaneEvent::OpenModTools) {
                 this.open_mod_tools(channel.clone(), window, cx);
                 return;
@@ -1609,7 +1630,7 @@ impl Workbench {
                 );
             }
         }
-        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"studio_open":self.studio_open,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()})
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {

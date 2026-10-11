@@ -45,6 +45,7 @@ mod seven_paints;
 mod storage;
 mod stream_preview;
 mod stream_status;
+mod streamer_bot;
 mod studio;
 mod theme;
 mod twitch_actions;
@@ -147,6 +148,10 @@ enum PaneEvent {
     OpenAccount,
     OpenStreamInfo,
     OpenModTools,
+    RunBotAction {
+        action: streamer_bot::Action,
+        args: serde_json::Value,
+    },
     /// A parsed Twitch command; `draft` is cleared only once Twitch confirms.
     TwitchCommand {
         request: twitch_actions::Request,
@@ -169,6 +174,8 @@ struct ChannelPane {
     stream: Option<stream_status::StreamInfo>,
     /// Moderator/Streamer setup shows the 🛡 button where the role allows.
     mod_tools: bool,
+    /// Pinned Streamer.bot actions offered in the message menu while connected.
+    bot_actions: std::rc::Rc<Vec<streamer_bot::Action>>,
     connection: String,
     connected: bool,
     room_settings: Option<room_settings::RoomSettings>,
@@ -256,6 +263,7 @@ impl ChannelPane {
             chatter_list: Default::default(),
             stream: None,
             mod_tools: false,
+            bot_actions: Default::default(),
             media,
             catalog,
             custom_commands: Default::default(),

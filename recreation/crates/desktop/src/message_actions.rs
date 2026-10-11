@@ -319,6 +319,37 @@ pub fn menu(
             }
         }
     }
+    // Pinned Streamer.bot actions run with this message's user and text as arguments.
+    let bot_actions = owner
+        .upgrade()
+        .map(|pane| pane.read(cx).bot_actions.clone())
+        .unwrap_or_default();
+    if !bot_actions.is_empty() && !message.deleted {
+        menu = menu.separator();
+        for action in bot_actions.iter() {
+            let owner = owner.clone();
+            let action = action.clone();
+            let args = serde_json::json!({
+                "source": "jawjack",
+                "user": message.login.clone().unwrap_or_default(),
+                "userId": message.user_id,
+                "userName": message.display_name,
+                "message": message.body(),
+                "messageId": message.id,
+                "channel": message.channel_id,
+            });
+            menu = menu.item(
+                PopupMenuItem::new(format!("Streamer.bot · {}", action.name)).on_click(
+                    move |_, _, cx| {
+                        let (action, args) = (action.clone(), args.clone());
+                        let _ = owner.update(cx, |_, cx| {
+                            cx.emit(PaneEvent::RunBotAction { action, args })
+                        });
+                    },
+                ),
+            );
+        }
+    }
     // Moderator actions appear only where the account moderates or owns the channel.
     let moderates = owner.upgrade().is_some_and(|pane| {
         matches!(

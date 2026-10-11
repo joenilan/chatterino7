@@ -481,6 +481,7 @@ impl Workbench {
                 Some(pane) => mode_buttons(owner.clone(), pane.clone(), own.clone(), pane.read(cx).room_settings.clone()),
                 None => div(),
             }))
+            .child(card("Streamer.bot").child(self.render_bot_card(cx)))
             .child(card("Broadcast")
                 .child(div().h_flex().flex_wrap().gap_1()
                     .child(action("studio-marker", "Add marker", Request::Marker { description: String::new() }, None))
