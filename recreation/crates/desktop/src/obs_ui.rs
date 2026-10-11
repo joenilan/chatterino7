@@ -1050,7 +1050,11 @@ impl Workbench {
                 } else if has {
                     "Reading with an API key (read-only). Connect with Google to chat too."
                 } else {
-                    "Sign in with Google to read and chat in YouTube streams. One-time set-up, about 5 minutes, step by step."
+                    if self.google_client_available().is_some() {
+                        "Sign in with Google to read and chat in YouTube streams."
+                    } else {
+                        "Sign in with Google to read and chat in YouTube streams. First time: a short set-up, step by step."
+                    }
                 },
                 div()
                     .h_flex()
@@ -1059,14 +1063,20 @@ impl Workbench {
                         Button::new("youtube-connect")
                             .small()
                             .when(!signed_in, |b| b.primary())
-                            .label(if signed_in { "Sign in again…" } else { "Connect…" })
+                            .label(if signed_in { "Sign in again" } else { "Connect" })
                             .on_click(cx.listener(|this, _, w, cx| {
                                 this.settings = false;
-                                this.open_guide(guides::Guide::YouTubeChat, w, cx)
+                                this.connect_youtube(w, cx)
                             })),
                     )
                     .when(signed_in, |el| {
                         el.child(Button::new("youtube-signout").small().ghost().label("Sign out").on_click(cx.listener(|this, _, _, cx| this.google_sign_out(cx))))
+                    })
+                    .when(crate::google_auth::built_in().is_none() && self.google_client.is_some(), |el| {
+                        el.child(Button::new("youtube-own-client").small().ghost().label("Change client…").tooltip("Your own Google OAuth client (set-up guide)").on_click(cx.listener(|this, _, w, cx| {
+                            this.settings = false;
+                            this.open_guide(guides::Guide::YouTubeChat, w, cx)
+                        })))
                     })
                     .when(!signed_in && !has, |el| {
                         el.child(Button::new("youtube-key-instead").small().ghost().label("API key instead…").tooltip("Read-only: a YouTube Data API key without signing in").on_click(cx.listener(|this, _, w, cx| {
@@ -1134,6 +1144,25 @@ impl Workbench {
         })
         .detach();
     }
+    /// The Google client to sign in with: your own saved one, else Jawjack's built-in one.
+    pub(super) fn google_client_available(&self) -> Option<crate::google_auth::OAuthClient> {
+        self.google_client
+            .clone()
+            .or_else(crate::google_auth::built_in)
+    }
+    /// "Connect YouTube": one click when a client is known, else the set-up guide.
+    pub(super) fn connect_youtube(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.google_client_available() {
+            Some(client) => {
+                window.push_notification(
+                    Notification::info("Opening Google sign-in in your browser…"),
+                    cx,
+                );
+                self.google_sign_in_with(client, window, cx);
+            }
+            None => self.open_guide(guides::Guide::YouTubeChat, window, cx),
+        }
+    }
     pub(super) fn google_sign_in(
         &mut self,
         id: &str,
@@ -1146,6 +1175,14 @@ impl Workbench {
             cx.notify();
             return;
         };
+        self.google_sign_in_with(client, window, cx);
+    }
+    fn google_sign_in_with(
+        &mut self,
+        client: crate::google_auth::OAuthClient,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.guide_status = Some((
             true,
             "Your browser is opening Google's sign-in. Approve YouTube access there…".into(),
@@ -1199,8 +1236,17 @@ impl Workbench {
                             true,
                             "Signed in. YouTube tabs can now read and send chat.".into(),
                         ));
+                        window.push_notification(
+                            Notification::info(
+                                "Signed in with Google: YouTube tabs can read and send chat.",
+                            ),
+                            cx,
+                        );
                     }
-                    Err(e) => this.guide_status = Some((false, e)),
+                    Err(e) => {
+                        window.push_notification(Notification::info(e.clone()), cx);
+                        this.guide_status = Some((false, e));
+                    }
                 }
                 window.refresh();
                 cx.notify();
@@ -1232,10 +1278,10 @@ impl Workbench {
         else {
             pane.update(cx, |p, cx| {
                 p.pending = None;
-                p.send_status = "To chat on YouTube, sign in with Google (opening the set-up guide). Draft kept.".into();
+                p.send_status = "To chat on YouTube, sign in with Google. Draft kept.".into();
                 cx.notify();
             });
-            self.open_guide(guides::Guide::YouTubeChat, window, cx);
+            self.connect_youtube(window, cx);
             return;
         };
         let Some(chat) = self.youtube_chats.get(&name).cloned() else {

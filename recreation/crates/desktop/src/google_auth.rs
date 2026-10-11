@@ -27,6 +27,16 @@ pub struct Tokens {
     pub expires: Instant,
 }
 
+/// Jawjack's own OAuth client, baked in at build time when the developer has
+/// one (see build.rs); then "Connect YouTube" is a single click for everyone.
+pub fn built_in() -> Option<OAuthClient> {
+    Some(OAuthClient {
+        id: option_env!("JAWJACK_GOOGLE_CLIENT_ID")?.to_owned(),
+        secret: option_env!("JAWJACK_GOOGLE_CLIENT_SECRET")?.to_owned(),
+    })
+    .filter(|c| !c.id.is_empty())
+}
+
 fn random(bytes: usize) -> Result<String, String> {
     let mut buf = vec![0u8; bytes];
     getrandom::fill(&mut buf).map_err(|_| "No secure randomness available".to_owned())?;
