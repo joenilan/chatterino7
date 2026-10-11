@@ -587,3 +587,6 @@ STREAMER_TOOLS.md or FEATURE_COVERAGE.md says so.
     has native adapters.
   - Local only, explicit opt-in, and the connection status is shown. Do it after the Studio drawer.
 - **OBS WebSocket** (later): scene switching and stream/record state in Studio.
+- **Discord bridge** (owner idea 2026-10-11, [DISCORD_BRIDGE.md](DISCORD_BRIDGE.md)): link a
+  Discord channel with Twitch chat both ways (webhook names/avatars, loop prevention,
+  moderation sync, opt-in), and show that Discord channel as a Jawjack pane.
