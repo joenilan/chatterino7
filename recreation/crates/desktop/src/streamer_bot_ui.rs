@@ -65,6 +65,7 @@ impl Workbench {
         let (changed, ran, feed) = self.streamer_bot.poll();
         for item in feed {
             self.feed.push(item);
+            self.animate_for(Duration::from_millis(320), cx);
             cx.notify();
         }
         for (request, result) in ran {
@@ -223,12 +224,28 @@ impl Workbench {
     pub(super) fn render_bot_card(&self, cx: &mut Context<Self>) -> Div {
         let connected = self.streamer_bot.connected;
         let enabled = self.bot_settings.enabled;
+        if !enabled {
+            // Not set up: one sentence on what it adds, one primary action.
+            return div()
+                .v_flex()
+                .gap_2()
+                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                    "Run your Streamer.bot actions from here, and see donations plus YouTube and Kick events in Activity.",
+                ))
+                .child(
+                    div().h_flex().gap_2()
+                        .child(Button::new("bot-connect").small().primary().icon(IconName::Bot).label("Connect").on_click(cx.listener(|this, _, _, cx| {
+                            let mut settings = this.bot_settings.clone();
+                            settings.enabled = true;
+                            this.set_bot_settings(settings, cx);
+                        })))
+                        .child(Button::new("bot-settings").small().ghost().label("Settings…").on_click(cx.listener(|this, _, w, cx| this.open_bot_settings(w, cx)))),
+                );
+        }
         let status_color = if connected {
             theme::STREAM_LIVE
-        } else if enabled {
-            theme::STREAM_UNKNOWN
         } else {
-            theme::MUTED
+            theme::STREAM_UNKNOWN
         };
         div()
             .v_flex()
@@ -238,7 +255,13 @@ impl Workbench {
                     .h_flex()
                     .items_center()
                     .gap_2()
-                    .child(div().size(px(8.)).rounded_full().bg(rgb(status_color)))
+                    .child(
+                        div()
+                            .size(px(7.))
+                            .flex_shrink_0()
+                            .rounded_full()
+                            .bg(rgb(status_color)),
+                    )
                     .child(
                         div()
                             .flex_1()
@@ -246,12 +269,9 @@ impl Workbench {
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .text_ellipsis()
-                            .text_size(px(12.))
-                            .child(if enabled {
-                                self.streamer_bot.status.clone()
-                            } else {
-                                "Not connected".into()
-                            }),
+                            .text_size(px(11.))
+                            .text_color(rgb(theme::MUTED))
+                            .child(self.streamer_bot.status.clone()),
                     )
                     .child(
                         Button::new("bot-settings")
@@ -262,69 +282,69 @@ impl Workbench {
                             .on_click(cx.listener(|this, _, w, cx| this.open_bot_settings(w, cx))),
                     ),
             )
-            .when(!enabled, |el| {
+            .when(connected && self.bot_pinned.is_empty(), |el| {
                 el.child(
-                    Button::new("bot-connect")
-                        .small()
-                        .label("Connect Streamer.bot")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            let mut settings = this.bot_settings.clone();
-                            settings.enabled = true;
-                            this.set_bot_settings(settings, cx);
-                        })),
+                    div()
+                        .text_size(px(11.))
+                        .text_color(rgb(theme::MUTED))
+                        .child("Pin the actions you use live to get one-click buttons here."),
                 )
             })
-            .when(connected, |el| {
+            // Pinned actions as an even two-column grid.
+            .when(connected && !self.bot_pinned.is_empty(), |el| {
                 el.child(div().h_flex().flex_wrap().gap_1().children(
                     self.bot_pinned.iter().enumerate().map(|(index, action)| {
                         let action = action.clone();
-                        Button::new(("bot-run", index))
-                            .xsmall()
-                            .label(action.name.clone())
-                            .tooltip("Run in Streamer.bot")
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.run_bot_action(
-                                    action.clone(),
-                                    json!({"source": "jawjack"}),
-                                    cx,
-                                )
-                            }))
+                        div().w(px(134.)).child(
+                            Button::new(("bot-run", index))
+                                .small()
+                                .w_full()
+                                .label(action.name.clone())
+                                .tooltip(format!("Run “{}” in Streamer.bot", action.name))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.run_bot_action(
+                                        action.clone(),
+                                        json!({"source": "jawjack"}),
+                                        cx,
+                                    )
+                                })),
+                        )
                     }),
                 ))
             })
-            // Secondary actions share one row, left and right.
-            .when(enabled, |el| {
-                el.child(
-                    div()
-                        .h_flex()
-                        .justify_between()
-                        .child(div().when(connected, |el| {
-                            el.child(
-                                Button::new("bot-choose")
-                                    .ghost()
-                                    .xsmall()
-                                    .label(if self.bot_pinned.is_empty() {
-                                        "Pin actions…"
-                                    } else {
-                                        "Edit pinned actions…"
-                                    })
-                                    .on_click(
-                                        cx.listener(|this, _, w, cx| this.open_bot_actions(w, cx)),
-                                    ),
-                            )
-                        }))
-                        .child(
-                            Button::new("bot-disconnect")
+            .child(
+                div()
+                    .h_flex()
+                    .justify_between()
+                    .child(div().when(connected, |el| {
+                        el.child(
+                            Button::new("bot-choose")
                                 .ghost()
                                 .xsmall()
-                                .label("Disconnect")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    let mut settings = this.bot_settings.clone();
-                                    settings.enabled = false;
-                                    this.set_bot_settings(settings, cx);
-                                })),
-                        ),
-                )
-            })
+                                .icon(gpui_kit::component::Icon::new(
+                                    gpui_kit::assets::IconName::Pin,
+                                ))
+                                .label(if self.bot_pinned.is_empty() {
+                                    "Pin actions"
+                                } else {
+                                    "Edit pins"
+                                })
+                                .on_click(
+                                    cx.listener(|this, _, w, cx| this.open_bot_actions(w, cx)),
+                                ),
+                        )
+                    }))
+                    .child(
+                        Button::new("bot-disconnect")
+                            .ghost()
+                            .xsmall()
+                            .label("Disconnect")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let mut settings = this.bot_settings.clone();
+                                settings.enabled = false;
+                                this.set_bot_settings(settings, cx);
+                            })),
+                    ),
+            )
     }
 }

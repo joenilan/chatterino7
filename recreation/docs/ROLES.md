@@ -43,26 +43,11 @@ double-click is caught by a window-level listener limited to the split's area.
 
 ## Studio panel (right side)
 
-Toggle it with the panel icon right of the settings gear (panel-right open/close),
-**Ctrl+Shift+S**, or gear menu → "Studio panel". The choice is saved.
-
-- Live/offline, uptime, viewers and category for your channel, plus its chat connection.
-- **Stream info:** the title/category editor embedded (Revert/Reload instead of Close).
-- **Chat modes:** Slow 30s, Followers, Subscribers, Emote-only and Unique chat. Each shows ✓ from
-  Twitch's live room state and toggles through the same command path as `/slow`.
-- **Broadcast:** Add marker, ads of 30, 60 or 90 s (each asks first), and Raid… (asks first, explains
-  the countdown and /unraid).
-- **Activity:** newest-first feed, capped at 200 items for the session, with kind pills coloured to match
-  event highlights:
-  - Twitch: follows (`channel.follow` v2) and channel-point redemptions. These are extra EventSub subscriptions,
-    made only for the signed-in broadcaster's own channel, and they are optional: a failure doesn't affect chat. Each
-    socket now carries at most 49 channels (147 in total) to leave room for them.
-  - Own-channel subs, gifts, raids, Bits and charity notices taken from chat.
-  - Streamer.bot: donations (Ko-fi, Streamlabs, StreamElements, Fourthwall, TipeeeStream,
-    Patreon) and YouTube/Kick events. Jawjack asks Streamer.bot which events it supports (`GetEvents`) and
-    subscribes to those.
-- **Streamer.bot** card and pinned action buttons ([STREAMER_BOT.md](STREAMER_BOT.md)).
-- Planned next: polls and predictions.
+Toggle it with the panel icon right of the settings gear, **Ctrl+Shift+S**, or gear menu →
+"Studio panel". Layout, tabs and visual rules are in [STUDIO.md](STUDIO.md). Feed sources:
+Twitch follows and redemptions (optional EventSub extras for the own channel; 49 channels per socket,
+147 in total), own-channel subs/gifts/raids/Bits from chat, and Streamer.bot donations plus YouTube/Kick
+events ([STREAMER_BOT.md](STREAMER_BOT.md)).
 
 ## Evidence (Windows, 2026-10-11)
 

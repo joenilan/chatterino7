@@ -3,7 +3,24 @@
 use gpui_kit::{AssetSource, Result, SharedString};
 use std::borrow::Cow;
 
-gpui_kit::assets::icon_assets!(ExtraIcons, [Pencil, Shield, RotateCcwClock, Sticker, Pin]);
+gpui_kit::assets::icon_assets!(
+    ExtraIcons,
+    [
+        Pencil,
+        Shield,
+        RotateCcwClock,
+        Sticker,
+        Pin,
+        UserPlus,
+        Gem,
+        Rocket,
+        Sparkles,
+        HandCoins,
+        Activity,
+        BookmarkPlus,
+        Tv
+    ]
+);
 
 pub struct Assets;
 impl AssetSource for Assets {

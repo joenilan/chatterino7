@@ -3,7 +3,7 @@
 //! changes made elsewhere meanwhile, and reads the result back from Twitch.
 use crate::{auth::CLIENT_ID, auth::TwitchAccount, live::Identity, theme};
 use gpui_kit::component::{
-    Disableable, Selectable, Sizable, StyledExt, WindowExt,
+    Disableable, Sizable, StyledExt, WindowExt,
     button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState},
 };
@@ -412,8 +412,14 @@ impl Render for StreamEditor {
                     .justify_between()
                     .child(label("Title"))
                     .child(
-                        label(if count > TITLE_LIMIT { "Too long" } else { "" })
-                            .child(format!(" {count}/{TITLE_LIMIT}")),
+                        div()
+                            .text_size(px(10.))
+                            .text_color(rgb(if count > TITLE_LIMIT {
+                                0xF07A7A
+                            } else {
+                                theme::MUTED
+                            }))
+                            .child(format!("{count}/{TITLE_LIMIT}")),
                     ),
             )
             .child(
@@ -421,32 +427,77 @@ impl Render for StreamEditor {
                     .small()
                     .disabled(self.snapshot.is_none()),
             )
-            .child(label("Category"))
-            .child(div().text_size(px(13.)).child(match &self.category {
-                Some(c) => format!("✓ {}", c.name),
-                None => "No category".into(),
-            }))
+            .child(
+                div()
+                    .h_flex()
+                    .justify_between()
+                    .items_center()
+                    .pt_1()
+                    .child(label("Category"))
+                    .child(
+                        div()
+                            .max_w(px(170.))
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_size(px(12.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(
+                                self.category
+                                    .as_ref()
+                                    .map(|c| c.name.clone())
+                                    .unwrap_or_else(|| "None".into()),
+                            ),
+                    ),
+            )
             .child(
                 Input::new(&self.search)
                     .small()
                     .disabled(self.snapshot.is_none()),
             )
+            // Search results as a compact list; the chosen one is marked.
             .when(!self.results.is_empty(), |el| {
-                el.child(div().h_flex().flex_wrap().gap_1().children(
-                    self.results.iter().enumerate().map(|(index, category)| {
-                        let selected = current.as_deref() == Some(category.id.as_str());
-                        let choice = category.clone();
-                        Button::new(SharedString::from(format!("category-{index}")))
-                            .small()
-                            .selected(selected)
-                            .when(selected, |b| b.primary())
-                            .label(category.name.clone())
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.category = Some(choice.clone());
-                                cx.notify();
-                            }))
-                    }),
-                ))
+                el.child(
+                    div()
+                        .v_flex()
+                        .rounded(px(6.))
+                        .border_1()
+                        .border_color(rgb(theme::BORDER))
+                        .overflow_hidden()
+                        .children(self.results.iter().enumerate().map(|(index, category)| {
+                            let selected = current.as_deref() == Some(category.id.as_str());
+                            let choice = category.clone();
+                            div()
+                                .id(SharedString::from(format!("category-{index}")))
+                                .h_flex()
+                                .items_center()
+                                .gap_2()
+                                .px_2()
+                                .py_1()
+                                .text_size(px(12.))
+                                .cursor_pointer()
+                                .when(selected, |el| {
+                                    el.bg(rgb(0x272237)).text_color(rgb(0xA99CF4))
+                                })
+                                .hover(|s| s.bg(rgb(theme::HOVER)))
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .text_ellipsis()
+                                        .child(category.name.clone()),
+                                )
+                                .when(selected, |el| {
+                                    el.child(div().text_size(px(11.)).child("Selected"))
+                                })
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.category = Some(choice.clone());
+                                    cx.notify();
+                                }))
+                        })),
+                )
             })
             .when(!self.status.is_empty(), |el| {
                 el.child(
@@ -466,21 +517,29 @@ impl Render for StreamEditor {
                         el.child(
                             Button::new("stream-info-retry")
                                 .small()
+                                .ghost()
                                 .label("Retry")
                                 .on_click(cx.listener(|this, _, w, cx| this.load(w, cx))),
                         )
                     })
-                    .child(if self.embedded {
-                        Button::new("stream-info-cancel")
-                            .small()
-                            .label(if changed { "Revert" } else { "Reload" })
-                            .disabled(self.busy)
-                            .on_click(cx.listener(|this, _, w, cx| this.load(w, cx)))
-                    } else {
-                        Button::new("stream-info-cancel")
-                            .small()
-                            .label(if changed { "Cancel" } else { "Close" })
-                            .on_click(|_, window, cx| window.close_dialog(cx))
+                    .when(self.embedded && changed, |el| {
+                        el.child(
+                            Button::new("stream-info-cancel")
+                                .small()
+                                .ghost()
+                                .label("Revert")
+                                .disabled(self.busy)
+                                .on_click(cx.listener(|this, _, w, cx| this.load(w, cx))),
+                        )
+                    })
+                    .when(!self.embedded, |el| {
+                        el.child(
+                            Button::new("stream-info-cancel")
+                                .small()
+                                .ghost()
+                                .label(if changed { "Cancel" } else { "Close" })
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
                     })
                     .child(
                         Button::new("stream-info-save")

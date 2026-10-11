@@ -389,85 +389,573 @@ impl Workbench {
                 )
         });
     }
-    /// Newest first: kind pill, who, what, when and (if not Twitch) where.
-    fn render_feed(&self) -> AnyElement {
-        if self.feed.items.is_empty() {
-            return div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
-                "Nothing yet this session. Follows, subs, gifts, Bits, raids and rewards show up here; donations and YouTube/Kick events come in through Streamer.bot.",
-            ).into_any_element();
+    /// Request repaints for a short animation (no-op with reduced motion).
+    pub(super) fn animate_for(&self, duration: Duration, cx: &mut Context<Self>) {
+        if cx.reduce_motion() {
+            return;
         }
+        let frames = (duration.as_millis() / 16) as usize + 1;
+        cx.spawn(async move |view, cx| {
+            for _ in 0..frames {
+                cx.background_executor()
+                    .timer(Duration::from_millis(16))
+                    .await;
+                if view.update(cx, |_, cx| cx.notify()).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+    fn studio_run(
+        owner: WeakEntity<Workbench>,
+        pane: Option<Entity<ChannelPane>>,
+        own: String,
+        request: Request,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let Some(pane) = pane else { return };
+        let _ = owner.update(cx, |this, cx| {
+            this.run_twitch_command(pane, own, request, String::new(), window, cx)
+        });
+    }
+    /// A small confirmation dialog for consequential broadcast actions.
+    fn studio_confirm(
+        title: String,
+        body: &'static str,
+        action: &'static str,
+        run: impl Fn(&mut Window, &mut App) + 'static,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let run = std::rc::Rc::new(run);
+        window.open_dialog(cx, move |dialog, _, _| {
+            let run = run.clone();
+            dialog
+                .title(title.clone())
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .text_color(rgb(theme::MUTED))
+                        .child(body),
+                )
+                .footer(
+                    div()
+                        .h_flex()
+                        .justify_end()
+                        .gap_2()
+                        .child(
+                            Button::new("studio-cancel")
+                                .small()
+                                .ghost()
+                                .label("Cancel")
+                                .on_click(|_, w, cx| w.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("studio-confirm")
+                                .small()
+                                .primary()
+                                .label(action)
+                                .on_click(move |_, w, cx| {
+                                    w.close_dialog(cx);
+                                    run(w, cx);
+                                }),
+                        ),
+                )
+        });
+    }
+    fn studio_section(title: &'static str) -> Div {
         div()
-            .id("studio-feed")
+            .pt_4()
+            .pb_2()
+            .text_size(px(10.))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(rgb(theme::MUTED))
+            .child(title.to_uppercase())
+    }
+    fn feed_icon(kind: crate::activity_feed::Kind) -> gpui_kit::assets::IconName {
+        use crate::activity_feed::Kind;
+        use gpui_kit::assets::IconName as I;
+        match kind {
+            Kind::Follow => I::UserPlus,
+            Kind::Subscription => I::Star,
+            Kind::Bits => I::Gem,
+            Kind::Raid => I::Rocket,
+            Kind::Redemption => I::Sparkles,
+            Kind::Donation => I::HandCoins,
+            Kind::Other => I::Activity,
+        }
+    }
+    /// Activity tab: filter chips, then the newest-first feed.
+    fn render_feed(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        use crate::activity_feed::Kind;
+        let filters: [(Option<Kind>, &str); 6] = [
+            (None, "All"),
+            (Some(Kind::Follow), "Follows"),
+            (Some(Kind::Subscription), "Subs"),
+            (Some(Kind::Bits), "Bits"),
+            (Some(Kind::Redemption), "Rewards"),
+            (Some(Kind::Donation), "Tips"),
+        ];
+        let chips = div().h_flex().flex_wrap().gap_1().pt_3().children(
+            filters
+                .into_iter()
+                .enumerate()
+                .map(|(index, (kind, label))| {
+                    let selected = self.feed_filter == kind;
+                    div()
+                        .id(("feed-filter", index))
+                        .px(px(7.))
+                        .py(px(2.))
+                        .rounded_full()
+                        .text_size(px(11.))
+                        .cursor_pointer()
+                        .border_1()
+                        .map(|el| {
+                            if selected {
+                                el.bg(rgb(0x272237))
+                                    .border_color(rgb(0xA99CF4))
+                                    .text_color(rgb(0xD9D2FA))
+                            } else {
+                                el.border_color(rgb(theme::BORDER))
+                                    .text_color(rgb(theme::MUTED))
+                                    .hover(|s| s.bg(rgb(theme::HOVER)).text_color(rgb(theme::TEXT)))
+                            }
+                        })
+                        .child(label)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.feed_filter = kind;
+                            cx.notify();
+                        }))
+                }),
+        );
+        let items: Vec<_> = self
+            .feed
+            .items
+            .iter()
+            .filter(|i| self.feed_filter.is_none_or(|k| i.kind == k))
+            .take(60)
+            .cloned()
+            .collect();
+        if items.is_empty() {
+            return div()
+                .v_flex()
+                .child(chips)
+                .child(
+                    div()
+                        .v_flex()
+                        .items_center()
+                        .gap_2()
+                        .py_8()
+                        .child(
+                            div()
+                                .size(px(36.))
+                                .rounded_full()
+                                .bg(rgb(theme::CONTROL))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_color(rgb(theme::MUTED))
+                                .child(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Inbox)),
+                        )
+                        .child(div().text_size(px(13.)).font_weight(FontWeight::SEMIBOLD).child(if self.feed_filter.is_some() { "Nothing of this kind yet" } else { "No activity yet" }))
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).text_center().child("Follows, subs, Bits, raids, rewards and donations land here as they happen.")),
+                )
+                .into_any_element();
+        }
+        let now = chrono::Local::now();
+        let reduced = cx.reduce_motion();
+        div()
             .v_flex()
-            .gap_1()
-            .max_h(px(260.))
-            .overflow_y_scroll()
-            .children(
-                self.feed
-                    .items
-                    .iter()
-                    .take(40)
-                    .enumerate()
-                    .map(|(index, item)| {
+            .child(chips)
+            .child(
+                div()
+                    .v_flex()
+                    .pt_2()
+                    .children(items.into_iter().enumerate().map(|(index, item)| {
                         let (_, accent, background) =
                             crate::highlight_rules::COLORS[item.kind.color()];
+                        // The newest item eases in from above.
+                        let age = (now - item.at).num_milliseconds().max(0) as f32;
+                        let t = if reduced {
+                            1.
+                        } else {
+                            (age / 300.).clamp(0., 1.)
+                        };
+                        let eased = 1. - (1. - t).powi(3);
                         div()
-                            .id(("feed", index))
-                            .v_flex()
-                            .gap(px(2.))
-                            .px_2()
-                            .py_1()
-                            .rounded(px(6.))
-                            .bg(rgb(background))
-                            .border_l_2()
-                            .border_color(rgb(accent))
+                            .id(("feed-item", index))
+                            .h_flex()
+                            .items_start()
+                            .gap_2()
+                            .py_2()
+                            .border_b_1()
+                            .border_color(rgb(theme::BORDER))
+                            .opacity(0.2 + 0.8 * eased)
+                            .top(px(-6. * (1. - eased)))
                             .child(
                                 div()
-                                    .h_flex()
-                                    .gap_2()
-                                    .items_center()
-                                    .child(
-                                        div()
-                                            .text_size(px(10.))
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .text_color(rgb(accent))
-                                            .child(item.kind.label().to_uppercase()),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .overflow_hidden()
-                                            .whitespace_nowrap()
-                                            .text_ellipsis()
-                                            .text_size(px(12.))
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .child(item.who.clone()),
-                                    )
-                                    .when(item.source != "Twitch", |el| {
-                                        el.child(
-                                            div()
-                                                .text_size(px(10.))
-                                                .text_color(rgb(theme::MUTED))
-                                                .child(item.source.clone()),
-                                        )
+                                    .id(("feed-kind", index))
+                                    .tooltip({
+                                        let label = item.kind.label();
+                                        move |w, cx| {
+                                            gpui_kit::component::tooltip::Tooltip::new(label)
+                                                .build(w, cx)
+                                        }
                                     })
+                                    .size(px(26.))
+                                    .flex_shrink_0()
+                                    .rounded_full()
+                                    .bg(rgb(background))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_color(rgb(accent))
                                     .child(
-                                        div()
-                                            .text_size(px(10.))
-                                            .text_color(rgb(theme::MUTED))
-                                            .child(item.at.format("%H:%M").to_string()),
+                                        gpui_kit::component::Icon::new(Self::feed_icon(item.kind))
+                                            .xsmall(),
                                     ),
                             )
                             .child(
                                 div()
-                                    .text_size(px(11.))
-                                    .text_color(rgb(theme::MUTED))
-                                    .line_clamp(2)
-                                    .child(item.detail.clone()),
+                                    .v_flex()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .gap(px(2.))
+                                    .child(
+                                        div()
+                                            .h_flex()
+                                            .gap_2()
+                                            .items_center()
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .overflow_hidden()
+                                                    .whitespace_nowrap()
+                                                    .text_ellipsis()
+                                                    .text_size(px(12.))
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .child(item.who.clone()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex_shrink_0()
+                                                    .text_size(px(10.))
+                                                    .text_color(rgb(theme::MUTED))
+                                                    .child(item.at.format("%H:%M").to_string()),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(11.))
+                                            .text_color(rgb(theme::MUTED))
+                                            .line_clamp(2)
+                                            .child(if item.source == "Twitch" {
+                                                item.detail.clone()
+                                            } else {
+                                                format!("{} · {}", item.source, item.detail)
+                                            }),
+                                    ),
                             )
-                    }),
+                    })),
             )
+            .into_any_element()
+    }
+    /// Stream tab: stream info editor, then chat modes as switches.
+    fn render_stream_tab(
+        &mut self,
+        pane: Option<Entity<ChannelPane>>,
+        own: String,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let owner = cx.entity().downgrade();
+        let modes = pane.as_ref().and_then(|p| p.read(cx).room_settings.clone());
+        let rows: Vec<(&str, String, bool, &str, &str)> = match &modes {
+            Some(m) => vec![
+                (
+                    "Slow mode",
+                    m.slow
+                        .map(|s| format!("{s} s between messages"))
+                        .unwrap_or_else(|| "30 s between messages".into()),
+                    m.slow.is_some(),
+                    "/slow",
+                    "30",
+                ),
+                (
+                    "Followers only",
+                    match m.followers {
+                        Some(0) => "Any follower".into(),
+                        Some(n) => format!("Followed for {n} min"),
+                        None => "Only followers can chat".into(),
+                    },
+                    m.followers.is_some(),
+                    "/followers",
+                    "",
+                ),
+                (
+                    "Subscribers only",
+                    "Only subscribers can chat".into(),
+                    m.subscribers,
+                    "/subscribers",
+                    "",
+                ),
+                (
+                    "Emote only",
+                    "Messages must be emotes".into(),
+                    m.emote,
+                    "/emoteonly",
+                    "",
+                ),
+                (
+                    "Unique chat",
+                    "No repeated messages".into(),
+                    m.unique,
+                    "/uniquechat",
+                    "",
+                ),
+            ],
+            None => Vec::new(),
+        };
+        div()
+            .v_flex()
+            .child(Self::studio_section("Stream info"))
+            .children(self.studio_editor.clone())
+            .child(Self::studio_section("Chat modes"))
+            .when(rows.is_empty(), |el| {
+                el.child(
+                    div()
+                        .text_size(px(11.))
+                        .text_color(rgb(theme::MUTED))
+                        .child("Available once your chat is connected."),
+                )
+            })
+            .children(rows.into_iter().enumerate().map(
+                |(index, (label, detail, on, command, arg))| {
+                    let (owner, pane, own) = (owner.clone(), pane.clone(), own.clone());
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_3()
+                        .py_2()
+                        .child(
+                            div()
+                                .v_flex()
+                                .flex_1()
+                                .min_w_0()
+                                .child(div().text_size(px(12.)).child(label))
+                                .child(
+                                    div()
+                                        .text_size(px(11.))
+                                        .text_color(rgb(theme::MUTED))
+                                        .child(detail),
+                                ),
+                        )
+                        .child(
+                            gpui_kit::component::switch::Switch::new(("chat-mode", index))
+                                .checked(on)
+                                .on_click(move |checked: &bool, window, cx| {
+                                    let name = if *checked {
+                                        command.to_owned()
+                                    } else {
+                                        format!("{command}off")
+                                    };
+                                    let args = if *checked { arg } else { "" };
+                                    if let Some(Ok(request)) =
+                                        crate::twitch_actions::parse(&name, args)
+                                    {
+                                        Self::studio_run(
+                                            owner.clone(),
+                                            pane.clone(),
+                                            own.clone(),
+                                            request,
+                                            window,
+                                            cx,
+                                        );
+                                    }
+                                }),
+                        )
+                },
+            ))
+            .into_any_element()
+    }
+    /// Tools tab: quick broadcast actions and Streamer.bot.
+    fn render_tools_tab(
+        &mut self,
+        pane: Option<Entity<ChannelPane>>,
+        own: String,
+        live: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let owner = cx.entity().downgrade();
+        let raid_input = self.raid_input.clone().expect("created by render_studio");
+        let row = |icon: gpui_kit::assets::IconName, title: &'static str, detail: &'static str| {
+            div()
+                .h_flex()
+                .items_center()
+                .gap_3()
+                .py_2()
+                .child(
+                    div()
+                        .size(px(28.))
+                        .flex_shrink_0()
+                        .rounded(px(6.))
+                        .bg(rgb(theme::CONTROL))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_color(rgb(0xA99CF4))
+                        .child(gpui_kit::component::Icon::new(icon).xsmall()),
+                )
+                .child(
+                    div()
+                        .v_flex()
+                        .flex_1()
+                        .min_w_0()
+                        .child(div().text_size(px(12.)).child(title))
+                        .child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(rgb(theme::MUTED))
+                                .child(detail),
+                        ),
+                )
+        };
+        let marker = {
+            let (owner, pane, own) = (owner.clone(), pane.clone(), own.clone());
+            Button::new("studio-marker")
+                .xsmall()
+                .ghost()
+                .label("Add")
+                .disabled(!live)
+                .on_click(move |_, window, cx| {
+                    Self::studio_run(
+                        owner.clone(),
+                        pane.clone(),
+                        own.clone(),
+                        Request::Marker {
+                            description: String::new(),
+                        },
+                        window,
+                        cx,
+                    );
+                })
+        };
+        let ads = div()
+            .h_flex()
+            .gap_1()
+            .children([30u32, 60, 90].into_iter().map(|seconds| {
+                let (owner, pane, own) = (owner.clone(), pane.clone(), own.clone());
+                Button::new(("studio-ad", seconds as usize))
+                    .xsmall()
+                    .ghost()
+                    .label(format!("{seconds}s"))
+                    .disabled(!live)
+                    .on_click(move |_, window, cx| {
+                        let (owner, pane, own) = (owner.clone(), pane.clone(), own.clone());
+                        Self::studio_confirm(
+                            format!("Run a {seconds}-second ad?"),
+                            "Viewers see an ad break now.",
+                            "Run ad",
+                            move |w, cx| {
+                                Self::studio_run(
+                                    owner.clone(),
+                                    pane.clone(),
+                                    own.clone(),
+                                    Request::Commercial { seconds },
+                                    w,
+                                    cx,
+                                )
+                            },
+                            window,
+                            cx,
+                        );
+                    })
+            }));
+        let raid = {
+            let (owner, pane, own, input) =
+                (owner.clone(), pane.clone(), own.clone(), raid_input.clone());
+            Button::new("studio-raid")
+                .xsmall()
+                .ghost()
+                .label("Raid")
+                .on_click(move |_, window, cx| {
+                    let target = input
+                        .read(cx)
+                        .value()
+                        .trim()
+                        .trim_start_matches('@')
+                        .to_ascii_lowercase();
+                    let Some(Ok(request)) = crate::twitch_actions::parse("/raid", &target) else {
+                        window.push_notification(
+                            Notification::info("Enter the channel to raid."),
+                            cx,
+                        );
+                        return;
+                    };
+                    let (owner, pane, own) = (owner.clone(), pane.clone(), own.clone());
+                    Self::studio_confirm(
+                        format!("Raid #{target}?"),
+                        "Twitch starts a countdown; /unraid cancels it until it ends.",
+                        "Start raid",
+                        move |w, cx| {
+                            Self::studio_run(
+                                owner.clone(),
+                                pane.clone(),
+                                own.clone(),
+                                request.clone(),
+                                w,
+                                cx,
+                            )
+                        },
+                        window,
+                        cx,
+                    );
+                })
+        };
+        div()
+            .v_flex()
+            .child(Self::studio_section("Broadcast"))
+            .child(
+                row(
+                    gpui_kit::assets::IconName::BookmarkPlus,
+                    "Stream marker",
+                    if live {
+                        "Mark this moment for highlights"
+                    } else {
+                        "Available while live"
+                    },
+                )
+                .child(marker),
+            )
+            .child(
+                row(
+                    gpui_kit::assets::IconName::Tv,
+                    "Ad break",
+                    if live {
+                        "Run an ad now"
+                    } else {
+                        "Available while live"
+                    },
+                )
+                .child(ads),
+            )
+            .child(row(
+                gpui_kit::assets::IconName::Rocket,
+                "Raid",
+                "Send your viewers to another channel",
+            ))
+            .child(
+                div()
+                    .h_flex()
+                    .gap_2()
+                    .pl(px(40.))
+                    .child(div().flex_1().child(Input::new(&raid_input).small()))
+                    .child(raid),
+            )
+            .child(Self::studio_section("Streamer.bot"))
+            .child(self.render_bot_card(cx))
             .into_any_element()
     }
     pub(super) fn render_studio(
@@ -490,168 +978,141 @@ impl Workbench {
             }));
         }
         if self.raid_input.is_none() {
-            self.raid_input =
-                Some(cx.new(|cx| InputState::new(window, cx).placeholder("Channel to raid")));
+            self.raid_input = Some(cx.new(|cx| InputState::new(window, cx).placeholder("Channel")));
         }
         let detail = self.streams.detail(&own).map(|(info, _)| info.clone());
-        let owner = cx.entity().downgrade();
-        let action = |id: &'static str,
-                      label: &'static str,
-                      request: Request,
-                      confirm: Option<String>| {
-            let (owner, pane, own) = (owner.clone(), pane.clone(), own.clone());
-            Button::new(id)
-                .xsmall()
-                .label(label)
-                .on_click(move |_, window, cx| {
-                    let Some(pane) = pane.clone() else { return };
-                    let (owner, own, request) = (owner.clone(), own.clone(), request.clone());
-                    match confirm.clone() {
-                        None => {
-                            let _ = owner.update(cx, |this, cx| {
-                                this.run_twitch_command(
-                                    pane,
-                                    own,
-                                    request,
-                                    String::new(),
-                                    window,
-                                    cx,
-                                )
-                            });
-                        }
-                        Some(question) => window.open_dialog(cx, move |dialog, _, _| {
-                            let (owner, pane, own, request) =
-                                (owner.clone(), pane.clone(), own.clone(), request.clone());
-                            dialog.title(question.clone()).footer(
-                                div()
-                                    .h_flex()
-                                    .justify_end()
-                                    .gap_2()
-                                    .child(
-                                        Button::new("studio-cancel")
-                                            .small()
-                                            .label("Cancel")
-                                            .on_click(|_, w, cx| w.close_dialog(cx)),
-                                    )
-                                    .child(
-                                        Button::new("studio-confirm")
-                                            .small()
-                                            .primary()
-                                            .label("Confirm")
-                                            .on_click(move |_, w, cx| {
-                                                w.close_dialog(cx);
-                                                let (pane, own, request) =
-                                                    (pane.clone(), own.clone(), request.clone());
-                                                let _ = owner.update(cx, |this, cx| {
-                                                    this.run_twitch_command(
-                                                        pane,
-                                                        own,
-                                                        request,
-                                                        String::new(),
-                                                        w,
-                                                        cx,
-                                                    )
-                                                });
-                                            }),
-                                    ),
-                            )
-                        }),
-                    }
-                })
-        };
-        let raid_input = self.raid_input.clone().expect("created above");
-        let raid_owner = owner.clone();
-        let raid_pane = pane.clone();
-        let raid_own = own.clone();
-        let card = |title: &'static str| {
-            div()
-                .v_flex()
-                .gap_2()
-                .p_2()
-                .rounded(px(8.))
-                .bg(rgb(theme::ELEVATED))
-                .border_1()
-                .border_color(rgb(theme::BORDER))
-                .child(
-                    div()
-                        .text_size(px(10.))
-                        .text_color(rgb(theme::MUTED))
-                        .child(title.to_uppercase()),
-                )
-        };
         let live = detail.as_ref().is_some_and(|i| i.live);
-        let (pill_color, pill_text) = match &detail {
+        let (tag_color, tag) = match &detail {
             Some(info) if info.live => (
                 theme::STREAM_LIVE,
                 format!(
-                    "● LIVE{}",
+                    "LIVE{}",
                     info.uptime().map(|u| format!(" · {u}")).unwrap_or_default()
                 ),
             ),
-            Some(_) => (theme::STREAM_OFFLINE, "○ OFFLINE".into()),
-            None => (theme::STREAM_UNKNOWN, "◌ CHECKING".into()),
+            Some(_) => (theme::STREAM_OFFLINE, "OFFLINE".into()),
+            None => (theme::STREAM_UNKNOWN, "CHECKING".into()),
+        };
+        let chat_problem = pane
+            .as_ref()
+            .map(|p| p.read(cx))
+            .filter(|p| !p.connected)
+            .map(|p| p.connection.clone());
+        if self.studio_tab == 0 {
+            self.feed.unseen = 0;
+        }
+        let unseen = self.feed.unseen;
+        // Tab content fades in when switching.
+        let fade = if cx.reduce_motion() {
+            1.
+        } else {
+            (self.studio_tab_switched.elapsed().as_secs_f32() / 0.15).clamp(0., 1.)
+        };
+        let body = match self.studio_tab {
+            1 => self.render_stream_tab(pane.clone(), own.clone(), cx),
+            2 => self.render_tools_tab(pane.clone(), own.clone(), live, cx),
+            _ => self.render_feed(cx),
         };
         div()
-            .id("studio")
             .v_flex()
             .w(px(STUDIO_WIDTH))
             .h_full()
             .flex_shrink_0()
-            .gap_2()
-            .p_2()
-            .overflow_y_scroll()
             .bg(rgb(theme::PANEL))
             .border_l_1()
             .border_color(rgb(theme::BORDER))
             .child(
-                div().h_flex().items_center().gap_2().px_1()
-                    .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().font_weight(FontWeight::SEMIBOLD).child(format!("Studio · #{own}")))
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .px_3()
+                    .pt_3()
+                    .pb_2()
+                    .child(
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .text_ellipsis()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(format!("#{own}")),
+                            )
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .px_2()
+                                    .py(px(1.))
+                                    .rounded(px(10.))
+                                    .text_size(px(10.))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(rgb(tag_color))
+                                    .border_1()
+                                    .border_color(rgb(tag_color))
+                                    .child(tag),
+                            ),
+                    )
+                    // Always exactly one status line, so the tabs never shift.
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .map(
+                                |el| match (&chat_problem, detail.as_ref().filter(|i| i.live)) {
+                                    (Some(problem), _) => el
+                                        .text_color(rgb(theme::STREAM_UNKNOWN))
+                                        .child(format!("Chat · {problem}")),
+                                    (None, Some(info)) => el.text_color(rgb(theme::MUTED)).child(
+                                        format!("{} viewers · {}", info.viewers, info.category),
+                                    ),
+                                    (None, None) => {
+                                        el.text_color(rgb(theme::MUTED)).child("Chat connected")
+                                    }
+                                },
+                            ),
+                    ),
             )
-            .child(card("Broadcast status")
-                .child(div().h_flex().items_center().gap_2()
-                    .child(div().px_2().py(px(2.)).rounded(px(10.)).text_size(px(11.)).font_weight(FontWeight::SEMIBOLD).text_color(rgb(pill_color)).border_1().border_color(rgb(pill_color)).child(pill_text))
-                    .when_some(detail.as_ref().filter(|_| live), |el, info| el.child(div().text_size(px(12.)).child(format!("{} viewers", info.viewers)))))
-                .when_some(detail.as_ref().filter(|i| i.live && !i.category.is_empty()), |el, info| el.child(div().text_size(px(12.)).text_color(rgb(0xC5B8E6)).child(info.category.clone())))
-                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
-                    pane.as_ref().map(|p| format!("Chat · {}", p.read(cx).connection)).unwrap_or_default(),
-                )))
-            .child(card("Activity").child(self.render_feed()))
-            .child(card("Stream info").children(self.studio_editor.clone()))
-            .child(card("Chat modes").child(match &pane {
-                Some(pane) => mode_buttons(owner.clone(), pane.clone(), own.clone(), pane.read(cx).room_settings.clone()),
-                None => div(),
-            }))
-            .child(card("Streamer.bot").child(self.render_bot_card(cx)))
-            .child(card("Broadcast")
-                .child(div().h_flex().flex_wrap().gap_1()
-                    .child(action("studio-marker", "Add marker", Request::Marker { description: String::new() }, None))
-                    .child(action("studio-ad-30", "Ad 30s", Request::Commercial { seconds: 30 }, Some("Run a 30-second ad now?".into())))
-                    .child(action("studio-ad-60", "Ad 60s", Request::Commercial { seconds: 60 }, Some("Run a 60-second ad now?".into())))
-                    .child(action("studio-ad-90", "Ad 90s", Request::Commercial { seconds: 90 }, Some("Run a 90-second ad now?".into()))))
-                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(if live { "Markers and ads apply to your current stream." } else { "Markers and ads work once you're live." }))
-                .child(div().h_flex().gap_1()
-                    .child(div().flex_1().child(Input::new(&raid_input).small()))
-                    .child(Button::new("studio-raid").xsmall().label("Raid…").on_click(move |_, window, cx| {
-                        let target = raid_input.read(cx).value().trim().trim_start_matches('@').to_ascii_lowercase();
-                        let Some(Ok(request)) = crate::twitch_actions::parse("/raid", &target) else {
-                            window.push_notification(Notification::info("Enter the channel to raid."), cx);
-                            return;
-                        };
-                        let (owner, pane, own) = (raid_owner.clone(), raid_pane.clone(), raid_own.clone());
-                        let Some(pane) = pane else { return };
-                        window.open_dialog(cx, move |dialog, _, _| {
-                            let (owner, pane, own, request) = (owner.clone(), pane.clone(), own.clone(), request.clone());
-                            dialog.title(format!("Raid #{target}?"))
-                                .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Twitch starts a countdown; you can cancel with /unraid until it ends."))
-                                .footer(div().h_flex().justify_end().gap_2()
-                                    .child(Button::new("raid-cancel").small().label("Cancel").on_click(|_, w, cx| w.close_dialog(cx)))
-                                    .child(Button::new("raid-confirm").small().primary().label("Start raid").on_click(move |_, w, cx| {
-                                        w.close_dialog(cx);
-                                        let (pane, own, request) = (pane.clone(), own.clone(), request.clone());
-                                        let _ = owner.update(cx, |this, cx| this.run_twitch_command(pane, own, request, String::new(), w, cx));
-                                    })))
-                        });
-                    }))))
+            .child(
+                div().px_3().child(
+                    gpui_kit::component::tab::TabBar::new("studio-tabs")
+                        .segmented()
+                        .selected_index(self.studio_tab)
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            if this.studio_tab != *index {
+                                this.studio_tab = *index;
+                                this.studio_tab_switched = std::time::Instant::now();
+                                this.animate_for(Duration::from_millis(160), cx);
+                                this.schedule_save(cx);
+                                cx.notify();
+                            }
+                        }))
+                        .child(gpui_kit::component::tab::Tab::new().label(if unseen > 0 {
+                            format!("Activity · {unseen}")
+                        } else {
+                            "Activity".into()
+                        }))
+                        .child(gpui_kit::component::tab::Tab::new().label("Stream"))
+                        .child(gpui_kit::component::tab::Tab::new().label("Tools")),
+                ),
+            )
+            .child(
+                div()
+                    .id("studio-body")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .px_3()
+                    .pb_3()
+                    .opacity(fade)
+                    .child(body),
+            )
             .into_any_element()
     }
 }
