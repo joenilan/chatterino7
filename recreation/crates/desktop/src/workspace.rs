@@ -180,6 +180,8 @@ pub struct Workbench {
     automod: std::collections::HashMap<String, std::rc::Rc<Vec<crate::automod::Held>>>,
     /// Own-channel extra subscriptions Twitch refused (None until the own channel connects).
     own_extras_refused: Option<Vec<&'static str>>,
+    /// Channels where you chose not to see AutoMod (not subscribed either).
+    automod_hidden: std::collections::BTreeSet<String>,
     /// Moderated channels with a live AutoMod queue subscription.
     mod_automod_channels: Vec<String>,
     /// Ping sounds (Chatterino defaults: mentions on, other highlights off,
@@ -562,6 +564,13 @@ impl Workbench {
             account_focus: None,
             automod: Default::default(),
             own_extras_refused: None,
+            automod_hidden: state["automod_hidden"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str())
+                .filter_map(chat_core::twitch_login)
+                .collect(),
             mod_automod_channels: Vec::new(),
             sound_mentions: state["sound"]["mentions"].as_bool().unwrap_or(true),
             sound_highlights: state["sound"]["highlights"].as_bool().unwrap_or(false),
@@ -1072,6 +1081,7 @@ impl Workbench {
                     let p = p.read(cx);
                     p.name.as_ref() == channel.as_str()
                         && p.role == Some(crate::capabilities::Role::Moderator)
+                        && !self.automod_hidden.contains(channel.as_str())
                 })
             })
             .cloned()
@@ -1145,6 +1155,8 @@ impl Workbench {
                     self.own_extras_refused = Some(refused);
                     cx.notify();
                 }
+                crate::live::Event::AutoMod(channel, _)
+                    if self.automod_hidden.contains(channel.as_str()) => {}
                 crate::live::Event::AutoMod(channel, update) => {
                     let queue = self.automod.entry(channel.clone()).or_default();
                     let notice = crate::automod::apply(std::rc::Rc::make_mut(queue), update);
@@ -1780,6 +1792,26 @@ impl Workbench {
                 this.ping(*ping, id, window);
                 return;
             }
+            if let PaneEvent::DismissAutoMod(id) = event {
+                if let Some(queue) = this.automod.get_mut(channel.as_str()) {
+                    std::rc::Rc::make_mut(queue).retain(|h| h.id != *id);
+                    let queue = queue.clone();
+                    this.share_automod(&channel, queue, cx);
+                }
+                return;
+            }
+            if matches!(event, PaneEvent::HideAutoMod) {
+                this.automod_hidden.insert(channel.clone());
+                this.automod.remove(channel.as_str());
+                this.share_automod(&channel, Default::default(), cx);
+                this.notice = Some((
+                    format!("AutoMod hidden in #{channel}. Settings > Chat lists hidden channels."),
+                    std::time::Instant::now(),
+                ));
+                this.schedule_save(cx);
+                cx.notify();
+                return;
+            }
             if let PaneEvent::AutoMod(id, allow) = event {
                 this.resolve_automod(channel.clone(), id.clone(), *allow, window, cx);
                 return;
@@ -2132,6 +2164,7 @@ impl Workbench {
         value["accounts"] = accounts["accounts"].clone();
         value["active_account"] = accounts["active_account"].clone();
         value["send_as"] = json!(self.send_as);
+        value["automod_hidden"] = json!(self.automod_hidden);
         value["popouts"] = json!(self.popout_channels(cx));
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());

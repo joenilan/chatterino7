@@ -176,6 +176,10 @@ enum PaneEvent {
     Ping(attention::Ping, String),
     /// Allow (true) or deny a held AutoMod message.
     AutoMod(String, bool),
+    /// Remove a held message from your screen without acting on it.
+    DismissAutoMod(String),
+    /// Stop showing (and subscribing to) AutoMod in this channel.
+    HideAutoMod,
     RunBotAction {
         action: streamer_bot::Action,
         args: serde_json::Value,

@@ -44,7 +44,16 @@ impl ChannelPane {
                                     .text_color(rgb(theme::MUTED))
                                     .child(format!("· {hidden} older not shown")),
                             )
-                        }),
+                        })
+                        .child(div().flex_1())
+                        .child(
+                            Button::new("automod-hide-channel")
+                                .xsmall()
+                                .ghost()
+                                .label("Hide here")
+                                .tooltip("Stop showing AutoMod in this channel (Settings > Chat brings it back)")
+                                .on_click(cx.listener(|_, _, _, cx| cx.emit(PaneEvent::HideAutoMod))),
+                        ),
                 )
                 .children(
                     self.automod
@@ -53,7 +62,8 @@ impl ChannelPane {
                         .take(SHOWN)
                         .enumerate()
                         .map(|(index, held)| {
-                            let (allow_id, deny_id) = (held.id.clone(), held.id.clone());
+                            let (allow_id, deny_id, dismiss_id) =
+                                (held.id.clone(), held.id.clone(), held.id.clone());
                             div()
                                 .h_flex()
                                 .items_center()
@@ -102,6 +112,16 @@ impl ChannelPane {
                                         .disabled(held.pending)
                                         .on_click(cx.listener(move |_, _, _, cx| {
                                             cx.emit(PaneEvent::AutoMod(deny_id.clone(), false))
+                                        })),
+                                )
+                                .child(
+                                    Button::new(("automod-dismiss", index))
+                                        .xsmall()
+                                        .ghost()
+                                        .icon(gpui_kit::component::IconName::Close)
+                                        .tooltip("Dismiss: hide it here without allowing or denying")
+                                        .on_click(cx.listener(move |_, _, _, cx| {
+                                            cx.emit(PaneEvent::DismissAutoMod(dismiss_id.clone()))
                                         })),
                                 )
                         }),

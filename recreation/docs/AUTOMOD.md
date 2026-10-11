@@ -35,3 +35,12 @@ newly visible channels once a socket's 10 are taken.
 Evidence (Windows, 2026-10-11): Twitch accepted both subscriptions for #dreadedzombie
 (`own_extras_refused: []`), and the parser/queue tests pass. No message has been held live yet,
 because a broadcaster's own messages are never held.
+
+## Dismiss and hide (owner request, 2026-10-11)
+
+- **Dismiss (×)** on each held message removes it from your screen without allowing or denying. Other
+  moderators can still handle it, and Twitch expires it.
+- **Hide here** in the strip's header stops AutoMod for that channel: nothing is shown and the channel
+  is no longer subscribed, which frees its slot for channels you actually moderate. For channels where you
+  only hold the mod role as a friend. Settings → Chat lists hidden channels, and "Show all again" brings them back.
+

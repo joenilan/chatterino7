@@ -258,6 +258,17 @@ impl Workbench {
                         }))
                         .children(crate::similarity::Mode::ALL.map(|m| gpui_kit::component::tab::Tab::new().label(m.label()))),
                 ))
+                .when(!self.automod_hidden.is_empty(), |el| {
+                    el.child(row(
+                        "AutoMod hidden in",
+                        self.automod_hidden.iter().map(|c| format!("#{c}")).collect::<Vec<_>>().join(", "),
+                        Button::new("settings-automod-unhide").small().label("Show all again").on_click(cx.listener(|this, _, _, cx| {
+                            this.automod_hidden.clear();
+                            this.schedule_save(cx);
+                            cx.notify();
+                        })),
+                    ))
+                })
                 .child(row(
                     "Hide blocked users",
                     match &self.blocks.ids {
