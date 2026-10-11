@@ -194,6 +194,7 @@ pub struct Workbench {
     /// Twitch block list; blocked users' messages are hidden unless turned off.
     blocks: crate::blocks::Blocks,
     hide_blocked: bool,
+    similar_mode: crate::similarity::Mode,
     /// Optional chat logs (off by default).
     logs: crate::chat_logs::Logs,
     logs_enabled: bool,
@@ -549,6 +550,9 @@ impl Workbench {
             popouts: Vec::new(),
             blocks: crate::blocks::Blocks::new(),
             hide_blocked: state["hide_blocked"].as_bool().unwrap_or(true),
+            similar_mode: crate::similarity::Mode::from_key(
+                state["similar_messages"].as_str().unwrap_or(""),
+            ),
             logs: crate::chat_logs::Logs::new(),
             logs_enabled: state["logs"]["enabled"].as_bool().unwrap_or(false),
             logs_folder: state["logs"]["folder"]
@@ -802,6 +806,10 @@ impl Workbench {
         // Keep each composer's "send as" picker in step with the signed-in accounts.
         let options = std::rc::Rc::new(self.send_as_options(cx));
         for pane in &panes {
+            if pane.read(cx).similar_mode != self.similar_mode {
+                let mode = self.similar_mode;
+                pane.update(cx, |p, _| p.similar_mode = mode);
+            }
             if pane.read(cx).streamer_mode != self.streamer_live {
                 let live = self.streamer_live;
                 pane.update(cx, |p, _| p.streamer_mode = live);
@@ -1997,6 +2005,7 @@ impl Workbench {
         value["send_as"] = json!(self.send_as);
         value["popouts"] = json!(self.popout_channels(cx));
         value["hide_blocked"] = json!(self.hide_blocked);
+        value["similar_messages"] = json!(self.similar_mode.key());
         value["logs"] =
             json!({"enabled": self.logs_enabled, "folder": self.logs_folder.display().to_string()});
         value["streamer_mode"] =

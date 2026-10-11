@@ -85,6 +85,8 @@ pub struct MessagePresentation {
     pub source: Option<String>,
     /// Loaded from recent history rather than received live.
     pub historical: bool,
+    /// Nearly repeats the same chatter's recent message (shown dimmed).
+    pub similar: bool,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
@@ -390,6 +392,8 @@ mod tests {
                 id: "synthetic".into(),
                 label: "Wave".into(),
                 overlay: true,
+                animated: false,
+                asset: None,
             },
         ];
         assert_eq!(m.body(), "日本語 👩🏽‍💻 Wave");

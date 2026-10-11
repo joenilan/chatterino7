@@ -456,7 +456,7 @@ mod tests {
         let (dock, changed) = dock.pin_first("me");
         assert!(changed);
         assert_eq!(dock.primary(), vec!["me".to_owned(), "a".to_owned()]);
-        let (dock, changed) = dock.pin_first("me");
+        let (_, changed) = dock.pin_first("me");
         assert!(!changed);
         let (_, changed) = Dock::Leaf("x".into()).pin_first("me");
         assert!(changed);

@@ -237,6 +237,19 @@ impl Workbench {
                     open_button("settings-commands", "Edit").on_click(cx.listener(|this, _, w, cx| this.open_custom_commands(None, w, cx))),
                 ))
                 .child(row(
+                    "Repeated messages",
+                    "When someone posts nearly the same thing again within a minute (90% alike), like Chatterino's similar-message filter.",
+                    gpui_kit::component::tab::TabBar::new("settings-similar")
+                        .segmented()
+                        .selected_index(crate::similarity::Mode::ALL.iter().position(|m| *m == self.similar_mode).unwrap_or(0))
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            this.similar_mode = crate::similarity::Mode::ALL[*index];
+                            this.schedule_save(cx);
+                            cx.notify();
+                        }))
+                        .children(crate::similarity::Mode::ALL.map(|m| gpui_kit::component::tab::Tab::new().label(m.label()))),
+                ))
+                .child(row(
                     "Hide blocked users",
                     match &self.blocks.ids {
                         Some(ids) if ids.len() >= crate::blocks::MAX_IDS => format!(

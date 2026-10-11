@@ -52,6 +52,7 @@ mod seven_events;
 mod seven_lookup;
 mod seven_paints;
 mod seven_presence;
+mod similarity;
 mod sound;
 mod storage;
 mod stream_preview;
@@ -204,6 +205,8 @@ struct ChannelPane {
     quiet_pings: bool,
     /// Streamer mode is active: no stream thumbnails in the header card.
     streamer_mode: bool,
+    /// What to do with a chatter's near-repeats of their recent messages.
+    similar_mode: similarity::Mode,
     send_as: Option<SharedString>,
     connection: String,
     connected: bool,
@@ -297,6 +300,7 @@ impl ChannelPane {
             automod: Default::default(),
             quiet_pings: false,
             streamer_mode: false,
+            similar_mode: Default::default(),
             send_as: None,
             media,
             catalog,
@@ -415,6 +419,15 @@ impl ChannelPane {
                     .expand(&self.name, &message.user_id, &message.fragments);
             if let ignores::Outcome::Hide = self.ignores.borrow().apply(message) {
                 return;
+            }
+            if self.similar_mode != similarity::Mode::Show
+                && !historical
+                && similarity::is_repeat(message, self.timeline.borrow().messages().iter())
+            {
+                if self.similar_mode == similarity::Mode::Hide {
+                    return;
+                }
+                message.presentation.similar = true;
             }
             chatter_appearance::apply(&self.chatter_appearance, message);
         }
@@ -870,7 +883,7 @@ impl Render for ChannelPane {
                                 .left(px(12.0 * (1.0 - eased)))
                                 .top(px(6.0 * (1.0 - eased)))
                                 // Recent history is dimmed, as in Chatterino.
-                                .opacity(if message.presentation.historical { 0.6 } else { 0.25 + 0.75 * eased })
+                                .opacity(if message.presentation.similar { 0.4 } else if message.presentation.historical { 0.6 } else { 0.25 + 0.75 * eased })
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()

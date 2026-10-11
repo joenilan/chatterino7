@@ -1349,6 +1349,7 @@ pub(crate) fn chat_message(
                         .collect()
                 }),
             historical: false,
+            similar: false,
         },
         deleted: false,
     }
