@@ -2,6 +2,8 @@
 mod accounts_ui;
 #[path = "activity.rs"]
 mod activity;
+#[path = "automod_actions.rs"]
+mod automod_actions;
 #[path = "channel_details.rs"]
 mod channel_details;
 #[path = "channel_switcher.rs"]
@@ -168,6 +170,10 @@ pub struct Workbench {
     account_focus: Option<usize>,
     /// "Send as" choice per channel: the chosen account's vault entry.
     send_as: std::collections::HashMap<String, SharedString>,
+    /// Held AutoMod messages per channel (session only).
+    automod: std::collections::HashMap<String, std::rc::Rc<Vec<crate::automod::Held>>>,
+    /// Own-channel extra subscriptions Twitch refused (None until the own channel connects).
+    own_extras_refused: Option<Vec<&'static str>>,
     live: crate::live::LiveChat,
     streams: crate::stream_status::Streams,
     capabilities: crate::capabilities::Capabilities,
@@ -327,7 +333,7 @@ impl Workbench {
         json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()})
     }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"capabilities":self.capabilities.inspection(),"seventv_presence":self.presence.last.lock().map(|s|s.clone()).unwrap_or_default(),"roles":self.panes().iter().map(|p|{let p=p.read(cx);(p.name.to_string(),p.role.map(|r|r.label()))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
+        json!({"own_extras_refused":self.own_extras_refused,"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"capabilities":self.capabilities.inspection(),"seventv_presence":self.presence.last.lock().map(|s|s.clone()).unwrap_or_default(),"roles":self.panes().iter().map(|p|{let p=p.read(cx);(p.name.to_string(),p.role.map(|r|r.label()))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
     }
     /// Channels to connect, highest priority first: visible panes, the rest of the
     /// active workspace, then other workspaces by most recent use. Beyond the
@@ -487,6 +493,8 @@ impl Workbench {
             account: accounts[active_account].clone(),
             accounts,
             account_focus: None,
+            automod: Default::default(),
+            own_extras_refused: None,
             send_as: state["send_as"]
                 .as_object()
                 .into_iter()
@@ -719,6 +727,19 @@ impl Workbench {
         // Keep each composer's "send as" picker in step with the signed-in accounts.
         let options = std::rc::Rc::new(self.send_as_options(cx));
         for pane in &panes {
+            let held = self
+                .automod
+                .get(pane.read(cx).name.as_ref())
+                .cloned()
+                .unwrap_or_default();
+            if !std::rc::Rc::ptr_eq(&pane.read(cx).automod, &held)
+                && !(held.is_empty() && pane.read(cx).automod.is_empty())
+            {
+                pane.update(cx, |p, cx| {
+                    p.automod = held;
+                    cx.notify();
+                });
+            }
             let send_as = self.send_as.get(pane.read(cx).name.as_ref()).cloned();
             if *pane.read(cx).send_as_options != *options || pane.read(cx).send_as != send_as {
                 let options = options.clone();
@@ -920,6 +941,20 @@ impl Workbench {
                     text,
                 } => {
                     self.whisper_received(id, from_login, from_name, text, window, cx);
+                }
+                crate::live::Event::OwnExtras(refused) => {
+                    self.own_extras_refused = Some(refused);
+                    cx.notify();
+                }
+                crate::live::Event::AutoMod(channel, update) => {
+                    let queue = self.automod.entry(channel.clone()).or_default();
+                    let notice = crate::automod::apply(std::rc::Rc::make_mut(queue), update);
+                    let queue = queue.clone();
+                    self.share_automod(&channel, queue, cx);
+                    if let Some(notice) = notice {
+                        self.notice = Some((notice, std::time::Instant::now()));
+                    }
+                    cx.notify();
                 }
                 crate::live::Event::Activity(item) => {
                     self.feed.push(item);
@@ -1497,6 +1532,10 @@ impl Workbench {
             }
             if let PaneEvent::RunBotAction { action, args } = event {
                 this.run_bot_action(action.clone(), args.clone(), cx);
+                return;
+            }
+            if let PaneEvent::AutoMod(id, allow) = event {
+                this.resolve_automod(channel.clone(), id.clone(), *allow, window, cx);
                 return;
             }
             if let PaneEvent::SendAs(vault) = event {

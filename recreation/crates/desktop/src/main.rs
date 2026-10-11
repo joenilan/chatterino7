@@ -4,6 +4,8 @@ mod assets;
 mod attention;
 mod attention_navigation;
 mod auth;
+mod automod;
+mod automod_ui;
 mod capabilities;
 mod catalog;
 mod chat_pause;
@@ -156,6 +158,8 @@ enum PaneEvent {
     OpenModTools,
     /// Choose which signed-in account sends from this pane (vault entry).
     SendAs(SharedString),
+    /// Allow (true) or deny a held AutoMod message.
+    AutoMod(String, bool),
     RunBotAction {
         action: streamer_bot::Action,
         args: serde_json::Value,
@@ -186,6 +190,8 @@ struct ChannelPane {
     bot_actions: std::rc::Rc<Vec<streamer_bot::Action>>,
     /// Signed-in accounts (vault, login), active first; the picker shows with 2+.
     send_as_options: std::rc::Rc<Vec<(SharedString, String)>>,
+    /// Messages AutoMod is holding in this channel for you to review.
+    automod: std::rc::Rc<Vec<automod::Held>>,
     send_as: Option<SharedString>,
     connection: String,
     connected: bool,
@@ -276,6 +282,7 @@ impl ChannelPane {
             mod_tools: false,
             bot_actions: Default::default(),
             send_as_options: Default::default(),
+            automod: Default::default(),
             send_as: None,
             media,
             catalog,
@@ -934,6 +941,7 @@ impl Render for ChannelPane {
                         cx.stop_propagation();
                     }
                 }))
+                .children(self.render_automod(cx))
                 .children(self.render_reply_target(cx))
                 .children(picker)
                 .children(suggestions)

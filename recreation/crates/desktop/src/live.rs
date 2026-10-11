@@ -42,6 +42,10 @@ pub enum Event {
     Resolved(String, String),
     /// Follow or reward redemption on the signed-in broadcaster's own channel.
     Activity(crate::activity_feed::Item),
+    /// Own-channel extras (follows, redemptions, AutoMod) Twitch refused.
+    OwnExtras(Vec<&'static str>),
+    /// A held AutoMod message, or its outcome, in a channel you moderate.
+    AutoMod(String, crate::automod::Update),
     /// A whisper received by the signed-in account.
     Whisper {
         id: String,
@@ -374,9 +378,12 @@ fn optional_kind(kind: &str) -> bool {
 }
 /// Extra, optional subscriptions for the signed-in broadcaster's own channel,
 /// feeding the Studio activity feed: (type, version).
-const OWN_KINDS: [(&str, &str); 2] = [
+const OWN_KINDS: [(&str, &str); 4] = [
     ("channel.follow", "2"),
     ("channel.channel_points_custom_reward_redemption.add", "1"),
+    // AutoMod queue: held messages and their outcome.
+    ("automod.message.hold", "2"),
+    ("automod.message.update", "2"),
 ];
 /// EventSub allows 300 enabled subscriptions per WebSocket and three WebSockets
 /// per user token. One shard also carries the own channel's extras.
@@ -420,6 +427,8 @@ struct Assignment {
     ids: Vec<String>,
     step: usize,
     notices_unavailable: bool,
+    /// Own-channel extras Twitch refused (missing scope or role).
+    extras_refused: Vec<&'static str>,
     ready: bool,
     failed_until: Option<Instant>,
 }
@@ -432,6 +441,7 @@ impl Assignment {
             ids: Vec::new(),
             step: 0,
             notices_unavailable: false,
+            extras_refused: Vec::new(),
             ready: false,
             failed_until: None,
         }
@@ -441,6 +451,7 @@ impl Assignment {
         self.ids.clear();
         self.step = 0;
         self.notices_unavailable = false;
+        self.extras_refused.clear();
         self.ready = false;
     }
 }
@@ -786,7 +797,7 @@ impl Step<'_> {
         let extra = a.step >= CHANNEL_KINDS.len();
         let (kind, kind_version, condition) = if extra {
             let (kind, kind_version) = OWN_KINDS[a.step - CHANNEL_KINDS.len()];
-            let condition = if kind == "channel.follow" {
+            let condition = if kind == "channel.follow" || kind.starts_with("automod.") {
                 json!({"broadcaster_user_id":broadcaster,"moderator_user_id":self.identity.user_id})
             } else {
                 json!({"broadcaster_user_id":broadcaster})
@@ -848,7 +859,8 @@ impl Step<'_> {
                 a.ids.push(id.to_owned());
             }
         } else if extra {
-            // Activity-feed extras are best effort (missing scope or role).
+            // Activity-feed and AutoMod extras are best effort (missing scope or role).
+            a.extras_refused.push(kind);
         } else if optional_kind(kind) {
             a.notices_unavailable = true;
         } else {
@@ -867,6 +879,9 @@ impl Step<'_> {
         if a.step == total {
             a.ready = true;
             a.failed_until = None;
+            if own {
+                let _ = tx.send((version, Event::OwnExtras(a.extras_refused.clone())));
+            }
             let _ = self.snapshots.try_send(RoomSnapshot {
                 version,
                 identity: self.identity.clone(),
@@ -1066,6 +1081,10 @@ fn deliver(
         return;
     }
     let kind = v["payload"]["subscription"]["type"].as_str().unwrap_or("");
+    if let Some(update) = crate::automod::parse(kind, e) {
+        let _ = tx.send((version, Event::AutoMod(channel, update)));
+        return;
+    }
     if let Some(item) = crate::activity_feed::Feed::from_eventsub(kind, e) {
         let _ = tx.send((version, Event::Activity(item)));
         return;
