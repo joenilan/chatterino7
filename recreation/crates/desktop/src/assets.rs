@@ -18,7 +18,10 @@ gpui_kit::assets::icon_assets!(
         HandCoins,
         Activity,
         BookmarkPlus,
-        Tv
+        Tv,
+        ChartBar,
+        Trophy,
+        Lock
     ]
 );
 

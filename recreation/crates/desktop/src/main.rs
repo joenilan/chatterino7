@@ -19,6 +19,7 @@ mod control;
 mod custom_commands;
 mod dock;
 mod emote_picker;
+mod engagement;
 mod event_highlights;
 mod ffz_badges;
 mod ffz_role_badges;

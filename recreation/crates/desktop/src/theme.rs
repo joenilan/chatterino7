@@ -13,6 +13,8 @@ pub const MUTED: u32 = 0xA4A9B1;
 pub const STREAM_LIVE: u32 = 0x91D7BA;
 pub const STREAM_OFFLINE: u32 = 0xB4ACC6;
 pub const STREAM_UNKNOWN: u32 = 0xE8C68A;
+/// Jawjack's lilac accent: primary buttons, switches and selected states.
+pub const ACCENT: u32 = 0xA99CF4;
 
 pub fn install(cx: &mut App) {
     Theme::change(ThemeMode::Dark, None, cx);
@@ -35,6 +37,17 @@ pub fn install(cx: &mut App) {
         theme.button_active = rgb(0x25272B).into();
         theme.button_foreground = rgb(TEXT).into();
         theme.selection = rgb(0x315166).into();
+        // Primary actions use the lilac accent with dark text, not the kit's white.
+        theme.primary = rgb(ACCENT).into();
+        theme.primary_hover = rgb(0xBAAFF8).into();
+        theme.primary_active = rgb(0x968AE6).into();
+        theme.primary_foreground = rgb(0x16121F).into();
+        theme.button_primary = rgb(ACCENT).into();
+        theme.button_primary_hover = rgb(0xBAAFF8).into();
+        theme.button_primary_active = rgb(0x968AE6).into();
+        theme.button_primary_foreground = rgb(0x16121F).into();
+        // Buttons read the resolved tokens; rebuild them from the edited colors.
+        theme.tokens = (&theme.colors).into();
     });
 }
 

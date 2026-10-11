@@ -421,7 +421,7 @@ impl Workbench {
         });
     }
     /// A small confirmation dialog for consequential broadcast actions.
-    fn studio_confirm(
+    pub(super) fn studio_confirm(
         title: String,
         body: &'static str,
         action: &'static str,
@@ -786,42 +786,12 @@ impl Workbench {
         pane: Option<Entity<ChannelPane>>,
         own: String,
         live: bool,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let owner = cx.entity().downgrade();
         let raid_input = self.raid_input.clone().expect("created by render_studio");
-        let row = |icon: gpui_kit::assets::IconName, title: &'static str, detail: &'static str| {
-            div()
-                .h_flex()
-                .items_center()
-                .gap_3()
-                .py_2()
-                .child(
-                    div()
-                        .size(px(28.))
-                        .flex_shrink_0()
-                        .rounded(px(6.))
-                        .bg(rgb(theme::CONTROL))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .text_color(rgb(0xA99CF4))
-                        .child(gpui_kit::component::Icon::new(icon).xsmall()),
-                )
-                .child(
-                    div()
-                        .v_flex()
-                        .flex_1()
-                        .min_w_0()
-                        .child(div().text_size(px(12.)).child(title))
-                        .child(
-                            div()
-                                .text_size(px(11.))
-                                .text_color(rgb(theme::MUTED))
-                                .child(detail),
-                        ),
-                )
-        };
+        let row = Self::tool_row;
         let marker = {
             let (owner, pane, own) = (owner.clone(), pane.clone(), own.clone());
             Button::new("studio-marker")
@@ -954,6 +924,8 @@ impl Workbench {
                     .child(div().flex_1().child(Input::new(&raid_input).small()))
                     .child(raid),
             )
+            .child(Self::studio_section("Polls & predictions"))
+            .child(self.render_engagement(window, cx))
             .child(Self::studio_section("Streamer.bot"))
             .child(self.render_bot_card(cx))
             .into_any_element()
@@ -1010,7 +982,7 @@ impl Workbench {
         };
         let body = match self.studio_tab {
             1 => self.render_stream_tab(pane.clone(), own.clone(), cx),
-            2 => self.render_tools_tab(pane.clone(), own.clone(), live, cx),
+            2 => self.render_tools_tab(pane.clone(), own.clone(), live, window, cx),
             _ => self.render_feed(cx),
         };
         div()

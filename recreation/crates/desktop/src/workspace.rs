@@ -4,6 +4,8 @@ mod activity;
 mod channel_details;
 #[path = "channel_switcher.rs"]
 mod channel_switcher;
+#[path = "engagement_ui.rs"]
+mod engagement_ui;
 #[path = "pane_navigation.rs"]
 mod pane_navigation;
 #[path = "roles.rs"]
@@ -160,6 +162,7 @@ pub struct Workbench {
     experience: roles::Experience,
     streamer_bot: crate::streamer_bot::StreamerBot,
     feed: crate::activity_feed::Feed,
+    engagement: crate::engagement::Engagement,
     feed_filter: Option<crate::activity_feed::Kind>,
     /// Studio tab: 0 Activity, 1 Stream, 2 Tools.
     studio_tab: usize,
@@ -413,6 +416,7 @@ impl Workbench {
             experience: roles::Experience::from_key(state["experience"].as_str().unwrap_or("")),
             streamer_bot: crate::streamer_bot::StreamerBot::new(),
             feed: Default::default(),
+            engagement: crate::engagement::Engagement::new(),
             feed_filter: None,
             studio_tab: state["studio_tab"]
                 .as_u64()
@@ -656,6 +660,7 @@ impl Workbench {
             self.start_streamer_bot(cx);
         }
         self.pump_streamer_bot(window, cx);
+        self.pump_engagement(window, cx);
         if !self.setup_offered && identity.is_some() {
             self.setup_offered = true;
             self.notice = Some((
