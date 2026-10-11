@@ -378,6 +378,8 @@ impl Workbench {
                 } else {
                     "New poll"
                 })
+                // Enter belongs to the fields inside; it must not close the dialog.
+                .on_ok(|_, _, _| false)
                 .child(
                     div()
                         .v_flex()

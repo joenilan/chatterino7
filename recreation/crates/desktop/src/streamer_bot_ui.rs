@@ -131,6 +131,8 @@ impl Workbench {
             dialog
                 .w(px(width))
                 .title("Streamer.bot connection")
+                // Enter belongs to the fields inside; it must not close the dialog.
+                .on_ok(|_, _, _| false)
                 .child(div().v_flex().gap_2()
                     .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("In Streamer.bot: Servers/Clients → WebSocket Server → Auto Start + Start. Jawjack connects locally; the password is kept in Windows Credential Manager."))
                     .child(div().text_size(px(12.)).child("Address"))
@@ -213,6 +215,8 @@ impl Workbench {
             dialog
                 .w(px(width))
                 .title("Streamer.bot actions")
+                // Enter belongs to the fields inside; it must not close the dialog.
+                .on_ok(|_, _, _| false)
                 .child(div().v_flex().gap_2()
                     .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Pin up to {MAX_PINNED} actions as Studio buttons; they also appear when you right-click a message, with that user and message passed as arguments.")))
                     .child(Input::new(&filter).small())

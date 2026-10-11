@@ -995,6 +995,8 @@ impl Workbench {
             dialog
                 .w(px(width))
                 .title("Private chatter notes")
+                // Enter belongs to the fields inside; it must not close the dialog.
+                .on_ok(|_, _, _| false)
                 .child(editor.clone())
         });
         focus_editor.update(cx, |editor, cx| editor.focus(window, cx));
@@ -1046,6 +1048,8 @@ impl Workbench {
             dialog
                 .w(px(width))
                 .title("Chatter nicknames & colors")
+                // Enter belongs to the fields inside; it must not close the dialog.
+                .on_ok(|_, _, _| false)
                 .child(editor.clone())
         });
     }
@@ -1088,6 +1092,8 @@ impl Workbench {
             dialog
                 .w(px(width))
                 .title("Highlight rules")
+                // Enter belongs to the fields inside; it must not close the dialog.
+                .on_ok(|_, _, _| false)
                 .child(editor.clone())
         });
     }
@@ -1273,7 +1279,12 @@ impl Workbench {
         };
         let width = (f32::from(window.viewport_size().width) - 24.).clamp(180., 500.);
         window.open_dialog(cx, move |dialog, _, _| {
-            dialog.w(px(width)).title("Ignores").child(editor.clone())
+            dialog
+                .w(px(width))
+                .title("Ignores")
+                // Enter belongs to the fields inside; it must not close the dialog.
+                .on_ok(|_, _, _| false)
+                .child(editor.clone())
         });
     }
     fn open_event_highlights(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1336,6 +1347,8 @@ impl Workbench {
             dialog
                 .w(px(width))
                 .title("Custom commands")
+                // Enter belongs to the fields inside; it must not close the dialog.
+                .on_ok(|_, _, _| false)
                 .child(editor.clone())
         });
     }
@@ -1761,6 +1774,8 @@ impl Workbench {
             dialog
                 .w(px(width))
                 .title(format!("Stream info · #{channel}"))
+                // Enter belongs to the fields inside; it must not close the dialog.
+                .on_ok(|_, _, _| false)
                 .child(editor.clone())
         });
     }
