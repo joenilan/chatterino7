@@ -363,11 +363,19 @@ impl ChannelPane {
                 .children(platforms.into_iter().map(|platform| {
                     let shown = !self.hidden_platforms.contains(&platform);
                     let icon = crate::assets::platform_icon(platform).small();
-                    let tip = if shown {
+                    let mut tip = if shown {
                         format!("Showing {} chat · click to hide it", platform.label())
                     } else {
                         format!("{} chat hidden · click to show it", platform.label())
                     };
+                    if platform == crate::combined::Platform::YouTube {
+                        tip = format!(
+                            "{tip}
+
+{}",
+                            crate::assets::YOUTUBE_BETA
+                        );
+                    }
                     div()
                         .id(SharedString::from(format!("platform-{}", platform.key())))
                         .size(px(22.))

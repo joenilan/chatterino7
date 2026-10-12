@@ -72,6 +72,31 @@ pub fn platform_icon(platform: crate::combined::Platform) -> gpui_kit::component
         .text_color(rgb(color))
 }
 
+/// Why YouTube carries a Beta label.
+pub const YOUTUBE_BETA: &str = "YouTube support is in beta. Google is still reviewing Jawjack, so all users share a limited daily YouTube allowance (it resets at midnight Pacific).";
+
+/// A small "Beta" pill with its explanation on hover.
+pub fn beta_badge(id: &'static str, why: &'static str) -> gpui_kit::AnyElement {
+    use gpui_kit::{
+        InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, div,
+        px, rgb,
+    };
+    div()
+        .id(id)
+        .flex_shrink_0()
+        .px(px(5.))
+        .rounded(px(4.))
+        .border_1()
+        .border_color(rgb(0x6D5BC7))
+        .bg(rgb(0x241D33))
+        .text_size(px(9.))
+        .font_weight(gpui_kit::FontWeight::BOLD)
+        .text_color(rgb(crate::theme::ACCENT))
+        .child("BETA")
+        .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(why).build(w, cx))
+        .into_any_element()
+}
+
 pub struct Assets;
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {

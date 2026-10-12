@@ -202,7 +202,7 @@ impl Workbench {
                 "Jawjack reads YouTube live chat through YouTube's official API with your own free key. About 3 minutes.",
             ),
             Guide::YouTubeChat => (
-                "Connect YouTube",
+                "Connect YouTube (beta)",
                 "Sign in with Google so Jawjack can read and send YouTube live chat. One-time set-up, about 5 minutes; Google requires each app to be registered in your own Google Cloud.",
             ),
             Guide::Obs => (

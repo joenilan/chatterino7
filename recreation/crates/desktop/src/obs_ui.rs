@@ -1135,7 +1135,13 @@ impl Workbench {
     ) -> Div {
         let has = self.youtube.has_key();
         let signed_in = self.google_tokens.is_some();
-        page.child(settings_ui::heading("YouTube"))
+        page.child(
+            settings_ui::heading("YouTube")
+                .h_flex()
+                .gap_2()
+                .items_center()
+                .child(crate::assets::beta_badge("youtube-beta-settings", crate::assets::YOUTUBE_BETA)),
+        )
             .child(settings_ui::row(
                 "YouTube live chat",
                 if signed_in {

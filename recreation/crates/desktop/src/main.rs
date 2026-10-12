@@ -846,6 +846,7 @@ impl Render for ChannelPane {
                             })
                             .child(div().h_flex().gap_1().items_center()
                                 .when(youtube::is_youtube(&self.name), |el| el.child(crate::assets::platform_icon(combined::Platform::YouTube).small()))
+                                .when(self.all_sources().iter().any(|s| youtube::is_youtube(s)), |el| el.child(crate::assets::beta_badge("youtube-beta-pane", crate::assets::YOUTUBE_BETA)))
                                 .child(match &self.display_title {
                                     Some(title) => title.clone(),
                                     None if youtube::is_youtube(&self.name) => "YouTube stream".into(),
