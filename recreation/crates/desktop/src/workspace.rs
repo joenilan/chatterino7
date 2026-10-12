@@ -82,6 +82,7 @@ gpui_kit::actions!(
         ToggleOrientation,
         ToggleLiveWorkspaces,
         ToggleLiveChannels,
+        ToggleTabStrip,
         QuitWithoutSaving,
         OpenActivity,
         MarkAllRead,
@@ -136,6 +137,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-f", crate::FindChat, Some("ChatWorkspace")),
         KeyBinding::new("cmd-f", crate::FindChat, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-k", AddChannel, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-u", ToggleTabStrip, Some("ChatWorkspace")),
     ]);
 }
 #[derive(Clone)]
@@ -344,6 +346,8 @@ pub struct Workbench {
     live_notify: Vec<String>,
     /// Channels whose mentions and highlights don't play a sound.
     muted_pings: Vec<String>,
+    /// Chatterino's "hide all tabs" (Ctrl+U): the channel tab strips are hidden.
+    tabs_hidden: bool,
     /// Live alerts also play your ping sound / flash the taskbar.
     live_alert_sound: bool,
     live_alert_flash: bool,
@@ -665,6 +669,7 @@ impl Workbench {
             live_notify_all: state["live_notify_all"].as_bool().unwrap_or(false),
             live_notify_follows: state["live_notify_follows"].as_bool().unwrap_or(false),
             next_notice: 0,
+            tabs_hidden: state["tabs_hidden"].as_bool().unwrap_or(false),
             live_alert_sound: state["live_alert_sound"].as_bool().unwrap_or(false),
             live_alert_flash: state["live_alert_flash"].as_bool().unwrap_or(false),
             quiet_unread: state["quiet_unread"]
@@ -3131,6 +3136,7 @@ impl Workbench {
         value["similar_messages"] = json!(self.similar_mode.key());
         value["quiet_unread"] = json!(self.quiet_unread);
         value["live_alert_sound"] = json!(self.live_alert_sound);
+        value["tabs_hidden"] = json!(self.tabs_hidden);
         value["live_alert_flash"] = json!(self.live_alert_flash);
         value["paint_options"] = json!([
             crate::name_paint::paint_option(0),
@@ -5011,6 +5017,16 @@ impl Workbench {
                                             });
                                         }),
                                 )
+                                .item(PopupMenuItem::new("Hide tabs · Ctrl+U").on_click({
+                                    let owner = owner.clone();
+                                    move |_, _, cx| {
+                                        let _ = owner.update(cx, |this, cx| {
+                                            this.tabs_hidden = true;
+                                            this.schedule_save(cx);
+                                            cx.notify();
+                                        });
+                                    }
+                                }))
                                 .separator()
                                 .item(PopupMenuItem::new("Sort tabs A–Z").on_click({
                                     let owner = owner.clone();
@@ -5181,23 +5197,26 @@ impl Workbench {
                         this.drop_at_pointer(drag, tab_id, w, cx);
                     }))
                     .v_flex()
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("channel-strip-{tab_id}-{name}")))
-                            .h_flex()
-                            .flex_wrap()
-                            .min_h(px(28.))
-                            .flex_shrink_0()
-                            .bg(rgb(theme::PANEL))
-                            .on_prepaint(move |bounds, _, _| {
-                                strip_bounds.borrow_mut().insert(strip_name.clone(), bounds);
-                            })
-                            .children(tabs)
-                            .child(
-                                Button::new(SharedString::from(format!("add-tab-{tab_id}-{name}")))
+                    .when(!self.tabs_hidden, |el| {
+                        el.child(
+                            div()
+                                .id(SharedString::from(format!("channel-strip-{tab_id}-{name}")))
+                                .h_flex()
+                                .flex_wrap()
+                                .min_h(px(28.))
+                                .flex_shrink_0()
+                                .bg(rgb(theme::PANEL))
+                                .on_prepaint(move |bounds, _, _| {
+                                    strip_bounds.borrow_mut().insert(strip_name.clone(), bounds);
+                                })
+                                .children(tabs)
+                                .child(
+                                    Button::new(SharedString::from(format!(
+                                        "add-tab-{tab_id}-{name}"
+                                    )))
                                     .ghost()
                                     .xsmall()
-                                    .label("+")
+                                    .icon(Icon::new(gpui_kit::assets::IconName::Plus))
                                     .tooltip("Add channel tab · Ctrl+K")
                                     .on_click(cx.listener({
                                         let target = name.clone();
@@ -5206,8 +5225,9 @@ impl Workbench {
                                             this.add_target = Some(target.clone());
                                         }
                                     })),
-                            ),
-                    )
+                                ),
+                        )
+                    })
                     .child(div().flex_1().min_h_0().children(pane))
                     .when(cx.has_active_drag(), |el| {
                         el.children(preview.map(Self::drop_preview))
@@ -6349,6 +6369,11 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &ToggleOrientation, _, cx| this.flip_split(cx)))
             .on_action(cx.listener(|this, _: &ToggleLiveWorkspaces, _, cx| {
                 this.live_workspaces = !this.live_workspaces;
+                this.schedule_save(cx);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ToggleTabStrip, _, cx| {
+                this.tabs_hidden = !this.tabs_hidden;
                 this.schedule_save(cx);
                 cx.notify();
             }))

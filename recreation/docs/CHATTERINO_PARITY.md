@@ -40,7 +40,7 @@ Chatterino import.
 - [x] Always on top for the main window (S)
 - [x] Start with Windows; beta update channel; open cache folder (S)
 - [ ] Overlay window: transparent, click-through, opacity (L)
-- [ ] Tab menu: ~~Close others / to the right, Sort A–Z, Duplicate (workspace), Lock layout, highlight on new messages (Count new messages)~~ done; Hide all tabs (S)
+- [x] Tab menu: Close others / to the right, Sort A–Z, Duplicate (workspace), Lock layout, highlight on new messages (Count new messages), Hide all tabs (Ctrl+U)
 - [ ] Tab position and style (M) [partly design]
 - [x] Change channel of an existing split (tab menu → Change channel…)
 - [ ] Input options: ~~send button, reply on hover, hide reply context, strip leading mention~~ done; hide when empty (S)

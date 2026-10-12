@@ -198,6 +198,13 @@ pub const HOTKEYS: &[Hotkey] = {
         ),
         hotkey!("whispers", "Whispers", "", "ChatWorkspace", OpenWhispers),
         hotkey!(
+            "hide-tabs",
+            "Hide or show channel tabs",
+            "ctrl-u",
+            "ChatWorkspace",
+            ToggleTabStrip
+        ),
+        hotkey!(
             "live-tabs",
             "Only show live channel tabs",
             "",
@@ -348,6 +355,19 @@ pub fn json() -> serde_json::Value {
 
 #[cfg(test)]
 mod tests {
+    /// Every default shortcut must also be bound at startup (bind_keys).
+    #[test]
+    fn defaults_are_bound() {
+        let source = [include_str!("workspace.rs"), include_str!("main.rs")].concat();
+        for hotkey in super::HOTKEYS.iter().filter(|h| !h.default.is_empty()) {
+            assert!(
+                source.contains(&format!("KeyBinding::new(\"{}\"", hotkey.default)),
+                "{} ({}) isn't bound at startup",
+                hotkey.id,
+                hotkey.default
+            );
+        }
+    }
     #[test]
     fn labels_and_validation() {
         assert_eq!(super::label("ctrl-shift-k"), "Ctrl+Shift+K");
