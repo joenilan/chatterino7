@@ -680,6 +680,20 @@ impl ChannelPane {
                     let role=owner.upgrade().and_then(|pane|pane.read(cx).role);
                     let moderating=matches!(role,Some(crate::capabilities::Role::Moderator|crate::capabilities::Role::Broadcaster));
                     let broadcaster=matches!(role,Some(crate::capabilities::Role::Broadcaster));
+                    // Follow age: only the broadcaster and moderators can look it up.
+                    let follow=owner.upgrade().and_then(|pane|{
+                        let known=pane.read(cx).follow_ages.get(&user_id).cloned();
+                        if known.is_none()&&moderating{
+                            let id=user_id.clone();
+                            pane.update(cx,|p,cx|{p.follow_ages.insert(id.clone(),Err("Loading…".into()));cx.emit(PaneEvent::WantFollowAge(id));});
+                        }
+                        known
+                    }).map(|result|match result{
+                        Ok(Some(at))=>format!("Following #{channel} since {}",created_label(&at)),
+                        Ok(None)=>format!("Not following #{channel}"),
+                        Err(e) if e=="Loading…"=>"Checking follow age…".into(),
+                        Err(_)=>"Follow age unavailable".into(),
+                    });
                     let mod_row=login.clone().filter(|_|moderating).map(|target|{
                         let act=|label:&'static str,id:&'static str,request:crate::twitch_actions::Request|{
                             let owner=owner.clone();
@@ -743,6 +757,7 @@ impl ChannelPane {
                             .when(!profile.description.is_empty(),|el|el.child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(profile.description))))
                         .child(login.clone().map(|login|format!("@{login}" )).unwrap_or_else(||"Login unavailable".into()))
                         .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("{count} retained messages in #{channel}")))
+                        .when_some(follow,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(text)))
                         .when(!badges.is_empty(),|el|el.child(div().h_flex().flex_wrap().gap_x_3().gap_y_1().text_size(px(11.)).children(badges.into_iter().map(|(title,key)|{
                             let image=key.and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(&key,cx)}));
                             div().h_flex().gap_1().items_center().when_some(image,|el,image|el.child(crate::emote_picker::icon(Some(image),String::new(),18.,18.))).child(title)

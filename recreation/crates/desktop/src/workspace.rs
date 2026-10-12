@@ -1991,6 +1991,25 @@ impl Workbench {
                 }
                 return;
             }
+            if let PaneEvent::WantFollowAge(user_id) = event {
+                let Some(identity) = this.account.read(cx).identity() else {
+                    return;
+                };
+                let (channel, user_id, pane) = (channel.clone(), user_id.clone(), pane.clone());
+                let task = cx.background_spawn({
+                    let user_id = user_id.clone();
+                    async move { crate::twitch_actions::followed_at(&identity, &channel, &user_id) }
+                });
+                cx.spawn(async move |_, cx| {
+                    let result = task.await;
+                    let _ = pane.update(cx, |p, cx| {
+                        p.follow_ages.insert(user_id, result);
+                        cx.notify();
+                    });
+                })
+                .detach();
+                return;
+            }
             if let PaneEvent::EditChatterNote(target) = event {
                 this.open_chatter_note(target.clone(), window, cx);
                 return;

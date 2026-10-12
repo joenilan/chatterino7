@@ -784,3 +784,24 @@ mod tests {
         assert!(parse("/notacommand", "").is_none());
     }
 }
+
+/// When `user_id` followed the channel (RFC 3339), for the user card. Needs the
+/// broadcaster or a moderator (moderator:read:followers); None when not following.
+pub fn followed_at(
+    identity: &Identity,
+    channel: &str,
+    user_id: &str,
+) -> Result<Option<String>, String> {
+    let helix = Helix {
+        client: crate::live::client()?,
+        identity,
+    };
+    let room = helix.user_id(channel)?;
+    let value = helix.ok(
+        reqwest::Method::GET,
+        "channels/followers",
+        &[("broadcaster_id", room.as_str()), ("user_id", user_id)],
+        None,
+    )?;
+    Ok(value["data"][0]["followed_at"].as_str().map(str::to_owned))
+}

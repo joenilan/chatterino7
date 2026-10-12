@@ -208,6 +208,8 @@ enum PaneEvent {
     OpenCommands(String),
     EditChatter(chatter_appearance::Target),
     EditChatterNote(chatter_appearance::Target),
+    /// The user card wants this chatter's follow age (looked up with your login).
+    WantFollowAge(String),
     SearchAll(String),
 }
 impl EventEmitter<PaneEvent> for ChannelPane {}
@@ -247,6 +249,8 @@ struct ChannelPane {
     view_filter: Option<(String, std::rc::Rc<chat_search::Query>)>,
     /// Combined feeds: platforms whose messages are hidden here.
     pub(crate) hidden_platforms: Vec<combined::Platform>,
+    /// User card: follow dates by user ID (Ok(None) = not following, Err = unavailable).
+    pub(crate) follow_ages: std::collections::HashMap<String, Result<Option<String>, String>>,
     /// The last message sent here and when, so an identical one can still go through.
     last_sent: Option<(String, Instant)>,
     /// Extra sources shown in this pane: your own YouTube live chat in your own channel.
@@ -360,6 +364,7 @@ impl ChannelPane {
             spelling: Vec::new(),
             view_filter: None,
             hidden_platforms: Vec::new(),
+            follow_ages: Default::default(),
             last_sent: None,
             linked: Vec::new(),
             display_title: None,
