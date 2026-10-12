@@ -842,8 +842,7 @@ impl Workbench {
                     Switch::new("settings-hide-blocked").checked(self.hide_blocked).on_click(cx.listener(|this, on: &bool, _, cx| {
                         this.hide_blocked = *on;
                         this.apply_blocks();
-                        this.schedule_save(cx);
-                        cx.notify();
+                        this.remeasure_all(cx);
                     })),
                 ))
                 .child(row(

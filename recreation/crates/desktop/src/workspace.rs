@@ -1536,6 +1536,8 @@ impl Workbench {
         }
         if self.blocks.pump(identity.as_ref()) {
             self.apply_blocks();
+            // Hide messages already on screen from anyone newly blocked.
+            self.remeasure_all(cx);
         }
         let priority = self.connection_priority(cx);
         // Ask 7TV for the cosmetics of people in open channels (visible first).

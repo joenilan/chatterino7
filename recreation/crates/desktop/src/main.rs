@@ -876,6 +876,7 @@ impl Render for ChannelPane {
         let expanded = self.expanded.clone();
         let collapse_lines = COLLAPSE_LINES.load(std::sync::atomic::Ordering::Relaxed);
         let view_filter = self.view_filter.as_ref().map(|(_, q)| q.clone());
+        let ignores = self.ignores.clone();
         let hidden_platforms = self.hidden_platforms.clone();
         // Shared Chat: colours per guest channel, hidden channels, and the look.
         let shared_style = shared_chat::style();
@@ -1141,7 +1142,9 @@ impl Render for ChannelPane {
                                 return div().into_any_element();
                             };
                             // A filtered-out row draws nothing (rows have no padding of their own).
-                            if (message.deleted && theme::flag(&theme::HIDE_DELETED))
+                            // Someone blocked after their messages arrived disappears too.
+                            if ignores.borrow().blocked.contains(&message.user_id)
+                                || (message.deleted && theme::flag(&theme::HIDE_DELETED))
                                 || (message.presentation.kind == chat_core::MODERATION && streamer_mode::hides(streamer_mode::MOD_ACTIONS))
                                 || match &message.presentation.source_id {
                                     Some(source) => hidden_sources.contains(source),
