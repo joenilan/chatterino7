@@ -314,6 +314,9 @@ struct ChannelPane {
     media: Rc<RefCell<media::MediaCache>>,
     catalog: Rc<RefCell<catalog::Catalog>>,
     custom_commands: custom_commands::Definitions,
+    /// While a custom command runs from a message's menu: (login, user ID,
+    /// message ID, text) for {user.name} {user.id} {msg.id} {msg.text}.
+    command_message: Option<(String, String, String, String)>,
     chatter_appearance: chatter_appearance::Preferences,
     ignores: ignores::Shared,
     selection: Rc<RefCell<Selection>>,
@@ -416,6 +419,7 @@ impl ChannelPane {
             media,
             catalog,
             custom_commands: Default::default(),
+            command_message: None,
             chatter_appearance: Default::default(),
             ignores: Default::default(),
             connection: "Sign in to connect".into(),

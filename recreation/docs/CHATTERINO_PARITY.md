@@ -71,7 +71,7 @@ Chatterino import.
 - [ ] Highlight rules: custom sound file, per-rule flash, show in mentions, free colour picker (S–M)
 - [ ] Event highlights: whispers, own messages, elevated/hype chat, AutoMod, thread replies; per-kind sound/flash (M)
 - [ ] User card: ~~block, ignore, open channel, warn, avatar card~~ done; follower count, 7TV profile, custom timeout, pin card, emotes in recent messages (M)
-- [ ] Custom command placeholders: ~~{my.name} {my.id} {channel.id} {stream.title} {stream.game}~~ done; {user.name} {msg.id} {msg.text} with "show in message menu" (S–M)
+- [x] Custom command placeholders (S–M) — {my.*} {channel.id} {stream.*}, and {user.name} {user.id} {msg.id} {msg.text}: commands using them appear in the message menu
 - [ ] Mod buttons: any command, image icons (S)
 - [x] Timestamps: 12-hour, custom format, hide while live (S)
 - [x] Streamer mode: hide avatars, link previews, viewers/uptime, mod actions, restricted users, blocked terms; suppress live alerts (S)

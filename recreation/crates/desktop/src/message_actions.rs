@@ -548,6 +548,40 @@ pub fn menu(
             }
         }
     }
+    // Custom commands using {user.name}, {msg.text}… run on this message.
+    let custom: Vec<String> = owner
+        .upgrade()
+        .map(|pane| {
+            pane.read(cx)
+                .custom_commands
+                .borrow()
+                .iter()
+                .filter(|(_, template)| crate::custom_commands::for_messages(template))
+                .map(|(name, _)| name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    if !custom.is_empty() && !message.deleted && message.login.is_some() {
+        menu = menu.separator();
+        for name in custom {
+            let owner = owner.clone();
+            let target = (
+                message.login.clone().unwrap_or_default(),
+                message.user_id.clone(),
+                message.id.clone(),
+                message.body(),
+            );
+            menu = menu.item(
+                PopupMenuItem::new(format!("/{name}")).on_click(move |_, w, cx| {
+                    let _ = owner.update(cx, |pane, cx| {
+                        pane.command_message = Some(target.clone());
+                        pane.route_command(&format!("/{name}"), w, cx);
+                        pane.command_message = None;
+                    });
+                }),
+            );
+        }
+    }
     // Pinned Streamer.bot actions run with this message's user and text as arguments.
     let bot_actions = owner
         .upgrade()

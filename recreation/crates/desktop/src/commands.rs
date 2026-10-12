@@ -411,7 +411,12 @@ impl ChannelPane {
                     let me = self.attention.identity().cloned();
                     let channel_id = self.catalog.borrow().channel_id(&self.name);
                     let stream = self.stream.clone();
+                    let target = self.command_message.clone();
                     let context = move |key: &str| match key {
+                        "user.name" => target.as_ref().map(|t| t.0.clone()),
+                        "user.id" => target.as_ref().map(|t| t.1.clone()),
+                        "msg.id" => target.as_ref().map(|t| t.2.clone()),
+                        "msg.text" => target.as_ref().map(|t| t.3.clone()),
                         "my.name" => me.as_ref().map(|(_, login)| login.clone()),
                         "my.id" => me.as_ref().map(|(id, _)| id.clone()),
                         "channel.id" => channel_id.clone(),

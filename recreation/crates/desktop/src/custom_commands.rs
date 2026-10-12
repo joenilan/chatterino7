@@ -105,13 +105,22 @@ pub fn validate(name: &str, template: &str) -> Result<String, String> {
     Ok(name)
 }
 /// Placeholders filled from where the command runs (Chatterino's names).
-pub const CONTEXT_KEYS: [&str; 5] = [
+pub const CONTEXT_KEYS: [&str; 9] = [
     "my.name",
     "my.id",
     "channel.id",
     "stream.title",
     "stream.game",
+    // From a message's right-click menu (empty when typed).
+    "user.name",
+    "user.id",
+    "msg.id",
+    "msg.text",
 ];
+/// Commands using a message's placeholders show in its right-click menu.
+pub fn for_messages(template: &str) -> bool {
+    template.contains("{user.") || template.contains("{msg.")
+}
 pub fn expand(template: &str, channel: &str, args: &str) -> Result<String, String> {
     expand_inner(template, channel, args, true, &|_| None)
 }
@@ -185,7 +194,7 @@ fn expand_inner(
                 }
                 _ => {
                     return Err(format!(
-                        "Unknown placeholder {{{token}}}. Use {{channel}}, {{args}}, {{1}}–{{9}}, {{2+}}, {{my.name}}, {{my.id}}, {{channel.id}}, {{stream.title}} or {{stream.game}}."
+                        "Unknown placeholder {{{token}}}. Use {{channel}}, {{args}}, {{1}}–{{9}}, {{2+}}, {{my.name}}, {{my.id}}, {{channel.id}}, {{stream.title}}, {{stream.game}}, {{user.name}}, {{user.id}}, {{msg.id}} or {{msg.text}}."
                     ));
                 }
             };
@@ -372,7 +381,7 @@ impl Render for Editor {
             .child(Input::new(&self.name).small())
             .child(div().text_size(px(11.)).child("Message template"))
             .child(Input::new(&self.template).small())
-            .child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child("{channel} = channel login · {args} = all arguments · {1}–{9} = individual words · {2+} = word 2 onward · {my.name} {my.id} {channel.id} {stream.title} {stream.game} · {{ and }} = literal braces"))
+            .child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child("{channel} = channel login · {args} = all arguments · {1}–{9} = individual words · {2+} = word 2 onward · {my.name} {my.id} {channel.id} {stream.title} {stream.game} · {user.name} {user.id} {msg.id} {msg.text} = the message you right-click (such commands appear in its menu) · {{ and }} = literal braces"))
             .child(Input::new(&self.sample).small())
             .child(div().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL)).text_size(px(12.)).child(preview))
             .child(div().h_flex().gap_2().child(Button::new("save-custom-command").small().label("Save command").on_click(cx.listener(|this,_,w,cx|this.save(w,cx))))
