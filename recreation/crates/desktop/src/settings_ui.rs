@@ -25,6 +25,33 @@ const SHORTCUTS: [(&str, &str); 3] = [
     ("Double-click a divider", "Make the splits equal"),
 ];
 
+/// A setting whose controls are too wide to sit beside the text: they wrap
+/// on their own line underneath.
+pub(super) fn stacked_row(
+    title: impl Into<SharedString>,
+    detail: impl Into<SharedString>,
+    control: impl IntoElement,
+) -> Div {
+    div()
+        .v_flex()
+        .gap_2()
+        .py(px(10.))
+        .border_b_1()
+        .border_color(rgb(theme::BORDER))
+        .child(
+            div()
+                .v_flex()
+                .gap(px(2.))
+                .child(div().text_size(px(13.)).child(title.into()))
+                .child(
+                    div()
+                        .text_size(px(11.))
+                        .text_color(rgb(theme::MUTED))
+                        .child(detail.into()),
+                ),
+        )
+        .child(control)
+}
 pub(super) fn row(
     title: impl Into<SharedString>,
     detail: impl Into<SharedString>,
@@ -317,6 +344,30 @@ impl Workbench {
                             this.remeasure_all(cx);
                         }))
                         .children(["Small", "Normal", "Large", "Huge"].map(|l| crate::theme::segment(l))),
+                ))
+                .child(stacked_row(
+                    "Emote options",
+                    "Images off shows emote names as text. Zero-width emotes (7TV overlays) stack on the emote before them. Bits combines repeated cheers into one total.",
+                    div().h_flex().flex_wrap().gap_x_4().gap_y_1()
+                        .children([(0usize, "Images"), (1, "Stack zero-width"), (2, "No spaces between emotes"), (3, "Combine bits")].map(|(index, label)| {
+                            gpui_kit::component::checkbox::Checkbox::new(("settings-emote-option", index))
+                                .label(label)
+                                .checked(crate::inline_chat::emote_option(index))
+                                .on_click(cx.listener(move |this, on: &bool, _, cx| {
+                                    crate::inline_chat::EMOTE_OPTIONS[index].store(*on, std::sync::atomic::Ordering::Relaxed);
+                                    this.remeasure_all(cx);
+                                }))
+                        }))
+                        .child(
+                            gpui_kit::component::checkbox::Checkbox::new("settings-unlisted-7tv")
+                                .label("Unlisted 7TV")
+                                .checked(crate::catalog::SHOW_UNLISTED.load(std::sync::atomic::Ordering::Relaxed))
+                                .on_click(cx.listener(|this, on: &bool, _, cx| {
+                                    crate::catalog::SHOW_UNLISTED.store(*on, std::sync::atomic::Ordering::Relaxed);
+                                    this.reload_all_emotes(cx);
+                                    this.remeasure_all(cx);
+                                })),
+                        ),
                 ))
                 .child(row(
                     "Alternate row backgrounds",

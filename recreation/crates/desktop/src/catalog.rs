@@ -1116,6 +1116,9 @@ fn load_personal(client: &reqwest::blocking::Client, url: &str) -> Option<Loaded
     loaded.owner = owner;
     Some(loaded)
 }
+/// Settings → Appearance → "Unlisted 7TV emotes": show emotes 7TV hasn't
+/// approved for public listing (off, like Chatterino, they show as text).
+pub static SHOW_UNLISTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 fn parse(json: &Value, global: bool, personal: bool) -> Option<Loaded> {
     if json.is_null() {
         return Some(Loaded {
@@ -1147,6 +1150,12 @@ fn parse(json: &Value, global: bool, personal: bool) -> Option<Loaded> {
                     .as_array()
                     .is_some_and(|states| states.iter().any(|s| s == "PERSONAL"))
                 || entry["data"]["flags"].as_u64().unwrap_or(0) & (1 << 24) != 0)
+        {
+            continue;
+        }
+        if !personal
+            && !SHOW_UNLISTED.load(std::sync::atomic::Ordering::Relaxed)
+            && entry["data"]["listed"].as_bool() == Some(false)
         {
             continue;
         }

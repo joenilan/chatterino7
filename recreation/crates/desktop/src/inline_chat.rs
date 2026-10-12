@@ -127,6 +127,19 @@ impl InlineChat {
         viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
         cx: &mut App,
     ) -> Option<Self> {
+        // Emote images off: the plain text row shows their names.
+        if !emote_option(0) {
+            return None;
+        }
+        let adjusted;
+        let message = if emote_option(1) && !emote_option(2) && !emote_option(3) {
+            message
+        } else {
+            let mut copy = message.clone();
+            copy.fragments = displayed_fragments(&message.fragments);
+            adjusted = copy;
+            &adjusted
+        };
         if !message.fragments.iter().any(|f| {
             matches!(
                 f,
@@ -747,6 +760,75 @@ impl Element for InlineChat {
     }
 }
 
+/// Settings → Appearance → Emote options (Chatterino's): [images, zero-width
+/// stacking, remove spaces between emotes, stack bits].
+pub const EMOTE_OPTION_NAMES: [&str; 4] = ["images", "zero_width", "remove_spaces", "stack_bits"];
+pub static EMOTE_OPTIONS: [std::sync::atomic::AtomicBool; 4] = [
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(false),
+    std::sync::atomic::AtomicBool::new(false),
+];
+pub fn emote_option(index: usize) -> bool {
+    EMOTE_OPTIONS[index].load(std::sync::atomic::Ordering::Relaxed)
+}
+/// The fragments as drawn under the emote options: zero-width emotes unstacked
+/// when that's off, spaces between emotes dropped, runs of the same cheer
+/// combined ("Cheer100 Cheer100" → "Cheer200").
+pub fn displayed_fragments(fragments: &[Fragment]) -> Vec<Fragment> {
+    arrange(fragments, emote_option(1), emote_option(2), emote_option(3))
+}
+fn arrange(
+    fragments: &[Fragment],
+    zero_width: bool,
+    no_spaces: bool,
+    stack_bits: bool,
+) -> Vec<Fragment> {
+    let mut out: Vec<Fragment> = Vec::with_capacity(fragments.len());
+    let is_emote = |f: &Fragment| {
+        matches!(
+            f,
+            Fragment::Emote { .. } | Fragment::Cheer { asset: Some(_), .. }
+        )
+    };
+    for (index, fragment) in fragments.iter().enumerate() {
+        let mut fragment = fragment.clone();
+        if !zero_width && let Fragment::Emote { overlay, .. } = &mut fragment {
+            *overlay = false;
+        }
+        // Whitespace between two emotes.
+        if no_spaces
+            && let Fragment::Text(text) = &fragment
+            && text.trim().is_empty()
+            && out.last().is_some_and(is_emote)
+            && fragments.get(index + 1).is_some_and(is_emote)
+        {
+            continue;
+        }
+        if stack_bits && let Fragment::Cheer { prefix, bits, .. } = &fragment {
+            // Skip the space we kept after the previous cheer, then merge.
+            let space = matches!(out.last(), Some(Fragment::Text(t)) if t.trim().is_empty());
+            let at = out.len() - usize::from(space);
+            if let Some(Fragment::Cheer {
+                prefix: p,
+                bits: b,
+                label,
+                ..
+            }) = at.checked_sub(1).and_then(|i| out.get_mut(i))
+                && p.eq_ignore_ascii_case(prefix)
+            {
+                *b += bits;
+                *label = format!("{}{}", &label[..p.len().min(label.len())], b);
+                if space {
+                    out.pop();
+                }
+                continue;
+            }
+        }
+        out.push(fragment);
+    }
+    out
+}
 /// Settings → Appearance → Emote size, in percent of the normal 28 px.
 pub static EMOTE_SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(100);
 pub fn emote_scale() -> f32 {
@@ -760,5 +842,45 @@ fn base_emote_size(message: &Message) -> f32 {
         56.
     } else {
         28.
+    }
+}
+
+#[cfg(test)]
+mod option_tests {
+    use super::{Fragment, arrange};
+    fn emote(label: &str) -> Fragment {
+        Fragment::Emote {
+            provider: "7tv".into(),
+            id: label.into(),
+            label: label.into(),
+            overlay: false,
+            animated: false,
+            asset: None,
+        }
+    }
+    fn cheer(bits: u64) -> Fragment {
+        Fragment::Cheer {
+            prefix: "Cheer".into(),
+            bits,
+            tier: 1,
+            label: format!("Cheer{bits}"),
+            asset: None,
+        }
+    }
+    #[test]
+    fn spaces_between_emotes_and_stacked_bits() {
+        let text = |t: &str| Fragment::Text(t.into());
+        let fragments = vec![emote("A"), text(" "), emote("B"), text(" hi "), emote("C")];
+        let kept: Vec<_> = arrange(&fragments, true, true, false)
+            .iter()
+            .map(|f| f.copy_text().to_owned())
+            .collect();
+        assert_eq!(kept, ["A", "B", " hi ", "C"]);
+        let cheers = vec![cheer(100), text(" "), cheer(50), text(" gg")];
+        let stacked: Vec<_> = arrange(&cheers, true, false, true)
+            .iter()
+            .map(|f| f.copy_text().to_owned())
+            .collect();
+        assert_eq!(stacked, ["Cheer150", " gg"]);
     }
 }

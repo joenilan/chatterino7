@@ -811,6 +811,18 @@ impl Workbench {
                     state["emote_scale"].as_u64().unwrap_or(100).clamp(50, 200) as u32,
                     std::sync::atomic::Ordering::Relaxed,
                 );
+                for (index, name) in crate::inline_chat::EMOTE_OPTION_NAMES.iter().enumerate() {
+                    if let Some(on) = state["emote_options"][name].as_bool() {
+                        crate::inline_chat::EMOTE_OPTIONS[index]
+                            .store(on, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+                crate::catalog::SHOW_UNLISTED.store(
+                    state["emote_options"]["unlisted_7tv"]
+                        .as_bool()
+                        .unwrap_or(false),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 crate::theme::ALTERNATE_ROWS.store(
                     state["alternate_rows"].as_bool().unwrap_or(false),
                     std::sync::atomic::Ordering::Relaxed,
@@ -2810,6 +2822,18 @@ impl Workbench {
         value["emote_scale"] =
             json!(crate::inline_chat::EMOTE_SCALE.load(std::sync::atomic::Ordering::Relaxed));
         value["alternate_rows"] = json!(crate::theme::alternate_rows());
+        let mut options = serde_json::Map::new();
+        for (index, name) in crate::inline_chat::EMOTE_OPTION_NAMES.iter().enumerate() {
+            options.insert(
+                (*name).into(),
+                json!(crate::inline_chat::emote_option(index)),
+            );
+        }
+        options.insert(
+            "unlisted_7tv".into(),
+            json!(crate::catalog::SHOW_UNLISTED.load(std::sync::atomic::Ordering::Relaxed)),
+        );
+        value["emote_options"] = Value::Object(options);
         value["emote_providers"] = json!({
             "7tv": crate::catalog::on(&crate::catalog::SEVEN_TV),
             "bttv": crate::catalog::on(&crate::catalog::BTTV),
@@ -3623,6 +3647,19 @@ impl Workbench {
         cx.notify();
     }
     /// Re-lay out every chat row (after an appearance change).
+    /// Refetch every open channel's 7TV/BTTV/FFZ emotes (an emote filter changed).
+    pub(crate) fn reload_all_emotes(&mut self, cx: &mut Context<Self>) {
+        let names: Vec<String> = self
+            .panes()
+            .iter()
+            .flat_map(|p| crate::combined::sources(&p.read(cx).name))
+            .filter(|n| !crate::combined::is_special(n))
+            .collect();
+        let mut catalog = self.catalog.borrow_mut();
+        for name in names {
+            catalog.reload_channel(&name);
+        }
+    }
     pub(crate) fn remeasure_all(&mut self, cx: &mut Context<Self>) {
         for pane in self
             .panes()
