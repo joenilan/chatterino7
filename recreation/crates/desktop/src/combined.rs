@@ -38,7 +38,10 @@ impl Platform {
 }
 /// The platforms a combined feed draws from, Twitch first.
 pub fn platforms(name: &str) -> Vec<Platform> {
-    let sources = sources(name);
+    platforms_of(&sources(name))
+}
+/// The platforms among some sources, Twitch first.
+pub fn platforms_of(sources: &[String]) -> Vec<Platform> {
     [Platform::Twitch, Platform::YouTube]
         .into_iter()
         .filter(|p| sources.iter().any(|s| Platform::of(s) == *p))

@@ -313,11 +313,34 @@ impl ChannelPane {
         focus.update(cx, |i, cx| i.focus(window, cx));
     }
     /// "Filtered: is:mod ×" in the header while a view filter is on.
+    /// Every source shown here: the pane's own (or a combined feed's) plus linked ones.
+    pub fn all_sources(&self) -> Vec<String> {
+        let mut sources = crate::combined::sources(&self.name);
+        sources.extend(
+            self.linked
+                .iter()
+                .filter(|s| !sources.contains(s))
+                .cloned()
+                .collect::<Vec<_>>(),
+        );
+        sources
+    }
+    /// Link extra sources (your own YouTube live chat into your own channel).
+    pub fn set_linked(&mut self, linked: Vec<String>, cx: &mut Context<Self>) {
+        self.linked = linked;
+        if !crate::combined::is_combined(&self.name) {
+            self.send_to = (!self.linked.is_empty()).then(|| self.name.to_string());
+        }
+        let platforms = crate::combined::platforms_of(&self.all_sources());
+        self.hidden_platforms.retain(|p| platforms.contains(p));
+        self.scroller.update(cx, |s, cx| s.remeasure(cx));
+        cx.notify();
+    }
     /// Show or hide one platform in a combined feed (at least one stays shown).
     pub fn toggle_platform(&mut self, platform: crate::combined::Platform, cx: &mut Context<Self>) {
         if let Some(at) = self.hidden_platforms.iter().position(|p| *p == platform) {
             self.hidden_platforms.remove(at);
-        } else if crate::combined::platforms(&self.name)
+        } else if crate::combined::platforms_of(&self.all_sources())
             .iter()
             .any(|p| *p != platform && !self.hidden_platforms.contains(p))
         {
@@ -329,7 +352,7 @@ impl ChannelPane {
     }
     /// Twitch / YouTube chips on a combined feed that mixes platforms.
     pub fn render_platform_toggles(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let platforms = crate::combined::platforms(&self.name);
+        let platforms = crate::combined::platforms_of(&self.all_sources());
         if platforms.len() < 2 {
             return None;
         }

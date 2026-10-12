@@ -550,6 +550,38 @@ fn watch(
     }
 }
 
+/// The signed-in channel's live broadcast right now, as "yt:<videoId>"
+/// (liveBroadcasts.list with broadcastStatus=active; 1 quota unit).
+pub fn my_live(access: &str) -> Result<Option<String>, String> {
+    let client = crate::live::client()?;
+    let response = client
+        .get(format!("{API}/liveBroadcasts"))
+        .query(&[
+            ("part", "id"),
+            ("broadcastStatus", "active"),
+            ("broadcastType", "all"),
+            ("maxResults", "5"),
+        ])
+        .bearer_auth(access)
+        .send()
+        .map_err(|_| "YouTube didn't answer".to_owned())?;
+    let code = response.status().as_u16();
+    let value: Value = response
+        .text()
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default();
+    if code != 200 {
+        return Err(refusal(code, &value));
+    }
+    Ok(value["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| item["id"].as_str())
+        .find_map(|id| parse(&format!("yt:{id}"))))
+}
+
 /// One watcher thread per open YouTube pane.
 pub struct YouTube {
     watching: HashMap<String, Arc<AtomicBool>>,

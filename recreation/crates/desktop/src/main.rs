@@ -241,6 +241,8 @@ struct ChannelPane {
     view_filter: Option<(String, std::rc::Rc<chat_search::Query>)>,
     /// Combined feeds: platforms whose messages are hidden here.
     pub(crate) hidden_platforms: Vec<combined::Platform>,
+    /// Extra sources shown in this pane: your own YouTube live chat in your own channel.
+    pub(crate) linked: Vec<String>,
     /// A friendlier title than the pane name (YouTube: "Channel · Stream title").
     display_title: Option<String>,
     /// Suspicious labels for messages that haven't arrived yet (by message ID).
@@ -350,6 +352,7 @@ impl ChannelPane {
             spelling: Vec::new(),
             view_filter: None,
             hidden_platforms: Vec::new(),
+            linked: Vec::new(),
             display_title: None,
             suspicious_pending: Default::default(),
             send_as: None,
@@ -920,7 +923,7 @@ impl Render for ChannelPane {
                             };
                             // A filtered-out row draws nothing (rows have no padding of their own).
                             if view_filter.as_ref().is_some_and(|q| q.matches(message).is_none())
-                                || message.presentation.origin.as_deref().is_some_and(|o| hidden_platforms.contains(&combined::Platform::of(o))) {
+                                || (!hidden_platforms.is_empty() && hidden_platforms.contains(&message.presentation.origin.as_deref().map(combined::Platform::of).unwrap_or(combined::Platform::Twitch))) {
                                 return div().into_any_element();
                             }
                             let row = first_order + index as u64;
@@ -1140,7 +1143,7 @@ impl Render for ChannelPane {
                     .when_some(self.room_settings.as_ref().filter(|r|!r.labels().is_empty()).map(|r|r.summary()),|el,summary|el.child(div().id("room-modes-hint").max_w(px(120.)).min_w_0().flex_shrink(1.).overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(rgb(0xC5B8E6)).tooltip({let summary=summary.clone();move|w,cx|gpui_kit::component::tooltip::Tooltip::new(format!("{summary}. Your role may grant exemptions; Twitch validates sending. Ctrl+I for channel details.")).build(w,cx)}).child(summary)))
                     .child(div().h_flex().gap_2().when_some(self.send_to.clone(), |el, current| {
                         // Combined feed: one explicit destination, never all of them.
-                        let sources = combined::sources(&self.name);
+                        let sources = self.all_sources();
                         let owner = cx.entity().downgrade();
                         el.child(Button::new("send-to").ghost().xsmall().label(format!("to {}", combined::label(&current))).tooltip("Where your messages go: one channel or stream, never all of them")
                             .dropdown_menu(move |mut menu, _, _| {

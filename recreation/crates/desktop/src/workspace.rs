@@ -217,6 +217,10 @@ pub struct Workbench {
     view_filters: std::collections::HashMap<String, String>,
     /// Combined feeds: hidden platforms per "tab:pane".
     platform_filters: std::collections::HashMap<String, Vec<String>>,
+    /// Your own channel's live YouTube broadcast ("yt:<id>"), linked into your own tab.
+    own_youtube: Option<String>,
+    own_youtube_checked: Option<std::time::Instant>,
+    own_youtube_busy: bool,
     mod_buttons: bool,
     custom_mod_buttons: std::rc::Rc<Vec<crate::mod_buttons::ModButton>>,
     mod_button_inputs: Option<(Entity<InputState>, Entity<InputState>)>,
@@ -675,6 +679,9 @@ impl Workbench {
             shouted: Default::default(),
             obs_found: None,
             spellcheck: state["spellcheck"].as_bool().unwrap_or(false),
+            own_youtube: None,
+            own_youtube_checked: None,
+            own_youtube_busy: false,
             platform_filters: state["platform_filters"]
                 .as_object()
                 .map(|o| {
@@ -2666,10 +2673,10 @@ impl Workbench {
         channel: &str,
         cx: &App,
     ) -> String {
-        if !crate::combined::is_combined(channel) {
+        let p = pane.read(cx);
+        if !crate::combined::is_combined(channel) && p.linked.is_empty() {
             return channel.to_owned();
         }
-        let p = pane.read(cx);
         reply_parent
             .and_then(|id| {
                 p.timeline

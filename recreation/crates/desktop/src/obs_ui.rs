@@ -958,6 +958,63 @@ impl Workbench {
 const YOUTUBE_VAULT: &str = "https://jawjack.zombie.digital/youtube/api-key-v1";
 impl Workbench {
     /// YouTube panes: load the API key once, keep one watcher per pane, deliver updates.
+    /// Your own YouTube live chat joins your own channel's tab while you're live
+    /// there (checked every 90 s while your Twitch is live, 10 min otherwise).
+    fn link_own_youtube(&mut self, cx: &mut Context<Self>) {
+        let own = self.account.read(cx).login();
+        let signed_in = self.google_client.is_some() && self.google_tokens.is_some();
+        if !signed_in {
+            self.own_youtube = None;
+        } else if let (Some(own), false) = (own.clone(), self.own_youtube_busy) {
+            let every = if self.own_youtube.is_some() {
+                300
+            } else if self.streams.get(&own) == Some(true) {
+                90
+            } else {
+                600
+            };
+            if self
+                .own_youtube_checked
+                .is_none_or(|t| t.elapsed() >= Duration::from_secs(every))
+                && let (Some(client), Some(tokens)) =
+                    (self.google_client.clone(), self.google_tokens.clone())
+            {
+                self.own_youtube_busy = true;
+                self.own_youtube_checked = Some(std::time::Instant::now());
+                let task = cx.background_spawn(async move {
+                    let mut tokens = tokens;
+                    let found = crate::google_auth::access(&client, &mut tokens)
+                        .and_then(|access| crate::youtube::my_live(&access));
+                    (tokens, found)
+                });
+                cx.spawn(async move |view, cx| {
+                    let (tokens, found) = task.await;
+                    let _ = view.update(cx, |this, cx| {
+                        this.own_youtube_busy = false;
+                        if this.google_tokens.is_some() {
+                            this.google_tokens = Some(tokens);
+                        }
+                        if let Ok(found) = found {
+                            this.own_youtube = found;
+                        }
+                        cx.notify();
+                    });
+                })
+                .detach();
+            }
+        }
+        for pane in self.panes() {
+            let mine = own.as_deref() == Some(pane.read(cx).name.as_ref());
+            let linked: Vec<String> = if mine {
+                self.own_youtube.clone().into_iter().collect()
+            } else {
+                Vec::new()
+            };
+            if pane.read(cx).linked != linked {
+                pane.update(cx, |p, cx| p.set_linked(linked, cx));
+            }
+        }
+    }
     pub(super) fn pump_youtube(&mut self, cx: &mut Context<Self>) {
         if !self.youtube_key_loaded {
             self.youtube_key_loaded = true;
@@ -978,12 +1035,13 @@ impl Workbench {
             .detach();
             return;
         }
+        self.link_own_youtube(cx);
         let panes = self.panes();
-        // YouTube streams open on their own or inside combined feeds.
+        // YouTube streams open on their own, inside combined feeds, or linked into your channel.
         let mut names: Vec<String> = Vec::new();
         for source in panes
             .iter()
-            .flat_map(|p| crate::combined::sources(&p.read(cx).name))
+            .flat_map(|p| p.read(cx).all_sources())
             .filter(|n| crate::youtube::is_youtube(n))
         {
             if !names.contains(&source) {
@@ -1006,9 +1064,8 @@ impl Workbench {
             let combined: Vec<_> = panes
                 .iter()
                 .filter(|p| {
-                    let pane_name = p.read(cx).name.to_string();
-                    crate::combined::is_combined(&pane_name)
-                        && crate::combined::sources(&pane_name).contains(&name)
+                    let p = p.read(cx);
+                    p.name.as_ref() != name && p.all_sources().contains(&name)
                 })
                 .cloned()
                 .collect();
