@@ -247,6 +247,8 @@ pub enum Action {
     CopyBody,
     CopyName,
     CopyId,
+    /// Everything Jawjack knows about the message (for bug reports).
+    CopyDetails,
     Inspect,
     InspectMention(String),
     Notes,
@@ -388,6 +390,7 @@ pub fn menu(
         ("Copy message text", Action::CopyBody),
         ("Copy username", Action::CopyName),
         ("Copy user ID", Action::CopyId),
+        ("Copy message details", Action::CopyDetails),
     ] {
         if action == Action::Notes && message.user_id.is_empty() {
             continue;
@@ -784,6 +787,7 @@ impl ChannelPane {
                 }
             }
             Action::CopyId => copy(message.user_id, window, cx),
+            Action::CopyDetails => copy(format!("{message:#?}"), window, cx),
             Action::Profile => {
                 if let Some(login) = message.login {
                     cx.open_url(&format!("https://www.twitch.tv/{login}"));

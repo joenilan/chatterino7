@@ -51,7 +51,7 @@ Chatterino import.
 - [ ] Link actions: incognito, open Twitch link as split, Streamlink from link, double-click, lowercase domains (S)
 - [ ] Web search of selected text, configurable engine (S)
 - [ ] Username right-click behaviour (mention vs card, modifier) (S)
-- [ ] ~~"Go to message" from mentions~~ done (click the channel tag); from search; copy message JSON (S)
+- [x] "Go to message" from mentions (channel tag) and search (Jump); Copy message details
 
 ### Commands
 - [x] /ignore /unignore /copy /streamlink /clearmessages /banid /requests /lowtrust (S each)
