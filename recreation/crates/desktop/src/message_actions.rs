@@ -985,7 +985,7 @@ impl ChannelPane {
                         let pane=pane.read(cx);let timeline=pane.timeline.borrow();
                         let messages=timeline.messages().iter().filter(|m|m.user_id==user_id).collect::<Vec<_>>();
                         let last=messages.last().copied();
-                        (pane.name.to_string(),messages.len(),last.map(|m|m.author_label().to_owned()).unwrap_or_else(||clicked_name.clone()),last.and_then(|m|m.login.clone()).or_else(||clicked_login.clone()),messages.iter().rev().take(20).map(|m|m.body()).collect::<Vec<_>>(),last.map(|m|{
+                        (pane.name.to_string(),messages.len(),last.map(|m|m.author_label().to_owned()).unwrap_or_else(||clicked_name.clone()),last.and_then(|m|m.login.clone()).or_else(||clicked_login.clone()),messages.iter().rev().take(20).map(|m|(*m).clone()).collect::<Vec<_>>(),last.map(|m|{
                             // Show the provider's badge title and art, not internal set IDs.
                             let catalog=pane.catalog.borrow();
                             m.badges.iter().map(|b|match catalog.twitch.badge(&m.channel_id,&b.set_id,&b.id){
@@ -1106,7 +1106,10 @@ impl ChannelPane {
                         .children(cosmetic_panel)
                         .children(mod_row)
                         .child(div().id("chatter-recent").v_flex().gap_2()
-                            .children(recent.into_iter().map(|body|div().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL)).min_w_0().child(body))))
+                            .children(recent.into_iter().map(|message|{
+                                let body=owner.upgrade().map(|pane|{let media=pane.read(cx).media.clone();let mut media=media.borrow_mut();card_body(&message,&mut media,cx)}).unwrap_or_else(||message.body().into_any_element());
+                                div().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL)).min_w_0().child(body)
+                            })))
                         .child(div().h_flex().flex_wrap().gap_1()
                             .when(login.is_some(),|el|el
                                 .child(Button::new("chatter-mention").small().label("Mention").on_click(move|_,w,cx|{if let Some(login)=&mention_login{w.close_dialog(cx);let _=mention_owner.update(cx,|p,cx|p.insert_mention(login,w,cx));}}))
@@ -1185,6 +1188,86 @@ impl ChannelPane {
     }
 }
 
+/// A message body for the user card: text with its emotes as images.
+fn card_body(
+    message: &chat_core::Message,
+    media: &mut crate::media::MediaCache,
+    cx: &mut App,
+) -> AnyElement {
+    let has_emotes = message
+        .fragments
+        .iter()
+        .any(|f| matches!(f, chat_core::Fragment::Emote { .. }));
+    if message.deleted || !has_emotes || !crate::inline_chat::emote_option(0) {
+        return message.body().into_any_element();
+    }
+    let mut parts: Vec<AnyElement> = Vec::new();
+    for fragment in &message.fragments {
+        match fragment {
+            chat_core::Fragment::Emote {
+                provider,
+                id,
+                label,
+                animated,
+                asset,
+                ..
+            } => {
+                let animated = *animated && !cx.reduce_motion();
+                let key = match provider.as_str() {
+                    "twitch" => crate::media::EmoteKey::twitch(id, animated),
+                    "7tv" | "bttv" | "ffz" => asset
+                        .as_ref()
+                        .and_then(|a| crate::media::EmoteKey::community(provider, id, animated, a)),
+                    _ => None,
+                };
+                match key {
+                    Some(key) => {
+                        let image = media.get(&key, cx);
+                        let width = image.as_ref().map_or(24., |m| {
+                            let size = m.image.size(0);
+                            24. * u32::from(size.width) as f32
+                                / (u32::from(size.height) as f32).max(1.)
+                        });
+                        parts.push(
+                            div()
+                                .id(SharedString::from(format!(
+                                    "card-emote-{}-{}",
+                                    message.id,
+                                    parts.len()
+                                )))
+                                .tooltip(crate::media_hover::image_card(
+                                    label.clone(),
+                                    provider.to_uppercase(),
+                                    image.clone(),
+                                ))
+                                .child(crate::emote_picker::icon(
+                                    image,
+                                    label.clone(),
+                                    width.min(96.),
+                                    24.,
+                                ))
+                                .into_any_element(),
+                        );
+                    }
+                    None => parts.push(div().child(label.clone()).into_any_element()),
+                }
+            }
+            other => {
+                for word in other.copy_text().split_whitespace() {
+                    parts.push(div().child(word.to_owned()).into_any_element());
+                }
+            }
+        }
+    }
+    div()
+        .h_flex()
+        .flex_wrap()
+        .items_center()
+        .gap_x(px(4.))
+        .gap_y(px(2.))
+        .children(parts)
+        .into_any_element()
+}
 /// 12345 → "12,345".
 fn group_digits(n: u64) -> String {
     let digits = n.to_string();
