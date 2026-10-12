@@ -27,6 +27,7 @@ mod control;
 mod custom_commands;
 mod dock;
 mod duplicates;
+mod emoji;
 mod emote_picker;
 mod engagement;
 mod event_highlights;

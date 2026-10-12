@@ -821,6 +821,7 @@ impl Catalog {
                     .cloned()
             })
             .collect();
+        result.extend(crate::emoji::collections());
         result.insert(
             0,
             Collection {

@@ -290,10 +290,29 @@ impl ChannelPane {
             .flat_map(|c| c.items.iter())
             .filter(|i| {
                 (self.picker.service.is_empty() || i.choice.provider == self.picker.service)
-                    && i.choice.label.to_lowercase().contains(&query)
+                    && (i.choice.label.to_lowercase().contains(&query)
+                        || (crate::emoji::is_emoji(&i.choice)
+                            && crate::emoji::name_matches(&i.choice.label, query.trim())))
             })
             .cloned()
             .collect();
+        // Searching "Available here" also finds emoji by name (":joy:").
+        if self.picker.collection == "all"
+            && query.trim().len() >= 2
+            && self.picker.service.is_empty()
+        {
+            let emoji = self
+                .picker
+                .collections
+                .iter()
+                .filter(|c| c.id.starts_with("emoji-"))
+                .flat_map(|c| c.items.iter())
+                .filter(|i| crate::emoji::name_matches(&i.choice.label, query.trim()))
+                .take(60)
+                .cloned()
+                .collect::<Vec<_>>();
+            self.picker.items.extend(emoji);
+        }
         if self.picker.collection != "recent" {
             self.picker.items.sort_by(|a, b| {
                 (a.choice.provider, &a.origin, a.choice.label.to_lowercase()).cmp(&(
@@ -574,6 +593,13 @@ impl ChannelPane {
             return;
         }
         self.picker.suggestions = self.catalog.borrow().choices(&self.name, query, 8);
+        // `:` also completes emoji by short name (":joy" → 😂), after emotes.
+        if raw.starts_with(':') {
+            let room = 10usize.saturating_sub(self.picker.suggestions.len()).min(6);
+            self.picker
+                .suggestions
+                .extend(crate::emoji::search(query, room));
+        }
         // Tab on a bare word also completes chatter names, as in Chatterino.
         if forced && !raw.starts_with(':') {
             let users = self.user_choices(query, "", 10 - self.picker.suggestions.len().min(10));
@@ -774,16 +800,33 @@ impl ChannelPane {
                             .cursor_pointer()
                             .when(i == self.picker.selected, |el| el.bg(rgb(theme::HOVER)))
                             .hover(|s| s.bg(rgb(theme::HOVER)))
-                            .when(!choice.label.starts_with('/'), |el| {
-                                el.child(preview(image, choice.label.clone()))
+                            .when(crate::emoji::is_emoji(&choice), |el| {
+                                el.child(
+                                    div()
+                                        .w(px(34.))
+                                        .flex()
+                                        .justify_center()
+                                        .text_size(px(22.))
+                                        .child(choice.label.clone()),
+                                )
                             })
+                            .when(
+                                !choice.label.starts_with('/') && !crate::emoji::is_emoji(&choice),
+                                |el| el.child(preview(image, choice.label.clone())),
+                            )
                             .child(
                                 div()
                                     .flex_1()
                                     .min_w_0()
                                     .v_flex()
                                     .text_size(px(12.))
-                                    .child(choice.label.clone())
+                                    .child(if crate::emoji::is_emoji(&choice) {
+                                        crate::emoji::name_of(&choice.label)
+                                            .map(|name| format!(":{name}:"))
+                                            .unwrap_or_else(|| choice.label.clone())
+                                    } else {
+                                        choice.label.clone()
+                                    })
                                     .when(choice.label.starts_with('/'), |el| {
                                         el.child(
                                             div()
@@ -1127,14 +1170,14 @@ impl ChannelPane {
                             }else{false};
                             let mut cells=Vec::new();for (index,item,image,loading) in row_items {
                                 let image=if wait {None}else{image};let loading=loading||wait;
-                                let unavailable=image.is_none()&&!loading;
+                                let emoji=crate::emoji::is_emoji(&item.choice);let unavailable=image.is_none()&&!loading&&!emoji;
                                 let shown=image.as_ref().map(|image|{
                                     if !this.picker.reveals.contains_key(&image.image.id.0) && this.picker.reveals.len()>=1024&& let Some(old)=this.picker.reveals.iter().min_by_key(|(_,at)|at.get()).map(|(id,_)|*id){this.picker.reveals.remove(&old);}
                                     this.picker.reveals.entry(image.image.id.0).or_default().clone()
                                 });let clicked=item.clone();let favorited=item.saved_key.is_some() || this.catalog.borrow().is_favorite(&item.choice);let favorite_item=item.clone();
                                 let tooltip=format!("{} · {} · {}{}",item.choice.label,item.choice.provider,item.origin,if item.available{""}else{" · Not available with this alias in the current channel"});let tooltip=if unavailable {format!("{tooltip} · Image unavailable{}",if item.available{"; emote text can still be inserted"}else{""})} else {tooltip};let tooltip=format!("{tooltip} · {}",if favorited{"Favorite · right-click to remove"}else{"Right-click to favorite"});let hover=tooltip.clone();
                                 let preview=crate::media_hover::Content::Emote{label:item.choice.label.clone(),source:format!("{} · {}{}",item.choice.provider,item.origin,if unavailable{" · Image unavailable"}else{""}),images:image.iter().cloned().collect()};
-                                cells.push(div().id(("emote-browser-cell",index)).size(px(40.)).flex_shrink_0().flex().items_center().justify_center().rounded(px(4.)).border_1().border_color(if index==this.picker.current{rgb(0xB9A1FF)}else{rgba(0x00000000)}).opacity(if item.available{1.}else{0.4}).cursor_pointer().hover(|s|s.bg(rgb(theme::HOVER))).tooltip(move|_,cx|cx.new(|_|crate::media_hover::Card(preview.clone())).into()).relative().child(if loading { loading_icon(index,cx.reduce_motion()) } else if unavailable {
+                                cells.push(div().id(("emote-browser-cell",index)).size(px(40.)).flex_shrink_0().flex().items_center().justify_center().rounded(px(4.)).border_1().border_color(if index==this.picker.current{rgb(0xB9A1FF)}else{rgba(0x00000000)}).opacity(if item.available{1.}else{0.4}).cursor_pointer().hover(|s|s.bg(rgb(theme::HOVER))).tooltip(move|_,cx|cx.new(|_|crate::media_hover::Card(preview.clone())).into()).relative().child(if emoji { div().size(px(34.)).flex().items_center().justify_center().text_size(px(24.)).child(item.choice.label.clone()).into_any_element() } else if loading { loading_icon(index,cx.reduce_motion()) } else if unavailable {
                                     div().size(px(34.)).flex().items_center().justify_center().child(div().size(px(20.)).flex().items_center().justify_center().rounded(px(5.)).border_1().border_color(rgb(theme::BORDER)).text_color(rgb(theme::MUTED)).text_size(px(12.)).child("×")).into_any_element()
                                 } else { smooth_icon(image,item.choice.label,34.,34.,cx.reduce_motion(),shown) }).when(favorited,|el|el.child(div().absolute().top_0().right_0().text_size(px(9.)).text_color(rgb(0xE9C99C)).child("★"))).on_hover(cx.listener(move|this,over,_,cx|{if *over{this.picker.hover_text=hover.clone();this.picker.current=index;cx.notify();}})).on_mouse_down(MouseButton::Left,|_,w,cx|{w.prevent_default();cx.stop_propagation();}).on_mouse_down(MouseButton::Right,cx.listener(move|this,_,w,cx|{w.prevent_default();cx.stop_propagation();this.toggle_browser_favorite(&favorite_item,w,cx);})).on_click(cx.listener(move|this,_,w,cx|{this.insert_browser_item(&clicked,w,cx);})));
                             }
