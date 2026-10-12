@@ -101,6 +101,12 @@ impl Workbench {
             && self.visible_panes(cx).contains(pane);
         if reading {
             (0, 0)
+        } else if self
+            .quiet_unread
+            .iter()
+            .any(|c| c.as_str() == p.name.as_ref())
+        {
+            (0, p.attention.counts().1)
         } else {
             p.attention.counts()
         }

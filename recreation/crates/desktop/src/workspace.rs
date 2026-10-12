@@ -342,6 +342,8 @@ pub struct Workbench {
     live_notify: Vec<String>,
     /// Channels whose mentions and highlights don't play a sound.
     muted_pings: Vec<String>,
+    /// Tabs whose plain new messages don't count as unread (highlights still do).
+    quiet_unread: Vec<String>,
     live_notify_all: bool,
     /// Alerts for every followed channel going live, open as a tab or not.
     live_notify_follows: bool,
@@ -657,6 +659,13 @@ impl Workbench {
             live_notify_all: state["live_notify_all"].as_bool().unwrap_or(false),
             live_notify_follows: state["live_notify_follows"].as_bool().unwrap_or(false),
             next_notice: 0,
+            quiet_unread: state["quiet_unread"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| c.as_str().map(str::to_owned))
+                .take(500)
+                .collect(),
             muted_pings: state["muted_pings"]
                 .as_array()
                 .into_iter()
@@ -3089,6 +3098,7 @@ impl Workbench {
         value["popouts"] = json!(self.popout_channels(cx));
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
+        value["quiet_unread"] = json!(self.quiet_unread);
         value["names"] = json!({
             "click": crate::message_actions::PLAIN_NAME_CLICK.load(std::sync::atomic::Ordering::Relaxed),
             "right_click": crate::message_actions::RIGHT_CLICK_NAME.load(std::sync::atomic::Ordering::Relaxed),
@@ -4603,6 +4613,11 @@ impl Workbench {
                                 let notify_now = owner.upgrade().is_some_and(|o| {
                                     o.read(cx).live_notify.contains(&menu_channel)
                                 });
+                                let quiet_owner = owner.clone();
+                                let quiet_channel = menu_channel.clone();
+                                let quiet_now = owner.upgrade().is_some_and(|o| {
+                                    o.read(cx).quiet_unread.contains(&menu_channel)
+                                });
                                 let mute_owner = owner.clone();
                                 let mute_channel = menu_channel.clone();
                                 let muted_now = owner.upgrade().is_some_and(|o| {
@@ -4628,6 +4643,23 @@ impl Workbench {
                                         .on_click(move |_, _, cx| {
                                             let _ = notify_owner.update(cx, |this, cx| {
                                                 this.toggle_live_notify(&notify_channel, cx)
+                                            });
+                                        }),
+                                )
+                                .item_if(!menu_special,
+                                    // Chatterino's "highlight on new message": off, only
+                                    // highlights and mentions mark the tab.
+                                    PopupMenuItem::new("Count new messages")
+                                        .checked(!quiet_now)
+                                        .on_click(move |_, _, cx| {
+                                            let _ = quiet_owner.update(cx, |this, cx| {
+                                                if let Some(at) = this.quiet_unread.iter().position(|c| *c == quiet_channel) {
+                                                    this.quiet_unread.remove(at);
+                                                } else {
+                                                    this.quiet_unread.push(quiet_channel.clone());
+                                                }
+                                                this.schedule_save(cx);
+                                                cx.notify();
                                             });
                                         }),
                                 )
