@@ -2034,6 +2034,26 @@ impl Workbench {
                 let Some(identity) = this.account.read(cx).identity() else {
                     return;
                 };
+                // Your own channel: the subscription too (Twitch allows only the broadcaster).
+                if this.account.read(cx).login().as_deref() == Some(channel.as_str())
+                    && identity.has("channel:read:subscriptions")
+                {
+                    let (identity, user_id, pane) =
+                        (identity.clone(), user_id.clone(), pane.clone());
+                    let task = cx.background_spawn({
+                        let user_id = user_id.clone();
+                        async move { crate::twitch_actions::subscription(&identity, &user_id) }
+                    });
+                    cx.spawn(async move |_, cx| {
+                        if let Ok(sub) = task.await {
+                            let _ = pane.update(cx, |p, cx| {
+                                p.sub_status.insert(user_id, sub);
+                                cx.notify();
+                            });
+                        }
+                    })
+                    .detach();
+                }
                 let (channel, user_id, pane) = (channel.clone(), user_id.clone(), pane.clone());
                 let task = cx.background_spawn({
                     let user_id = user_id.clone();

@@ -694,6 +694,7 @@ impl ChannelPane {
                         Err(e) if e=="Loading…"=>"Checking follow age…".into(),
                         Err(_)=>"Follow age unavailable".into(),
                     });
+                    let sub=owner.upgrade().and_then(|pane|pane.read(cx).sub_status.get(&user_id).cloned()).map(|sub|sub.unwrap_or_else(||format!("Not subscribed to #{channel}")));
                     let mod_row=login.clone().filter(|_|moderating).map(|target|{
                         let act=|label:&'static str,id:&'static str,request:crate::twitch_actions::Request|{
                             let owner=owner.clone();
@@ -758,6 +759,7 @@ impl ChannelPane {
                         .child(login.clone().map(|login|format!("@{login}" )).unwrap_or_else(||"Login unavailable".into()))
                         .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("{count} retained messages in #{channel}")))
                         .when_some(follow,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(text)))
+                        .when_some(sub,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(text)))
                         .when(!badges.is_empty(),|el|el.child(div().h_flex().flex_wrap().gap_x_3().gap_y_1().text_size(px(11.)).children(badges.into_iter().map(|(title,key)|{
                             let image=key.and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(&key,cx)}));
                             div().h_flex().gap_1().items_center().when_some(image,|el,image|el.child(crate::emote_picker::icon(Some(image),String::new(),18.,18.))).child(title)

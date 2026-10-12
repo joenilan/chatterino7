@@ -890,6 +890,39 @@ mod tests {
 
 /// When `user_id` followed the channel (RFC 3339), for the user card. Needs the
 /// broadcaster or a moderator (moderator:read:followers); None when not following.
+/// In your own channel: a chatter's subscription ("Tier 1 · gifted by X"), or None.
+pub fn subscription(identity: &Identity, user_id: &str) -> Result<Option<String>, String> {
+    let helix = Helix {
+        client: crate::live::client()?,
+        identity,
+    };
+    let value = helix.ok(
+        reqwest::Method::GET,
+        "subscriptions",
+        &[
+            ("broadcaster_id", identity.user_id.as_str()),
+            ("user_id", user_id),
+        ],
+        None,
+    )?;
+    let sub = &value["data"][0];
+    let Some(tier) = sub["tier"].as_str() else {
+        return Ok(None);
+    };
+    let tier = match tier {
+        "2000" => "Tier 2",
+        "3000" => "Tier 3",
+        _ => "Tier 1",
+    };
+    Ok(Some(
+        match sub["gifter_name"].as_str().filter(|g| !g.is_empty()) {
+            Some(gifter) if sub["is_gift"].as_bool() == Some(true) => {
+                format!("{tier} subscriber · gifted by {gifter}")
+            }
+            _ => format!("{tier} subscriber"),
+        },
+    ))
+}
 pub fn followed_at(
     identity: &Identity,
     channel: &str,

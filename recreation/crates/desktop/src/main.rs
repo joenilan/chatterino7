@@ -254,6 +254,8 @@ struct ChannelPane {
     pub(crate) hidden_platforms: Vec<combined::Platform>,
     /// User card: follow dates by user ID (Ok(None) = not following, Err = unavailable).
     pub(crate) follow_ages: std::collections::HashMap<String, Result<Option<String>, String>>,
+    /// User card in your own channel: subscription by user ID (None = not subscribed).
+    pub(crate) sub_status: std::collections::HashMap<String, Option<String>>,
     /// The last message sent here and when, so an identical one can still go through.
     last_sent: Option<(String, Instant)>,
     /// Extra sources shown in this pane: your own YouTube live chat in your own channel.
@@ -368,6 +370,7 @@ impl ChannelPane {
             view_filter: None,
             hidden_platforms: Vec::new(),
             follow_ages: Default::default(),
+            sub_status: Default::default(),
             last_sent: None,
             linked: Vec::new(),
             display_title: None,
