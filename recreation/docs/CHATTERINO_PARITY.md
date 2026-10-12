@@ -22,7 +22,7 @@ Chatterino import.
 - [x] Message separator lines (S)
 - [ ] Collapse long messages after N lines (M)
 - [x] Hide deleted messages; show/hide moderation & deletion lines (S)
-- [ ] Timeout/ban lines with duration for viewers; stack/combine (M) — lines and "(N times)" stacking done; Twitch EventSub gives viewers no duration (only IRC does)
+- [x] Timeout/ban lines with duration for viewers; stack/combine (M) — an anonymous IRC connection runs beside EventSub for lengths (live and history), and carries chat while a channel's EventSub is down
 - [x] Badge visibility toggles per category; animated 7TV badges (M)
 - [ ] Chatterino supporter badges (S)
 - [ ] Join/part messages (via IRC) (M)
