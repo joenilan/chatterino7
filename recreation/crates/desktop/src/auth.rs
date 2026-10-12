@@ -112,6 +112,11 @@ pub struct TwitchAccount {
     account: Option<Account>,
     /// This account's entry in the OS credential vault.
     vault: SharedString,
+    /// The refresh token the current check started from, so a rejected one can
+    /// be told apart from a newer one another Jawjack window saved meanwhile.
+    started_refresh: Option<String>,
+    /// One retry with the vault's newer token per rejected refresh.
+    retried_newer: bool,
 }
 impl Drop for TwitchAccount {
     fn drop(&mut self) {
@@ -129,6 +134,41 @@ impl TwitchAccount {
     /// signed in or still checking).
     pub fn signed_out_reason(&self) -> Option<String> {
         (self.account.is_none() && !self.busy).then(|| self.status.clone())
+    }
+    /// A rejected refresh token may just be stale: Twitch refresh tokens are
+    /// one-use, so if another Jawjack window renewed first, the vault now holds
+    /// a newer one. Use it once before giving up.
+    fn retry_newer(&mut self, message: String, cx: &mut Context<Self>) {
+        self.retried_newer = true;
+        let read = cx.read_credentials(&self.vault);
+        let used = self.started_refresh.clone();
+        cx.spawn(async move |view, cx| {
+            let newer = read
+                .await
+                .ok()
+                .flatten()
+                .and_then(|(_, bytes)| serde_json::from_slice::<Value>(&bytes).ok())
+                .filter(|t| {
+                    t["refresh_token"]
+                        .as_str()
+                        .is_some_and(|r| Some(r) != used.as_deref())
+                });
+            let _ = view.update(cx, |this, cx| {
+                this.renewing = false;
+                this.validating = false;
+                match newer {
+                    Some(tokens) => this.start(Some(tokens), cx),
+                    None => {
+                        this.busy = false;
+                        this.code = None;
+                        this.account = None;
+                        this.status = message;
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
     pub fn login(&self) -> Option<String> {
         self.account.as_ref().map(|a| a.login.clone())
@@ -193,6 +233,8 @@ impl TwitchAccount {
             generation: 0,
             account: None,
             vault,
+            started_refresh: None,
+            retried_newer: false,
         }
     }
     fn start(&mut self, saved: Option<Value>, cx: &mut Context<Self>) {
@@ -208,6 +250,10 @@ impl TwitchAccount {
         self.code = None;
         self.copied_at = None;
         self.code_revealed = false;
+        self.started_refresh = saved
+            .as_ref()
+            .and_then(|t| t["refresh_token"].as_str())
+            .map(str::to_owned);
         self.validating = saved.is_some() && self.account.is_some();
         self.upgrading = saved.is_none() && self.account.is_some();
         if !self.validating && !self.upgrading {
@@ -249,6 +295,7 @@ impl TwitchAccount {
                                 Event::Renewing(ack) => { this.renewing = true; this.status = "Renewing Twitch session securely…".into(); let _ = ack.send(true); }
                                 Event::Invalidated => { this.account = None; this.status = "Renewing expired Twitch authorization…".into(); }
                                 Event::Error(message) if this.upgrading => this.keep_account(format!("Permissions were not updated: {message}"), cx),
+                                Event::Error(message) if message.contains("expired or was revoked") && !this.retried_newer && this.started_refresh.is_some() => this.retry_newer(message, cx),
                                 Event::Error(message) => { this.renewing = false; this.validating = false; this.busy = false; this.code = None; this.status = message; this.account = None; }
                                 Event::Ready(account) => this.persist(account, generation, cx),
                                 Event::Rotated(tokens, ack) => this.save_rotation(tokens, ack, generation, cx),
@@ -300,6 +347,7 @@ impl TwitchAccount {
         self.schedule_validation(self.generation, cx);
     }
     fn persist(&mut self, account: Account, generation: u64, cx: &mut Context<Self>) {
+        self.retried_newer = false;
         self.renewing = false;
         self.upgrading = false;
         // A routine validation of unchanged credentials must not interrupt live chat
