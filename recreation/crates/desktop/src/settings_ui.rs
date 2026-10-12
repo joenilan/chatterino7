@@ -476,6 +476,21 @@ impl Workbench {
                             cx.notify();
                         }))),
                 ))
+                .child(stacked_row(
+                    "Completion",
+                    "Tab completes emotes and chatter names; @ always completes names. A comma after a name that starts the message reads like \"name, hi\".",
+                    div().h_flex().flex_wrap().gap_x_4().gap_y_1()
+                        .children([(0usize, "Names only after @"), (1, "Comma after a leading name"), (2, "Add @ to names"), (3, "Include the streamer")].map(|(index, label)| {
+                            gpui_kit::component::checkbox::Checkbox::new(("settings-completion", index))
+                                .label(label)
+                                .checked(crate::emote_picker::COMPLETION_OPTIONS[index].load(std::sync::atomic::Ordering::Relaxed))
+                                .on_click(cx.listener(move |this, on: &bool, _, cx| {
+                                    crate::emote_picker::COMPLETION_OPTIONS[index].store(*on, std::sync::atomic::Ordering::Relaxed);
+                                    this.schedule_save(cx);
+                                    cx.notify();
+                                }))
+                        })),
+                ))
                 .child(row(
                     "Joins and parts",
                     "Chatters arriving and leaving, listed every few seconds. Twitch only reports these in channels with fewer than 1,000 chatters.",

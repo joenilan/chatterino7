@@ -875,6 +875,12 @@ impl Workbench {
                     state["joins_parts"].as_bool().unwrap_or(false),
                     std::sync::atomic::Ordering::Relaxed,
                 );
+                for (index, name) in crate::emote_picker::COMPLETION_NAMES.iter().enumerate() {
+                    if let Some(on) = state["completion"][name].as_bool() {
+                        crate::emote_picker::COMPLETION_OPTIONS[index]
+                            .store(on, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
                 crate::mention_names::COLOR_MENTIONS.store(
                     state["mentions"]["color"].as_bool().unwrap_or(true),
                     std::sync::atomic::Ordering::Relaxed,
@@ -3052,6 +3058,17 @@ impl Workbench {
         value["popouts"] = json!(self.popout_channels(cx));
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
+        let mut completion = serde_json::Map::new();
+        for (index, name) in crate::emote_picker::COMPLETION_NAMES.iter().enumerate() {
+            completion.insert(
+                (*name).into(),
+                json!(
+                    crate::emote_picker::COMPLETION_OPTIONS[index]
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                ),
+            );
+        }
+        value["completion"] = Value::Object(completion);
         value["joins_parts"] =
             json!(crate::anon_chat::SHOW_MEMBERSHIP.load(std::sync::atomic::Ordering::Relaxed));
         value["recent_limit"] =

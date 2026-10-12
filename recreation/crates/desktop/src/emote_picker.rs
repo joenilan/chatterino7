@@ -549,6 +549,8 @@ impl ChannelPane {
         }
     }
     pub fn complete_query(&mut self, forced: bool, cx: &mut Context<Self>) {
+        let option =
+            |index: usize| COMPLETION_OPTIONS[index].load(std::sync::atomic::Ordering::Relaxed);
         self.picker.suggestions.clear();
         self.picker.selected = 0;
         self.picker.token = None;
@@ -624,9 +626,12 @@ impl ChannelPane {
                 .suggestions
                 .extend(crate::emoji::search(query, room));
         }
-        // Tab on a bare word also completes chatter names, as in Chatterino.
-        if forced && !raw.starts_with(':') {
-            let users = self.user_choices(query, "", 10 - self.picker.suggestions.len().min(10));
+        // Tab on a bare word also completes chatter names, as in Chatterino
+        // (unless names only complete after @).
+        if forced && !raw.starts_with(':') && !option(0) {
+            let prefix = if option(2) { "@" } else { "" };
+            let users =
+                self.user_choices(query, prefix, 10 - self.picker.suggestions.len().min(10));
             self.picker.suggestions.extend(users);
         }
         if !self.picker.suggestions.is_empty() {
@@ -637,25 +642,44 @@ impl ChannelPane {
     /// list where available. Login and display-name prefixes rank above substrings.
     fn user_choices(&self, query: &str, prefix: &str, limit: usize) -> Vec<Choice> {
         let query = query.to_lowercase();
-        let mut candidates: Vec<(String, String, &'static str)> = Vec::new();
+        // (login, lowercase display name, source, what to insert)
+        let mut candidates: Vec<(String, String, &'static str, String)> = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for message in self.timeline.borrow().messages().iter().rev() {
             let Some(login) = message.login.as_deref().and_then(chat_core::twitch_login) else {
                 continue;
             };
             if seen.insert(login.clone()) {
-                candidates.push((login, message.display_name.to_lowercase(), "Recent chatter"));
+                // Their display name when it's just the login's capitalisation.
+                let label = if message.display_name.eq_ignore_ascii_case(&login) {
+                    message.display_name.clone()
+                } else {
+                    login.clone()
+                };
+                candidates.push((
+                    login,
+                    message.display_name.to_lowercase(),
+                    "Recent chatter",
+                    label,
+                ));
             }
         }
         for login in self.chatter_list.iter() {
             if seen.insert(login.clone()) {
-                candidates.push((login.clone(), login.clone(), "In chat"));
+                candidates.push((login.clone(), login.clone(), "In chat", login.clone()));
             }
         }
-        let starts = |(login, display, _): &&(String, String, &'static str)| {
+        // The streamer, even before they've said anything.
+        if COMPLETION_OPTIONS[3].load(std::sync::atomic::Ordering::Relaxed)
+            && let Some(login) = chat_core::twitch_login(&self.name)
+            && seen.insert(login.clone())
+        {
+            candidates.push((login.clone(), login.clone(), "Broadcaster", login));
+        }
+        let starts = |(login, display, _, _): &&(String, String, &'static str, String)| {
             login.starts_with(&query) || display.starts_with(&query)
         };
-        let contains = |(login, display, _): &&(String, String, &'static str)| {
+        let contains = |(login, display, _, _): &&(String, String, &'static str, String)| {
             login.contains(&query) || display.contains(&query)
         };
         let ranked = candidates
@@ -664,8 +688,8 @@ impl ChannelPane {
             .chain(candidates.iter().filter(|c| !starts(c) && contains(c)));
         ranked
             .take(limit)
-            .map(|(login, _, source)| Choice {
-                label: format!("{prefix}{login}"),
+            .map(|(_, _, source, label)| Choice {
+                label: format!("{prefix}{label}"),
                 provider: source,
                 key: None,
             })
@@ -710,7 +734,16 @@ impl ChannelPane {
         } else {
             ""
         };
-        let replacement = format!("{left}{}{right}", choice.label);
+        // "name, " when a chatter's name starts the message (Chatterino's comma).
+        let comma = completion
+            && before.trim().is_empty()
+            && USER_SOURCES.contains(&choice.provider)
+            && COMPLETION_OPTIONS[1].load(std::sync::atomic::Ordering::Relaxed);
+        let replacement = format!(
+            "{left}{}{}{right}",
+            choice.label,
+            if comma { "," } else { "" }
+        );
         if before.chars().count() + replacement.chars().count() + after.chars().count() > 500 {
             window.push_notification(
                 Notification::info(
@@ -1217,3 +1250,15 @@ impl ChannelPane {
             .into_any_element()
     }
 }
+
+/// Settings → Chat → Completion: [names only after @, comma after a name that
+/// starts the message, add @ to Tab-completed names, include the broadcaster].
+pub const COMPLETION_NAMES: [&str; 4] = ["only_at", "comma", "add_at", "broadcaster"];
+pub static COMPLETION_OPTIONS: [std::sync::atomic::AtomicBool; 4] = [
+    std::sync::atomic::AtomicBool::new(false),
+    std::sync::atomic::AtomicBool::new(false),
+    std::sync::atomic::AtomicBool::new(false),
+    std::sync::atomic::AtomicBool::new(true),
+];
+/// Where chatter-name suggestions come from (vs emotes and commands).
+const USER_SOURCES: [&str; 3] = ["Recent chatter", "In chat", "Broadcaster"];

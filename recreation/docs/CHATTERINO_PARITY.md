@@ -82,7 +82,7 @@ Chatterino import.
 - [ ] Recent messages: ~~limit~~ done; ~~reconnect gap fill~~ covered by the IRC fallback, and live chat now waits for history; custom URL (S)
 - [x] Repeated-message filter options (S) — how alike, window, count, same chatter only, own messages, repeats highlight
 - [ ] Nicknames: regex, case sensitivity (S)
-- [ ] Completion options: only with @, comma after mention, include broadcaster, smart emote completion (S)
+- [x] Completion options (S) — names only after @, comma after a leading name, add @, include the streamer; names complete as display names
 - [x] Mentions: bold/coloured in the chatter's colour, detect names without @ (option), colourless names get a stable colour
 - [ ] Settings search; restore backups (S)
 - [ ] Spellcheck: more languages, personal dictionary (S)
