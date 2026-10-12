@@ -54,6 +54,7 @@ mod name_paint;
 mod obs;
 mod owned_emotes;
 mod profiles;
+mod pronouns;
 mod recent_messages;
 mod replies;
 mod rewards;

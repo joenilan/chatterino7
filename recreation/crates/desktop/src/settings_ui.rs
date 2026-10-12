@@ -290,6 +290,15 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "Show pronouns",
+                    format!("On user cards, from {} (as Chatterino does). It sees the names of chatters whose cards you open.", crate::pronouns::SERVICE),
+                    Switch::new("settings-pronouns").checked(crate::pronouns::enabled()).on_click(cx.listener(|this, on: &bool, _, cx| {
+                        crate::pronouns::ENABLED.store(*on, std::sync::atomic::Ordering::Relaxed);
+                        this.schedule_save(cx);
+                        cx.notify();
+                    })),
+                ))
+                .child(row(
                     "Emote providers",
                     "Show emotes from these services in chat, the emote picker and Tab completion. Twitch emotes always show.",
                     div().h_flex().gap_3().children(

@@ -704,6 +704,10 @@ impl Workbench {
                     std::sync::atomic::Ordering::Relaxed,
                 );
                 crate::chat_search::load_saved(&state["saved_filters"]);
+                crate::pronouns::ENABLED.store(
+                    state["pronouns"].as_bool().unwrap_or(false),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 crate::hotkeys::load(&state["hotkeys"], cx);
                 crate::inline_chat::EMOTE_SCALE.store(
                     state["emote_scale"].as_u64().unwrap_or(100).clamp(50, 200) as u32,
@@ -2516,6 +2520,7 @@ impl Workbench {
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
         value["saved_filters"] = crate::chat_search::saved_json();
+        value["pronouns"] = json!(crate::pronouns::enabled());
         value["hotkeys"] = crate::hotkeys::json();
         value["emote_scale"] =
             json!(crate::inline_chat::EMOTE_SCALE.load(std::sync::atomic::Ordering::Relaxed));

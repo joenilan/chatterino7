@@ -746,7 +746,18 @@ impl ChannelPane {
                     let moderating=matches!(role,Some(crate::capabilities::Role::Moderator|crate::capabilities::Role::Broadcaster));
                     let broadcaster=matches!(role,Some(crate::capabilities::Role::Broadcaster));
                     // Follow age: only the broadcaster and moderators can look it up.
-                    let follow=owner.upgrade().and_then(|pane|{
+                    // Pronouns (Settings → Chat; off by default, as in Chatterino).
+                    let pronouns=login.clone().filter(|_|crate::pronouns::enabled()).map(|l|crate::pronouns::get(&l));
+                    if pronouns==Some(crate::pronouns::State::Loading){window.request_animation_frame();}
+                    let pronouns=pronouns.and_then(|state|match state{
+                        crate::pronouns::State::Ready(Some(p))=>Some(format!("Pronouns: {p}")),
+                        crate::pronouns::State::Ready(None)=>Some("Pronouns: not set".to_owned()),
+                        crate::pronouns::State::Loading=>Some("Pronouns: loading…".to_owned()),
+                        crate::pronouns::State::Failed=>None,
+                    });
+                    // The channel's own broadcaster can't follow, subscribe to or be moderated in it.
+                    let own_channel=login.as_deref()==Some(channel.as_str());
+                    let follow=owner.upgrade().filter(|_|!own_channel).and_then(|pane|{
                         let known=pane.read(cx).follow_ages.get(&user_id).cloned();
                         if known.is_none()&&moderating{
                             let id=user_id.clone();
@@ -759,8 +770,8 @@ impl ChannelPane {
                         Err(e) if e=="Loading…"=>"Checking follow age…".into(),
                         Err(_)=>"Follow age unavailable".into(),
                     });
-                    let sub=owner.upgrade().and_then(|pane|pane.read(cx).sub_status.get(&user_id).cloned()).map(|sub|sub.unwrap_or_else(||format!("Not subscribed to #{channel}")));
-                    let mod_row=login.clone().filter(|_|moderating).map(|target|{
+                    let sub=owner.upgrade().filter(|_|!own_channel).and_then(|pane|pane.read(cx).sub_status.get(&user_id).cloned()).map(|sub|sub.unwrap_or_else(||format!("Not subscribed to #{channel}")));
+                    let mod_row=login.clone().filter(|_|moderating&&!own_channel).map(|target|{
                         let act=|label:&'static str,id:&'static str,request:crate::twitch_actions::Request|{
                             let owner=owner.clone();
                             Button::new(id).small().label(label).on_click(move|_,w,cx|{w.close_dialog(cx);let request=request.clone();let _=owner.update(cx,|_,cx|cx.emit(PaneEvent::TwitchCommand{request,draft:String::new()}));})
@@ -825,6 +836,7 @@ impl ChannelPane {
                         .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("{count} retained messages in #{channel}")))
                         .when_some(follow,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(text)))
                         .when_some(sub,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(text)))
+                        .when_some(pronouns,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(text)))
                         .when(!badges.is_empty(),|el|el.child(div().h_flex().flex_wrap().gap_x_3().gap_y_1().text_size(px(11.)).children(badges.into_iter().map(|(title,key)|{
                             let image=key.and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(&key,cx)}));
                             div().h_flex().gap_1().items_center().when_some(image,|el,image|el.child(crate::emote_picker::icon(Some(image),String::new(),18.,18.))).child(title)
