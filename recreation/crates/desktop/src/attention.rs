@@ -36,7 +36,9 @@ pub fn terms(text: &str) -> Vec<String> {
         if !result.contains(&item) {
             result.push(item);
         }
-        if result.len() == 8 {
+        // Highlight words (8) plus "!name" exclusions (up to 24 more).
+        if result.iter().filter(|t| !t.starts_with('!')).count() > 8 || result.len() >= 32 {
+            result.pop();
             break;
         }
     }
@@ -69,8 +71,20 @@ impl Attention {
             true
         }
     }
+    /// "!name" in highlight words: never highlight or ping for that chatter (bots).
+    fn excluded(&self, message: &Message) -> bool {
+        let login = message.login.as_deref().unwrap_or("");
+        let name = message.display_name.to_lowercase();
+        self.terms
+            .iter()
+            .filter_map(|t| t.strip_prefix('!'))
+            .any(|x| x == login || x == name)
+    }
     fn color(&self, message: &Message) -> Option<usize> {
-        if message.deleted || message.presentation.kind == chat_core::MODERATION {
+        if message.deleted
+            || message.presentation.kind == chat_core::MODERATION
+            || self.excluded(message)
+        {
             return None;
         }
         // Replies in a followed thread stand out like mentions (not your own).
@@ -119,6 +133,7 @@ impl Attention {
             }
             self.terms
                 .iter()
+                .filter(|term| !term.starts_with('!'))
                 .any(|term| crate::highlight_rules::normalized_match(&folded, term, true))
                 .then_some(Some(0))
         };
@@ -184,7 +199,7 @@ impl Attention {
     /// such as subs and raids are colour only.
     fn ping(&self, message: &Message) -> Option<Ping> {
         let (user, login) = self.identity.as_ref()?;
-        if message.deleted || &message.user_id == user {
+        if message.deleted || &message.user_id == user || self.excluded(message) {
             return None;
         }
         if self.in_followed_thread(message) {
@@ -213,6 +228,7 @@ impl Attention {
             || self
                 .terms
                 .iter()
+                .filter(|term| !term.starts_with('!'))
                 .any(|term| crate::highlight_rules::normalized_match(&text, term, true)))
         .then_some(Ping::Highlight)
     }

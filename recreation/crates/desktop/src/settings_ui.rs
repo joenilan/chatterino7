@@ -327,7 +327,7 @@ impl Workbench {
             3 => page
                 .child(row(
                     "Highlight words",
-                    "Up to 8 words or phrases. Whole-word, any case. Your mentions are always included.",
+                    "Up to 8 words or phrases, comma-separated. Whole-word, any case. Your mentions are always included. Add !name to never highlight or ping for that chatter (e.g. !streamelements, !nightbot).",
                     div().w(px(220.)).child(Input::new(&self.highlight_input).small()),
                 ))
                 .child(row(
