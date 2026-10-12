@@ -30,7 +30,7 @@ Chatterino import.
 - [x] Chat notices when 7TV/BTTV emotes are added/removed/renamed (S)
 - [ ] Inline whispers in channel splits (S)
 - [x] Slow-mode / timeout send countdown (S)
-- [ ] Header: stream title, game, viewers, uptime toggles (S)
+- [x] Header: stream title, game, viewers, uptime toggles (S)
 - [ ] Emote options: images off, animations off, animate only when focused, zero-width, unlisted 7TV, remove spaces between emotes, stack bits (S each)
 - [ ] 7TV paint options (paints, shadows); animated 7TV avatar (S)
 - [ ] Emoji image styles (Twemoji, Apple, Google…) (M)

@@ -750,6 +750,11 @@ impl Workbench {
                     std::sync::atomic::Ordering::Relaxed,
                 );
                 crate::chat_search::load_saved(&state["saved_filters"]);
+                for (index, flag) in crate::theme::HEADER.iter().enumerate() {
+                    if let Some(on) = state["header"][index].as_bool() {
+                        flag.store(on, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
                 crate::media::ANIMATE.store(
                     state["animate"].as_u64().unwrap_or(0).min(2) as u8,
                     std::sync::atomic::Ordering::Relaxed,
@@ -2700,6 +2705,11 @@ impl Workbench {
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
         value["saved_filters"] = crate::chat_search::saved_json();
+        value["header"] = json!(
+            (0..crate::theme::HEADER.len())
+                .map(crate::theme::header_shows)
+                .collect::<Vec<_>>()
+        );
         value["animate"] = json!(crate::media::ANIMATE.load(std::sync::atomic::Ordering::Relaxed));
         value["badges"] = json!(
             (0..crate::theme::BADGES.len())

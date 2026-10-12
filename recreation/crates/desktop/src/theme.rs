@@ -239,3 +239,16 @@ impl RenderOnce for Segmented {
             )
     }
 }
+
+/// Settings → Appearance → Channel header: what shows beside the channel name
+/// while it's live (Chatterino's header options).
+pub const HEADER_PARTS: [&str; 4] = ["Viewers", "Uptime", "Category", "Title"];
+pub static HEADER: [std::sync::atomic::AtomicBool; 4] = [
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(false),
+    std::sync::atomic::AtomicBool::new(false),
+];
+pub fn header_shows(part: usize) -> bool {
+    HEADER[part].load(std::sync::atomic::Ordering::Relaxed)
+}

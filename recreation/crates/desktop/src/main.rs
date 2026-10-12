@@ -964,7 +964,27 @@ impl Render for ChannelPane {
                                     Some(title) => title.clone(),
                                     None if youtube::is_youtube(&self.name) => "YouTube stream".into(),
                                     None => format!("# {}", combined::title(&self.name)),
-                                })),
+                                })
+                                // Live details beside the name (Settings → Appearance → Channel header).
+                                .children(self.stream.as_ref().filter(|s| s.live).map(|info| {
+                                    let counts = !streamer_mode::hides(streamer_mode::VIEWER_COUNTS);
+                                    let parts = [
+                                        (theme::header_shows(0) && counts).then(|| format!("{} viewers", follows_live::viewers(info.viewers))),
+                                        (theme::header_shows(1) && counts).then(|| info.uptime()).flatten(),
+                                        (theme::header_shows(2) && !info.category.is_empty()).then(|| info.category.clone()),
+                                        (theme::header_shows(3) && !info.title.is_empty()).then(|| info.title.clone()),
+                                    ];
+                                    let text = parts.into_iter().flatten().collect::<Vec<_>>().join(" · ");
+                                    div()
+                                        .min_w_0()
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .text_ellipsis()
+                                        .text_size(px(11.))
+                                        .font_weight(FontWeight::NORMAL)
+                                        .text_color(rgb(theme::MUTED))
+                                        .child(text)
+                                }))),
                     )
                     .children(self.render_filter_chip(cx))
                     .children(self.render_platform_toggles(cx))

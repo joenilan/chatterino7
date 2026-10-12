@@ -249,6 +249,19 @@ impl Workbench {
                         .children(["Display name", "Login", "Both"].map(|l| crate::theme::segment(l))),
                 ))
                 .child(row(
+                    "Channel header",
+                    "While a channel is live, show these beside its name.",
+                    div().h_flex().flex_wrap().justify_end().gap_x_3().gap_y_1().children(crate::theme::HEADER_PARTS.iter().enumerate().map(|(index, label)| {
+                        gpui_kit::component::checkbox::Checkbox::new(("settings-header-part", index))
+                            .label(*label)
+                            .checked(crate::theme::header_shows(index))
+                            .on_click(cx.listener(move |this, on: &bool, _, cx| {
+                                crate::theme::HEADER[index].store(*on, std::sync::atomic::Ordering::Relaxed);
+                                this.remeasure_all(cx);
+                            }))
+                    })),
+                ))
+                .child(row(
                     "Badges",
                     "Which badges show before names.",
                     div().h_flex().flex_wrap().justify_end().gap_x_3().gap_y_1().max_w(px(300.)).children(crate::theme::BADGE_KINDS.iter().enumerate().map(|(index, label)| {
