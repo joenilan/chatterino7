@@ -123,16 +123,17 @@ fn fetch(broadcaster_id: &str, identity: &Identity) -> Option<Session> {
     Some(Session { participants })
 }
 
-/// Settings → Chat → Shared chat: 0 stripe + tint, 1 stripe only, 2 stripe and
-/// dim other channels, 3 off. Your own channel's messages always stay plain.
+/// Settings → Chat → Shared chat: 0 avatar rings, 1 rings and dim other channels,
+/// 2 off. No background or stripe: those mean highlights (raids, mentions…).
+/// Your own channel's messages always stay plain.
 pub static STYLE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
-pub const STYLES: [&str; 4] = ["Stripe + tint", "Stripe", "Dim others", "Off"];
+pub const STYLES: [&str; 3] = ["Avatar rings", "Rings + dim others", "Off"];
 pub fn style() -> u8 {
-    STYLE.load(std::sync::atomic::Ordering::Relaxed).min(3)
+    STYLE.load(std::sync::atomic::Ordering::Relaxed).min(2)
 }
 
-/// Guest-channel colours: distinct from each other and from highlight colours.
-const PALETTE: [u32; 6] = [0x5CC8A8, 0x6AA8F0, 0xF08A5D, 0xE36FA8, 0xD9C35A, 0x9C7CF0];
+/// Guest-channel ring colours: distinct from each other; no greens (raid highlights).
+const PALETTE: [u32; 6] = [0x5AA9F5, 0xF08A4B, 0xEB6FB0, 0xE6C34A, 0x45D0E0, 0xB98AF5];
 
 fn hash(id: &str) -> usize {
     id.bytes()
@@ -167,12 +168,21 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
 impl ChannelPane {
-    /// Header: who the chat is shared with, as overlapping avatar bubbles ringed in
-    /// each channel's colour (yours neutral). Click one to hide or show its messages.
-    pub fn render_shared_avatars(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    /// Floating over the top of the chat: who it's shared with, as overlapping
+    /// avatar bubbles ringed in each channel's colour (yours neutral). A bubble
+    /// pulses when its channel speaks; click one to hide or show its messages.
+    pub fn render_shared_avatars(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        const SIZE: f32 = 30.;
+        const PULSE_MS: f32 = 900.;
         let session = self.shared_session.clone().filter(|s| s.len() > 1)?;
         let own = self.shared_own.clone();
         let colors = colors(&session, own.as_deref());
+        let animate = !cx.reduce_motion();
+        let mut pulsing = false;
         let mut bubbles = Vec::new();
         for (index, id) in session.iter().enumerate() {
             let (avatar, name) = {
@@ -190,11 +200,19 @@ impl ChannelPane {
             let image = avatar.and_then(|key| self.media.borrow_mut().get(&key, cx));
             let mine = own.as_deref() == Some(id.as_str());
             let ring = if mine {
-                0x6B6F78
+                0x8A8F98
             } else {
-                colors.get(id).copied().unwrap_or(0x6B6F78)
+                colors.get(id).copied().unwrap_or(0x8A8F98)
             };
             let hidden = self.hidden_sources.contains(id);
+            // 1.0 right after the channel spoke, fading to 0.
+            let pulse = self
+                .shared_pulse
+                .get(id)
+                .map(|at| 1. - at.elapsed().as_millis() as f32 / PULSE_MS)
+                .filter(|p| *p > 0. && animate && !hidden)
+                .unwrap_or(0.);
+            pulsing |= pulse > 0.;
             let tip = match (mine, hidden) {
                 (true, false) => format!("{name} (this channel) · click to hide its messages"),
                 (true, true) => format!("{name} (this channel) hidden · click to show"),
@@ -208,10 +226,11 @@ impl ChannelPane {
                 .to_uppercase()
                 .to_string();
             let id = id.clone();
+            let glow = (pulse * 200.) as u32;
             bubbles.push(
                 div()
                     .id(("shared-bubble", index))
-                    .size(px(22.))
+                    .size(px(SIZE))
                     .flex_shrink_0()
                     .rounded_full()
                     .border_2()
@@ -222,15 +241,21 @@ impl ChannelPane {
                     .items_center()
                     .justify_center()
                     .cursor_pointer()
-                    .when(index > 0, |el| el.ml(px(-7.)))
+                    .when(index > 0, |el| el.ml(px(-9.)))
                     .when(hidden, |el| el.opacity(0.3))
+                    .when(pulse > 0., |el| {
+                        el.shadow(vec![BoxShadow {
+                            color: rgba((ring << 8) | glow).into(),
+                            offset: point(px(0.), px(0.)),
+                            blur_radius: px(6. + 6. * pulse),
+                            spread_radius: px(1. + 3. * pulse),
+                            inset: false,
+                        }])
+                    })
                     .child(match image {
-                        Some(image) => {
-                            crate::emote_picker::icon(Some(image), String::new(), 18., 18.)
-                                .into_any_element()
-                        }
+                        Some(image) => crate::emote_picker::avatar(image, SIZE - 4.),
                         None => div()
-                            .text_size(px(10.))
+                            .text_size(px(12.))
                             .text_color(rgb(theme::TEXT))
                             .child(initial)
                             .into_any_element(),
@@ -242,14 +267,34 @@ impl ChannelPane {
                     .into_any_element(),
             );
         }
+        let count = bubbles.len() as f32;
+        if pulsing {
+            window.request_animation_frame();
+        }
         Some(
             div()
-                .id("shared-chat-bubbles")
-                .h_flex()
-                .items_center()
-                .flex_shrink_0()
-                .px_1()
-                .children(bubbles)
+                .absolute()
+                .top(px(8.))
+                .left_0()
+                .right_0()
+                .flex()
+                .justify_center()
+                .child(
+                    div()
+                        .id("shared-chat-bubbles")
+                        .flex_none()
+                        // Sized explicitly: overlapping bubbles (negative margins) confuse auto width.
+                        .w(px(10. + SIZE * count - 9. * (count - 1.)))
+                        .h_flex()
+                        .items_center()
+                        .p(px(4.))
+                        .rounded_full()
+                        .bg(rgba((theme::PANEL << 8) | 0xE0))
+                        .border_1()
+                        .border_color(rgb(theme::BORDER))
+                        .shadow_md()
+                        .children(bubbles),
+                )
                 .into_any_element(),
         )
     }

@@ -263,6 +263,8 @@ struct ChannelPane {
     pub(crate) shared_session: Option<Vec<String>>,
     pub(crate) shared_own: Option<String>,
     pub(crate) hidden_sources: Vec<String>,
+    /// When each session channel last spoke (its bubble pulses): broadcaster ID → time.
+    pub(crate) shared_pulse: std::collections::HashMap<String, Instant>,
     /// User card: follow dates by user ID (Ok(None) = not following, Err = unavailable).
     pub(crate) follow_ages: std::collections::HashMap<String, Result<Option<String>, String>>,
     /// User card in your own channel: subscription by user ID (None = not subscribed).
@@ -383,6 +385,7 @@ impl ChannelPane {
             shared_session: None,
             shared_own: None,
             hidden_sources: Vec::new(),
+            shared_pulse: Default::default(),
             follow_ages: Default::default(),
             sub_status: Default::default(),
             last_sent: None,
@@ -516,6 +519,17 @@ impl ChannelPane {
         let historical =
             matches!(&event, chat_core::Event::Message(m) if m.presentation.historical);
         if let chat_core::Event::Message(message) = &mut event {
+            // Shared Chat: pulse the bubble of the channel this was said in.
+            if !historical
+                && self.shared_session.is_some()
+                && let Some(id) = message
+                    .presentation
+                    .source_id
+                    .clone()
+                    .or_else(|| self.shared_own.clone())
+            {
+                self.shared_pulse.insert(id, Instant::now());
+            }
             self.catalog.borrow_mut().want_cosmetics(&message.user_id);
             // In a combined feed, each message uses its own channel's emotes.
             let emote_channel = message
@@ -917,7 +931,6 @@ impl Render for ChannelPane {
                     )
                     .children(self.render_filter_chip(cx))
                     .children(self.render_platform_toggles(cx))
-                    .children(self.render_shared_avatars(cx))
                     .child(
                         div()
                             .min_w_0()
@@ -983,6 +996,7 @@ impl Render for ChannelPane {
                         *viewport_layout.borrow_mut() = Some(bounds);
                         if changed&&picker_is_open{let owner=picker_layout_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}
                     })
+                    .relative()
                     .when_some(theme::chat_font(), |el, font| el.font_family(font))
                     .when(retained == 0, |el| el.child(div().v_flex().p_6().gap_2().text_color(rgb(theme::MUTED))
                         .child(div().text_color(rgb(theme::TEXT)).text_size(px(16.)).child(if youtube::is_youtube(&self.name) { format!("{} is ready", combined::title(&self.name)) } else { format!("#{} is ready", combined::title(&self.name)) }))
@@ -1066,11 +1080,6 @@ impl Render for ChannelPane {
                                 .when(theme::flag(&theme::SEPARATORS), |el| el.child(div().absolute().left_0().right_0().bottom_0().h(px(1.)).bg(rgb(theme::BORDER))))
                                 .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(0xA99CF40D)).py(px(2.)).rounded_r(px(4.)))
                                 .when(highlight_rows.contains(&row),|el|{let (_,accent,background)=highlight_rules::COLORS[highlight_colors.get(&row).copied().unwrap_or(0)];el.bg(rgb(background)).border_color(rgb(accent)).py(px(2.)).rounded_r(px(4.))})
-                                // Shared Chat: a stripe (and light tint) in the guest channel's colour; yours stays plain.
-                                .when_some(message.presentation.source_id.as_ref().filter(|_| shared_style < 3).map(|id| shared_colors.get(id).copied().unwrap_or_else(|| shared_chat::color_of(id))), |el, color| {
-                                    let el = el.border_color(rgb(color));
-                                    if shared_style == 0 && !highlight_rows.contains(&row) { el.bg(rgba((color << 8) | 0x14)) } else { el }
-                                })
                                 .on_prepaint(move|bounds,window,cx|{
                                     let clip=window.content_mask().bounds;
                                     if following&&eligible.get()&&window.is_window_active()&&!window.has_active_dialog(cx)
@@ -1084,7 +1093,7 @@ impl Render for ChannelPane {
                                 .left(px(12.0 * (1.0 - eased)))
                                 .top(px(6.0 * (1.0 - eased)))
                                 // Recent history is dimmed, as in Chatterino.
-                                .opacity((if message.presentation.similar { 0.4 } else if message.presentation.historical { 0.6 } else { 0.25 + 0.75 * eased }) * if shared_style == 2 && message.presentation.source_id.is_some() { 0.55 } else { 1.0 })
+                                .opacity((if message.presentation.similar { 0.4 } else if message.presentation.historical { 0.6 } else { 0.25 + 0.75 * eased }) * if shared_style == 1 && message.presentation.source_id.is_some() { 0.55 } else { 1.0 })
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()
@@ -1145,13 +1154,15 @@ impl Render for ChannelPane {
                                     let (avatar, profile_name) = { let mut c = catalog.borrow_mut(); c.profiles.request(&source_id); let p = c.profiles.get(&source_id); (p.and_then(|p| p.avatar.clone()), p.map(|p| p.display_name.clone()).filter(|n| !n.is_empty())) };
                                     let name = profile_name.or_else(|| message.presentation.source.clone().filter(|s| s != "Shared Chat")).unwrap_or_else(|| "another channel".into());
                                     let image = avatar.and_then(|key| media.borrow_mut().get(&key, cx));
-                                    el.child(div().id(SharedString::from(format!("shared-{source_id}"))).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0()
+                                    // Ringed in the channel's colour, matching its bubble at the top of the chat.
+                                    let ring = (shared_style < 2).then(|| shared_colors.get(&source_id).copied().unwrap_or_else(|| shared_chat::color_of(&source_id)));
+                                    el.child(div().id(SharedString::from(format!("shared-{source_id}"))).w(px(20.)).h(first_line_height).flex().items_center().flex_shrink_0()
                                         .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(format!("Shared Chat · sent in {name}'s channel")).build(w, cx))
-                                        .child(match image {
-                                            Some(image) => div().size(px(18.)).rounded_full().overflow_hidden().child(emote_picker::icon(Some(image), String::new(), 18., 18.)).into_any_element(),
-                                            None => div().size(px(18.)).rounded_full().bg(rgb(0x3A3350)).flex().items_center().justify_center().text_size(px(10.)).text_color(rgb(theme::TEXT))
+                                        .child(div().size(px(20.)).rounded_full().flex().items_center().justify_center().when_some(ring, |el, ring| el.border_2().border_color(rgb(ring))).child(match image {
+                                            Some(image) => emote_picker::avatar(image, if ring.is_some() { 14. } else { 18. }),
+                                            None => div().size(px(14.)).rounded_full().bg(rgb(0x3A3350)).flex().items_center().justify_center().text_size(px(9.)).text_color(rgb(theme::TEXT))
                                                 .child(message.presentation.source.as_deref().and_then(|n| n.chars().next()).unwrap_or('?').to_uppercase().to_string()).into_any_element(),
-                                        }))
+                                        })))
                                 })
                                 .children(badge_images.into_iter().map(|(badge,image,background)|{
                                     div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(div().size(px(18.)).when_some(background,|el,color|el.bg(rgb(color))).child(emote_picker::icon(image,String::new(),18.,18.)))
@@ -1186,7 +1197,8 @@ impl Render for ChannelPane {
                         .with_row_style(StyleRefinement::default().px_3().pb_0())
                         .with_list_style(StyleRefinement::default().py_2())
                         .h_full(),
-                    ),
+                    )
+                    .children(self.render_shared_avatars(window, cx)),
             )
             .child(div().key_context("JawjackComposer").relative().v_flex().p_1().gap_1().bg(rgb(theme::PANEL)).border_t_1().border_color(rgb(theme::BORDER))
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {

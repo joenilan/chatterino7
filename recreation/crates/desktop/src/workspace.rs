@@ -711,7 +711,7 @@ impl Workbench {
                 );
                 crate::chat_search::load_saved(&state["saved_filters"]);
                 crate::shared_chat::STYLE.store(
-                    state["shared_chat_style"].as_u64().unwrap_or(0).min(3) as u8,
+                    state["shared_chat_look"].as_u64().unwrap_or(0).min(2) as u8,
                     std::sync::atomic::Ordering::Relaxed,
                 );
                 chat_core::NAME_MODE.store(
@@ -2561,7 +2561,7 @@ impl Workbench {
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
         value["saved_filters"] = crate::chat_search::saved_json();
-        value["shared_chat_style"] = json!(crate::shared_chat::style());
+        value["shared_chat_look"] = json!(crate::shared_chat::style());
         value["on_top"] = json!(self.on_top);
         value["name_mode"] = json!(chat_core::NAME_MODE.load(std::sync::atomic::Ordering::Relaxed));
         value["separators"] = json!(crate::theme::flag(&crate::theme::SEPARATORS));

@@ -103,6 +103,30 @@ pub fn icon(
 ) -> AnyElement {
     smooth_icon(image, label, width, height, true, None)
 }
+/// A circular image (avatars), animated when the image is.
+pub fn avatar(media: Arc<DecodedMedia>, size: f32) -> AnyElement {
+    canvas(
+        |bounds, _, _| bounds,
+        move |bounds, _, window, cx| {
+            let frame = media.frame(cx.reduce_motion());
+            if media.image.frame_count() > 1 && !cx.reduce_motion() {
+                window.request_animation_frame();
+            }
+            let fit = ObjectFit::Cover.get_bounds(bounds, media.image.size(frame));
+            let _ = window.paint_image(
+                fit,
+                fit,
+                Corners::all(px(size / 2.)),
+                media.image.clone(),
+                frame,
+                false,
+            );
+        },
+    )
+    .w(px(size))
+    .h(px(size))
+    .into_any_element()
+}
 fn loading_icon(index: usize, reduced: bool) -> AnyElement {
     let placeholder = div()
         .size(px(34.))
