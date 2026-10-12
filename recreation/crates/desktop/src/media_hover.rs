@@ -19,12 +19,61 @@ pub enum Content {
         source: String,
         images: Vec<Arc<DecodedMedia>>,
     },
+    /// A live channel: avatar, name, stream title, and "category · viewers · uptime".
+    Stream {
+        name: String,
+        title: String,
+        detail: String,
+        avatar: Option<Arc<DecodedMedia>>,
+    },
 }
 pub struct Card(pub Content);
 impl Render for Card {
     fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         match &self.0 {
             Content::Link(url) => link_card(url, window, _cx),
+            Content::Stream {
+                name,
+                title,
+                detail,
+                avatar,
+            } => div()
+                .h_flex()
+                .items_start()
+                .gap_2()
+                .p_2()
+                .max_w(px(320.))
+                .font_family("Segoe UI")
+                .text_color(rgb(theme::TEXT))
+                .bg(rgb(theme::ELEVATED))
+                .border_1()
+                .border_color(rgb(theme::BORDER))
+                .rounded(px(6.))
+                .when_some(avatar.clone(), |el, avatar| {
+                    el.child(crate::emote_picker::avatar(avatar, 40.))
+                })
+                .child(
+                    div()
+                        .v_flex()
+                        .gap(px(2.))
+                        .min_w_0()
+                        .child(
+                            div()
+                                .text_size(px(13.))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(name.clone()),
+                        )
+                        .when(!title.is_empty(), |el| {
+                            el.child(div().text_size(px(12.)).child(title.clone()))
+                        })
+                        .child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(rgb(0xC5B8E6))
+                                .child(detail.clone()),
+                        ),
+                )
+                .into_any_element(),
             Content::Hint(text) => div()
                 .p_2()
                 .max_w(px(300.))

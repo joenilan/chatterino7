@@ -819,6 +819,187 @@ impl Workbench {
             ))
             .into_any_element()
     }
+    /// Studio → Raid: live channels you follow, sorted for raiding and filtered
+    /// by the raid box; click one to fill it in.
+    fn render_raid_finder(
+        &self,
+        own: &str,
+        raid_input: &Entity<InputState>,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        use crate::follows_live::Sort;
+        use gpui_kit::component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
+        let all: Vec<_> = self
+            .follows_live
+            .list
+            .as_ref()?
+            .iter()
+            .filter(|f| f.login != own)
+            .cloned()
+            .collect();
+        if all.is_empty() {
+            return None;
+        }
+        let own_game = self
+            .streams
+            .detail(own)
+            .map(|(info, _)| info.category.clone())
+            .filter(|g| !g.is_empty());
+        let typed = raid_input
+            .read(cx)
+            .value()
+            .trim()
+            .trim_start_matches('@')
+            .to_string();
+        let sort = self.raid_sort;
+        let list = crate::follows_live::arrange(&all, sort, &typed, own_game.as_deref());
+        let hide_counts = crate::streamer_mode::hides(crate::streamer_mode::VIEWER_COUNTS);
+        let owner = cx.entity().downgrade();
+        let mut rows = Vec::new();
+        for (index, live) in list.iter().enumerate() {
+            let avatar = {
+                let mut catalog = self.catalog.borrow_mut();
+                if !live.user_id.is_empty() {
+                    catalog.profiles.request(&live.user_id);
+                }
+                catalog
+                    .profiles
+                    .get(&live.user_id)
+                    .and_then(|p| p.avatar.clone())
+            }
+            .and_then(|key| self.media.borrow_mut().get(&key, cx));
+            let same = own_game
+                .as_deref()
+                .is_some_and(|g| g.eq_ignore_ascii_case(&live.game));
+            let detail = [
+                Some(live.game.clone()).filter(|g| !g.is_empty()),
+                (!hide_counts)
+                    .then(|| format!("{} viewers", crate::follows_live::viewers(live.viewers))),
+                live.uptime()
+                    .filter(|_| !hide_counts)
+                    .map(|u| format!("live {u}")),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · ");
+            let card = crate::media_hover::Content::Stream {
+                name: live.label().to_owned(),
+                title: live.title.clone(),
+                detail,
+                avatar: avatar.clone(),
+            };
+            let (input, login) = (raid_input.clone(), live.login.clone());
+            rows.push(
+                div()
+                    .id(("raid-pick", index))
+                    .flex_shrink_0()
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .px_1()
+                    .py(px(2.))
+                    .rounded(px(4.))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(rgb(theme::HOVER)))
+                    .text_size(px(11.))
+                    .tooltip(move |_, cx| cx.new(|_| crate::media_hover::Card(card.clone())).into())
+                    .child(match avatar {
+                        Some(image) => crate::emote_picker::avatar(image, 18.),
+                        None => div()
+                            .size(px(18.))
+                            .rounded_full()
+                            .bg(rgb(0x3A3350))
+                            .into_any_element(),
+                    })
+                    .child(div().flex_shrink_0().child(live.label().to_owned()))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_color(rgb(if same { 0xC5B8E6 } else { theme::MUTED }))
+                            .child(live.game.clone()),
+                    )
+                    .when(!hide_counts, |el| {
+                        el.child(
+                            div()
+                                .flex_shrink_0()
+                                .text_color(rgb(theme::MUTED))
+                                .child(crate::follows_live::viewers(live.viewers)),
+                        )
+                    })
+                    .on_click(move |_, window, cx| {
+                        input.update(cx, |i, cx| i.set_value(login.clone(), window, cx));
+                    })
+                    .into_any_element(),
+            );
+        }
+        let count = list.len();
+        Some(
+            div()
+                .pl(px(40.))
+                .pt_1()
+                .v_flex()
+                .gap_1()
+                .child(
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_1()
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_size(px(10.))
+                                .text_color(rgb(theme::MUTED))
+                                .child(format!("LIVE NOW · YOU FOLLOW · {count}")),
+                        )
+                        .child(
+                            Button::new("raid-sort")
+                                .ghost()
+                                .xsmall()
+                                .icon(Icon::new(gpui_kit::assets::IconName::ArrowDownWideNarrow))
+                                .label(sort.label())
+                                .dropdown_menu(move |mut menu: PopupMenu, _, _| {
+                                    for choice in Sort::RAID {
+                                        let owner = owner.clone();
+                                        menu = menu.item(
+                                            PopupMenuItem::new(choice.label())
+                                                .checked(choice == sort)
+                                                .on_click(move |_, _, cx| {
+                                                    let _ = owner.update(cx, |this, cx| {
+                                                        this.raid_sort = choice;
+                                                        this.schedule_save(cx);
+                                                        cx.notify();
+                                                    });
+                                                }),
+                                        );
+                                    }
+                                    menu
+                                }),
+                        ),
+                )
+                .when(count == 0, |el| {
+                    el.child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(theme::MUTED))
+                            .child(format!("No live channel you follow matches “{typed}” — you can still raid it.")),
+                    )
+                })
+                .child(
+                    div()
+                        .id("raid-finder")
+                        .v_flex()
+                        .max_h(px(220.))
+                        .overflow_y_scroll()
+                        .children(rows),
+                )
+                .into_any_element(),
+        )
+    }
     /// Tools tab: quick broadcast actions and Streamer.bot.
     fn render_tools_tab(
         &mut self,
@@ -998,81 +1179,11 @@ impl Workbench {
                     .child(div().flex_1().child(Input::new(&raid_input).small()))
                     .child(raid),
             )
-            // Raid finder: live channels you follow (from LIVE NOW), click to fill in.
+            // Raid finder: live channels you follow, filtered by what's typed in the
+            // raid box and sorted for raiding (your category first by default).
             .when_some(
-                self.follows_live
-                    .list
-                    .clone()
-                    .map(|l| {
-                        l.into_iter()
-                            .filter(|f| f.login != own)
-                            .take(8)
-                            .collect::<Vec<_>>()
-                    })
-                    .filter(|l| !l.is_empty()),
-                |el, list| {
-                    el.child(
-                        div()
-                            .pl(px(40.))
-                            .pt_1()
-                            .v_flex()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(theme::MUTED))
-                                    .child("LIVE NOW · YOU FOLLOW"),
-                            )
-                            .children(list.into_iter().enumerate().map(|(index, live)| {
-                                let (input, login) = (raid_input.clone(), live.login.clone());
-                                div()
-                                    .id(("raid-pick", index))
-                                    .h_flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .px_1()
-                                    .rounded(px(4.))
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(rgb(theme::HOVER)))
-                                    .text_size(px(11.))
-                                    .tooltip({
-                                        let title = live.title.clone();
-                                        move |w, cx| {
-                                            gpui_kit::component::tooltip::Tooltip::new(
-                                                title.clone(),
-                                            )
-                                            .build(w, cx)
-                                        }
-                                    })
-                                    .child(div().flex_shrink_0().child(if live.name.is_empty() {
-                                        live.login.clone()
-                                    } else {
-                                        live.name.clone()
-                                    }))
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .overflow_hidden()
-                                            .whitespace_nowrap()
-                                            .text_ellipsis()
-                                            .text_color(rgb(theme::MUTED))
-                                            .child(live.game.clone()),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex_shrink_0()
-                                            .text_color(rgb(theme::MUTED))
-                                            .child(crate::follows_live::viewers(live.viewers)),
-                                    )
-                                    .on_click(move |_, window, cx| {
-                                        input.update(cx, |i, cx| {
-                                            i.set_value(login.clone(), window, cx)
-                                        });
-                                    })
-                            })),
-                    )
-                },
+                self.render_raid_finder(&own, &raid_input, cx),
+                |el, finder| el.child(finder),
             )
             .child(Self::studio_section("Channel points"))
             .child(self.render_rewards(cx))
@@ -1107,7 +1218,16 @@ impl Workbench {
             self.studio_editor = Some(editor);
         }
         if self.raid_input.is_none() {
-            self.raid_input = Some(cx.new(|cx| InputState::new(window, cx).placeholder("Channel")));
+            let input =
+                cx.new(|cx| InputState::new(window, cx).placeholder("Channel, or pick one below"));
+            // Typing filters the raid finder below.
+            cx.subscribe(&input, |_, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            })
+            .detach();
+            self.raid_input = Some(input);
         }
         let detail = self.streams.detail(&own).map(|(info, _)| info.clone());
         let live = detail.as_ref().is_some_and(|i| i.live);

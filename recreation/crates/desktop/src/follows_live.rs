@@ -16,6 +16,153 @@ pub struct LiveFollow {
     pub game: String,
     pub title: String,
     pub viewers: u64,
+    /// Twitch user ID (for the avatar) and when the stream started (RFC 3339).
+    pub user_id: String,
+    pub started_at: String,
+}
+impl LiveFollow {
+    pub fn label(&self) -> &str {
+        if self.name.is_empty() {
+            &self.login
+        } else {
+            &self.name
+        }
+    }
+    /// Seconds live, if the start time is known.
+    pub fn live_seconds(&self) -> Option<i64> {
+        let started = chrono::DateTime::parse_from_rfc3339(&self.started_at).ok()?;
+        Some(
+            (chrono::Utc::now() - started.with_timezone(&chrono::Utc))
+                .num_seconds()
+                .max(0),
+        )
+    }
+    /// "2h 05m" / "14m".
+    pub fn uptime(&self) -> Option<String> {
+        let s = self.live_seconds()?;
+        Some(if s >= 3600 {
+            format!("{}h {:02}m", s / 3600, s % 3600 / 60)
+        } else {
+            format!("{}m", s / 60)
+        })
+    }
+}
+
+/// How a list of live channels is ordered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Sort {
+    #[default]
+    MostViewers,
+    FewestViewers,
+    LongestLive,
+    JustWentLive,
+    Name,
+    /// Grouped by category (biggest category first), viewers within.
+    Category,
+    /// Raids: your current category first, then by viewers.
+    SameCategory,
+}
+impl Sort {
+    /// Choices in the sidebar, and in the raid finder.
+    pub const SIDEBAR: [Sort; 6] = [
+        Sort::MostViewers,
+        Sort::FewestViewers,
+        Sort::LongestLive,
+        Sort::JustWentLive,
+        Sort::Name,
+        Sort::Category,
+    ];
+    pub const RAID: [Sort; 4] = [
+        Sort::SameCategory,
+        Sort::FewestViewers,
+        Sort::MostViewers,
+        Sort::Name,
+    ];
+    pub fn label(self) -> &'static str {
+        match self {
+            Sort::MostViewers => "Most viewers",
+            Sort::FewestViewers => "Fewest viewers",
+            Sort::LongestLive => "Live longest",
+            Sort::JustWentLive => "Just went live",
+            Sort::Name => "Name A–Z",
+            Sort::Category => "By category",
+            Sort::SameCategory => "Your category first",
+        }
+    }
+    pub fn key(self) -> &'static str {
+        match self {
+            Sort::MostViewers => "viewers",
+            Sort::FewestViewers => "fewest",
+            Sort::LongestLive => "longest",
+            Sort::JustWentLive => "newest",
+            Sort::Name => "name",
+            Sort::Category => "category",
+            Sort::SameCategory => "same_category",
+        }
+    }
+    pub fn from_key(key: &str, fallback: Sort) -> Sort {
+        [
+            Sort::MostViewers,
+            Sort::FewestViewers,
+            Sort::LongestLive,
+            Sort::JustWentLive,
+            Sort::Name,
+            Sort::Category,
+            Sort::SameCategory,
+        ]
+        .into_iter()
+        .find(|s| s.key() == key)
+        .unwrap_or(fallback)
+    }
+}
+
+/// Filter by `query` (name, login, category or title) and order by `sort`.
+/// `own_game` is your current category, for `Sort::SameCategory`.
+pub fn arrange(
+    list: &[LiveFollow],
+    sort: Sort,
+    query: &str,
+    own_game: Option<&str>,
+) -> Vec<LiveFollow> {
+    let query = query.trim().to_lowercase();
+    let mut out: Vec<LiveFollow> = list
+        .iter()
+        .filter(|l| {
+            query.is_empty()
+                || [&l.login, &l.name, &l.game, &l.title]
+                    .iter()
+                    .any(|field| field.to_lowercase().contains(&query))
+        })
+        .cloned()
+        .collect();
+    let by_viewers = |a: &LiveFollow, b: &LiveFollow| b.viewers.cmp(&a.viewers);
+    match sort {
+        Sort::MostViewers => out.sort_by(by_viewers),
+        Sort::FewestViewers => out.sort_by(|a, b| a.viewers.cmp(&b.viewers)),
+        Sort::LongestLive => out.sort_by_key(|l| std::cmp::Reverse(l.live_seconds().unwrap_or(0))),
+        Sort::JustWentLive => out.sort_by_key(|l| l.live_seconds().unwrap_or(i64::MAX)),
+        Sort::Name => out.sort_by_key(|l| l.label().to_lowercase()),
+        Sort::Category => {
+            let mut totals = std::collections::HashMap::<String, u64>::new();
+            for l in &out {
+                *totals.entry(l.game.clone()).or_default() += l.viewers;
+            }
+            out.sort_by(|a, b| {
+                totals[&b.game]
+                    .cmp(&totals[&a.game])
+                    .then_with(|| a.game.cmp(&b.game))
+                    .then_with(|| by_viewers(a, b))
+            });
+        }
+        Sort::SameCategory => {
+            let own = own_game.unwrap_or("").to_lowercase();
+            out.sort_by(|a, b| {
+                let same = |l: &LiveFollow| !own.is_empty() && l.game.to_lowercase() == own;
+                same(b).cmp(&same(a)).then_with(|| by_viewers(a, b))
+            });
+        }
+    }
+    out
 }
 
 pub struct FollowsLive {
@@ -115,6 +262,8 @@ fn fetch(client: &reqwest::blocking::Client, identity: &Identity) -> Option<Vec<
                 continue;
             };
             list.push(LiveFollow {
+                user_id: text(&s["user_id"], 32),
+                started_at: text(&s["started_at"], 40),
                 name: text(&s["user_name"], 64),
                 login,
                 game: text(&s["game_name"], 80),
@@ -147,6 +296,50 @@ pub fn viewers(n: u64) -> String {
     }
 }
 
+#[cfg(test)]
+mod arrange_tests {
+    use super::{LiveFollow, Sort, arrange};
+    fn live(login: &str, game: &str, viewers: u64) -> LiveFollow {
+        LiveFollow {
+            login: login.into(),
+            name: String::new(),
+            game: game.into(),
+            title: format!("{login} plays {game}"),
+            viewers,
+            user_id: String::new(),
+            started_at: String::new(),
+        }
+    }
+    #[test]
+    fn sorts_and_filters() {
+        let list = [
+            live("a", "Art", 10),
+            live("b", "Chess", 500),
+            live("c", "Art", 90),
+        ];
+        let logins = |v: Vec<LiveFollow>| v.into_iter().map(|l| l.login).collect::<Vec<_>>();
+        assert_eq!(
+            logins(arrange(&list, Sort::MostViewers, "", None)),
+            ["b", "c", "a"]
+        );
+        assert_eq!(
+            logins(arrange(&list, Sort::FewestViewers, "", None)),
+            ["a", "c", "b"]
+        );
+        assert_eq!(
+            logins(arrange(&list, Sort::Category, "", None)),
+            ["b", "c", "a"]
+        );
+        assert_eq!(
+            logins(arrange(&list, Sort::SameCategory, "", Some("art"))),
+            ["c", "a", "b"]
+        );
+        assert_eq!(
+            logins(arrange(&list, Sort::MostViewers, "chess", None)),
+            ["b"]
+        );
+    }
+}
 #[cfg(test)]
 mod tests {
     #[test]

@@ -39,7 +39,9 @@ gpui_kit::assets::icon_assets!(
         Clock,
         Ban,
         Mic,
-        MicOff
+        MicOff,
+        ListFilter,
+        ArrowDownWideNarrow
     ]
 );
 

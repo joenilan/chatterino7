@@ -231,6 +231,12 @@ pub struct Workbench {
     mod_button_inputs: Option<(Entity<InputState>, Entity<InputState>)>,
     follows_live: crate::follows_live::FollowsLive,
     follows_open: bool,
+    /// LIVE NOW: sort order, and the filter box (shown while `live_filter_open`).
+    live_sort: crate::follows_live::Sort,
+    live_filter: Entity<InputState>,
+    live_filter_open: bool,
+    /// Studio raid finder sort.
+    pub(crate) raid_sort: crate::follows_live::Sort,
     stream_presets: crate::studio::Presets,
     obs: crate::obs::Obs,
     obs_settings: crate::streamer_bot::Settings,
@@ -670,6 +676,27 @@ impl Workbench {
             mod_button_inputs: None,
             follows_live: crate::follows_live::FollowsLive::new(),
             follows_open: state["follows_open"].as_bool().unwrap_or(true),
+            live_sort: crate::follows_live::Sort::from_key(
+                state["live_sort"].as_str().unwrap_or(""),
+                crate::follows_live::Sort::MostViewers,
+            ),
+            live_filter: {
+                let filter = cx.new(|cx| {
+                    InputState::new(window, cx).placeholder("Filter by name, game or title")
+                });
+                cx.subscribe(&filter, |_, _, event: &InputEvent, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        cx.notify();
+                    }
+                })
+                .detach();
+                filter
+            },
+            live_filter_open: false,
+            raid_sort: crate::follows_live::Sort::from_key(
+                state["raid_sort"].as_str().unwrap_or(""),
+                crate::follows_live::Sort::SameCategory,
+            ),
             stream_presets: crate::studio::load_presets(&state["stream_presets"]),
             obs: crate::obs::Obs::new(),
             obs_settings: obs_ui::load_obs_settings(&state["obs"]),
@@ -2635,6 +2662,8 @@ impl Workbench {
         value["mod_buttons"] = json!(self.mod_buttons);
         value["custom_mod_buttons"] = crate::mod_buttons::json(&self.custom_mod_buttons);
         value["follows_open"] = json!(self.follows_open);
+        value["live_sort"] = json!(self.live_sort.key());
+        value["raid_sort"] = json!(self.raid_sort.key());
         value["stream_presets"] = crate::studio::presets_json(&self.stream_presets);
         value["obs"] = self.obs_json();
         value["checklist"] = json!(self.checklist_items);
@@ -4747,45 +4776,274 @@ impl Workbench {
             )
             .into_any_element()
     }
-    /// Sidebar: followed channels that are live, most viewers first.
+    /// Sidebar LIVE NOW: followed channels that are live, sortable (most viewers
+    /// first by default) and filterable; hover one for its stream card.
     fn render_live_follows(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let list = self.follows_live.list.as_ref()?;
+        use crate::follows_live::Sort;
+        use gpui_kit::component::menu::{DropdownMenu as _, PopupMenu};
+        let all = self.follows_live.list.as_ref()?;
+        let query = if self.live_filter_open {
+            self.live_filter.read(cx).value().to_string()
+        } else {
+            String::new()
+        };
+        let list = crate::follows_live::arrange(all, self.live_sort, &query, None);
         let open: std::collections::HashSet<String> = self
             .tab_panes()
             .iter()
             .map(|p| p.read(cx).name.to_string())
             .collect();
+        let hide_counts = crate::streamer_mode::hides(crate::streamer_mode::VIEWER_COUNTS);
+        let owner = cx.entity().downgrade();
+        let sort = self.live_sort;
+        let mut rows = Vec::new();
+        let mut last_game: Option<String> = None;
+        for (index, live) in list.iter().enumerate() {
+            // "By category": a small heading above each category.
+            if sort == Sort::Category && last_game.as_deref() != Some(live.game.as_str()) {
+                last_game = Some(live.game.clone());
+                rows.push(
+                    div()
+                        .flex_shrink_0()
+                        .pt_1()
+                        .px_1()
+                        .text_size(px(10.))
+                        .text_color(rgb(0xC5B8E6))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .child(if live.game.is_empty() {
+                            "No category".to_owned()
+                        } else {
+                            live.game.clone()
+                        })
+                        .into_any_element(),
+                );
+            }
+            let avatar = {
+                let mut catalog = self.catalog.borrow_mut();
+                if !live.user_id.is_empty() {
+                    catalog.profiles.request(&live.user_id);
+                }
+                catalog
+                    .profiles
+                    .get(&live.user_id)
+                    .and_then(|p| p.avatar.clone())
+            }
+            .and_then(|key| self.media.borrow_mut().get(&key, cx));
+            let login = live.login.clone();
+            let is_open = open.contains(&live.login);
+            let detail = [
+                Some(live.game.clone()).filter(|g| !g.is_empty()),
+                (!hide_counts)
+                    .then(|| format!("{} viewers", crate::follows_live::viewers(live.viewers))),
+                live.uptime()
+                    .filter(|_| !hide_counts)
+                    .map(|u| format!("live {u}")),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · ");
+            let card = crate::media_hover::Content::Stream {
+                name: live.label().to_owned(),
+                title: live.title.clone(),
+                detail,
+                avatar: avatar.clone(),
+            };
+            rows.push(
+                div()
+                    .id(("live-follow", index))
+                    .flex_shrink_0()
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .px_1()
+                    .py(px(3.))
+                    .rounded(px(5.))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(rgb(theme::HOVER)))
+                    .tooltip(move |_, cx| cx.new(|_| crate::media_hover::Card(card.clone())).into())
+                    .child(
+                        div()
+                            .relative()
+                            .size(px(22.))
+                            .flex_shrink_0()
+                            .child(match avatar {
+                                Some(image) => crate::emote_picker::avatar(image, 22.),
+                                None => div()
+                                    .size(px(22.))
+                                    .rounded_full()
+                                    .bg(rgb(0x3A3350))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_size(px(10.))
+                                    .child(
+                                        live.label()
+                                            .chars()
+                                            .next()
+                                            .unwrap_or('?')
+                                            .to_uppercase()
+                                            .to_string(),
+                                    )
+                                    .into_any_element(),
+                            })
+                            // Live dot on the avatar's corner.
+                            .child(
+                                div()
+                                    .absolute()
+                                    .right(px(-1.))
+                                    .bottom(px(-1.))
+                                    .size(px(8.))
+                                    .rounded_full()
+                                    .border_2()
+                                    .border_color(rgb(theme::PANEL))
+                                    .bg(rgb(theme::STREAM_LIVE)),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .child(
+                                div()
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .text_ellipsis()
+                                    .text_size(px(12.))
+                                    .when(is_open, |el| el.text_color(rgb(theme::ACCENT)))
+                                    .child(live.label().to_owned()),
+                            )
+                            .when(sort != Sort::Category, |el| {
+                                el.child(
+                                    div()
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .text_ellipsis()
+                                        .text_size(px(10.))
+                                        .text_color(rgb(theme::MUTED))
+                                        .child(live.game.clone()),
+                                )
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_size(px(10.))
+                            .text_color(rgb(theme::MUTED))
+                            .when(!hide_counts, |el| {
+                                el.child(match sort {
+                                    Sort::LongestLive | Sort::JustWentLive => {
+                                        live.uptime().unwrap_or_default()
+                                    }
+                                    _ => crate::follows_live::viewers(live.viewers),
+                                })
+                            }),
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.open_channel(login.clone(), window, cx)
+                    }))
+                    .into_any_element(),
+            );
+        }
+        let shown = list.len();
+        let total = all.len();
         Some(
             div()
                 .v_flex()
                 .flex_shrink_0()
-                .max_h(px(280.))
+                .max_h(px(320.))
                 .gap_1()
                 .child(
                     div()
-                        .id("live-follows-header")
                         .h_flex()
                         .items_center()
                         .gap_1()
-                        .cursor_pointer()
-                        .text_size(px(10.))
-                        .text_color(rgb(theme::MUTED))
                         .child(
-                            Icon::new(if self.follows_open {
-                                IconName::ChevronDown
-                            } else {
-                                IconName::ChevronRight
-                            })
-                            .xsmall(),
+                            div()
+                                .id("live-follows-header")
+                                .flex_1()
+                                .h_flex()
+                                .items_center()
+                                .gap_1()
+                                .cursor_pointer()
+                                .text_size(px(10.))
+                                .text_color(rgb(theme::MUTED))
+                                .child(
+                                    Icon::new(if self.follows_open {
+                                        IconName::ChevronDown
+                                    } else {
+                                        IconName::ChevronRight
+                                    })
+                                    .xsmall(),
+                                )
+                                .child(if shown == total {
+                                    format!("LIVE NOW · {total}")
+                                } else {
+                                    format!("LIVE NOW · {shown} of {total}")
+                                })
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.follows_open = !this.follows_open;
+                                    this.schedule_save(cx);
+                                    cx.notify();
+                                })),
                         )
-                        .child(format!("LIVE NOW · {}", list.len()))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.follows_open = !this.follows_open;
-                            this.schedule_save(cx);
-                            cx.notify();
-                        })),
+                        .when(self.follows_open, |el| {
+                            el.child(
+                                Button::new("live-filter")
+                                    .ghost()
+                                    .xsmall()
+                                    .icon(Icon::new(gpui_kit::assets::IconName::ListFilter))
+                                    .when(self.live_filter_open, |b| {
+                                        gpui_kit::component::Selectable::selected(b, true)
+                                    })
+                                    .tooltip("Filter by name, game or title")
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.live_filter_open = !this.live_filter_open;
+                                        if this.live_filter_open {
+                                            this.live_filter
+                                                .update(cx, |i, cx| i.focus(window, cx));
+                                        } else {
+                                            this.live_filter
+                                                .update(cx, |i, cx| i.set_value("", window, cx));
+                                        }
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(
+                                Button::new("live-sort")
+                                    .ghost()
+                                    .xsmall()
+                                    .icon(Icon::new(
+                                        gpui_kit::assets::IconName::ArrowDownWideNarrow,
+                                    ))
+                                    .tooltip(format!("Sort: {}", sort.label()))
+                                    .dropdown_menu(move |mut menu: PopupMenu, _, _| {
+                                        for choice in Sort::SIDEBAR {
+                                            let owner = owner.clone();
+                                            menu = menu.item(
+                                                PopupMenuItem::new(choice.label())
+                                                    .checked(choice == sort)
+                                                    .on_click(move |_, _, cx| {
+                                                        let _ = owner.update(cx, |this, cx| {
+                                                            this.live_sort = choice;
+                                                            this.schedule_save(cx);
+                                                            cx.notify();
+                                                        });
+                                                    }),
+                                            );
+                                        }
+                                        menu
+                                    }),
+                            )
+                        }),
                 )
-                .when(self.follows_open && list.is_empty(), |el| {
+                .when(self.follows_open && self.live_filter_open, |el| {
+                    el.child(Input::new(&self.live_filter).xsmall().cleanable(true))
+                })
+                .when(self.follows_open && total == 0, |el| {
                     el.child(
                         div()
                             .text_size(px(11.))
@@ -4793,88 +5051,22 @@ impl Workbench {
                             .child("Nobody you follow is live."),
                     )
                 })
-                .when(self.follows_open && !list.is_empty(), |el| {
+                .when(self.follows_open && total > 0 && shown == 0, |el| {
+                    el.child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(theme::MUTED))
+                            .child("No live channels match."),
+                    )
+                })
+                .when(self.follows_open && shown > 0, |el| {
                     el.child(
                         div()
                             .id("live-follows")
                             .v_flex()
                             .min_h_0()
                             .overflow_y_scroll()
-                            .children(list.iter().enumerate().map(|(index, live)| {
-                                let login = live.login.clone();
-                                let title = live.title.clone();
-                                let is_open = open.contains(&live.login);
-                                div()
-                                    .id(("live-follow", index))
-                                    .h_flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .px_1()
-                                    .py(px(3.))
-                                    .rounded(px(5.))
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(rgb(theme::HOVER)))
-                                    .tooltip(move |w, cx| {
-                                        gpui_kit::component::tooltip::Tooltip::new(title.clone())
-                                            .build(w, cx)
-                                    })
-                                    .child(
-                                        div()
-                                            .size(px(6.))
-                                            .flex_shrink_0()
-                                            .rounded_full()
-                                            .bg(rgb(theme::STREAM_LIVE)),
-                                    )
-                                    .child(
-                                        div()
-                                            .v_flex()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .child(
-                                                div()
-                                                    .overflow_hidden()
-                                                    .whitespace_nowrap()
-                                                    .text_ellipsis()
-                                                    .text_size(px(12.))
-                                                    .when(is_open, |el| {
-                                                        el.text_color(rgb(theme::ACCENT))
-                                                    })
-                                                    .child(if live.name.is_empty() {
-                                                        live.login.clone()
-                                                    } else {
-                                                        live.name.clone()
-                                                    }),
-                                            )
-                                            .child(
-                                                div()
-                                                    .overflow_hidden()
-                                                    .whitespace_nowrap()
-                                                    .text_ellipsis()
-                                                    .text_size(px(10.))
-                                                    .text_color(rgb(theme::MUTED))
-                                                    .child(live.game.clone()),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex_shrink_0()
-                                            .text_size(px(10.))
-                                            .text_color(rgb(theme::MUTED))
-                                            .when(
-                                                !crate::streamer_mode::hides(
-                                                    crate::streamer_mode::VIEWER_COUNTS,
-                                                ),
-                                                |el| {
-                                                    el.child(crate::follows_live::viewers(
-                                                        live.viewers,
-                                                    ))
-                                                },
-                                            ),
-                                    )
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.open_channel(login.clone(), window, cx)
-                                    }))
-                            })),
+                            .children(rows),
                     )
                 })
                 .into_any_element(),
