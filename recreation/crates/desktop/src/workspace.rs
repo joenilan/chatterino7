@@ -3874,6 +3874,20 @@ impl Workbench {
                                     PopupMenuItem::new("Open stream in browser")
                                         .on_click(move |_, _, cx| cx.open_url(&open_url)),
                                 )
+                                .item(PopupMenuItem::new("Open player pop-out").on_click({
+                                    let url = crate::streamlink::player_url(&menu_channel);
+                                    move |_, _, cx| cx.open_url(&url)
+                                }))
+                                .item(PopupMenuItem::new("Open in Streamlink").on_click({
+                                    let channel = menu_channel.clone();
+                                    move |_, window, cx| {
+                                        let note = match crate::streamlink::open(&channel) {
+                                            Ok(()) => format!("Starting #{channel} in Streamlink…"),
+                                            Err(problem) => problem,
+                                        };
+                                        window.push_notification(Notification::info(note), cx);
+                                    }
+                                }))
                                 .item(PopupMenuItem::new("Copy channel URL").on_click(
                                     move |_, window, cx| {
                                         cx.write_to_clipboard(ClipboardItem::new_string(

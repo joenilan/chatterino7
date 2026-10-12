@@ -73,6 +73,7 @@ mod stream_preview;
 mod stream_status;
 mod streamer_bot;
 mod streamer_mode;
+mod streamlink;
 mod studio;
 mod suspicious;
 mod theme;
