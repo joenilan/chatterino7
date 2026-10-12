@@ -378,7 +378,7 @@ impl Workbench {
                 ))
                 .child(row(
                     "Highlight rules",
-                    "Per-channel and per-user rules with their own colors.",
+                    "Rules for words, chatters or badges, each with its own color and sound.",
                     open_button("settings-rules", "Edit").on_click(cx.listener(|this, _, w, cx| this.open_highlight_rules(w, cx))),
                 ))
                 .child(row(

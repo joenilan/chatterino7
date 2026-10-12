@@ -28,6 +28,8 @@ pub struct Attention {
 pub enum Ping {
     Mention,
     Highlight,
+    /// A highlight rule matched; its sound choice (highlight_rules::SOUNDS index).
+    Rule(u8),
 }
 pub fn terms(text: &str) -> Vec<String> {
     let mut result = Vec::new();
@@ -224,13 +226,15 @@ impl Attention {
         {
             return Some(Ping::Mention);
         }
-        (crate::highlight_rules::first_color(&self.rules, message, &self.channel).is_some()
-            || self
-                .terms
-                .iter()
-                .filter(|term| !term.starts_with('!'))
-                .any(|term| crate::highlight_rules::normalized_match(&text, term, true)))
-        .then_some(Ping::Highlight)
+        if let Some(rule) = crate::highlight_rules::first_match(&self.rules, message, &self.channel)
+        {
+            return Some(Ping::Rule(rule.sound));
+        }
+        self.terms
+            .iter()
+            .filter(|term| !term.starts_with('!'))
+            .any(|term| crate::highlight_rules::normalized_match(&text, term, true))
+            .then_some(Ping::Highlight)
     }
     /// Records a new row; returns a ping for a fresh (not history) mention or highlight.
     pub fn appended(&mut self, message: &Message, row: u64, first: u64) -> Option<Ping> {

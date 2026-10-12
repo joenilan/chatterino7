@@ -52,7 +52,16 @@ pub struct Rule {
     pub whole_word: bool,
     pub enabled: bool,
     pub color: usize,
+    /// Match a chat badge set (moderator, vip, subscriber…) instead of text.
+    pub badge: bool,
+    /// Index into SOUNDS: what plays when this rule pings.
+    pub sound: u8,
 }
+/// Per-rule ping sound: the Highlights sound setting, nothing, or a fixed tone.
+pub const SOUNDS: [&str; 4] = ["Default sound", "No sound", "Chime", "Soft"];
+/// Badge sets offered as examples in the editor; any Twitch badge set ID works.
+pub const BADGE_EXAMPLES: &str =
+    "broadcaster, moderator, vip, subscriber, founder, partner, artist-badge";
 impl Default for Rule {
     fn default() -> Self {
         Self {
@@ -66,6 +75,8 @@ impl Default for Rule {
             whole_word: true,
             enabled: true,
             color: 0,
+            badge: false,
+            sound: 0,
         }
     }
 }
@@ -80,7 +91,19 @@ impl Rule {
             return Err(format!("Enter 1–{limit} characters on one line."));
         }
         self.compiled = None;
-        if self.regex {
+        if self.badge {
+            self.author = false;
+            self.regex = false;
+            self.pattern = self.pattern.to_ascii_lowercase();
+            if self.pattern.len() > 40
+                || !self
+                    .pattern
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            {
+                return Err(format!("Enter a badge such as {BADGE_EXAMPLES}."));
+            }
+        } else if self.regex {
             self.compiled = Some(compile(&self.pattern, self.case_sensitive)?);
         } else if self.author {
             self.pattern = chat_core::twitch_login(self.pattern.trim_start_matches('@'))
@@ -95,6 +118,7 @@ impl Rule {
         };
         self.folded = self.pattern.to_lowercase();
         self.color = self.color.min(COLORS.len() - 1);
+        self.sound = self.sound.min(SOUNDS.len() as u8 - 1);
         Ok(self)
     }
     pub fn matches(&self, text: &str, login: Option<&str>, channel: &str) -> bool {
@@ -102,6 +126,10 @@ impl Rule {
             || (!self.channel.is_empty() && !self.channel.eq_ignore_ascii_case(channel))
         {
             return false;
+        }
+        if self.badge {
+            // The editor preview has no badges; treat the sample login as a badge list.
+            return login.is_some_and(|l| l.split([',', ' ']).any(|b| b == self.pattern));
         }
         if let Some(regex) = &self.compiled {
             let subject = if self.author {
@@ -166,6 +194,14 @@ pub fn normalized_match(text: &str, needle: &str, whole: bool) -> bool {
     }
 }
 pub fn first_color(rules: &[Rule], message: &chat_core::Message, channel: &str) -> Option<usize> {
+    first_match(rules, message, channel).map(|rule| rule.color)
+}
+/// The first enabled rule that matches `message` in `channel` (rules are in priority order).
+pub fn first_match<'a>(
+    rules: &'a [Rule],
+    message: &chat_core::Message,
+    channel: &str,
+) -> Option<&'a Rule> {
     if message.deleted || rules.is_empty() {
         return None;
     }
@@ -194,42 +230,42 @@ pub fn first_color(rules: &[Rule], message: &chat_core::Message, channel: &str) 
     } else {
         Vec::new()
     };
-    rules
-        .iter()
-        .find(|rule| {
-            if !rule.enabled
-                || (!rule.channel.is_empty() && !rule.channel.eq_ignore_ascii_case(channel))
-            {
-                return false;
-            }
-            if let Some(regex) = &rule.compiled {
-                // Like Chatterino, patterns see the whole original message,
-                // emote codes included, not only the text between emotes.
-                return if rule.author {
-                    message
-                        .login
-                        .as_deref()
-                        .is_some_and(|l| regex.0.is_match(l))
-                } else {
-                    regex.0.is_match(&message.body())
-                };
-            }
-            if rule.author {
-                return message
+    rules.iter().find(|rule| {
+        if !rule.enabled
+            || (!rule.channel.is_empty() && !rule.channel.eq_ignore_ascii_case(channel))
+        {
+            return false;
+        }
+        if rule.badge {
+            return message.badges.iter().any(|b| b.set_id == rule.pattern);
+        }
+        if let Some(regex) = &rule.compiled {
+            // Like Chatterino, patterns see the whole original message,
+            // emote codes included, not only the text between emotes.
+            return if rule.author {
+                message
                     .login
                     .as_deref()
-                    .is_some_and(|login| login.eq_ignore_ascii_case(&rule.pattern));
-            }
-            let (segments, needle) = if rule.case_sensitive {
-                (&segments, &rule.pattern)
+                    .is_some_and(|l| regex.0.is_match(l))
             } else {
-                (&folded, &rule.folded)
+                regex.0.is_match(&message.body())
             };
-            segments
-                .iter()
-                .any(|text| normalized_match(text, needle, rule.whole_word))
-        })
-        .map(|rule| rule.color)
+        }
+        if rule.author {
+            return message
+                .login
+                .as_deref()
+                .is_some_and(|login| login.eq_ignore_ascii_case(&rule.pattern));
+        }
+        let (segments, needle) = if rule.case_sensitive {
+            (&segments, &rule.pattern)
+        } else {
+            (&folded, &rule.folded)
+        };
+        segments
+            .iter()
+            .any(|text| normalized_match(text, needle, rule.whole_word))
+    })
 }
 
 pub fn load(value: &serde_json::Value) -> Rules {
@@ -246,7 +282,15 @@ pub fn load(value: &serde_json::Value) -> Rules {
                 case_sensitive: item["case_sensitive"].as_bool().unwrap_or(false),
                 whole_word: item["whole_word"].as_bool().unwrap_or(true),
                 enabled: item["enabled"].as_bool().unwrap_or(true),
-                color: item["color"].as_u64().unwrap_or(0).min(4) as usize,
+                color: item["color"]
+                    .as_u64()
+                    .unwrap_or(0)
+                    .min(COLORS.len() as u64 - 1) as usize,
+                badge: item["badge"].as_bool().unwrap_or(false),
+                sound: item["sound"]
+                    .as_u64()
+                    .unwrap_or(0)
+                    .min(SOUNDS.len() as u64 - 1) as u8,
             };
             if let Ok(rule) = rule.validate() {
                 rules.push(rule);
@@ -256,7 +300,7 @@ pub fn load(value: &serde_json::Value) -> Rules {
     Rc::new(RefCell::new(rules))
 }
 pub fn json(rules: &Rules) -> serde_json::Value {
-    serde_json::Value::Array(rules.borrow().iter().map(|r|serde_json::json!({"pattern":r.pattern,"regex":r.regex,"channel":r.channel,"author":r.author,"case_sensitive":r.case_sensitive,"whole_word":r.whole_word,"enabled":r.enabled,"color":r.color})).collect())
+    serde_json::Value::Array(rules.borrow().iter().map(|r|serde_json::json!({"pattern":r.pattern,"regex":r.regex,"channel":r.channel,"author":r.author,"case_sensitive":r.case_sensitive,"whole_word":r.whole_word,"enabled":r.enabled,"color":r.color,"badge":r.badge,"sound":r.sound})).collect())
 }
 
 pub struct Changed;
@@ -453,26 +497,32 @@ impl Render for Editor {
         let max_height = (f32::from(window.viewport_size().height) - 150.).clamp(100., 650.);
         div().id("highlight-rule-editor")
             .capture_key_down(cx.listener(|this,event:&KeyDownEvent,w,cx|{if event.keystroke.modifiers.control&&!event.keystroke.modifiers.alt&&event.keystroke.key=="s"{this.save(w,cx);w.prevent_default();cx.stop_propagation();}})).v_flex().gap_2().max_h(px(max_height)).overflow_y_scroll()
-            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Local highlights across all workspaces. First matching rule chooses the color. Mentions, replies and your simple highlight words stay enabled. Your own messages are excluded; no sounds or external alerts."))
+            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Local highlights across all workspaces. First matching rule chooses the color. Mentions, replies and your simple highlight words stay enabled. Your own messages are excluded. Each rule can play its own sound."))
             .child(div().h_flex().gap_2().child(Button::new("new-highlight-rule").small().label("New rule").on_click(cx.listener(|this,_,w,cx|this.select(None,w,cx))))
                 .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("{}/24 rules",rules.len()))))
             .child(div().id("saved-highlight-rules").v_flex().gap_1().max_h(px(130.)).overflow_y_scroll().children(rules.iter().enumerate().map(|(index,r)|{
                 let limit=if f32::from(window.viewport_size().width)<500.{18}else{36};
                 let label=r.pattern.chars().take(limit).collect::<String>();let suffix=if r.pattern.chars().count()>limit{"…"}else{""};
-                Button::new(("highlight-rule",index)).small().w_full().min_w_0().overflow_hidden().label(format!("{} · {}{}{}{}",index+1,if r.author{"@"}else{""},label,suffix,if !r.enabled{" · off"}else if self.selected==Some(index){" · editing"}else{""}))
+                Button::new(("highlight-rule",index)).small().w_full().min_w_0().overflow_hidden().label(format!("{} · {}{}{}{}",index+1,if r.badge{"badge: "}else if r.author{"@"}else{""},label,suffix,if !r.enabled{" · off"}else if self.selected==Some(index){" · editing"}else{""}))
                     .on_click(cx.listener(move|this,_,w,cx|this.select(Some(index),w,cx)))
             })))
             .child(div().h_flex().flex_wrap().gap_1()
-                .child(Button::new("rule-text").small().label("Message text").selected(!self.draft.author).when(!self.draft.author,|b|b.primary()).on_click(cx.listener(|this,_,_,cx|{this.draft.author=false;this.edited(cx);})))
-                .child(Button::new("rule-author").small().label("Sender login").selected(self.draft.author).when(self.draft.author,|b|b.primary()).on_click(cx.listener(|this,_,_,cx|{this.draft.author=true;this.edited(cx);})))
+                .child(Button::new("rule-text").small().label("Message text").selected(!self.draft.author&&!self.draft.badge).when(!self.draft.author&&!self.draft.badge,|b|b.primary()).on_click(cx.listener(|this,_,_,cx|{this.draft.author=false;this.draft.badge=false;this.edited(cx);})))
+                .child(Button::new("rule-author").small().label("Sender login").selected(self.draft.author).when(self.draft.author,|b|b.primary()).on_click(cx.listener(|this,_,_,cx|{this.draft.author=true;this.draft.badge=false;this.edited(cx);})))
+                .child(Button::new("rule-badge").small().label("Badge").tooltip(format!("Highlight everyone with a badge: {BADGE_EXAMPLES}")).selected(self.draft.badge).when(self.draft.badge,|b|b.primary()).on_click(cx.listener(|this,_,_,cx|{this.draft.badge=true;this.draft.author=false;this.draft.regex=false;this.edited(cx);})))
                 .child(Button::new("rule-enabled").small().label(if self.draft.enabled{"Enabled"}else{"Disabled"}).on_click(cx.listener(|this,_,_,cx|{this.draft.enabled = !this.draft.enabled;this.edited(cx);})))
-                .child(Button::new("rule-regex").small().label(if self.draft.regex{"Regex"}else{"Plain text"}).tooltip("Match a regular expression instead of plain text").on_click(cx.listener(|this,_,_,cx|{this.draft.regex = !this.draft.regex;this.edited(cx);}))))
+                .when(!self.draft.badge,|el|el.child(Button::new("rule-regex").small().label(if self.draft.regex{"Regex"}else{"Plain text"}).tooltip("Match a regular expression instead of plain text").on_click(cx.listener(|this,_,_,cx|{this.draft.regex = !this.draft.regex;this.edited(cx);})))))
+            .when(self.draft.badge,|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Badge set, e.g. {BADGE_EXAMPLES}. In the preview, type badges in the sender box."))))
             .child(Input::new(&self.pattern).small()).child(Input::new(&self.channel).small())
-            .when(!self.draft.author,|el|el.child(div().h_flex().flex_wrap().gap_1()
+            .when(!self.draft.author&&!self.draft.badge,|el|el.child(div().h_flex().flex_wrap().gap_1()
                 .child(Button::new("rule-case").small().label(if self.draft.case_sensitive{"Match case"}else{"Ignore case"}).on_click(cx.listener(|this,_,_,cx|{this.draft.case_sensitive = !this.draft.case_sensitive;this.edited(cx);})))
                 .when(!self.draft.regex,|el|el.child(Button::new("rule-word").small().label(if self.draft.whole_word{"Whole words"}else{"Anywhere in text"}).on_click(cx.listener(|this,_,_,cx|{this.draft.whole_word = !this.draft.whole_word;this.edited(cx);}))))))
             .child(div().h_flex().flex_wrap().gap_1().children(COLORS.iter().enumerate().map(|(index,(name,color,_))|
                 Button::new(("rule-color",index)).small().label(if self.draft.color==index{format!("✓ {name}")}else{name.to_string()}).text_color(rgb(*color)).selected(self.draft.color==index).on_click(cx.listener(move|this,_,_,cx|{this.draft.color=index;this.edited(cx);})))))
+            .child(div().h_flex().flex_wrap().items_center().gap_1()
+                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Sound"))
+                .children(SOUNDS.iter().enumerate().map(|(index,label)|{let index=index as u8;
+                    Button::new(("rule-sound",index as usize)).small().label(*label).selected(self.draft.sound==index).when(self.draft.sound==index,|b|b.primary()).on_click(cx.listener(move|this,_,_,cx|{this.draft.sound=index;if index>=2{crate::sound::play(&if index==2{crate::sound::Tone::Chime}else{crate::sound::Tone::Soft},0.6);}this.edited(cx);}))})))
             .child(div().border_l_2().border_color(rgb(accent)).bg(rgb(background)).rounded(px(4.)).p_2().v_flex().gap_1()
                 .child(div().text_size(px(11.)).child(format!("Preview in #{} · {}",self.preview_channel,if preview{"matches"}else{"does not match"})))
                 .child(Input::new(&self.sample).small()).child(Input::new(&self.login).small())
@@ -488,5 +538,31 @@ impl Render for Editor {
                         this.switch_pending=Some(None);this.select(None,w,cx);this.status="Rule removed.".into();
                     })))))
             .when(!self.status.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xE9C99C)).child(self.status.clone())))
+    }
+}
+
+#[cfg(test)]
+mod badge_tests {
+    use super::{Rule, first_match};
+    #[test]
+    fn badge_rules_match_badge_sets() {
+        let rule = Rule {
+            pattern: "VIP".into(),
+            badge: true,
+            sound: 2,
+            ..Default::default()
+        }
+        .validate()
+        .unwrap();
+        assert_eq!(rule.pattern, "vip");
+        let mut message = chat_core::fixture("c", 0);
+        message.badges = vec![chat_core::Badge {
+            set_id: "vip".into(),
+            id: "1".into(),
+        }];
+        let rules = [rule];
+        assert_eq!(first_match(&rules, &message, "c").map(|r| r.sound), Some(2));
+        message.badges.clear();
+        assert!(first_match(&rules, &message, "c").is_none());
     }
 }
