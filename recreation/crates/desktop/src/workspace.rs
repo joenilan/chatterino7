@@ -881,6 +881,23 @@ impl Workbench {
                             .store(on, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
+                crate::chat_logs::TIME_FORMAT.store(
+                    (state["logs"]["time"].as_u64().unwrap_or(0) as usize)
+                        .min(crate::chat_logs::TIME_FORMATS.len() - 1),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                crate::chat_logs::ONLY_CHOSEN.store(
+                    state["logs"]["only_chosen"].as_bool().unwrap_or(false),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                if let Ok(mut chosen) = crate::chat_logs::CHOSEN.lock() {
+                    *chosen = state["logs"]["channels"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|c| c.as_str().map(str::to_owned))
+                        .collect();
+                }
                 crate::mention_names::COLOR_MENTIONS.store(
                     state["mentions"]["color"].as_bool().unwrap_or(true),
                     std::sync::atomic::Ordering::Relaxed,
@@ -3181,8 +3198,13 @@ impl Workbench {
         value["stream_presets"] = crate::studio::presets_json(&self.stream_presets);
         value["obs"] = self.obs_json();
         value["checklist"] = json!(self.checklist_items);
-        value["logs"] =
-            json!({"enabled": self.logs_enabled, "folder": self.logs_folder.display().to_string()});
+        value["logs"] = json!({
+            "enabled": self.logs_enabled,
+            "folder": self.logs_folder.display().to_string(),
+            "time": crate::chat_logs::TIME_FORMAT.load(std::sync::atomic::Ordering::Relaxed),
+            "only_chosen": crate::chat_logs::ONLY_CHOSEN.load(std::sync::atomic::Ordering::Relaxed),
+            "channels": crate::chat_logs::CHOSEN.lock().map(|c| c.clone()).unwrap_or_default(),
+        });
         value["streamer_mode"] = json!({"mode": self.streamer_mode.key(), "mute": self.streamer_mute, "hide": crate::streamer_mode::OPTIONS.iter().enumerate().map(|(index, (key, ..))| (key.to_string(), json!(crate::streamer_mode::HIDE[index].load(std::sync::atomic::Ordering::Relaxed)))).collect::<serde_json::Map<_, _>>()});
         value["sound"] = json!({
             "mentions": self.sound_mentions,
@@ -4338,6 +4360,7 @@ impl Workbench {
                     .into_iter()
                     .chain(self.tabs[self.active].pinned.iter().cloned())
                     .collect();
+                let logs_on = self.logs_enabled;
                 let tabs = names
                     .iter()
                     .filter(|channel| {
@@ -4702,6 +4725,25 @@ impl Workbench {
                                         );
                                     }
                                 }))
+                                .item_if(
+                                    !menu_special
+                                        && logs_on
+                                        && crate::chat_logs::ONLY_CHOSEN
+                                            .load(std::sync::atomic::Ordering::Relaxed),
+                                    PopupMenuItem::new("Log this channel")
+                                        .checked(crate::chat_logs::chosen(&menu_channel))
+                                    .on_click({
+                                        let owner = owner.clone();
+                                        let channel = menu_channel.clone();
+                                        move |_, _, cx| {
+                                            crate::chat_logs::toggle_chosen(&channel);
+                                            let _ = owner.update(cx, |this, cx| {
+                                                this.schedule_save(cx);
+                                                cx.notify();
+                                            });
+                                        }
+                                    }),
+                                )
                                 .item(PopupMenuItem::new("Change channel…").on_click({
                                     let owner = owner.clone();
                                     let channel = menu_channel.clone();

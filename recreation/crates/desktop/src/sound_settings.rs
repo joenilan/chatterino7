@@ -297,7 +297,9 @@ impl Workbench {
             }
             chat_core::Event::Moderation { .. } => return,
         };
-        self.logs.write(&self.logs_folder, channel, text);
+        if crate::chat_logs::wanted(channel) {
+            self.logs.write(&self.logs_folder, channel, text);
+        }
     }
     pub(super) fn choose_logs_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions {

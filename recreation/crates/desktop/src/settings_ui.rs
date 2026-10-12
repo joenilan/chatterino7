@@ -514,6 +514,30 @@ impl Workbench {
                 ))
                 .when(self.logs_enabled, |el| {
                     el.child(row(
+                        "Log timestamps",
+                        "The time written at the start of each line.",
+                        crate::theme::Segmented::new("settings-log-time")
+                            .selected_index(crate::chat_logs::TIME_FORMAT.load(std::sync::atomic::Ordering::Relaxed))
+                            .on_click(cx.listener(|this, index: &usize, _, cx| {
+                                crate::chat_logs::TIME_FORMAT.store(*index, std::sync::atomic::Ordering::Relaxed);
+                                this.schedule_save(cx);
+                                cx.notify();
+                            }))
+                            .children(crate::chat_logs::TIME_FORMATS.map(|(l, _)| crate::theme::segment(l))),
+                    ))
+                    .child(row(
+                        "Which channels",
+                        "Only chosen channels: right-click a tab → Log this channel.",
+                        crate::theme::Segmented::new("settings-log-which")
+                            .selected_index(usize::from(crate::chat_logs::ONLY_CHOSEN.load(std::sync::atomic::Ordering::Relaxed)))
+                            .on_click(cx.listener(|this, index: &usize, _, cx| {
+                                crate::chat_logs::ONLY_CHOSEN.store(*index == 1, std::sync::atomic::Ordering::Relaxed);
+                                this.schedule_save(cx);
+                                cx.notify();
+                            }))
+                            .children(["All channels", "Only chosen"].map(crate::theme::segment)),
+                    ))
+                    .child(row(
                         "Log folder",
                         self.logs_folder.display().to_string(),
                         div()
