@@ -522,7 +522,7 @@ impl Element for InlineChat {
                             interaction
                                 .mentions
                                 .iter()
-                                .map(|mention| (&mention.range, 0xB6A9E6)),
+                                .map(|mention| (&mention.range, mention.color.unwrap_or(0xB6A9E6))),
                         )
                     {
                         let a = range.start.max(piece.range.start);

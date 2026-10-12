@@ -821,6 +821,14 @@ impl Workbench {
                             .store(on, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
+                crate::mention_names::COLOR_MENTIONS.store(
+                    state["mentions"]["color"].as_bool().unwrap_or(true),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                crate::mention_names::FIND_NAMES.store(
+                    state["mentions"]["find_names"].as_bool().unwrap_or(false),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 crate::catalog::SHOW_UNLISTED.store(
                     state["emote_options"]["unlisted_7tv"]
                         .as_bool()
@@ -2916,6 +2924,10 @@ impl Workbench {
             json!(crate::catalog::SHOW_UNLISTED.load(std::sync::atomic::Ordering::Relaxed)),
         );
         value["emote_options"] = Value::Object(options);
+        value["mentions"] = json!({
+            "color": crate::mention_names::COLOR_MENTIONS.load(std::sync::atomic::Ordering::Relaxed),
+            "find_names": crate::mention_names::FIND_NAMES.load(std::sync::atomic::Ordering::Relaxed),
+        });
         value["emote_providers"] = json!({
             "7tv": crate::catalog::on(&crate::catalog::SEVEN_TV),
             "bttv": crate::catalog::on(&crate::catalog::BTTV),

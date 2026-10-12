@@ -50,6 +50,7 @@ mod link_preview;
 mod live;
 mod media;
 mod media_hover;
+mod mention_names;
 mod message_actions;
 mod message_scroller;
 mod mod_buttons;
@@ -615,6 +616,8 @@ impl ChannelPane {
                 message.presentation.similar = true;
             }
             chatter_appearance::apply(&self.chatter_appearance, message);
+            mention_names::note(message);
+            mention_names::link_names(message);
         }
         self.observe_reply_redaction(&event, cx);
         let change = self.timeline.borrow_mut().apply(event);

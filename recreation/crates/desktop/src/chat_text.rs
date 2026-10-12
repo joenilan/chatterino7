@@ -58,13 +58,22 @@ impl ChatText {
         highlights.extend(interaction.mentions.iter().map(|mention| {
             (
                 mention.range.clone(),
-                HighlightStyle {
-                    underline: Some(UnderlineStyle {
-                        thickness: px(1.),
-                        color: Some(rgb(0xB6A9E6).into()),
-                        wavy: false,
-                    }),
-                    ..Default::default()
+                // In the chatter's colour and bold when known (like Chatterino);
+                // otherwise a lilac underline.
+                match mention.color {
+                    Some(color) => HighlightStyle {
+                        color: Some(rgb(color).into()),
+                        font_weight: Some(FontWeight::SEMIBOLD),
+                        ..Default::default()
+                    },
+                    None => HighlightStyle {
+                        underline: Some(UnderlineStyle {
+                            thickness: px(1.),
+                            color: Some(rgb(0xB6A9E6).into()),
+                            wavy: false,
+                        }),
+                        ..Default::default()
+                    },
                 },
             )
         }));

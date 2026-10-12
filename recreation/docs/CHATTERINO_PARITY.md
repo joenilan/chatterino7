@@ -83,7 +83,7 @@ Chatterino import.
 - [ ] Repeated-message filter options (S)
 - [ ] Nicknames: regex, case sensitivity (S)
 - [ ] Completion options: only with @, comma after mention, include broadcaster, smart emote completion (S)
-- [ ] Mentions: bold/coloured, detect names without @; colourise colourless names (S)
+- [x] Mentions: bold/coloured in the chatter's colour, detect names without @ (option), colourless names get a stable colour
 - [ ] Settings search; restore backups (S)
 - [ ] Spellcheck: more languages, personal dictionary (S)
 - [ ] Theme: light / system / custom (M) [design]

@@ -137,6 +137,8 @@ pub fn message_links(message: &chat_core::Message) -> Vec<Link> {
 pub struct MentionTarget {
     pub range: Range<usize>,
     pub user_id: String,
+    /// The mentioned chatter's name colour, when known and that's on.
+    pub color: Option<u32>,
 }
 pub fn message_mentions(message: &chat_core::Message) -> Vec<MentionTarget> {
     if message.deleted {
@@ -152,6 +154,7 @@ pub fn message_mentions(message: &chat_core::Message) -> Vec<MentionTarget> {
             result.push(MentionTarget {
                 range: offset..end,
                 user_id: user_id.clone(),
+                color: crate::mention_names::color(user_id),
             });
         }
         offset = end;

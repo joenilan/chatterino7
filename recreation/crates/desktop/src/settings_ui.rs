@@ -346,6 +346,29 @@ impl Workbench {
                         .children(["Small", "Normal", "Large", "Huge"].map(|l| crate::theme::segment(l))),
                 ))
                 .child(stacked_row(
+                    "Mentions",
+                    "Colour @mentions like the chatter's name (once they've chatted). Finding names without @ makes a chatter's bare name work like a mention: coloured, and Ctrl+click opens their card.",
+                    div().h_flex().flex_wrap().gap_x_4().gap_y_1()
+                        .child(
+                            gpui_kit::component::checkbox::Checkbox::new("settings-color-mentions")
+                                .label("Colour @mentions")
+                                .checked(crate::mention_names::COLOR_MENTIONS.load(std::sync::atomic::Ordering::Relaxed))
+                                .on_click(cx.listener(|this, on: &bool, _, cx| {
+                                    crate::mention_names::COLOR_MENTIONS.store(*on, std::sync::atomic::Ordering::Relaxed);
+                                    this.remeasure_all(cx);
+                                })),
+                        )
+                        .child(
+                            gpui_kit::component::checkbox::Checkbox::new("settings-find-names")
+                                .label("Find names without @")
+                                .checked(crate::mention_names::FIND_NAMES.load(std::sync::atomic::Ordering::Relaxed))
+                                .on_click(cx.listener(|this, on: &bool, _, cx| {
+                                    crate::mention_names::FIND_NAMES.store(*on, std::sync::atomic::Ordering::Relaxed);
+                                    this.remeasure_all(cx);
+                                })),
+                        ),
+                ))
+                .child(stacked_row(
                     "Emote options",
                     "Images off shows emote names as text. Zero-width emotes (7TV overlays) stack on the emote before them. Bits combines repeated cheers into one total.",
                     div().h_flex().flex_wrap().gap_x_4().gap_y_1()
