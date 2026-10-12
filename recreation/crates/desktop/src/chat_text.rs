@@ -184,23 +184,24 @@ impl Element for ChatText {
         if !self.selection.borrow().dragging
             && let Some(interaction) = &self.interaction
         {
+            use crate::media_hover::Content;
             let mut targets = vec![(
                 0..interaction.author_len,
-                "Ctrl+click to inspect this chatter",
+                Content::Hint("Ctrl+click to inspect this chatter".into()),
             )];
-            targets.extend(interaction.links.iter().map(|link| {
-                (
-                    link.range.clone(),
-                    "Ctrl+click to open link · Right-click for actions",
-                )
-            }));
+            targets.extend(
+                interaction
+                    .links
+                    .iter()
+                    .map(|link| (link.range.clone(), Content::Link(link.url.clone()))),
+            );
             targets.extend(interaction.mentions.iter().map(|mention| {
                 (
                     mention.range.clone(),
-                    "Ctrl+click to inspect mentioned chatter",
+                    Content::Hint("Ctrl+click to inspect mentioned chatter".into()),
                 )
             }));
-            for (target, (range, hint)) in targets.into_iter().enumerate() {
+            for (target, (range, content)) in targets.into_iter().enumerate() {
                 let mut boxes: Vec<Bounds<Pixels>> = Vec::new();
                 let Some(target_text) = self.text.get(range.clone()) else {
                     continue;
@@ -238,7 +239,7 @@ impl Element for ChatText {
                     regions.push(crate::media_hover::region(
                         format!("plain-hover-{}-{target}-{part}", self.row),
                         slot,
-                        crate::media_hover::Content::Hint(hint.into()),
+                        content.clone(),
                         window,
                         cx,
                     ));

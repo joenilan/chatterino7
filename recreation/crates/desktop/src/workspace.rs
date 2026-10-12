@@ -692,7 +692,13 @@ impl Workbench {
             last_raid: None,
             shouted: Default::default(),
             obs_found: None,
-            spellcheck: state["spellcheck"].as_bool().unwrap_or(false),
+            spellcheck: {
+                crate::link_preview::ENABLED.store(
+                    state["link_previews"].as_bool().unwrap_or(true),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                state["spellcheck"].as_bool().unwrap_or(false)
+            },
             own_youtube: None,
             own_youtube_checked: None,
             own_youtube_busy: false,
@@ -2426,6 +2432,7 @@ impl Workbench {
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
         value["spellcheck"] = json!(self.spellcheck);
+        value["link_previews"] = json!(crate::link_preview::enabled());
         let mut filters = serde_json::Map::new();
         for tab in &self.tabs {
             for pane in &tab.panes {

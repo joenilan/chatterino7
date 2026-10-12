@@ -17,6 +17,50 @@ pub struct Link {
     pub range: Range<usize>,
     pub url: String,
 }
+/// "twitch.tv/name" or "example.com": a bare domain ending in a real top-level
+/// domain (IANA list, as Chatterino uses), so plain words with dots aren't links.
+fn bare_domain(lower: &str) -> bool {
+    static TLDS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    let tlds = TLDS.get_or_init(|| {
+        include_str!("../assets/tlds.txt")
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect()
+    });
+    let host = lower.split(['/', '?', '#']).next().unwrap_or("");
+    let host = host.split(':').next().unwrap_or("");
+    let labels: Vec<&str> = host.split('.').collect();
+    labels.len() >= 2
+        && !lower.contains('@')
+        && labels.iter().all(|l| {
+            !l.is_empty()
+                && l.len() <= 63
+                && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        })
+        && labels
+            .last()
+            .is_some_and(|tld| tld.len() >= 2 && tlds.contains(tld))
+}
+#[cfg(test)]
+mod bare_domain_tests {
+    #[test]
+    fn bare_domains() {
+        let urls = |t: &str| {
+            super::links(t)
+                .into_iter()
+                .map(|l| l.url)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            urls("go to twitch.tv/valarrl now"),
+            vec!["https://twitch.tv/valarrl"]
+        );
+        assert_eq!(urls("see example.com."), vec!["https://example.com/"]);
+        assert!(urls("e.g. this... and v1.2 or file.exe? me@x.com").is_empty());
+    }
+}
 pub fn links(text: &str) -> Vec<Link> {
     let mut result = Vec::new();
     let mut offset = 0;
@@ -43,7 +87,7 @@ pub fn links(text: &str) -> Vec<Link> {
         let lower = token.to_ascii_lowercase();
         let candidate = if lower.starts_with("https://") || lower.starts_with("http://") {
             token.to_owned()
-        } else if lower.starts_with("www.") {
+        } else if lower.starts_with("www.") || bare_domain(&lower) {
             format!("https://{token}")
         } else {
             continue;

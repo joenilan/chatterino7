@@ -7,6 +7,8 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub enum Content {
     Hint(String),
+    /// A link: its preview (title, site, where it redirects, warnings).
+    Link(String),
     Emote {
         label: String,
         source: String,
@@ -22,6 +24,7 @@ pub struct Card(pub Content);
 impl Render for Card {
     fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         match &self.0 {
+            Content::Link(url) => link_card(url, window, _cx),
             Content::Hint(text) => div()
                 .p_2()
                 .max_w(px(300.))
@@ -161,4 +164,75 @@ pub fn source(provider: &str) -> &'static str {
 pub struct HoverState {
     pub hitbox: Hitbox,
     pub regions: Vec<AnyElement>,
+}
+
+/// The hover card for a link: a preview once it has loaded (Chatterino-style).
+fn link_card(url: &str, _window: &mut Window, cx: &mut Context<Card>) -> AnyElement {
+    use crate::link_preview::{self, State};
+    let state = if link_preview::enabled() {
+        Some(link_preview::get(url))
+    } else {
+        None
+    };
+    if state == Some(State::Loading) {
+        // Re-render until the preview arrives (the card closes when the mouse leaves).
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(200))
+                .await;
+            let _ = this.update(cx, |_, cx| cx.notify());
+        })
+        .detach();
+    }
+    let shown: String = url.chars().take(120).collect();
+    let small =
+        |text: String, color: u32| div().text_size(px(11.)).text_color(rgb(color)).child(text);
+    div()
+        .p_2()
+        .w(px(340.))
+        .v_flex()
+        .gap_1()
+        .font_family("Segoe UI")
+        .text_color(rgb(theme::TEXT))
+        .text_size(px(12.))
+        .bg(rgb(theme::ELEVATED))
+        .border_1()
+        .border_color(rgb(theme::BORDER))
+        .rounded(px(5.))
+        .map(|el| match state {
+            Some(State::Ready(p)) => el
+                .when(!p.site.is_empty(), |el| {
+                    el.child(small(p.site.clone(), theme::MUTED))
+                })
+                .when(!p.title.is_empty(), |el| {
+                    el.child(
+                        div()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(p.title.clone()),
+                    )
+                })
+                .when(!p.description.is_empty(), |el| {
+                    el.child(small(p.description.clone(), 0xC0C4CE))
+                })
+                .when_some(p.redirected_to.clone(), |el, to| {
+                    el.child(small(
+                        format!("Goes to: {}", to.chars().take(120).collect::<String>()),
+                        0xE8C68A,
+                    ))
+                })
+                .children(
+                    p.warnings
+                        .iter()
+                        .map(|w| small(format!("Warning: {w}"), 0xF29D9D)),
+                ),
+            Some(State::Loading) => el.child(small("Loading preview…".into(), theme::MUTED)),
+            Some(State::Failed(why)) => el.child(small(format!("No preview: {why}"), theme::MUTED)),
+            None => el,
+        })
+        .child(small(shown, 0x91C7E8))
+        .child(small(
+            "Ctrl+click to open · Right-click for actions".into(),
+            theme::MUTED,
+        ))
+        .into_any_element()
 }

@@ -446,23 +446,24 @@ impl Element for InlineChat {
                         cx,
                     ));
                 } else if let (Some(text), Some(interaction)) = (&piece.text, &self.interaction) {
+                    use crate::media_hover::Content;
                     let mut targets = vec![(
                         0..interaction.author_len,
-                        "Ctrl+click to inspect this chatter".to_owned(),
+                        Content::Hint("Ctrl+click to inspect this chatter".to_owned()),
                     )];
-                    targets.extend(interaction.links.iter().map(|link| {
-                        (
-                            link.range.clone(),
-                            "Ctrl+click to open link · Right-click for actions".into(),
-                        )
-                    }));
+                    targets.extend(
+                        interaction
+                            .links
+                            .iter()
+                            .map(|link| (link.range.clone(), Content::Link(link.url.clone()))),
+                    );
                     targets.extend(interaction.mentions.iter().map(|mention| {
                         (
                             mention.range.clone(),
-                            "Ctrl+click to inspect mentioned chatter".into(),
+                            Content::Hint("Ctrl+click to inspect mentioned chatter".into()),
                         )
                     }));
-                    for (target, (range, hint)) in targets.into_iter().enumerate() {
+                    for (target, (range, content)) in targets.into_iter().enumerate() {
                         let a = range.start.max(piece.range.start);
                         let b = range.end.min(piece.range.end);
                         if a >= b {
@@ -479,7 +480,7 @@ impl Element for InlineChat {
                             regions.push(crate::media_hover::region(
                                 format!("text-hover-{}-{index}-{target}", self.row),
                                 slot,
-                                crate::media_hover::Content::Hint(hint),
+                                content.clone(),
                                 window,
                                 cx,
                             ));

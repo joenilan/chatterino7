@@ -41,6 +41,7 @@ mod hype;
 mod ignores;
 mod inline_chat;
 mod input_history;
+mod link_preview;
 mod live;
 mod media;
 mod media_hover;

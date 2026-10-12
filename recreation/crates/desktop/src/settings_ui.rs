@@ -270,6 +270,15 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "Link previews",
+                    "Hovering a link shows its title, where it really goes, and warnings for lookalike sites. Jawjack loads the page from your PC only when you hover.",
+                    Switch::new("settings-link-previews").checked(crate::link_preview::enabled()).on_click(cx.listener(|this, on: &bool, _, cx| {
+                        crate::link_preview::ENABLED.store(*on, std::sync::atomic::Ordering::Relaxed);
+                        this.schedule_save(cx);
+                        cx.notify();
+                    })),
+                ))
+                .child(row(
                     "Repeated messages",
                     "When someone posts nearly the same thing again within a minute (90% alike), like Chatterino's similar-message filter.",
                     gpui_kit::component::tab::TabBar::new("settings-similar")
