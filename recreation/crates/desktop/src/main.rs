@@ -126,7 +126,8 @@ gpui_kit::actions!(
         SentHistory,
         CatchUpChat,
         PreviousHighlight,
-        NextHighlight
+        NextHighlight,
+        OpenEmotePicker
     ]
 );
 
@@ -902,6 +903,7 @@ impl Render for ChannelPane {
             .capture_action(cx.listener(|this,_:&gpui_kit::base::input::Search,w,cx|{this.open_search(w,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&CatchUpChat,w,cx|{this.navigate_attention(0,w,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&PreviousHighlight,w,cx|{this.navigate_attention(-1,w,cx);cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&OpenEmotePicker,w,cx|{this.toggle_picker(w,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&NextHighlight,w,cx|{this.navigate_attention(1,w,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&SentHistory,w,cx|{this.open_input_history(w,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&ToggleChatPause,_,cx|{this.scroller.update(cx,|s,cx|s.toggle_pause(cx));cx.stop_propagation();}))

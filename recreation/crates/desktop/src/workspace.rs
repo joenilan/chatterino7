@@ -98,7 +98,8 @@ gpui_kit::actions!(
         ChooseSetup,
         ToggleStudio,
         ImportChatterino,
-        EditChatterAppearance
+        EditChatterAppearance,
+        ToggleStreamerMode
     ]
 );
 pub fn bind_keys(cx: &mut App) {
@@ -5237,6 +5238,24 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &RenameWorkspace, w, cx| this.open_add(true, w, cx)))
             .on_action(cx.listener(|this, _: &MoveTabLeft, _, cx| this.move_tab(-1, cx)))
             .on_action(cx.listener(|this, _: &MoveTabRight, _, cx| this.move_tab(1, cx)))
+            .on_action(cx.listener(|this, _: &ToggleStreamerMode, window, cx| {
+                // On if it's off now, otherwise Off (Settings has Automatic).
+                this.streamer_mode = if this.streamer_live {
+                    crate::streamer_mode::Mode::Off
+                } else {
+                    crate::streamer_mode::Mode::On
+                };
+                window.push_notification(
+                    Notification::info(if this.streamer_live {
+                        "Streamer mode off"
+                    } else {
+                        "Streamer mode on"
+                    }),
+                    cx,
+                );
+                this.schedule_save(cx);
+                cx.notify();
+            }))
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| {
                 this.sidebar = !this.sidebar;
                 this.schedule_save(cx);

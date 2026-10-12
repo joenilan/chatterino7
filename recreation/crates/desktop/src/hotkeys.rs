@@ -154,6 +154,91 @@ pub const HOTKEYS: &[Hotkey] = {
             "ChatWorkspace",
             FocusNextPane
         ),
+        hotkey!(
+            "previous-highlight",
+            "Previous highlight",
+            "alt-pageup",
+            "JawjackChannel",
+            crate::PreviousHighlight
+        ),
+        hotkey!(
+            "next-highlight",
+            "Next highlight",
+            "alt-pagedown",
+            "JawjackChannel",
+            crate::NextHighlight
+        ),
+        hotkey!(
+            "emote-picker",
+            "Open the emote picker",
+            "",
+            "JawjackChannel",
+            crate::OpenEmotePicker
+        ),
+        hotkey!(
+            "settings",
+            "Open settings",
+            "",
+            "ChatWorkspace",
+            ToggleAppearance
+        ),
+        hotkey!(
+            "streamer-mode",
+            "Toggle streamer mode",
+            "",
+            "ChatWorkspace",
+            ToggleStreamerMode
+        ),
+        hotkey!(
+            "sidebar",
+            "Show or hide the sidebar",
+            "",
+            "ChatWorkspace",
+            ToggleSidebar
+        ),
+        hotkey!("whispers", "Whispers", "", "ChatWorkspace", OpenWhispers),
+        hotkey!(
+            "live-tabs",
+            "Only show live channel tabs",
+            "",
+            "ChatWorkspace",
+            ToggleLiveChannels
+        ),
+        hotkey!(
+            "move-tab-left",
+            "Move tab left",
+            "",
+            "ChatWorkspace",
+            MoveTabLeft
+        ),
+        hotkey!(
+            "move-tab-right",
+            "Move tab right",
+            "",
+            "ChatWorkspace",
+            MoveTabRight
+        ),
+        hotkey!(
+            "equalize-split",
+            "Make the splits equal",
+            "",
+            "ChatWorkspace",
+            EqualizeSplit
+        ),
+        hotkey!(
+            "custom-commands",
+            "Edit custom commands",
+            "",
+            "ChatWorkspace",
+            EditCustomCommands
+        ),
+        hotkey!(
+            "rename-workspace",
+            "Rename workspace",
+            "",
+            "ChatWorkspace",
+            RenameWorkspace
+        ),
     ]
 };
 
@@ -173,6 +258,9 @@ pub fn keys(hotkey: &Hotkey) -> String {
 
 /// "ctrl-shift-k" → "Ctrl+Shift+K".
 pub fn label(keys: &str) -> String {
+    if keys.is_empty() {
+        return "Not set".into();
+    }
     let Ok(keystroke) = gpui_kit::Keystroke::parse(keys) else {
         return keys.to_owned();
     };
@@ -233,10 +321,15 @@ pub fn set(id: &str, keys: Option<String>, cx: &mut App) {
     }
     let after = self::keys(hotkey);
     if before != after {
-        cx.bind_keys([
-            KeyBinding::new(&before, NoAction, Some(hotkey.context)),
-            (hotkey.bind)(&after, Some(hotkey.context)),
-        ]);
+        // An empty key means "not set": nothing to disable or bind.
+        let mut bindings = Vec::new();
+        if !before.is_empty() {
+            bindings.push(KeyBinding::new(&before, NoAction, Some(hotkey.context)));
+        }
+        if !after.is_empty() {
+            bindings.push((hotkey.bind)(&after, Some(hotkey.context)));
+        }
+        cx.bind_keys(bindings);
     }
 }
 
