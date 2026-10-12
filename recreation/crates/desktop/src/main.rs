@@ -991,6 +991,7 @@ impl Render for ChannelPane {
                                 // Every row keeps the same inset so text never touches a highlight edge
                                 // and highlighting a row doesn't shift its text sideways.
                                 .border_l_2().border_color(rgba(0x00000000)).pl(px(6.)).pr(px(4.))
+                                .when(message.deleted, |el| el.opacity(0.45))
                                 .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(0xA99CF40D)).py(px(2.)).rounded_r(px(4.)))
                                 .when(highlight_rows.contains(&row),|el|{let (_,accent,background)=highlight_rules::COLORS[highlight_colors.get(&row).copied().unwrap_or(0)];el.bg(rgb(background)).border_color(rgb(accent)).py(px(2.)).rounded_r(px(4.))})
                                 .on_prepaint(move|bounds,window,cx|{
@@ -1065,7 +1066,15 @@ impl Render for ChannelPane {
                                 .children(badge_images.into_iter().map(|(badge,image,background)|{
                                     div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(div().size(px(18.)).when_some(background,|el,color|el.bg(rgb(color))).child(emote_picker::icon(image,String::new(),18.,18.)))
                                 }).collect::<Vec<_>>())
-                                .child(div().flex_1().min_w_0().child(if let Some(inline) = inline {
+                                .when(message.deleted, |el| el.child(div().h(first_line_height).flex().items_center().flex_shrink_0()
+                                    .child(div().px(px(4.)).rounded(px(3.)).bg(rgb(0x3A2328)).text_color(rgb(0xF29D9D)).text_size(px(10.)).child("deleted"))))
+                                .child(div().flex_1().min_w_0().child(if message.presentation.kind == chat_core::MODERATION {
+                                    let repeats = message.presentation.repeats;
+                                    let text = message.presentation.notice.clone().unwrap_or_default();
+                                    div().text_color(rgb(theme::MUTED)).italic()
+                                        .child(if repeats > 0 { format!("{text} ({} times)", repeats + 1) } else { text })
+                                        .into_any_element()
+                                } else if let Some(inline) = inline {
                                     inline.with_search(matches).with_interaction(interaction).into_any_element()
                                 } else {
                                     ChatText::new(SharedString::from(format!("text-{}", message.id)), row, message.copy_line(), selection.clone(), focus.clone(), viewport.clone())
@@ -1116,8 +1125,10 @@ impl Render for ChannelPane {
                 }))
                 .on_action(cx.listener(|this,_: &PreviousInput,window,cx|this.recall_input(true,window,cx)))
                 .on_action(cx.listener(|this,_: &NextInput,window,cx|this.recall_input(false,window,cx)))
-                .capture_action(cx.listener(|this,_: &gpui_kit::base::input::MoveDown,window,cx|{this.completion_action("down",window,cx);}))
-                .capture_action(cx.listener(|this,_: &gpui_kit::base::input::MoveUp,window,cx|{this.completion_action("up",window,cx);}))
+                // Up/Down: the completion list when it's open, else sent-message history
+                // (like Chatterino) while the draft is a single line.
+                .capture_action(cx.listener(|this,_: &gpui_kit::base::input::MoveDown,window,cx|{if !this.completion_action("down",window,cx)&&!this.draft.read(cx).value().contains('\n'){this.recall_input(false,window,cx);}}))
+                .capture_action(cx.listener(|this,_: &gpui_kit::base::input::MoveUp,window,cx|{if !this.completion_action("up",window,cx)&&!this.draft.read(cx).value().contains('\n'){this.recall_input(true,window,cx);}}))
                 .capture_action(cx.listener(|this,_: &gpui_kit::base::input::IndentInline,window,cx|{this.completion_action("tab",window,cx);}))
                 .capture_action(cx.listener(|this,_: &CompleteEmote,window,cx|{
                     if !this.draft.read(cx).focus_handle(cx).is_focused(window)||!this.completion_action("tab",window,cx){window.focus_next(cx);}

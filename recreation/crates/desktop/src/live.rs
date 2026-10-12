@@ -1271,9 +1271,51 @@ fn deliver(
         let _ = tx.send((version, Event::AutoMod(channel, update)));
         return;
     }
+    let sent_at = v["metadata"]["message_timestamp"]
+        .as_str()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|time| time.timestamp());
+    // In channels you moderate: the precise action as a line in chat too.
+    if kind == "channel.moderate"
+        && let Some((user_id, line)) = crate::activity_feed::moderation_line(e)
+    {
+        let _ = tx.send((
+            version,
+            Event::Chat(
+                channel.clone(),
+                chat_core::Event::Moderation {
+                    channel_id: channel.clone(),
+                    user_id,
+                    text: line,
+                    sent_at,
+                    precise: true,
+                },
+            ),
+        ));
+    }
     if let Some(item) = crate::activity_feed::Feed::from_eventsub(kind, e) {
         let _ = tx.send((version, Event::Activity(item)));
         return;
+    }
+    // Everyone: Twitch says a user's messages were cleared (a timeout or ban).
+    if kind == "channel.chat.clear_user_messages" {
+        let name = e["target_user_name"]
+            .as_str()
+            .or(e["target_user_login"].as_str())
+            .unwrap_or("Someone");
+        let _ = tx.send((
+            version,
+            Event::Chat(
+                channel.clone(),
+                chat_core::Event::Moderation {
+                    channel_id: channel.clone(),
+                    user_id: e["target_user_id"].as_str().unwrap_or("").to_owned(),
+                    text: format!("{name} was timed out or banned."),
+                    sent_at,
+                    precise: false,
+                },
+            ),
+        ));
     }
     let text = |key: &str| e[key].as_str().unwrap_or("").to_owned();
     let event = match v["payload"]["subscription"]["type"].as_str().unwrap_or("") {
@@ -1373,6 +1415,7 @@ pub(crate) fn chat_message(
         presentation: chat_core::MessagePresentation {
             local_alias: None,
             local_color: None,
+            repeats: 0,
             kind: e["message_type"]
                 .as_str()
                 .unwrap_or("text")

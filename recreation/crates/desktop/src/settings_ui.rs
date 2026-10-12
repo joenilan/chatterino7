@@ -27,7 +27,10 @@ const SHORTCUTS: [(&str, &str); 18] = [
     ("Ctrl+Shift+R", "Mark all read"),
     ("Ctrl+Shift+S", "Show or hide the Studio panel"),
     ("Ctrl+Shift+H", "Sent message history"),
-    ("Alt+Up / Down", "Previous / next sent message"),
+    (
+        "Up / Down (or Alt+Up / Down)",
+        "Previous / next sent message",
+    ),
     ("Ctrl+T", "New workspace"),
     ("Ctrl+W", "Close workspace"),
     ("Ctrl+Shift+T", "Reopen workspace"),

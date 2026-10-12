@@ -109,8 +109,8 @@ pub fn convert(lines: &[&str], channel: &str) -> Vec<Message> {
     messages
 }
 fn redact(message: &mut Message) {
+    // Kept readable and shown greyed out, like a live deletion.
     message.deleted = true;
-    message.fragments.clear();
 }
 
 struct Irc<'a> {

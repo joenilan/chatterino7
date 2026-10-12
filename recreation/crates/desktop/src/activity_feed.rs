@@ -57,6 +57,24 @@ pub struct Item {
 }
 /// "timed out bob for 10m: spam", "turned on slow mode (30s)", … for a
 /// `channel.moderate` v2 event.
+/// A chat line for a timeout, ban or their reversal ("Mod timed out bob for 10m: spam"),
+/// with the target's user ID; None for other moderation actions.
+pub fn moderation_line(e: &Value) -> Option<(String, String)> {
+    let action = e["action"].as_str()?;
+    let key = action.strip_prefix("shared_chat_").unwrap_or(action);
+    if !matches!(key, "ban" | "unban" | "timeout" | "untimeout") {
+        return None;
+    }
+    let object = if e[action].is_object() {
+        &e[action]
+    } else {
+        &e[key]
+    };
+    let user_id = object["user_id"].as_str()?.to_owned();
+    let moderator = text(&e["moderator_user_name"], 60);
+    let detail = moderation(e)?;
+    Some((user_id, format!("{moderator} {detail}.").trim().to_owned()))
+}
 pub fn moderation(e: &Value) -> Option<String> {
     let action = e["action"].as_str()?;
     // Shared-chat variants carry the same object under a prefixed key.

@@ -131,14 +131,12 @@ impl InlineChat {
         viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
         cx: &mut App,
     ) -> Option<Self> {
-        if message.deleted
-            || !message.fragments.iter().any(|f| {
-                matches!(
-                    f,
-                    Fragment::Emote { .. } | Fragment::Cheer { asset: Some(_), .. }
-                )
-            })
-        {
+        if !message.fragments.iter().any(|f| {
+            matches!(
+                f,
+                Fragment::Emote { .. } | Fragment::Cheer { asset: Some(_), .. }
+            )
+        }) {
             return None;
         }
         let text: SharedString = message.copy_line().into();

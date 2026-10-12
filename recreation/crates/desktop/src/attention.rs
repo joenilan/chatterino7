@@ -70,7 +70,7 @@ impl Attention {
         }
     }
     fn color(&self, message: &Message) -> Option<usize> {
-        if message.deleted {
+        if message.deleted || message.presentation.kind == chat_core::MODERATION {
             return None;
         }
         // Replies in a followed thread stand out like mentions (not your own).

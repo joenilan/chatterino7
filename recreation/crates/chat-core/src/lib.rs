@@ -91,6 +91,8 @@ pub struct MessagePresentation {
     pub suspicious: Option<String>,
     /// In a combined feed: the channel this message came from.
     pub origin: Option<String>,
+    /// Moderation lines: how many times this action was stacked into one line.
+    pub repeats: u32,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
@@ -120,10 +122,8 @@ impl Message {
     pub fn author_color(&self) -> Option<u32> {
         self.presentation.local_color.or(self.name_color)
     }
+    /// The text (deleted messages keep theirs; they are shown greyed out).
     pub fn body(&self) -> String {
-        if self.deleted {
-            return "[message deleted]".into();
-        }
         if self.fragments.is_empty()
             && let Some(notice) = &self.presentation.notice
         {
@@ -150,7 +150,21 @@ pub enum Event {
     ClearChannel {
         channel_id: String,
     },
+    /// A moderation line in chat ("X was timed out or banned"). `precise` lines
+    /// (from the moderator's own event, with length and reason) replace the most
+    /// recent vague line for the same user instead of adding another.
+    Moderation {
+        channel_id: String,
+        user_id: String,
+        text: String,
+        sent_at: Option<i64>,
+        precise: bool,
+    },
 }
+/// Moderation lines are written as `presentation.kind == MODERATION`.
+pub const MODERATION: &str = "moderation";
+/// How far back a repeat or a precise update looks for the same user's line.
+const MODERATION_WINDOW: usize = 40;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Change {
     Ignored,
@@ -259,7 +273,93 @@ impl Timeline {
                 if quotes { Change::Updated } else { body }
             }
             Event::ClearChannel { channel_id } => self.redact(&channel_id, |_| true),
+            Event::Moderation {
+                channel_id,
+                user_id,
+                text,
+                sent_at,
+                precise,
+            } => self.moderation(channel_id, user_id, text, sent_at, precise),
         }
+    }
+    fn moderation(
+        &mut self,
+        channel_id: String,
+        user_id: String,
+        text: String,
+        sent_at: Option<i64>,
+        precise: bool,
+    ) -> Change {
+        if !self.accepts(&channel_id) {
+            return Change::Ignored;
+        }
+        // Twitch sends a vague "messages cleared" event to everyone and, in channels
+        // you moderate, the precise action too, in either order (seconds apart).
+        // Rules: a precise action upgrades a vague line from the last few seconds;
+        // a vague echo of a fresh precise line is dropped; repeats of the same
+        // action stack into one line ("(3 times)").
+        const ECHO_SECONDS: i64 = 10;
+        let close = |a: Option<i64>, b: Option<i64>| match (a, b) {
+            (Some(a), Some(b)) => (a - b).abs() <= ECHO_SECONDS,
+            _ => true,
+        };
+        let recent = self
+            .messages
+            .iter_mut()
+            .rev()
+            .take(MODERATION_WINDOW)
+            .find(|m| {
+                m.presentation.kind == MODERATION
+                    && m.user_id == user_id
+                    && m.channel_id == channel_id
+            });
+        if let Some(line) = recent {
+            let vague = line.presentation.source.as_deref() == Some("vague");
+            match (precise, vague) {
+                (true, true) if close(sent_at, line.sent_at) => {
+                    line.presentation.notice = Some(text);
+                    line.presentation.source = None;
+                    return Change::Updated;
+                }
+                (false, false) if close(sent_at, line.sent_at) => return Change::Ignored,
+                // The same precise action again, or another vague clear: stack.
+                (true, false) | (false, true)
+                    if !precise || line.presentation.notice.as_deref() == Some(text.as_str()) =>
+                {
+                    line.presentation.repeats += 1;
+                    line.sent_at = sent_at.or(line.sent_at);
+                    return Change::Updated;
+                }
+                _ => {}
+            }
+        }
+        let id = format!(
+            "mod:{user_id}:{}:{}",
+            sent_at.unwrap_or(0),
+            self.messages.len()
+        );
+        let message = Message {
+            sent_at,
+            id,
+            channel_id,
+            user_id,
+            display_name: String::new(),
+            login: None,
+            reply: None,
+            mentions: vec![],
+            replyable: false,
+            name_color: None,
+            badges: vec![],
+            fragments: vec![],
+            presentation: MessagePresentation {
+                kind: MODERATION.into(),
+                notice: Some(text),
+                source: (!precise).then(|| "vague".into()),
+                ..Default::default()
+            },
+            deleted: false,
+        };
+        self.apply(Event::Message(message))
     }
     fn redact_quotes(&mut self, channel: &str, matches: impl Fn(&Reply) -> bool) -> bool {
         if !self.accepts(channel) {
@@ -283,9 +383,9 @@ impl Timeline {
         }
         let mut changed = false;
         for message in &mut self.messages {
-            if !message.deleted && matches(message) {
+            if !message.deleted && message.presentation.kind != MODERATION && matches(message) {
+                // Keep the text: Jawjack shows deleted messages greyed out, like Chatterino.
                 message.deleted = true;
-                message.fragments.clear();
                 message.presentation = MessagePresentation {
                     local_alias: message.presentation.local_alias.take(),
                     local_color: message.presentation.local_color,
@@ -336,6 +436,51 @@ pub fn fixture(channel: &str, index: usize) -> Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn moderation(user: &str, text: &str, at: i64, precise: bool) -> Event {
+        Event::Moderation {
+            channel_id: "a".into(),
+            user_id: user.into(),
+            text: text.into(),
+            sent_at: Some(at),
+            precise,
+        }
+    }
+    fn lines(t: &Timeline) -> Vec<(String, u32)> {
+        t.messages()
+            .iter()
+            .filter(|m| m.presentation.kind == MODERATION)
+            .map(|m| (m.body(), m.presentation.repeats))
+            .collect()
+    }
+    #[test]
+    fn moderation_lines_upgrade_dedupe_and_stack() {
+        let mut t = Timeline::new("a", 50);
+        // Vague first, then the moderator's precise event: one precise line.
+        t.apply(moderation("u1", "bob was timed out or banned.", 100, false));
+        t.apply(moderation("u1", "mod timed out bob for 10m", 101, true));
+        assert_eq!(lines(&t), vec![("mod timed out bob for 10m".into(), 0)]);
+        // Precise first, then the vague echo: still one line.
+        t.apply(moderation("u2", "mod banned amy", 200, true));
+        t.apply(moderation("u2", "amy was timed out or banned.", 201, false));
+        assert_eq!(lines(&t).len(), 2);
+        // The same action again later stacks.
+        t.apply(moderation("u1", "mod timed out bob for 10m", 400, true));
+        t.apply(moderation("u1", "bob was timed out or banned.", 401, false));
+        assert_eq!(lines(&t)[0], ("mod timed out bob for 10m".into(), 1));
+        // Viewers only see vague clears: repeats stack.
+        t.apply(moderation("u3", "cat was timed out or banned.", 500, false));
+        t.apply(moderation("u3", "cat was timed out or banned.", 560, false));
+        assert_eq!(lines(&t)[2], ("cat was timed out or banned.".into(), 1));
+        // A different action (unban) gets its own line.
+        t.apply(moderation("u2", "mod unbanned amy", 600, true));
+        assert_eq!(lines(&t).len(), 4);
+        // Clearing a user's messages never hides the moderation line itself.
+        t.apply(Event::ClearUser {
+            channel_id: "a".into(),
+            user_id: "u1".into(),
+        });
+        assert!(t.messages().iter().all(|m| !m.deleted));
+    }
     #[test]
     fn duplicate_is_ignored() {
         let mut t = Timeline::new("a", 10);
@@ -370,7 +515,7 @@ mod tests {
         assert_eq!(t.messages()[0].id, "a-98");
     }
     #[test]
-    fn deletion_redacts_copy_and_cannot_be_undone_by_duplicate() {
+    fn deletion_keeps_text_greyed_and_cannot_be_undone_by_duplicate() {
         let mut t = Timeline::new("a", 2);
         let m = fixture("a", 0);
         t.apply(Event::Message(m.clone()));
@@ -378,8 +523,11 @@ mod tests {
             channel_id: "a".into(),
             message_id: m.id.clone(),
         });
-        assert!(t.messages()[0].fragments.is_empty());
-        assert_eq!(t.messages()[0].body(), "[message deleted]");
+        assert_eq!(
+            t.messages()[0].body(),
+            m.body(),
+            "deleted text stays readable"
+        );
         assert_eq!(t.apply(Event::Message(m)), Change::Ignored);
         assert!(t.messages()[0].deleted);
     }
