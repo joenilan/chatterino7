@@ -914,6 +914,10 @@ impl Workbench {
                     state["show_gifs"].as_bool().unwrap_or(true),
                     std::sync::atomic::Ordering::Relaxed,
                 );
+                crate::chat_search::FILTER_KEEPS_OWN.store(
+                    state["filter_keeps_own"].as_bool().unwrap_or(false),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 crate::COLLAPSE_LINES.store(
                     (state["collapse_lines"].as_u64().unwrap_or(0) as u32).min(10),
                     std::sync::atomic::Ordering::Relaxed,
@@ -3160,6 +3164,8 @@ impl Workbench {
         value["quiet_unread"] = json!(self.quiet_unread);
         value["live_alert_sound"] = json!(self.live_alert_sound);
         value["tabs_hidden"] = json!(self.tabs_hidden);
+        value["filter_keeps_own"] =
+            json!(crate::chat_search::FILTER_KEEPS_OWN.load(std::sync::atomic::Ordering::Relaxed));
         value["show_gifs"] =
             json!(crate::rich_messages::SHOW_GIFS.load(std::sync::atomic::Ordering::Relaxed));
         value["collapse_lines"] =

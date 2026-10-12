@@ -1,4 +1,8 @@
 //! Bounded, local search of retained chat. No provider requests or draft mutations.
+/// Filter view: your own messages always show, whatever the filter (Chatterino's
+/// "exclude own messages from filters").
+pub static FILTER_KEEPS_OWN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 use crate::{ChannelPane, theme};
 use chat_core::Timeline;
 use gpui_kit::component::input::{Input, InputEvent, InputState};

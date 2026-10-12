@@ -311,6 +311,22 @@ impl ChannelPane {
                         ))
                         .child(gpui_kit::component::input::Input::new(&input).small())
                         .child(
+                            gpui_kit::component::checkbox::Checkbox::new("filter-keep-own")
+                                .label("Always show my own messages")
+                                .checked(crate::chat_search::FILTER_KEEPS_OWN.load(std::sync::atomic::Ordering::Relaxed))
+                                .on_click({
+                                    let owner = owner.clone();
+                                    move |on: &bool, _, cx| {
+                                        crate::chat_search::FILTER_KEEPS_OWN.store(*on, std::sync::atomic::Ordering::Relaxed);
+                                        let _ = owner.update(cx, |p, cx| {
+                                            p.scroller.update(cx, |s, cx| s.remeasure(cx));
+                                            cx.emit(PaneEvent::ViewFilterChanged);
+                                            cx.notify();
+                                        });
+                                    }
+                                }),
+                        )
+                        .child(
                             div()
                                 .h_flex()
                                 .gap_1()

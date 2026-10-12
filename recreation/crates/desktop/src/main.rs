@@ -1147,7 +1147,9 @@ impl Render for ChannelPane {
                                     Some(source) => hidden_sources.contains(source),
                                     None => own_hidden,
                                 }
-                                || view_filter.as_ref().is_some_and(|q| q.matches(message).is_none())
+                                || (view_filter.as_ref().is_some_and(|q| q.matches(message).is_none())
+                                    && !(chat_search::FILTER_KEEPS_OWN.load(std::sync::atomic::Ordering::Relaxed)
+                                        && own_user.as_deref() == Some(message.user_id.as_str())))
                                 || (!hidden_platforms.is_empty() && hidden_platforms.contains(&message.presentation.origin.as_deref().map(combined::Platform::of).unwrap_or(combined::Platform::Twitch))) {
                                 return div().into_any_element();
                             }

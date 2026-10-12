@@ -93,4 +93,4 @@ Chatterino import.
 - [x] Twitch GIF messages toggle (S) — Appearance → Twitch GIF messages (not yet seen with a real GIF message)
 - [ ] Blocked users: display modes; hide already-shown messages (S)
 - [ ] Multiple windows with workspaces; drag between windows (M)
-- [ ] Exclude own messages from filters (S)
+- [x] Exclude own messages from filters (S) — Filter view → Always show my own messages
