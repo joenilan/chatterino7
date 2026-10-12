@@ -2535,8 +2535,19 @@ impl Workbench {
                 {
                     this.ping(*ping, id, window);
                 }
-                // Mentions tabs get a copy, tagged with the channel it came from.
-                let found = if crate::combined::is_special(&channel) {
+                // Mentions tabs get a copy, tagged with the channel it came from
+                // (unless a highlight rule says to keep it out of Mentions).
+                let quiet = matches!(
+                    event,
+                    PaneEvent::Ping(
+                        crate::attention::Ping::Rule {
+                            mentions: false,
+                            ..
+                        },
+                        _
+                    )
+                );
+                let found = if crate::combined::is_special(&channel) || quiet {
                     None
                 } else {
                     let p = pane.read(cx);

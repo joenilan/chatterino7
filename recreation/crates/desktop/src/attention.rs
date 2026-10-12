@@ -28,8 +28,13 @@ pub struct Attention {
 pub enum Ping {
     Mention,
     Highlight,
-    /// A highlight rule matched; its sound choice (highlight_rules::SOUNDS index).
-    Rule(u8),
+    /// A highlight rule matched: its sound choice (highlight_rules::SOUNDS
+    /// index), whether it goes to Mentions, and whether it flashes the taskbar.
+    Rule {
+        sound: u8,
+        mentions: bool,
+        flash: bool,
+    },
 }
 pub fn terms(text: &str) -> Vec<String> {
     let mut result = Vec::new();
@@ -256,7 +261,11 @@ impl Attention {
         }
         if let Some(rule) = crate::highlight_rules::first_match(&self.rules, message, &self.channel)
         {
-            return Some(Ping::Rule(rule.sound));
+            return Some(Ping::Rule {
+                sound: rule.sound,
+                mentions: rule.mentions,
+                flash: rule.flash,
+            });
         }
         self.terms
             .iter()

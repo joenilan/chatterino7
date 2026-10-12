@@ -56,6 +56,10 @@ pub struct Rule {
     pub badge: bool,
     /// Index into SOUNDS: what plays when this rule pings.
     pub sound: u8,
+    /// Copy matches into Mentions tabs (Chatterino's "show in mentions").
+    pub mentions: bool,
+    /// Flash the taskbar (when that's on in Notifications).
+    pub flash: bool,
 }
 /// Per-rule ping sound: the Highlights sound setting, nothing, or a fixed tone.
 pub const SOUNDS: [&str; 4] = ["Default sound", "No sound", "Chime", "Soft"];
@@ -77,6 +81,8 @@ impl Default for Rule {
             color: 0,
             badge: false,
             sound: 0,
+            mentions: true,
+            flash: true,
         }
     }
 }
@@ -291,6 +297,8 @@ pub fn load(value: &serde_json::Value) -> Rules {
                     .as_u64()
                     .unwrap_or(0)
                     .min(SOUNDS.len() as u64 - 1) as u8,
+                mentions: item["mentions"].as_bool().unwrap_or(true),
+                flash: item["flash"].as_bool().unwrap_or(true),
             };
             if let Ok(rule) = rule.validate() {
                 rules.push(rule);
@@ -300,7 +308,7 @@ pub fn load(value: &serde_json::Value) -> Rules {
     Rc::new(RefCell::new(rules))
 }
 pub fn json(rules: &Rules) -> serde_json::Value {
-    serde_json::Value::Array(rules.borrow().iter().map(|r|serde_json::json!({"pattern":r.pattern,"regex":r.regex,"channel":r.channel,"author":r.author,"case_sensitive":r.case_sensitive,"whole_word":r.whole_word,"enabled":r.enabled,"color":r.color,"badge":r.badge,"sound":r.sound})).collect())
+    serde_json::Value::Array(rules.borrow().iter().map(|r|serde_json::json!({"pattern":r.pattern,"regex":r.regex,"channel":r.channel,"author":r.author,"case_sensitive":r.case_sensitive,"whole_word":r.whole_word,"enabled":r.enabled,"color":r.color,"badge":r.badge,"sound":r.sound,"mentions":r.mentions,"flash":r.flash})).collect())
 }
 
 pub struct Changed;
@@ -523,6 +531,9 @@ impl Render for Editor {
                 .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Sound"))
                 .children(SOUNDS.iter().enumerate().map(|(index,label)|{let index=index as u8;
                     Button::new(("rule-sound",index as usize)).small().label(*label).selected(self.draft.sound==index).when(self.draft.sound==index,|b|b.primary()).on_click(cx.listener(move|this,_,_,cx|{this.draft.sound=index;if index>=2{crate::sound::play(&if index==2{crate::sound::Tone::Chime}else{crate::sound::Tone::Soft},0.6);}this.edited(cx);}))})))
+            .child(div().h_flex().flex_wrap().items_center().gap_3()
+                .child(gpui_kit::component::checkbox::Checkbox::new("rule-mentions").label("Show in Mentions").checked(self.draft.mentions).on_click(cx.listener(|this,on:&bool,_,cx|{this.draft.mentions=*on;this.edited(cx);})))
+                .child(gpui_kit::component::checkbox::Checkbox::new("rule-flash").label("Flash taskbar").checked(self.draft.flash).on_click(cx.listener(|this,on:&bool,_,cx|{this.draft.flash=*on;this.edited(cx);}))))
             .child(div().border_l_2().border_color(rgb(accent)).bg(rgb(background)).rounded(px(4.)).p_2().v_flex().gap_1()
                 .child(div().text_size(px(11.)).child(format!("Preview in #{} · {}",self.preview_channel,if preview{"matches"}else{"does not match"})))
                 .child(Input::new(&self.sample).small()).child(Input::new(&self.login).small())

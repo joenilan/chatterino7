@@ -18,13 +18,14 @@ impl Workbench {
         // A highlight rule can pick its own tone or stay silent.
         let tone = match ping {
             Ping::Mention => self.sound_mentions.then(|| self.sound_tone.clone()),
-            Ping::Highlight | Ping::Rule(0) => {
+            Ping::Highlight | Ping::Rule { sound: 0, .. } => {
                 self.sound_highlights.then(|| self.sound_tone.clone())
             }
-            Ping::Rule(2) => Some(crate::sound::Tone::Chime),
-            Ping::Rule(3) => Some(crate::sound::Tone::Soft),
-            Ping::Rule(_) => None,
+            Ping::Rule { sound: 2, .. } => Some(crate::sound::Tone::Chime),
+            Ping::Rule { sound: 3, .. } => Some(crate::sound::Tone::Soft),
+            Ping::Rule { .. } => None,
         };
+        let flash = !matches!(ping, Ping::Rule { flash: false, .. });
         let muted = self.streamer_live && self.streamer_mute;
         if let Some(tone) = tone
             && !muted
@@ -33,7 +34,7 @@ impl Workbench {
             crate::sound::play(&tone, self.sound_volume);
         }
         // Like Chatterino: the taskbar button flashes until you come back.
-        if self.flash_taskbar && !window.is_window_active() {
+        if flash && self.flash_taskbar && !window.is_window_active() {
             flash_taskbar(window);
         }
     }
