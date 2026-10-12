@@ -1411,7 +1411,11 @@ pub(crate) fn chat_message(
                 })
             })
             .collect(),
-        fragments: twitch_fragments(&e["message"]),
+        fragments: {
+            let mut fragments = twitch_fragments(&e["message"]);
+            strip_action(&mut fragments);
+            fragments
+        },
         presentation: chat_core::MessagePresentation {
             local_alias: None,
             local_color: None,
@@ -1420,12 +1424,18 @@ pub(crate) fn chat_message(
                 .as_str()
                 .filter(|source| !source.is_empty() && *source != id && source.len() <= 64)
                 .map(str::to_owned),
-            kind: e["message_type"]
+            // `/me` messages come wrapped in CTCP ACTION markers.
+            kind: if e["message"]["text"]
                 .as_str()
-                .unwrap_or("text")
-                .chars()
-                .take(80)
-                .collect(),
+                .is_some_and(|t| t.starts_with("\u{1}ACTION "))
+            {
+                "action"
+            } else {
+                e["message_type"].as_str().unwrap_or("text")
+            }
+            .chars()
+            .take(80)
+            .collect(),
             bits: e["cheer"]["bits"].as_u64().unwrap_or(0),
             reward_id: e["channel_points_custom_reward_id"]
                 .as_str()
@@ -1461,6 +1471,18 @@ pub(crate) fn chat_message(
     }
 }
 
+/// `/me`: drop the "\u{1}ACTION " prefix and trailing "\u{1}" around the text.
+fn strip_action(fragments: &mut Vec<Fragment>) {
+    if let Some(Fragment::Text(first)) = fragments.first_mut()
+        && let Some(rest) = first.strip_prefix("\u{1}ACTION ")
+    {
+        *first = rest.to_owned();
+    }
+    if let Some(Fragment::Text(last)) = fragments.last_mut() {
+        *last = last.trim_end_matches('\u{1}').to_owned();
+    }
+    fragments.retain(|f| !matches!(f, Fragment::Text(t) if t.is_empty()));
+}
 fn twitch_fragments(message: &Value) -> Vec<Fragment> {
     let original = message["text"].as_str().unwrap_or("");
     let raw: Vec<_> = message["fragments"]
@@ -1612,4 +1634,22 @@ fn parse_reply(value: &Value) -> Option<chat_core::Reply> {
             .to_owned(),
         parent_deleted: false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn me_messages_lose_their_action_markers() {
+        let event = serde_json::json!({
+            "message_id": "m1", "chatter_user_id": "1", "chatter_user_login": "bot",
+            "chatter_user_name": "Bot", "message_type": "text",
+            "message": {"text": "\u{1}ACTION imagine?\u{1}", "fragments": [{"type": "text", "text": "\u{1}ACTION imagine?\u{1}"}]}
+        });
+        let message = chat_message(&event, "e1", "chan", "100", None, true);
+        assert_eq!(message.body(), "imagine?");
+        assert_eq!(message.presentation.kind, "action");
+        let plain = serde_json::json!({"message_id": "m2", "message": {"text": "hi", "fragments": [{"type": "text", "text": "hi"}]}});
+        assert_eq!(chat_message(&plain, "e2", "chan", "100", None, true).presentation.kind, "text");
+    }
 }

@@ -36,7 +36,7 @@ pub fn heading(message: &Message) -> Option<AnyElement> {
         "user_intro" => labels.push("Introduction".to_owned()),
         "power_ups_message_effect" => labels.push("Bits · Message effect".to_owned()),
         "power_ups_gigantified_emote" => labels.push("Bits · Gigantified emote".to_owned()),
-        "" | "text" => {}
+        "" | "text" | "action" => {}
         _ => labels.push("Twitch special message".to_owned()),
     }
     if let Some(kind) = &p.notice_type {

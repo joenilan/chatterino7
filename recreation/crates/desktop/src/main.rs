@@ -1082,7 +1082,10 @@ impl Render for ChannelPane {
                                 }).collect::<Vec<_>>())
                                 .when(message.deleted, |el| el.child(div().h(first_line_height).flex().items_center().flex_shrink_0()
                                     .child(div().px(px(4.)).rounded(px(3.)).bg(rgb(0x3A2328)).text_color(rgb(0xF29D9D)).text_size(px(10.)).child("deleted"))))
-                                .child(div().flex_1().min_w_0().child(if message.presentation.kind == chat_core::MODERATION {
+                                .child(div().flex_1().min_w_0()
+                                    // `/me`: the whole message in the chatter's colour, like Chatterino.
+                                    .when(message.presentation.kind == "action", |el| el.text_color(rgb(message.author_color().unwrap_or(theme::TEXT))).italic())
+                                    .child(if message.presentation.kind == chat_core::MODERATION {
                                     let repeats = message.presentation.repeats;
                                     let text = message.presentation.notice.clone().unwrap_or_default();
                                     div().text_color(rgb(theme::MUTED)).italic()

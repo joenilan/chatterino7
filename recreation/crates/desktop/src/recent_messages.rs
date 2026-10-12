@@ -232,7 +232,9 @@ fn message(irc: &Irc, channel: &str) -> Option<Message> {
         "sharedchatnotice" => format!("shared_chat_{}", tag("source-msg-id")),
         other => other.to_owned(),
     });
+    let action = irc.text.starts_with("\u{1}ACTION ");
     let message_type = match tag("msg-id").as_str() {
+        _ if action => "action",
         "highlighted-message" => "channel_points_highlighted",
         "user-intro" => "user_intro",
         _ => "text",
