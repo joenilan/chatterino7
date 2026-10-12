@@ -38,6 +38,11 @@ pub struct Profiles {
     values: HashMap<String, Profile>,
     tx: mpsc::SyncSender<Job>,
     rx: mpsc::Receiver<Batch>,
+    /// Follower totals for user cards: user ID → Some(total) once known,
+    /// None while loading or unavailable.
+    followers: HashMap<String, Option<u64>>,
+    follower_tx: mpsc::Sender<(u64, Identity, String)>,
+    follower_rx: mpsc::Receiver<(u64, String, Option<u64>)>,
 }
 impl Profiles {
     pub fn new() -> Self {
@@ -58,7 +63,27 @@ impl Profiles {
                 }
             }
         });
+        let (follower_tx, follower_jobs) = mpsc::channel::<(u64, Identity, String)>();
+        let (follower_results, follower_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let Ok(client) = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+            else {
+                return;
+            };
+            while let Ok((epoch, identity, id)) = follower_jobs.recv() {
+                let total = follower_total(&client, &identity, &id);
+                if follower_results.send((epoch, id, total)).is_err() {
+                    break;
+                }
+            }
+        });
         Self {
+            followers: HashMap::new(),
+            follower_tx,
+            follower_rx,
             identity: None,
             epoch: 0,
             requested: HashMap::new(),
@@ -71,6 +96,19 @@ impl Profiles {
     }
     pub fn get(&self, id: &str) -> Option<&Profile> {
         self.values.get(id)
+    }
+    /// A user's follower count, looked up once per session when first asked.
+    pub fn followers(&mut self, id: &str) -> Option<u64> {
+        if let Some(known) = self.followers.get(id) {
+            return *known;
+        }
+        let identity = self.identity.clone()?;
+        if self.followers.len() > 1024 {
+            self.followers.clear();
+        }
+        self.followers.insert(id.to_owned(), None);
+        let _ = self.follower_tx.send((self.epoch, identity, id.to_owned()));
+        None
     }
     /// Record interest; `pump` sends queued IDs in batches.
     pub fn request(&mut self, id: &str) {
@@ -99,7 +137,14 @@ impl Profiles {
             self.requested.clear();
             self.pending.clear();
             self.values.clear();
+            self.followers.clear();
             changed = true;
+        }
+        while let Ok((epoch, id, total)) = self.follower_rx.try_recv() {
+            if epoch == self.epoch && total.is_some() {
+                self.followers.insert(id, total);
+                changed = true;
+            }
         }
         while let Ok((epoch, ids, value)) = self.rx.try_recv() {
             if epoch != self.epoch {
@@ -198,6 +243,27 @@ fn load(
         found.insert(id.to_owned(), parse(user));
     }
     Some(found)
+}
+/// Helix gives anyone the follower total (the list itself needs permission).
+fn follower_total(
+    client: &reqwest::blocking::Client,
+    identity: &Identity,
+    id: &str,
+) -> Option<u64> {
+    let response = client
+        .get("https://api.twitch.tv/helix/channels/followers")
+        .query(&[("broadcaster_id", id), ("first", "1")])
+        .header("Client-Id", CLIENT_ID)
+        .bearer_auth(&identity.access)
+        .send()
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let mut bytes = vec![];
+    response.take(64 * 1024).read_to_end(&mut bytes).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    value["total"].as_u64()
 }
 fn parse(user: &serde_json::Value) -> Profile {
     Profile {

@@ -1038,6 +1038,8 @@ impl ChannelPane {
                                 .child(act("10m","card-timeout-10m",timeout(600)))
                                 .child(act("1h","card-timeout-1h",timeout(3600)))
                                 .child(act("1d","card-timeout-1d",timeout(86_400)))
+                                // Any other length: start /timeout in the message box (e.g. 3h, 2w).
+                                .child({let owner=owner.clone();let target=target.clone();Button::new("card-timeout-custom").small().label("Other…").tooltip("Starts /timeout in the message box; add a length like 30m, 3h or 2w").on_click(move|_,w,cx|{w.close_dialog(cx);let text=format!("/timeout {target} ");let _=owner.update(cx,|p,cx|p.command_draft(&text,w,cx));})})
                                 .child({let owner=owner.clone();let target=target.clone();let channel=channel.clone();Button::new("card-ban").small().danger().label("Ban…").on_click(move|_,w,cx|{
                                     // Same confirmation as the message menu's ban.
                                     w.close_dialog(cx);let owner=owner.clone();let login=target.clone();let channel=channel.clone();
@@ -1057,6 +1059,7 @@ impl ChannelPane {
                     });
                     if let Some(pane)=owner.upgrade(){pane.read(cx).catalog.borrow_mut().profiles.request(&user_id);}
                     let profile=owner.upgrade().and_then(|pane|pane.read(cx).catalog.borrow().profiles.get(&user_id).cloned());
+                    let followers=owner.upgrade().and_then(|pane|pane.read(cx).catalog.borrow_mut().profiles.followers(&user_id));
                     let avatar=profile.as_ref().and_then(|p|p.avatar.as_ref()).filter(|_|!crate::streamer_mode::hides(crate::streamer_mode::CARD_AVATARS)).and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(key,cx)}));
                     let cosmetics=owner.upgrade().map(|pane|{
                         let pane=pane.read(cx);let catalog=pane.catalog.borrow();
@@ -1085,7 +1088,10 @@ impl ChannelPane {
                         .when_some(profile,|el,profile|el.child(div().h_flex().items_start().gap_2()
                             .child(div().id("chatter-avatar").flex_shrink_0().tooltip(crate::media_hover::image_card(profile.display_name.clone(),"Twitch profile picture".into(),avatar.clone())).child(crate::emote_picker::icon(avatar,String::new(),48.,48.)))
                             .child(div().v_flex().gap_1().flex_1().min_w_0().child(profile.display_name)
-                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Created · {}",created_label(&profile.created))))
+                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(match followers{
+                                    Some(n)=>format!("Created · {} · {} follower{}",created_label(&profile.created),group_digits(n),if n==1{""}else{"s"}),
+                                    None=>format!("Created · {}",created_label(&profile.created)),
+                                }))
                                 .when(!profile.role.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(profile.role)))))
                             .when(!profile.description.is_empty(),|el|el.child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(profile.description))))
                         .child(login.clone().map(|login|format!("@{login}" )).unwrap_or_else(||"Login unavailable".into()))
@@ -1179,6 +1185,18 @@ impl ChannelPane {
     }
 }
 
+/// 12345 → "12,345".
+fn group_digits(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
 /// Twitch returns RFC 3339 timestamps; cards show a readable local date.
 fn created_label(raw: &str) -> String {
     chrono::DateTime::parse_from_rfc3339(raw)
@@ -1192,6 +1210,12 @@ fn created_label(raw: &str) -> String {
 
 #[cfg(test)]
 mod web_search_tests {
+    #[test]
+    fn digits_are_grouped() {
+        assert_eq!(super::group_digits(0), "0");
+        assert_eq!(super::group_digits(999), "999");
+        assert_eq!(super::group_digits(12_345_678), "12,345,678");
+    }
     #[test]
     fn queries_are_encoded() {
         assert_eq!(
