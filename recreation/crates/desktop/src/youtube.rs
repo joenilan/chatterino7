@@ -707,9 +707,13 @@ mod tests {
     #[test]
     fn moderation_events() {
         let deleted = json!({"snippet": {"type": "messageDeletedEvent", "messageDeletedDetails": {"deletedMessageId": "m1"}}});
-        assert!(matches!(moderation("yt", &deleted), Some(chat_core::Event::DeleteMessage { message_id, .. }) if message_id == "m1"));
+        assert!(
+            matches!(moderation("yt", &deleted), Some(chat_core::Event::DeleteMessage { message_id, .. }) if message_id == "m1")
+        );
         let banned = json!({"snippet": {"type": "userBannedEvent", "userBannedDetails": {"bannedUserDetails": {"channelId": "UC1"}}}});
-        assert!(matches!(moderation("yt", &banned), Some(chat_core::Event::ClearUser { user_id, .. }) if user_id == "yt:UC1"));
+        assert!(
+            matches!(moderation("yt", &banned), Some(chat_core::Event::ClearUser { user_id, .. }) if user_id == "yt:UC1")
+        );
         assert!(moderation("yt", &json!({"snippet": {"type": "textMessageEvent"}})).is_none());
     }
     #[test]

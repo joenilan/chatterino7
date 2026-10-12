@@ -123,13 +123,14 @@ fn fetch(broadcaster_id: &str, identity: &Identity) -> Option<Session> {
     Some(Session { participants })
 }
 
-/// Settings → Chat → Shared chat: 0 avatar rings, 1 rings and dim other channels,
-/// 2 off. No background or stripe: those mean highlights (raids, mentions…).
-/// Your own channel's messages always stay plain.
+/// Settings → Chat → Shared chat: 0 bar + avatar ring, 1 ring only, 2 bar + ring
+/// and dim other channels, 3 off. The bar is a short rounded pill, unlike a
+/// highlight's flat full-height edge, and there's never a background tint
+/// (that means highlights: raids, mentions…). Your own chat always stays plain.
 pub static STYLE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
-pub const STYLES: [&str; 3] = ["Avatar rings", "Rings + dim others", "Off"];
+pub const STYLES: [&str; 4] = ["Bar + ring", "Ring only", "Bar + ring, dim others", "Off"];
 pub fn style() -> u8 {
-    STYLE.load(std::sync::atomic::Ordering::Relaxed).min(2)
+    STYLE.load(std::sync::atomic::Ordering::Relaxed).min(3)
 }
 
 /// Guest-channel ring colours: distinct from each other; no greens (raid highlights).

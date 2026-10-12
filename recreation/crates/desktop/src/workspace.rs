@@ -711,7 +711,7 @@ impl Workbench {
                 );
                 crate::chat_search::load_saved(&state["saved_filters"]);
                 crate::shared_chat::STYLE.store(
-                    state["shared_chat_look"].as_u64().unwrap_or(0).min(2) as u8,
+                    state["shared_chat_look"].as_u64().unwrap_or(0).min(3) as u8,
                     std::sync::atomic::Ordering::Relaxed,
                 );
                 chat_core::NAME_MODE.store(

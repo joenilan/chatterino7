@@ -1077,6 +1077,8 @@ impl Render for ChannelPane {
                                 .when(message.deleted, |el| el.opacity(0.45))
                                 // Settings → Appearance → Alternate row backgrounds (Chatterino's option).
                                 .when(theme::alternate_rows() && row % 2 == 1, |el| el.bg(rgba(0xFFFFFF07)))
+                                // Shared Chat: a short rounded bar in the guest channel's colour, in the row's left gutter.
+                                .when_some(message.presentation.source_id.as_ref().filter(|_| shared_style == 0 || shared_style == 2).map(|id| shared_colors.get(id).copied().unwrap_or_else(|| shared_chat::color_of(id))), |el, color| el.child(div().absolute().left(px(1.)).top(px(4.)).bottom(px(4.)).w(px(3.)).rounded_full().bg(rgb(color))))
                                 .when(theme::flag(&theme::SEPARATORS), |el| el.child(div().absolute().left_0().right_0().bottom_0().h(px(1.)).bg(rgb(theme::BORDER))))
                                 .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(0xA99CF40D)).py(px(2.)).rounded_r(px(4.)))
                                 .when(highlight_rows.contains(&row),|el|{let (_,accent,background)=highlight_rules::COLORS[highlight_colors.get(&row).copied().unwrap_or(0)];el.bg(rgb(background)).border_color(rgb(accent)).py(px(2.)).rounded_r(px(4.))})
@@ -1093,7 +1095,7 @@ impl Render for ChannelPane {
                                 .left(px(12.0 * (1.0 - eased)))
                                 .top(px(6.0 * (1.0 - eased)))
                                 // Recent history is dimmed, as in Chatterino.
-                                .opacity((if message.presentation.similar { 0.4 } else if message.presentation.historical { 0.6 } else { 0.25 + 0.75 * eased }) * if shared_style == 1 && message.presentation.source_id.is_some() { 0.55 } else { 1.0 })
+                                .opacity((if message.presentation.similar { 0.4 } else if message.presentation.historical { 0.6 } else { 0.25 + 0.75 * eased }) * if shared_style == 2 && message.presentation.source_id.is_some() { 0.55 } else { 1.0 })
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()
@@ -1155,7 +1157,7 @@ impl Render for ChannelPane {
                                     let name = profile_name.or_else(|| message.presentation.source.clone().filter(|s| s != "Shared Chat")).unwrap_or_else(|| "another channel".into());
                                     let image = avatar.and_then(|key| media.borrow_mut().get(&key, cx));
                                     // Ringed in the channel's colour, matching its bubble at the top of the chat.
-                                    let ring = (shared_style < 2).then(|| shared_colors.get(&source_id).copied().unwrap_or_else(|| shared_chat::color_of(&source_id)));
+                                    let ring = (shared_style < 3).then(|| shared_colors.get(&source_id).copied().unwrap_or_else(|| shared_chat::color_of(&source_id)));
                                     el.child(div().id(SharedString::from(format!("shared-{source_id}"))).w(px(20.)).h(first_line_height).flex().items_center().flex_shrink_0()
                                         .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(format!("Shared Chat · sent in {name}'s channel")).build(w, cx))
                                         .child(div().size(px(20.)).rounded_full().flex().items_center().justify_center().when_some(ring, |el, ring| el.border_2().border_color(rgb(ring))).child(match image {
