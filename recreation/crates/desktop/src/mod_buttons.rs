@@ -1,7 +1,8 @@
 //! Your own moderator buttons (Chatterino's moderation buttons): a short label
 //! and a moderation command template. `{user}`, `{msg-id}` and `{channel}` are
-//! filled from the message. Only Twitch moderation commands are accepted, so
-//! a button can never post plain chat.
+//! filled from the message. Any /command is accepted (Twitch's, Jawjack's or
+//! your custom commands), never plain text, so a button can't post chat by
+//! itself.
 use serde_json::{Value, json};
 
 pub const MAX: usize = 8;
@@ -12,7 +13,7 @@ pub struct ModButton {
     pub command: String,
 }
 
-/// Commands a button may run.
+/// Suggested commands (any /command works).
 const ALLOWED: [&str; 10] = [
     "/timeout",
     "/untimeout",
@@ -37,8 +38,11 @@ pub fn validate(label: &str, command: &str) -> Result<ModButton, String> {
         .next()
         .unwrap_or("")
         .to_ascii_lowercase();
-    if !ALLOWED.contains(&name.as_str()) {
-        return Err(format!("Use a moderation command: {}.", ALLOWED.join(", ")));
+    if !name.starts_with('/') || name.len() < 2 {
+        return Err(format!(
+            "Use a /command, such as {}, or one of your custom commands.",
+            ALLOWED.join(", ")
+        ));
     }
     if command.chars().count() > 300 {
         return Err("Keep the command under 300 characters.".into());

@@ -818,10 +818,11 @@ impl ChannelPane {
                 match crate::twitch_actions::parse(&name, &args) {
                     Some(Ok(request)) => cx.emit(moderate(request)),
                     Some(Err(problem)) => window.push_notification(Notification::info(problem), cx),
-                    None => window.push_notification(
-                        Notification::info(format!("{name} isn't a command Jawjack can run.")),
-                        cx,
-                    ),
+                    // Jawjack's own and custom commands run as if typed.
+                    None => {
+                        let line = format!("{name} {args}");
+                        self.route_command(line.trim(), window, cx);
+                    }
                 }
             }
             Action::ModTimeout(seconds) => {

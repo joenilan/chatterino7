@@ -1035,7 +1035,7 @@ impl Workbench {
             .border_color(rgb(theme::BORDER))
             .child(div().text_size(px(13.)).child("Your moderator buttons"))
             .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
-                "Shown after delete, timeout and ban in moderator mode. {user}, {msg-id} and {channel} are filled from the message. Moderation commands only.",
+                "Shown after delete, timeout and ban in moderator mode. {user}, {msg-id} and {channel} are filled from the message. Any /command, including your custom commands.",
             ))
             .children(buttons.iter().enumerate().map(|(index, b)| {
                 div()

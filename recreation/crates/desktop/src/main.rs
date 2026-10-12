@@ -1237,8 +1237,9 @@ impl Render for ChannelPane {
                                         div().id(SharedString::from(format!("{id}-{}", message.id))).size(px(16.)).h(first_line_height).flex_shrink_0().flex().items_center().justify_center()
                                             .text_color(rgb(theme::MUTED)).cursor_pointer().hover(move |s| s.text_color(rgb(hover)))
                                             .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(tip).build(w, cx))
-                                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                            .on_click(move |_, window, cx| {
+                                            // Act on press, in capture: the row's own handlers would swallow a click.
+                                            .capture_any_mouse_down(move |event: &MouseDownEvent, window, cx| {
+                                                if event.button != MouseButton::Left { return; }
                                                 cx.stop_propagation();
                                                 let action = action.clone();
                                                 let _ = owner.update(cx, |p, cx| p.message_action(&message_id, action, window, cx));
@@ -1255,8 +1256,8 @@ impl Render for ChannelPane {
                                                 .rounded(px(3.)).text_size(px(10.)).text_color(rgb(theme::MUTED)).cursor_pointer()
                                                 .hover(|s| s.text_color(rgb(theme::TEXT)).bg(rgb(theme::HOVER)))
                                                 .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(w, cx))
-                                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                                .on_click(move |_, window, cx| {
+                                                .capture_any_mouse_down(move |event: &MouseDownEvent, window, cx| {
+                                                    if event.button != MouseButton::Left { return; }
                                                     cx.stop_propagation();
                                                     let action = message_actions::Action::ModCustom(command.clone());
                                                     let _ = owner.update(cx, |p, cx| p.message_action(&message_id, action, window, cx));
