@@ -113,10 +113,42 @@ fn redact(message: &mut Message) {
     message.deleted = true;
 }
 
+/// What a live IRC line means, for guest (signed-out) reading.
+pub enum Live {
+    Message(Message),
+    Delete(String),
+    ClearUser(String),
+    Clear,
+    /// The channel's Twitch ID (ROOMSTATE), for its emotes.
+    Room(String),
+}
+/// Parse one live IRC line into (channel login, event).
+pub fn live_line(line: &str) -> Option<(String, Live)> {
+    let irc = Irc::parse(line)?;
+    let channel = irc.target.strip_prefix('#')?.to_ascii_lowercase();
+    let live = match irc.command {
+        "PRIVMSG" | "USERNOTICE" => {
+            let mut message = message(&irc, &channel)?;
+            message.presentation.historical = false;
+            Live::Message(message)
+        }
+        "CLEARMSG" => Live::Delete(irc.tags.get("target-msg-id")?.clone()),
+        "CLEARCHAT" => match irc.tags.get("target-user-id") {
+            Some(user) => Live::ClearUser(user.clone()),
+            None => Live::Clear,
+        },
+        "ROOMSTATE" => Live::Room(irc.tags.get("room-id").filter(|id| !id.is_empty())?.clone()),
+        _ => return None,
+    };
+    Some((channel, live))
+}
+
 struct Irc<'a> {
     tags: HashMap<&'a str, String>,
     nick: &'a str,
     command: &'a str,
+    /// The first parameter: "#channel" for chat lines.
+    target: &'a str,
     text: &'a str,
 }
 impl<'a> Irc<'a> {
@@ -138,6 +170,7 @@ impl<'a> Irc<'a> {
             rest = after;
         }
         let (command, after) = rest.split_once(' ').unwrap_or((rest, ""));
+        let target = after.split(' ').next().unwrap_or("");
         // The trailing parameter only needs a colon when it contains spaces,
         // so a one-word message arrives as `#channel word`.
         let text = match after.split_once(" :") {
@@ -148,6 +181,7 @@ impl<'a> Irc<'a> {
             tags,
             nick,
             command,
+            target,
             text,
         })
     }
@@ -319,6 +353,24 @@ mod tests {
         let lines =
             ["@display-name=K;id=k1;room-id=1;user-id=12 :k!k@k.tmi.twitch.tv PRIVMSG #chan HOT*"];
         assert_eq!(convert(&lines, "chan")[0].body(), "HOT*");
+    }
+    #[test]
+    fn live_lines() {
+        let (channel, live) = live_line("@badges=;display-name=Al;id=x1;room-id=5;user-id=9 :al!al@al.tmi.twitch.tv PRIVMSG #Chan :hi there").unwrap();
+        assert_eq!(channel, "chan");
+        assert!(
+            matches!(live, Live::Message(m) if m.body() == "hi there" && !m.presentation.historical)
+        );
+        assert!(
+            matches!(live_line("@room-id=5;slow=0 :tmi.twitch.tv ROOMSTATE #chan").unwrap().1, Live::Room(id) if id == "5")
+        );
+        assert!(matches!(
+            live_line("@room-id=5 :tmi.twitch.tv CLEARCHAT #chan")
+                .unwrap()
+                .1,
+            Live::Clear
+        ));
+        assert!(live_line(":tmi.twitch.tv 001 justinfan1 :Welcome").is_none());
     }
     #[test]
     fn escaped_tags() {

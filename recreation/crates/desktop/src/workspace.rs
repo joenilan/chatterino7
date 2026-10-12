@@ -280,6 +280,8 @@ pub struct Workbench {
     streamer_live: bool,
     restore_popouts: Vec<String>,
     live: crate::live::LiveChat,
+    /// Guest (read-only) chat while no account is signed in.
+    anon: crate::anon_chat::AnonChat,
     streams: crate::stream_status::Streams,
     capabilities: crate::capabilities::Capabilities,
     experience: roles::Experience,
@@ -562,6 +564,7 @@ impl Workbench {
             activity_all: false,
             zoom_accumulator: 0.,
             live: crate::live::LiveChat::new(),
+            anon: crate::anon_chat::AnonChat::new(),
             streams: crate::stream_status::Streams::new(),
             capabilities: crate::capabilities::Capabilities::new(),
             experience: roles::Experience::from_key(state["experience"].as_str().unwrap_or("")),
@@ -1299,6 +1302,12 @@ impl Workbench {
             .cloned()
             .collect();
         let own = self.account.read(cx).login();
+        // Signed out: read chat as a guest until an account is added.
+        self.anon.configure(if identity.is_none() {
+            priority.clone()
+        } else {
+            Vec::new()
+        });
         if self
             .live
             .configure(identity.clone(), priority, moderated, own)
@@ -1317,8 +1326,15 @@ impl Workbench {
                 });
             }
         }
+        let guest = identity.is_none();
         for _ in 0..500 {
-            let Ok((version, event)) = self.live.events.try_recv() else {
+            // Guest events count as current only while still signed out.
+            let Ok((version, event)) = self.live.events.try_recv().or_else(|_| {
+                self.anon
+                    .events
+                    .try_recv()
+                    .map(|event| (if guest { self.live.version() } else { u64::MAX }, event))
+            }) else {
                 break;
             };
             if version != self.live.version() && !matches!(event, crate::live::Event::Sent(..)) {
