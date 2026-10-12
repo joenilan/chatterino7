@@ -75,7 +75,7 @@ Chatterino import.
 - [ ] Mod buttons: ~~any command~~ done (any /command, incl. custom commands); image icons (S)
 - [x] Timestamps: 12-hour, custom format, hide while live (S)
 - [x] Streamer mode: hide avatars, link previews, viewers/uptime, mod actions, restricted users, blocked terms; suppress live alerts (S)
-- [ ] Live alerts: ~~followed channels not open as tabs~~ done; sound, flash, /live split (M)
+- [x] Live alerts: followed channels not open as tabs, /live tab, sound and taskbar flash (Notifications → With each live alert; not yet seen on a real go-live) (M)
 - [x] Link previews: thumbnails; Twitch clip/VOD/channel cards (M)
 - [ ] AutoMod: inline caught rows, blocked-term messages, own-held notice (M)
 - [ ] Chat logs: ~~channel allow-list (tab menu → Log this channel), timestamp format~~ done; per-stream logs (S)

@@ -37,6 +37,15 @@ impl Workbench {
             flash_taskbar(window);
         }
     }
+    /// After a live alert: your ping sound and a taskbar flash, when turned on.
+    pub(super) fn live_alert_extras(&self, window: &Window) {
+        if self.live_alert_sound && !(self.streamer_live && self.streamer_mute) {
+            crate::sound::play(&self.sound_tone, self.sound_volume);
+        }
+        if self.live_alert_flash && !window.is_window_active() {
+            flash_taskbar(window);
+        }
+    }
     fn choose_sound(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,

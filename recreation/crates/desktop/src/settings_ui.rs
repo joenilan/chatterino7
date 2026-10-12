@@ -860,6 +860,24 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "With each live alert",
+                    "Also play your ping sound, and flash Jawjack's taskbar button until you look.",
+                    div().h_flex().gap_3()
+                        .child(gpui_kit::component::checkbox::Checkbox::new("settings-live-sound").label("Sound").checked(self.live_alert_sound).on_click(cx.listener(|this, on: &bool, _, cx| {
+                            this.live_alert_sound = *on;
+                            if *on {
+                                crate::sound::play(&this.sound_tone, this.sound_volume);
+                            }
+                            this.schedule_save(cx);
+                            cx.notify();
+                        })))
+                        .child(gpui_kit::component::checkbox::Checkbox::new("settings-live-flash").label("Flash taskbar").checked(self.live_alert_flash).on_click(cx.listener(|this, on: &bool, _, cx| {
+                            this.live_alert_flash = *on;
+                            this.schedule_save(cx);
+                            cx.notify();
+                        }))),
+                ))
+                .child(row(
                     "Whispers",
                     "A notification for each whisper unless that conversation is open.",
                     div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Always on"),

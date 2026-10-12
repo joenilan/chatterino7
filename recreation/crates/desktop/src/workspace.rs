@@ -344,6 +344,9 @@ pub struct Workbench {
     live_notify: Vec<String>,
     /// Channels whose mentions and highlights don't play a sound.
     muted_pings: Vec<String>,
+    /// Live alerts also play your ping sound / flash the taskbar.
+    live_alert_sound: bool,
+    live_alert_flash: bool,
     /// Tabs whose plain new messages don't count as unread (highlights still do).
     quiet_unread: Vec<String>,
     live_notify_all: bool,
@@ -662,6 +665,8 @@ impl Workbench {
             live_notify_all: state["live_notify_all"].as_bool().unwrap_or(false),
             live_notify_follows: state["live_notify_follows"].as_bool().unwrap_or(false),
             next_notice: 0,
+            live_alert_sound: state["live_alert_sound"].as_bool().unwrap_or(false),
+            live_alert_flash: state["live_alert_flash"].as_bool().unwrap_or(false),
             quiet_unread: state["quiet_unread"]
                 .as_array()
                 .into_iter()
@@ -2713,6 +2718,7 @@ impl Workbench {
                     }),
                 cx,
             );
+            self.live_alert_extras(window);
         }
         for (channel, info) in self.streams.take_went_live() {
             let detail = [info.title.as_str(), info.category.as_str()]
@@ -2744,6 +2750,7 @@ impl Workbench {
                     }),
                 cx,
             );
+            self.live_alert_extras(window);
         }
     }
     /// Joins and parts, gathered for a few seconds then posted as one line each
@@ -3123,6 +3130,8 @@ impl Workbench {
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
         value["quiet_unread"] = json!(self.quiet_unread);
+        value["live_alert_sound"] = json!(self.live_alert_sound);
+        value["live_alert_flash"] = json!(self.live_alert_flash);
         value["paint_options"] = json!([
             crate::name_paint::paint_option(0),
             crate::name_paint::paint_option(1)
