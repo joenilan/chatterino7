@@ -42,7 +42,7 @@ Chatterino import.
 - [ ] Overlay window: transparent, click-through, opacity (L)
 - [ ] Tab menu: ~~Close others / to the right, Sort A–Z, Duplicate (workspace), Lock layout~~ done; Hide all tabs, highlight on new messages (S each)
 - [ ] Tab position and style (M) [partly design]
-- [ ] Change channel of an existing split (S)
+- [x] Change channel of an existing split (tab menu → Change channel…)
 - [ ] Input options: hide when empty, send button, reply on hover, hide reply context, strip leading mention (S)
 - [ ] Header: Subscribe, Mod view, Changelog, room modes menu, custom player URI (S each)
 

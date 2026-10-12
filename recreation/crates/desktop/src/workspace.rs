@@ -369,6 +369,8 @@ pub struct Workbench {
     channel_input: Entity<InputState>,
     adding: bool,
     renaming: bool,
+    /// Tab menu → Change channel: the channel the Add box replaces.
+    replacing: Option<String>,
     add_target: Option<String>,
     selected_channel: Option<String>,
     /// Workspace IDs, most recently activated first; orders live connections.
@@ -949,6 +951,7 @@ impl Workbench {
             channel_input: input,
             adding: false,
             renaming: false,
+            replacing: None,
             add_target: None,
             selected_channel: None,
             recent_workspaces: Vec::new(),
@@ -3214,6 +3217,7 @@ impl Workbench {
     fn open_add(&mut self, rename: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.adding = true;
         self.renaming = rename;
+        self.replacing = None;
         self.add_target = None;
         self.add_error = None;
         let value = if rename {
@@ -3483,6 +3487,27 @@ impl Workbench {
                 return;
             }
             self.add_channel_to_active(channel, window, cx);
+        }
+        // Change channel: the new tab takes the old one's place, then it closes.
+        if let Some(old) = self.replacing.take()
+            && let Some(new) = self.tabs[self.active]
+                .panes
+                .last()
+                .map(|p| p.read(cx).name.to_string())
+            && new != old
+        {
+            if let Some(dock) = &mut self.tabs[self.active].dock {
+                dock.reorder_before(&new, Some(&old));
+                dock.select(&new);
+            }
+            if let Some(pane) = self.tabs[self.active]
+                .panes
+                .iter()
+                .find(|p| p.read(cx).name.as_ref() == old)
+                .cloned()
+            {
+                pane.update(cx, |_, cx| cx.emit(PaneEvent::Close));
+            }
         }
         self.adding = false;
         self.focus.focus(window, cx);
@@ -4314,6 +4339,7 @@ impl Workbench {
                                 let pinned_now = owner
                                     .upgrade()
                                     .is_some_and(|o| o.read(cx).is_pinned(&menu_channel, cx));
+                                let menu_special = crate::combined::is_special(&menu_channel);
                                 let notify_owner = owner.clone();
                                 let notify_channel = menu_channel.clone();
                                 let notify_now = owner.upgrade().is_some_and(|o| {
@@ -4338,7 +4364,7 @@ impl Workbench {
                                         },
                                     ),
                                 )
-                                .item(
+                                .item_if(!menu_special,
                                     PopupMenuItem::new("Notify when live")
                                         .checked(notify_now)
                                         .on_click(move |_, _, cx| {
@@ -4347,7 +4373,7 @@ impl Workbench {
                                             });
                                         }),
                                 )
-                                .item(
+                                .item_if(!menu_special,
                                     PopupMenuItem::new("Mute ping sounds here")
                                         .checked(muted_now)
                                         .on_click(move |_, _, cx| {
@@ -4414,7 +4440,7 @@ impl Workbench {
                                         menu
                                     },
                                 )
-                                .item(PopupMenuItem::new("Channel details · Ctrl+I").on_click(
+                                .item_if(!menu_special, PopupMenuItem::new("Channel details · Ctrl+I").on_click(
                                     move |_, w, cx| {
                                         let _ = details.update(cx, |this, cx| {
                                             this.open_channel_details(
@@ -4443,7 +4469,7 @@ impl Workbench {
                                         });
                                     },
                                 ))
-                                .item(PopupMenuItem::new("Reconnect").on_click({
+                                .item_if(!menu_special, PopupMenuItem::new("Reconnect").on_click({
                                     let owner = owner.clone();
                                     let channel = menu_channel.clone();
                                     move |_, window, cx| {
@@ -4461,7 +4487,26 @@ impl Workbench {
                                         );
                                     }
                                 }))
-                                .item(PopupMenuItem::new("Reload emotes").on_click({
+                                .item(PopupMenuItem::new("Change channel…").on_click({
+                                    let owner = owner.clone();
+                                    let channel = menu_channel.clone();
+                                    move |_, window, cx| {
+                                        let _ = owner.update(cx, |this, cx| {
+                                            if this.tabs[this.active].locked {
+                                                window.push_notification(
+                                                    Notification::info("This workspace's layout is locked. Right-click it in the sidebar → Unlock layout."),
+                                                    cx,
+                                                );
+                                                return;
+                                            }
+                                            this.open_add(false, window, cx);
+                                            this.replacing = Some(channel.clone());
+                                            this.add_target = Some(channel.clone());
+                                            cx.notify();
+                                        });
+                                    }
+                                }))
+                                .item_if(!menu_special, PopupMenuItem::new("Reload emotes").on_click({
                                     let owner = owner.clone();
                                     let channel = menu_channel.clone();
                                     move |_, window, cx| {
@@ -4497,15 +4542,15 @@ impl Workbench {
                                     }
                                 }))
                                 .separator()
-                                .item(
+                                .item_if(!menu_special,
                                     PopupMenuItem::new("Open stream in browser")
                                         .on_click(move |_, _, cx| cx.open_url(&open_url)),
                                 )
-                                .item(PopupMenuItem::new("Open player pop-out").on_click({
+                                .item_if(!menu_special, PopupMenuItem::new("Open player pop-out").on_click({
                                     let url = crate::streamlink::player_url(&menu_channel);
                                     move |_, _, cx| cx.open_url(&url)
                                 }))
-                                .item(PopupMenuItem::new("Open in Streamlink").on_click({
+                                .item_if(!menu_special, PopupMenuItem::new("Open in Streamlink").on_click({
                                     let channel = menu_channel.clone();
                                     move |_, window, cx| {
                                         let note = match crate::streamlink::open(&channel) {
@@ -4515,7 +4560,7 @@ impl Workbench {
                                         window.push_notification(Notification::info(note), cx);
                                     }
                                 }))
-                                .item(PopupMenuItem::new("Copy channel URL").on_click(
+                                .item_if(!menu_special, PopupMenuItem::new("Copy channel URL").on_click(
                                     move |_, window, cx| {
                                         cx.write_to_clipboard(ClipboardItem::new_string(
                                             copy_url.clone(),
@@ -6119,9 +6164,11 @@ impl Render for Workbench {
                                         .border_b_1()
                                         .border_color(rgb(theme::BORDER))
                                         .child(div().text_size(px(12.)).child(if self.renaming {
-                                            "Rename workspace"
+                                            "Rename workspace".to_owned()
+                                        } else if let Some(old) = &self.replacing {
+                                            format!("Change {} to another channel", crate::combined::special_title(old).map(str::to_owned).unwrap_or_else(|| format!("#{}", crate::combined::title(old))))
                                         } else {
-                                            "Add a channel to this workspace"
+                                            "Add a channel to this workspace".to_owned()
                                         }))
                                         .child(
                                             div()
@@ -6136,6 +6183,8 @@ impl Render for Workbench {
                                                     Button::new("accept-channel")
                                                         .label(if self.renaming {
                                                             "Save"
+                                                        } else if self.replacing.is_some() {
+                                                            "Change"
                                                         } else {
                                                             "Add channel"
                                                         })
@@ -6272,4 +6321,14 @@ fn stream_marker(channel: &str, status: Option<bool>) -> impl IntoElement {
                 .child("◇")
                 .into_any_element(),
         })
+}
+
+/// Menu items that only apply sometimes (e.g. not on Mentions/Whispers/Live).
+trait ItemIf {
+    fn item_if(self, show: bool, item: PopupMenuItem) -> Self;
+}
+impl ItemIf for gpui_kit::component::menu::PopupMenu {
+    fn item_if(self, show: bool, item: PopupMenuItem) -> Self {
+        if show { self.item(item) } else { self }
+    }
 }
