@@ -93,7 +93,148 @@ fn warnings(url: &str) -> Vec<String> {
     out
 }
 
+/// The signed-in Twitch session, for rich Twitch link cards (Helix needs one).
+static TWITCH: Mutex<Option<crate::live::Identity>> = Mutex::new(None);
+pub fn set_identity(identity: Option<crate::live::Identity>) {
+    if let Ok(mut slot) = TWITCH.lock() {
+        *slot = identity;
+    }
+}
+
+/// What a twitch.tv link points at.
+#[derive(Debug, PartialEq)]
+enum TwitchLink {
+    Channel(String),
+    Clip(String),
+    Video(String),
+}
+fn twitch_link(url: &str) -> Option<TwitchLink> {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    let host = parsed
+        .host_str()?
+        .trim_start_matches("www.")
+        .trim_start_matches("m.");
+    let parts: Vec<&str> = parsed.path_segments()?.filter(|p| !p.is_empty()).collect();
+    let id = |s: &str| {
+        (!s.is_empty()
+            && s.len() <= 100
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'))
+        .then(|| s.to_owned())
+    };
+    match (host, parts.as_slice()) {
+        ("clips.twitch.tv", [slug]) => id(slug).map(TwitchLink::Clip),
+        ("twitch.tv", [_, "clip", slug]) => id(slug).map(TwitchLink::Clip),
+        ("twitch.tv", ["videos", video]) => id(video)
+            .filter(|v| v.bytes().all(|b| b.is_ascii_digit()))
+            .map(TwitchLink::Video),
+        ("twitch.tv", [login]) => chat_core::twitch_login(login).map(TwitchLink::Channel),
+        _ => None,
+    }
+}
+fn helix(
+    client: &reqwest::blocking::Client,
+    identity: &crate::live::Identity,
+    path: &str,
+    query: &[(&str, &str)],
+) -> Option<serde_json::Value> {
+    let response = client
+        .get(format!("https://api.twitch.tv/helix/{path}"))
+        .query(query)
+        .header("Client-Id", crate::auth::CLIENT_ID)
+        .bearer_auth(&identity.access)
+        .send()
+        .ok()?;
+    let (status, value) = crate::live::response_json(response).ok()?;
+    (status == 200).then_some(value)
+}
+fn count(n: u64) -> String {
+    crate::follows_live::viewers(n)
+}
+/// A Twitch channel, clip or VOD card from Helix, like Chatterino's.
+fn twitch_card(url: &str, link: TwitchLink) -> Option<Preview> {
+    let identity = TWITCH.lock().ok()?.clone()?;
+    let client = crate::live::client().ok()?;
+    let mut preview = Preview {
+        site: "Twitch".into(),
+        warnings: warnings(url),
+        ..Default::default()
+    };
+    match link {
+        TwitchLink::Clip(slug) => {
+            let v = helix(&client, &identity, "clips", &[("id", &slug)])?;
+            let c = &v["data"][0];
+            preview.site = "Twitch clip".into();
+            preview.title = clip(c["title"].as_str()?, 160);
+            preview.description = format!(
+                "{} · clipped by {} · {} views · {}s",
+                c["broadcaster_name"].as_str().unwrap_or(""),
+                c["creator_name"].as_str().unwrap_or(""),
+                count(c["view_count"].as_u64().unwrap_or(0)),
+                c["duration"].as_f64().unwrap_or(0.).round()
+            );
+            preview.image = c["thumbnail_url"].as_str().map(str::to_owned);
+        }
+        TwitchLink::Video(video) => {
+            let v = helix(&client, &identity, "videos", &[("id", &video)])?;
+            let d = &v["data"][0];
+            preview.site = "Twitch video".into();
+            preview.title = clip(d["title"].as_str()?, 160);
+            preview.description = format!(
+                "{} · {} · {} views",
+                d["user_name"].as_str().unwrap_or(""),
+                d["duration"].as_str().unwrap_or(""),
+                count(d["view_count"].as_u64().unwrap_or(0))
+            );
+            preview.image = d["thumbnail_url"]
+                .as_str()
+                .map(|t| t.replace("%{width}", "320").replace("%{height}", "180"))
+                .filter(|t| !t.is_empty());
+        }
+        TwitchLink::Channel(login) => {
+            let users = helix(&client, &identity, "users", &[("login", &login)])?;
+            let user = &users["data"][0];
+            let name = user["display_name"].as_str()?.to_owned();
+            let stream = helix(&client, &identity, "streams", &[("user_login", &login)])
+                .map(|v| v["data"][0].clone())
+                .filter(|s| s.is_object());
+            preview.site = "Twitch channel".into();
+            preview.title = name;
+            match &stream {
+                Some(s) => {
+                    preview.description = format!(
+                        "Live: {} · {} · {} viewers",
+                        s["title"].as_str().unwrap_or(""),
+                        s["game_name"].as_str().unwrap_or(""),
+                        count(s["viewer_count"].as_u64().unwrap_or(0))
+                    );
+                    preview.image = s["thumbnail_url"]
+                        .as_str()
+                        .map(|t| t.replace("{width}", "320").replace("{height}", "180"));
+                }
+                None => {
+                    let bio = user["description"].as_str().unwrap_or("");
+                    preview.description = if bio.is_empty() {
+                        "Offline".into()
+                    } else {
+                        format!("Offline · {bio}")
+                    };
+                    preview.image = user["profile_image_url"].as_str().map(str::to_owned);
+                }
+            }
+            preview.description = clip(&preview.description, 300);
+        }
+    }
+    Some(preview)
+}
+
 fn fetch(url: &str) -> Result<Preview, String> {
+    // Twitch links get a real card (needs the signed-in session); else the page.
+    if let Some(link) = twitch_link(url)
+        && let Some(card) = twitch_card(url, link)
+    {
+        return Ok(card);
+    }
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(6))
         .redirect(reqwest::redirect::Policy::limited(5))
@@ -249,5 +390,25 @@ mod tests {
         assert!(warnings("http://example.com")[0].contains("http"));
         assert!(warnings("https://example.com").is_empty());
         assert_eq!(host("https://www.YouTube.com/watch"), "youtube.com");
+        assert_eq!(
+            twitch_link("https://twitch.tv/mittensgg"),
+            Some(TwitchLink::Channel("mittensgg".into()))
+        );
+        assert_eq!(
+            twitch_link("https://clips.twitch.tv/FunnyClip-abc_1"),
+            Some(TwitchLink::Clip("FunnyClip-abc_1".into()))
+        );
+        assert_eq!(
+            twitch_link("https://www.twitch.tv/x/clip/Slug"),
+            Some(TwitchLink::Clip("Slug".into()))
+        );
+        assert_eq!(
+            twitch_link("https://www.twitch.tv/videos/123"),
+            Some(TwitchLink::Video("123".into()))
+        );
+        assert_eq!(
+            twitch_link("https://twitch.tv/directory/category/art"),
+            None
+        );
     }
 }

@@ -1105,6 +1105,7 @@ impl Workbench {
         self.pump_rewards(identity.as_ref(), window, cx);
         self.pump_youtube(cx);
         self.pump_shared_chat(identity.as_ref(), cx);
+        self.sync_link_preview_identity(cx);
         // Goals, charity and Shield Mode already running at sign-in.
         if let Some(identity) = identity.clone()
             && self.hype_loaded_for.as_deref() != Some(identity.user_id.as_str())
@@ -2969,6 +2970,10 @@ impl Workbench {
     }
     /// Shared Chat: look sessions up for channels showing messages from other
     /// channels, keep them fresh, and load the participants' names and avatars.
+    /// Rich Twitch link cards use the signed-in session.
+    fn sync_link_preview_identity(&self, cx: &App) {
+        crate::link_preview::set_identity(self.account.read(cx).identity());
+    }
     fn pump_shared_chat(
         &mut self,
         identity: Option<&crate::live::Identity>,
