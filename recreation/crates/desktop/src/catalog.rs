@@ -7,6 +7,13 @@ use std::{
     sync::mpsc,
     time::{Duration, Instant},
 };
+/// Settings → Emotes: which third-party emote providers to show (all on by default).
+pub static SEVEN_TV: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+pub static BTTV: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+pub static FFZ: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+pub fn on(provider: &std::sync::atomic::AtomicBool) -> bool {
+    provider.load(std::sync::atomic::Ordering::Relaxed)
+}
 #[derive(Clone, PartialEq, Eq)]
 struct Emote {
     id: String,
@@ -457,12 +464,15 @@ impl Catalog {
             asset: Some(e.asset.clone()),
         };
         let local = self.community.channels.get(channel);
+        let (seven, bttv, ffz) = (on(&SEVEN_TV), on(&BTTV), on(&FFZ));
         sender
+            .filter(|_| seven)
             .filter(|id| Some(*id) == self.personal_user.as_deref())
             .and_then(|_| self.personal.get(token))
             .map(make_seven)
             .or_else(|| {
                 sender
+                    .filter(|_| seven)
                     .and_then(|id| {
                         self.entitlements
                             .for_user(id)
@@ -472,25 +482,25 @@ impl Catalog {
             })
             .or_else(|| {
                 local
+                    .filter(|_| ffz)
                     .and_then(|s| s.ffz.get(token))
-                    .or_else(|| local.and_then(|s| s.bttv.get(token)))
+                    .or_else(|| local.filter(|_| bttv).and_then(|s| s.bttv.get(token)))
                     .cloned()
             })
             .or_else(|| {
                 self.channels
                     .get(channel)
+                    .filter(|_| seven)
                     .and_then(|s| s.get(token))
                     .map(make_seven)
             })
             .or_else(|| {
-                self.community
-                    .global
-                    .ffz
-                    .get(token)
-                    .or_else(|| self.community.global.bttv.get(token))
+                let global = &self.community.global;
+                (ffz.then(|| global.ffz.get(token)).flatten())
+                    .or_else(|| bttv.then(|| global.bttv.get(token)).flatten())
                     .cloned()
             })
-            .or_else(|| self.global.get(token).map(make_seven))
+            .or_else(|| self.global.get(token).filter(|_| seven).map(make_seven))
     }
     pub fn browser_status(&self, service: &str) -> String {
         let states = [

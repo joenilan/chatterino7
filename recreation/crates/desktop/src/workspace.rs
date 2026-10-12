@@ -697,6 +697,16 @@ impl Workbench {
                     state["link_previews"].as_bool().unwrap_or(true),
                     std::sync::atomic::Ordering::Relaxed,
                 );
+                for (key, flag) in [
+                    ("7tv", &crate::catalog::SEVEN_TV),
+                    ("bttv", &crate::catalog::BTTV),
+                    ("ffz", &crate::catalog::FFZ),
+                ] {
+                    flag.store(
+                        state["emote_providers"][key].as_bool().unwrap_or(true),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
                 state["spellcheck"].as_bool().unwrap_or(false)
             },
             own_youtube: None,
@@ -2452,6 +2462,11 @@ impl Workbench {
         value["similar_messages"] = json!(self.similar_mode.key());
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
+        value["emote_providers"] = json!({
+            "7tv": crate::catalog::on(&crate::catalog::SEVEN_TV),
+            "bttv": crate::catalog::on(&crate::catalog::BTTV),
+            "ffz": crate::catalog::on(&crate::catalog::FFZ),
+        });
         let mut filters = serde_json::Map::new();
         for tab in &self.tabs {
             for pane in &tab.panes {

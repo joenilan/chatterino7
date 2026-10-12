@@ -257,7 +257,7 @@ impl Workbench {
                 })
                 .child(row(
                     "Custom commands",
-                    "Your own /commands that expand into text.",
+                    "Your own /commands: text to send, or another command such as /timeout {1} 600.",
                     open_button("settings-commands", "Edit").on_click(cx.listener(|this, _, w, cx| this.open_custom_commands(None, w, cx))),
                 ))
                 .child(row(
@@ -277,6 +277,27 @@ impl Workbench {
                         this.schedule_save(cx);
                         cx.notify();
                     })),
+                ))
+                .child(row(
+                    "Emote providers",
+                    "Show emotes from these services in chat, the emote picker and Tab completion. Twitch emotes always show.",
+                    div().h_flex().gap_3().children(
+                        [
+                            ("settings-emotes-7tv", "7TV", &crate::catalog::SEVEN_TV),
+                            ("settings-emotes-bttv", "BTTV", &crate::catalog::BTTV),
+                            ("settings-emotes-ffz", "FFZ", &crate::catalog::FFZ),
+                        ]
+                        .map(|(id, label, flag)| {
+                            gpui_kit::component::checkbox::Checkbox::new(id)
+                                .label(label)
+                                .checked(crate::catalog::on(flag))
+                                .on_click(cx.listener(move |this, on: &bool, _, cx| {
+                                    flag.store(*on, std::sync::atomic::Ordering::Relaxed);
+                                    this.schedule_save(cx);
+                                    cx.notify();
+                                }))
+                        }),
+                    ),
                 ))
                 .child(row(
                     "Repeated messages",

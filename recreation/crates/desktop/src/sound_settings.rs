@@ -309,6 +309,16 @@ impl Workbench {
     }
 }
 
+/// Keep this window above other windows, or stop (Windows; no-op elsewhere).
+pub(crate) fn set_on_top(window: &Window, on: bool) -> bool {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    if let Ok(handle) = HasWindowHandle::window_handle(window)
+        && let RawWindowHandle::Win32(win32) = handle.as_raw()
+    {
+        return jawjack_taskbar::set_topmost(win32.hwnd.get(), on);
+    }
+    false
+}
 /// Flash this window's taskbar button (Windows; no-op elsewhere).
 fn flash_taskbar(window: &Window) {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};

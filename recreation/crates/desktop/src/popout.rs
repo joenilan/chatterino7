@@ -15,9 +15,11 @@ pub(super) struct Popout {
 pub(super) struct PopoutView {
     pane: Entity<ChannelPane>,
     channel: SharedString,
+    /// Kept above other windows (title bar pin).
+    on_top: bool,
 }
 impl Render for PopoutView {
-    fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .v_flex()
             .size_full()
@@ -52,6 +54,43 @@ impl Render for PopoutView {
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .child(format!("#{}", self.channel)),
                             ),
+                    )
+                    .child(
+                        div()
+                            .id("popout-on-top")
+                            .w(px(32.))
+                            .h(px(32.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .cursor_pointer()
+                            .text_color(rgb(if self.on_top {
+                                theme::ACCENT
+                            } else {
+                                theme::MUTED
+                            }))
+                            .hover(|style| style.bg(rgb(theme::HOVER)).text_color(rgb(theme::TEXT)))
+                            .tooltip({
+                                let on_top = self.on_top;
+                                move |w, cx| {
+                                    gpui_kit::component::tooltip::Tooltip::new(if on_top {
+                                        "Always on top: on (click to turn off)"
+                                    } else {
+                                        "Keep this window on top of others"
+                                    })
+                                    .build(w, cx)
+                                }
+                            })
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                if crate::workspace::sound_settings::set_on_top(
+                                    window,
+                                    !this.on_top,
+                                ) {
+                                    this.on_top = !this.on_top;
+                                    cx.notify();
+                                }
+                            }))
+                            .child(Icon::new(gpui_kit::assets::IconName::Pin).small()),
                     )
                     .child(caption_control(
                         "popout-minimize",
@@ -138,6 +177,7 @@ impl Workbench {
                 cx.new(|_| PopoutView {
                     pane,
                     channel: channel.clone().into(),
+                    on_top: false,
                 })
             });
             if let Ok((window, view)) = built {
