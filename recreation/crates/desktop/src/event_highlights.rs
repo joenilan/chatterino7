@@ -21,8 +21,9 @@ pub enum Kind {
     Reward,
     Announcement,
     FirstChatter,
+    OwnMessage,
 }
-pub const KINDS: [(Kind, &str, &str, &str); 7] = [
+pub const KINDS: [(Kind, &str, &str, &str); 8] = [
     (
         Kind::Mention,
         "mention",
@@ -60,13 +61,19 @@ pub const KINDS: [(Kind, &str, &str, &str); 7] = [
         "First-time chatters",
         "Twitch's first-chat introduction messages",
     ),
+    (
+        Kind::OwnMessage,
+        "own_message",
+        "Your own messages",
+        "What you send, so it's easy to find (never pings)",
+    ),
 ];
 const RAID_WINDOW: std::time::Duration = std::time::Duration::from_secs(30 * 60);
 
 /// Colour index into `COLORS` per kind; `None` turns that kind off.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct EventHighlights {
-    colors: [Option<usize>; 7],
+    colors: [Option<usize>; 8],
 }
 impl Default for EventHighlights {
     fn default() -> Self {
@@ -80,6 +87,7 @@ impl Default for EventHighlights {
                 Some(2),
                 Some(2),
                 Some(3),
+                None,
             ],
         }
     }

@@ -103,7 +103,7 @@ impl Attention {
         if let Some((user, _)) = &self.identity
             && &message.user_id == user
         {
-            return None;
+            return self.events.get(Kind::OwnMessage);
         }
         if let Some(color) =
             crate::highlight_rules::first_color(&self.rules, message, &self.channel)
