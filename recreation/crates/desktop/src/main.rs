@@ -8,6 +8,7 @@ mod attention_navigation;
 mod auth;
 mod automod;
 mod automod_ui;
+mod autorun;
 mod blocks;
 mod bttv_events;
 mod capabilities;

@@ -284,6 +284,10 @@ pub struct Workbench {
     anon: crate::anon_chat::AnonChat,
     /// Settings → Shortcuts: listening for a new shortcut's keys.
     pub(crate) hotkey_capture: Option<Subscription>,
+    /// Settings → General: keep the main window above other windows.
+    pub(crate) on_top: bool,
+    /// Settings → General: Start with Windows (read from the registry when Settings opens).
+    pub(crate) autorun: Option<bool>,
     streams: crate::stream_status::Streams,
     capabilities: crate::capabilities::Capabilities,
     experience: roles::Experience,
@@ -568,6 +572,8 @@ impl Workbench {
             live: crate::live::LiveChat::new(),
             anon: crate::anon_chat::AnonChat::new(),
             hotkey_capture: None,
+            on_top: state["on_top"].as_bool().unwrap_or(false),
+            autorun: None,
             streams: crate::stream_status::Streams::new(),
             capabilities: crate::capabilities::Capabilities::new(),
             experience: roles::Experience::from_key(state["experience"].as_str().unwrap_or("")),
@@ -975,6 +981,9 @@ impl Workbench {
             }
         })
         .detach();
+        if this.on_top {
+            sound_settings::set_on_top(window, true);
+        }
         this
     }
     fn pump_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2548,6 +2557,7 @@ impl Workbench {
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
         value["saved_filters"] = crate::chat_search::saved_json();
+        value["on_top"] = json!(self.on_top);
         value["name_mode"] = json!(chat_core::NAME_MODE.load(std::sync::atomic::Ordering::Relaxed));
         value["separators"] = json!(crate::theme::flag(&crate::theme::SEPARATORS));
         value["hide_deleted"] = json!(crate::theme::flag(&crate::theme::HIDE_DELETED));

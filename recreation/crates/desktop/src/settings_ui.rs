@@ -149,6 +149,37 @@ impl Workbench {
                 ))
                 .child(self.render_mod_button_editor(window, cx))
                 .child(row(
+                    "Keep Jawjack on top",
+                    "The main window stays above other windows. Pop-outs have their own pin.",
+                    Switch::new("settings-on-top").checked(self.on_top).on_click(cx.listener(|this, on: &bool, w, cx| {
+                        if super::sound_settings::set_on_top(w, *on) {
+                            this.on_top = *on;
+                            this.schedule_save(cx);
+                        }
+                        cx.notify();
+                    })),
+                ))
+                .child(row(
+                    "Start with Windows",
+                    "Open Jawjack when you sign in to Windows.",
+                    Switch::new("settings-autorun").checked(*self.autorun.get_or_insert_with(crate::autorun::enabled)).on_click(cx.listener(|this, on: &bool, w, cx| {
+                        match crate::autorun::set(*on) {
+                            Ok(()) => this.autorun = Some(*on),
+                            Err(problem) => w.push_notification(Notification::info(problem), cx),
+                        }
+                        cx.notify();
+                    })),
+                ))
+                .child(row(
+                    "Data folder",
+                    "Where Jawjack keeps your workspace and settings (sign-ins are in Windows Credential Manager).",
+                    open_button("settings-data-folder", "Open").on_click(|_, _, cx| {
+                        if let Some(folder) = crate::storage::folder() {
+                            cx.open_with_system(&folder);
+                        }
+                    }),
+                ))
+                .child(row(
                     "Import from Chatterino",
                     "Brings in your Chatterino tabs, channels and highlights alongside what's here.",
                     open_button("settings-import", "Import").on_click(cx.listener(|this, _, w, cx| this.open_chatterino_import(w, cx))),

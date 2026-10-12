@@ -1,6 +1,10 @@
 //! Local, versioned workspace preferences. Credentials never belong here.
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf};
+/// Jawjack's settings folder (Settings → General → Open data folder).
+pub fn folder() -> Option<PathBuf> {
+    path().ok().and_then(|p| p.parent().map(PathBuf::from))
+}
 fn path() -> Result<PathBuf, String> {
     let root = std::env::var_os("LOCALAPPDATA")
         .or_else(|| std::env::var_os("XDG_CONFIG_HOME"))
