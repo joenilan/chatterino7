@@ -697,6 +697,7 @@ impl Workbench {
                     state["link_previews"].as_bool().unwrap_or(true),
                     std::sync::atomic::Ordering::Relaxed,
                 );
+                crate::chat_search::load_saved(&state["saved_filters"]);
                 crate::inline_chat::EMOTE_SCALE.store(
                     state["emote_scale"].as_u64().unwrap_or(100).clamp(50, 200) as u32,
                     std::sync::atomic::Ordering::Relaxed,
@@ -2470,6 +2471,7 @@ impl Workbench {
         value["similar_messages"] = json!(self.similar_mode.key());
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
+        value["saved_filters"] = crate::chat_search::saved_json();
         value["emote_scale"] =
             json!(crate::inline_chat::EMOTE_SCALE.load(std::sync::atomic::Ordering::Relaxed));
         value["alternate_rows"] = json!(crate::theme::alternate_rows());

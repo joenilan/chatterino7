@@ -273,11 +273,31 @@ impl ChannelPane {
             input.update(cx, |i, cx| i.set_value(query, window, cx));
         }
         let focus = input.clone();
+        let name_input = cx.new(|cx| {
+            gpui_kit::component::input::InputState::new(window, cx)
+                .placeholder("Name, to save this filter")
+        });
         let owner = cx.entity().downgrade();
         let channel = crate::combined::title(&self.name);
         let width = (f32::from(window.viewport_size().width) - 24.).clamp(240., 420.);
         window.open_dialog(cx, move |dialog, _, _| {
             let (apply_input, apply_owner, clear_owner) = (input.clone(), owner.clone(), owner.clone());
+            let saved = crate::chat_search::saved_filters();
+            let save = {
+                let (input, name_input, owner) = (input.clone(), name_input.clone(), owner.clone());
+                move |_: &ClickEvent, w: &mut Window, cx: &mut App| {
+                    let query = input.read(cx).value().to_string();
+                    let name = name_input.read(cx).value().to_string();
+                    match crate::chat_search::save_filter(&name, &query) {
+                        Ok(()) => {
+                            name_input.update(cx, |i, cx| i.set_value("", w, cx));
+                            let _ = owner.update(cx, |_, cx| cx.emit(PaneEvent::ViewFilterChanged));
+                            w.push_notification(gpui_kit::component::notification::Notification::info(format!("Saved filter “{}”", name.trim())), cx);
+                        }
+                        Err(problem) => w.push_notification(gpui_kit::component::notification::Notification::info(problem), cx),
+                    }
+                }
+            };
             dialog
                 .w(px(width))
                 .title(format!("Filter #{channel}"))
@@ -289,7 +309,32 @@ impl ChannelPane {
                         .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
                             "Show only messages matching a search: is:mod, is:sub, is:vip, is:first, from:name, has:link, badge:…, subtier:2, regex:…, -is:notice to exclude. Nothing is removed; clear the filter to see everything.",
                         ))
-                        .child(gpui_kit::component::input::Input::new(&input).small()),
+                        .child(gpui_kit::component::input::Input::new(&input).small())
+                        .child(
+                            div()
+                                .h_flex()
+                                .gap_1()
+                                .child(div().flex_1().child(gpui_kit::component::input::Input::new(&name_input).small()))
+                                .child(Button::new("filter-save").small().label("Save").on_click(save)),
+                        )
+                        .when(!saved.is_empty(), |el| {
+                            el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Saved filters · click to apply here"))
+                                .child(div().h_flex().flex_wrap().gap_1().children(saved.iter().enumerate().map(|(index, (name, query))| {
+                                    let (apply, remove) = (owner.clone(), owner.clone());
+                                    let (query, removed) = (query.clone(), name.clone());
+                                    div()
+                                        .h_flex()
+                                        .child(Button::new(("saved-filter", index)).xsmall().label(name.clone()).tooltip(query.clone()).on_click(move |_, w, cx| {
+                                            w.close_dialog(cx);
+                                            let query = query.clone();
+                                            let _ = apply.update(cx, |p, cx| p.set_view_filter(&query, cx));
+                                        }))
+                                        .child(Button::new(("saved-filter-remove", index)).xsmall().ghost().icon(gpui_kit::component::IconName::Close).tooltip("Remove this saved filter").on_click(move |_, _, cx| {
+                                            crate::chat_search::remove_filter(&removed);
+                                            let _ = remove.update(cx, |_, cx| cx.emit(PaneEvent::ViewFilterChanged));
+                                        }))
+                                })))
+                        }),
                 )
                 .footer(
                     div()

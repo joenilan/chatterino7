@@ -9,6 +9,64 @@ use gpui_kit::component::{
 use gpui_kit::*;
 use std::{collections::BTreeMap, ops::Range, rc::Rc};
 
+/// Named view filters (Chatterino's saved filters): (name, query), applied from
+/// any tab's Filter view dialog. Saved with the workspace.
+pub static SAVED: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+pub fn saved_filters() -> Vec<(String, String)> {
+    SAVED.lock().map(|s| s.clone()).unwrap_or_default()
+}
+/// Save (or replace) a named filter; the query must parse.
+pub fn save_filter(name: &str, query: &str) -> Result<(), String> {
+    let (name, query) = (name.trim(), query.trim());
+    if name.is_empty() || name.chars().count() > 32 || name.chars().any(char::is_control) {
+        return Err("Give the filter a name of 1–32 characters.".into());
+    }
+    if query.is_empty() {
+        return Err("Type a filter first.".into());
+    }
+    if let Some(problem) = Query::parse(query).error() {
+        return Err(problem.to_owned());
+    }
+    let mut saved = SAVED.lock().map_err(|_| "Saved filters are unavailable.")?;
+    if let Some(slot) = saved.iter_mut().find(|(n, _)| n.eq_ignore_ascii_case(name)) {
+        slot.1 = query.to_owned();
+    } else if saved.len() >= 30 {
+        return Err("30 filters are already saved. Remove one first.".into());
+    } else {
+        saved.push((name.to_owned(), query.to_owned()));
+    }
+    Ok(())
+}
+pub fn remove_filter(name: &str) {
+    if let Ok(mut saved) = SAVED.lock() {
+        saved.retain(|(n, _)| n != name);
+    }
+}
+pub fn load_saved(value: &serde_json::Value) {
+    let items = value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .take(30)
+        .filter_map(|v| {
+            Some((
+                v["name"].as_str()?.to_owned(),
+                v["query"].as_str()?.to_owned(),
+            ))
+        })
+        .collect();
+    if let Ok(mut saved) = SAVED.lock() {
+        *saved = items;
+    }
+}
+pub fn saved_json() -> serde_json::Value {
+    serde_json::Value::Array(
+        saved_filters()
+            .into_iter()
+            .map(|(name, query)| serde_json::json!({"name": name, "query": query}))
+            .collect(),
+    )
+}
 pub struct Search {
     pub open: bool,
     pub input: Entity<InputState>,
