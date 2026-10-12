@@ -618,6 +618,9 @@ impl ChannelPane {
             chatter_appearance::apply(&self.chatter_appearance, message);
             mention_names::note(message);
             mention_names::link_names(message);
+            if replies::option(3) {
+                replies::strip_leading_mention(message);
+            }
         }
         self.observe_reply_redaction(&event, cx);
         let change = self.timeline.borrow_mut().apply(event);
@@ -1153,7 +1156,7 @@ impl Render for ChannelPane {
                             if pulse.is_some()&&!cx.reduce_motion(){window.request_animation_frame();}
                             let rich_heading=rich_messages::heading(message);
                             let rich_attachments=rich_messages::attachments(message,&mut media.borrow_mut(),cx);
-                            let reply_line=replies::row_context(message,&messages,menu_owner.clone());
+                            let reply_line=if replies::option(1){replies::row_context(message,&messages,menu_owner.clone())}else{None};
                             let interaction=message_actions::Interaction{owner:menu_owner.clone(),message:message.id.clone(),author_len:message.author_label().len(),links:message_actions::message_links(message),mentions:message_actions::message_mentions(message),pressed:link_press.clone()};
                             let presented=presented_row.clone();let eligible=read_eligible.clone();
                             let matches=search_hits.get(&row).cloned().unwrap_or_default();
@@ -1168,8 +1171,24 @@ impl Render for ChannelPane {
                                 }).unwrap_or(1.0);
                             if progress < 1.0 { window.request_animation_frame(); }
                             let eased = 1.0 - (1.0 - progress).powi(3);
+                            // Reply button on hover (Settings → Chat → Input & replies).
+                            let hover_reply = (replies::option(2) && !special_tab && message.replyable && !message.deleted).then(|| (menu_owner.clone(), message.id.clone()));
+                            let row_group = SharedString::from(format!("row-{}", message.id));
                             div()
                                 .relative()
+                                .group(row_group.clone())
+                                .when_some(hover_reply, |el, (owner, id)| {
+                                    el.child(div().id(SharedString::from(format!("hover-reply-{id}"))).absolute().top(px(2.)).right(px(6.)).size(px(20.)).rounded(px(4.)).flex().items_center().justify_center()
+                                        .bg(rgb(theme::ELEVATED)).border_1().border_color(rgb(theme::BORDER)).text_color(rgb(theme::MUTED)).cursor_pointer()
+                                        .opacity(0.).group_hover(row_group.clone(), |s| s.opacity(1.)).hover(|s| s.text_color(rgb(theme::TEXT)))
+                                        .tooltip(|w, cx| gpui_kit::component::tooltip::Tooltip::new("Reply").build(w, cx))
+                                        .capture_any_mouse_down(move |event: &MouseDownEvent, window, cx| {
+                                            if event.button != MouseButton::Left { return; }
+                                            cx.stop_propagation();
+                                            let _ = owner.update(cx, |p, cx| p.message_action(&id, message_actions::Action::Reply, window, cx));
+                                        })
+                                        .child(Icon::new(gpui_kit::assets::IconName::Reply).xsmall()))
+                                })
                                 // Every row keeps the same inset so text never touches a highlight edge
                                 // and highlighting a row doesn't shift its text sideways.
                                 .border_l_2().border_color(rgba(0x00000000)).pl(px(6.)).pr(px(4.))
@@ -1418,7 +1437,7 @@ impl Render for ChannelPane {
                                 menu
                             }))
                     }).child(Button::new("sent-history").ghost().small().icon(Icon::new(gpui_kit::assets::IconName::RotateCcwClock)).tooltip("Sent message history · Ctrl+Shift+H").on_click(cx.listener(|this,_,w,cx|this.open_input_history(w,cx)))).child(div().id("emote-button-area").on_prepaint(move|bounds,_,cx|{if emote_button_bounds.replace(Some(bounds))!=Some(bounds)&&emote_picker_open{let owner=emote_button_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}}).on_hover(cx.listener(|this,over,_,cx|{if *over{this.prepare_picker_media(cx);}})).child(Button::new("emotes-toggle").ghost().small().icon(Icon::new(gpui_kit::assets::IconName::Sticker)).tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
-                    .child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else if commands::is_command(&self.draft.read(cx).value()) { "Run" } else { "Send" }).disabled(self.pending.is_some() || (!self.connected && !commands::is_command(&self.draft.read(cx).value()))).tooltip("Send a message or run a local /command").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx)))))))
+                    .when(crate::replies::option(0), |el| el.child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else if commands::is_command(&self.draft.read(cx).value()) { "Run" } else { "Send" }).disabled(self.pending.is_some() || (!self.connected && !commands::is_command(&self.draft.read(cx).value()))).tooltip("Send a message or run a local /command").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx))))))))
             .child(
                 canvas(
                     |_, _, _| (),

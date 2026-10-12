@@ -346,6 +346,20 @@ impl Workbench {
                         .children(["Small", "Normal", "Large", "Huge"].map(|l| crate::theme::segment(l))),
                 ))
                 .child(stacked_row(
+                    "Input & replies",
+                    "The Send button (Enter always sends), the \"replying to\" line above replies, a reply button when you hover a message, and hiding the @name Twitch puts at the start of replies.",
+                    div().h_flex().flex_wrap().gap_x_4().gap_y_1()
+                        .children([(0usize, "Send button"), (1, "Reply context"), (2, "Reply on hover"), (3, "Hide leading @mention")].map(|(index, label)| {
+                            gpui_kit::component::checkbox::Checkbox::new(("settings-input-option", index))
+                                .label(label)
+                                .checked(crate::replies::option(index))
+                                .on_click(cx.listener(move |this, on: &bool, _, cx| {
+                                    crate::replies::OPTIONS[index].store(*on, std::sync::atomic::Ordering::Relaxed);
+                                    this.remeasure_all(cx);
+                                }))
+                        })),
+                ))
+                .child(stacked_row(
                     "Mentions",
                     "Colour @mentions like the chatter's name (once they've chatted). Finding names without @ makes a chatter's bare name work like a mention: coloured, and Ctrl+click opens their card.",
                     div().h_flex().flex_wrap().gap_x_4().gap_y_1()

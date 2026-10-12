@@ -67,6 +67,56 @@ fn root(message: &chat_core::Message) -> String {
         .unwrap_or_else(|| message.id.clone())
 }
 
+/// Settings → Chat → Input & replies (Chatterino's): [Send button, reply
+/// context line, reply button on hover, strip the leading @mention in replies].
+pub const OPTION_NAMES: [&str; 4] = [
+    "send_button",
+    "reply_context",
+    "hover_reply",
+    "strip_mention",
+];
+pub static OPTIONS: [std::sync::atomic::AtomicBool; 4] = [
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(false),
+];
+pub fn option(index: usize) -> bool {
+    OPTIONS[index].load(std::sync::atomic::Ordering::Relaxed)
+}
+/// "@parent " at the start of a reply, which Twitch adds, removed for display.
+pub fn strip_leading_mention(message: &mut chat_core::Message) {
+    let Some(reply) = &message.reply else {
+        return;
+    };
+    let parent = reply.parent_name.to_lowercase();
+    let starts = match message.fragments.first() {
+        Some(chat_core::Fragment::Mention { login, .. }) => login.eq_ignore_ascii_case(&parent),
+        Some(chat_core::Fragment::Text(text)) => text
+            .to_lowercase()
+            .strip_prefix('@')
+            .is_some_and(|rest| rest.starts_with(&parent)),
+        _ => false,
+    };
+    if !starts {
+        return;
+    }
+    match message.fragments.first_mut() {
+        Some(chat_core::Fragment::Text(text)) => {
+            let cut = 1 + parent.len().min(text.len() - 1);
+            *text = text[cut..].trim_start().to_owned();
+            if text.is_empty() {
+                message.fragments.remove(0);
+            }
+        }
+        _ => {
+            message.fragments.remove(0);
+            if let Some(chat_core::Fragment::Text(text)) = message.fragments.first_mut() {
+                *text = text.trim_start().to_owned();
+            }
+        }
+    }
+}
 pub fn row_context(
     message: &chat_core::Message,
     timeline: &chat_core::Timeline,

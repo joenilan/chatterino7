@@ -823,6 +823,12 @@ impl Workbench {
                             .store(on, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
+                for (index, name) in crate::replies::OPTION_NAMES.iter().enumerate() {
+                    if let Some(on) = state["input_options"][name].as_bool() {
+                        crate::replies::OPTIONS[index]
+                            .store(on, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
                 crate::mention_names::COLOR_MENTIONS.store(
                     state["mentions"]["color"].as_bool().unwrap_or(true),
                     std::sync::atomic::Ordering::Relaxed,
@@ -2927,6 +2933,11 @@ impl Workbench {
             json!(crate::catalog::SHOW_UNLISTED.load(std::sync::atomic::Ordering::Relaxed)),
         );
         value["emote_options"] = Value::Object(options);
+        let mut inputs = serde_json::Map::new();
+        for (index, name) in crate::replies::OPTION_NAMES.iter().enumerate() {
+            inputs.insert((*name).into(), json!(crate::replies::option(index)));
+        }
+        value["input_options"] = Value::Object(inputs);
         value["mentions"] = json!({
             "color": crate::mention_names::COLOR_MENTIONS.load(std::sync::atomic::Ordering::Relaxed),
             "find_names": crate::mention_names::FIND_NAMES.load(std::sync::atomic::Ordering::Relaxed),

@@ -22,7 +22,7 @@ Chatterino import.
 - [x] Message separator lines (S)
 - [ ] Collapse long messages after N lines (M)
 - [x] Hide deleted messages; show/hide moderation & deletion lines (S)
-- [ ] Timeout/ban lines with duration for viewers; stack/combine (M)
+- [ ] Timeout/ban lines with duration for viewers; stack/combine (M) — lines and "(N times)" stacking done; Twitch EventSub gives viewers no duration (only IRC does)
 - [x] Badge visibility toggles per category; animated 7TV badges (M)
 - [ ] Chatterino supporter badges (S)
 - [ ] Join/part messages (via IRC) (M)
@@ -43,7 +43,7 @@ Chatterino import.
 - [ ] Tab menu: ~~Close others / to the right, Sort A–Z, Duplicate (workspace), Lock layout~~ done; Hide all tabs, highlight on new messages (S each)
 - [ ] Tab position and style (M) [partly design]
 - [x] Change channel of an existing split (tab menu → Change channel…)
-- [ ] Input options: hide when empty, send button, reply on hover, hide reply context, strip leading mention (S)
+- [ ] Input options: ~~send button, reply on hover, hide reply context, strip leading mention~~ done; hide when empty (S)
 - [ ] Header: Subscribe, Mod view, Changelog, room modes menu, custom player URI (S each)
 
 ### Menus and links
