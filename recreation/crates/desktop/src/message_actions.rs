@@ -719,6 +719,7 @@ pub fn menu(
         let open_id = id.clone();
         let url = link.url.clone();
         let copy = owner.clone();
+        let twitch_channel = twitch_channel_link(&link.url);
         let copy_id = id.clone();
         menu = menu
             .separator()
@@ -736,6 +737,32 @@ pub fn menu(
                     });
                 }),
             );
+        // A Twitch channel link: open it here, or watch it in Streamlink.
+        if let Some(channel) = twitch_channel {
+            let owner = owner.clone();
+            let open_channel = channel.clone();
+            menu = menu
+                .item(
+                    PopupMenuItem::new(format!("Open #{channel} as a tab")).on_click(
+                        move |_, _, cx| {
+                            let target = open_channel.clone();
+                            let _ =
+                                owner.update(cx, |_, cx| cx.emit(PaneEvent::OpenChannel(target)));
+                        },
+                    ),
+                )
+                .item(
+                    PopupMenuItem::new(format!("Watch #{channel} in Streamlink")).on_click(
+                        move |_, window, cx| {
+                            let note = match crate::streamlink::open(&channel) {
+                                Ok(()) => format!("Starting #{channel} in Streamlink…"),
+                                Err(problem) => problem,
+                            };
+                            window.push_notification(Notification::info(note), cx);
+                        },
+                    ),
+                );
+        }
     }
     menu
 }
@@ -1268,6 +1295,36 @@ fn card_body(
         .children(parts)
         .into_any_element()
 }
+/// "https://www.twitch.tv/name" (no further path) → "name".
+fn twitch_channel_link(url: &str) -> Option<String> {
+    let url = reqwest::Url::parse(url).ok()?;
+    if !matches!(
+        url.host_str()?,
+        "twitch.tv" | "www.twitch.tv" | "m.twitch.tv"
+    ) {
+        return None;
+    }
+    let mut parts = url.path_segments()?.filter(|p| !p.is_empty());
+    let login = parts.next()?;
+    if parts.next().is_some()
+        || matches!(
+            login,
+            "directory"
+                | "videos"
+                | "settings"
+                | "subscriptions"
+                | "inventory"
+                | "wallet"
+                | "downloads"
+                | "jobs"
+                | "p"
+                | "search"
+        )
+    {
+        return None;
+    }
+    chat_core::twitch_login(login)
+}
 /// 12345 → "12,345".
 fn group_digits(n: u64) -> String {
     let digits = n.to_string();
@@ -1293,6 +1350,22 @@ fn created_label(raw: &str) -> String {
 
 #[cfg(test)]
 mod web_search_tests {
+    #[test]
+    fn twitch_links() {
+        assert_eq!(
+            super::twitch_channel_link("https://www.twitch.tv/Xqc").as_deref(),
+            Some("xqc")
+        );
+        assert_eq!(
+            super::twitch_channel_link("https://twitch.tv/xqc/clip/abc"),
+            None
+        );
+        assert_eq!(
+            super::twitch_channel_link("https://www.twitch.tv/directory"),
+            None
+        );
+        assert_eq!(super::twitch_channel_link("https://example.com/xqc"), None);
+    }
     #[test]
     fn digits_are_grouped() {
         assert_eq!(super::group_digits(0), "0");
