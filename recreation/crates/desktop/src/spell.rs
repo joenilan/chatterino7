@@ -28,6 +28,22 @@ fn dictionary() -> Option<&'static spellbook::Dictionary> {
     DICTIONARY.get().and_then(Option::as_ref)
 }
 
+/// Your own words (Spelling → Add), lowercase; saved with the workspace.
+pub static PERSONAL: std::sync::Mutex<std::collections::BTreeSet<String>> =
+    std::sync::Mutex::new(std::collections::BTreeSet::new());
+pub fn add_personal(word: &str) {
+    if let Ok(mut words) = PERSONAL.lock()
+        && words.len() < 2000
+    {
+        words.insert(word.to_lowercase());
+    }
+}
+fn personal(word: &str) -> bool {
+    PERSONAL
+        .lock()
+        .is_ok_and(|w| w.contains(&word.to_lowercase()))
+}
+
 /// Common chat words a dictionary doesn't know.
 const CHAT_WORDS: &[&str] = &[
     "lol",
@@ -166,6 +182,7 @@ pub fn check(text: &str, known: &dyn Fn(&str) -> bool, limit: usize) -> Vec<(Str
         let lower = word.to_lowercase();
         if !checkable(word)
             || CHAT_WORDS.contains(&lower.as_str())
+            || personal(word)
             || known(word)
             || dictionary.check(word)
             || dictionary.check(&lower)

@@ -216,6 +216,23 @@ impl ChannelPane {
                         if suggestions.is_empty() {
                             items.push(div().child("(no suggestions)").into_any_element());
                         }
+                        let added = word.clone();
+                        items.push(
+                            Button::new(("spell-add", index))
+                                .xsmall()
+                                .ghost()
+                                .icon(gpui_kit::component::Icon::new(
+                                    gpui_kit::assets::IconName::Plus,
+                                ))
+                                .tooltip(format!("Add “{added}” to your dictionary"))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    crate::spell::add_personal(&added);
+                                    this.check_spelling(cx);
+                                    cx.emit(PaneEvent::SpellingWordAdded);
+                                    cx.notify();
+                                }))
+                                .into_any_element(),
+                        );
                         for (n, suggestion) in suggestions.iter().enumerate() {
                             let (word, suggestion) = (word.clone(), suggestion.clone());
                             items.push(

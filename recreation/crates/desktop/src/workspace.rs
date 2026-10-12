@@ -918,6 +918,16 @@ impl Workbench {
                     state["filter_keeps_own"].as_bool().unwrap_or(false),
                     std::sync::atomic::Ordering::Relaxed,
                 );
+                if let Ok(mut words) = crate::spell::PERSONAL.lock() {
+                    *words = state["spelling_words"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|w| w.as_str().map(str::to_lowercase))
+                        .filter(|w| !w.is_empty() && w.len() <= 40)
+                        .take(2000)
+                        .collect();
+                }
                 crate::COLLAPSE_LINES.store(
                     (state["collapse_lines"].as_u64().unwrap_or(0) as u32).min(10),
                     std::sync::atomic::Ordering::Relaxed,
@@ -2535,7 +2545,10 @@ impl Workbench {
                 this.schedule_save(cx);
                 return;
             }
-            if matches!(event, PaneEvent::ViewFilterChanged) {
+            if matches!(
+                event,
+                PaneEvent::ViewFilterChanged | PaneEvent::SpellingWordAdded
+            ) {
                 this.schedule_save(cx);
                 return;
             }
@@ -3166,6 +3179,12 @@ impl Workbench {
         value["quiet_unread"] = json!(self.quiet_unread);
         value["live_alert_sound"] = json!(self.live_alert_sound);
         value["tabs_hidden"] = json!(self.tabs_hidden);
+        value["spelling_words"] = json!(
+            crate::spell::PERSONAL
+                .lock()
+                .map(|w| w.clone())
+                .unwrap_or_default()
+        );
         value["filter_keeps_own"] =
             json!(crate::chat_search::FILTER_KEEPS_OWN.load(std::sync::atomic::Ordering::Relaxed));
         value["show_gifs"] =

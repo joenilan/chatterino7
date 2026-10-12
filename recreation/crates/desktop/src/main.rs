@@ -225,6 +225,8 @@ enum PaneEvent {
     },
     /// /ignore or /unignore changed the local ignore list (save it).
     IgnoresChanged,
+    /// A word was added to the personal spellcheck dictionary (save it).
+    SpellingWordAdded,
     /// User card → Open channel: jump to it, or add it as a tab here.
     OpenChannel(String),
     /// Mentions tab: show this message in the channel it was said in
