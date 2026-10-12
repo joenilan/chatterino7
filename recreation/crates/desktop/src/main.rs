@@ -1131,8 +1131,9 @@ impl Render for ChannelPane {
                                 return div().into_any_element();
                             }
                             let row = first_order + index as u64;
-                            let paint=if appearance.borrow().get(&message.user_id).is_some_and(|a|a.color.is_some()){None}else{
-                                let catalog=catalog.borrow();catalog.paints.for_user(&message.user_id).filter(|p|p.limitation.is_none()).cloned().map(|paint|{
+                            let paint=if appearance.borrow().get(&message.user_id).is_some_and(|a|a.color.is_some()) || !name_paint::paint_option(0){None}else{
+                                let catalog=catalog.borrow();catalog.paints.for_user(&message.user_id).filter(|p|p.limitation.is_none()).cloned().map(|mut paint|{
+                                    if !name_paint::paint_option(1){paint.shadows.clear();}
                                     // Image paints load (and animate) through the media cache.
                                     let image=paint.image().and_then(media::EmoteKey::paint_image).and_then(|key|media.borrow_mut().get(&key,cx));
                                     crate::name_paint::Request{paint,cache:catalog.paint_cache.clone(),image}

@@ -1,4 +1,12 @@
 //! Bounded compositing of the existing shaped author run; text geometry stays authoritative.
+/// Settings → Appearance → 7TV name paints: [show paints, their shadows].
+pub static PAINT_OPTIONS: [std::sync::atomic::AtomicBool; 2] = [
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(true),
+];
+pub fn paint_option(index: usize) -> bool {
+    PAINT_OPTIONS[index].load(std::sync::atomic::Ordering::Relaxed)
+}
 use crate::seven_paints::Paint;
 use gpui_kit::*;
 use std::{

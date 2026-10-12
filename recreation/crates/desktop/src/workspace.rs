@@ -894,6 +894,12 @@ impl Workbench {
                         std::sync::atomic::Ordering::Relaxed,
                     );
                 }
+                for (index, flag) in crate::name_paint::PAINT_OPTIONS.iter().enumerate() {
+                    flag.store(
+                        state["paint_options"][index].as_bool().unwrap_or(true),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
                 crate::whispers::INLINE.store(
                     state["inline_whispers"].as_bool().unwrap_or(false),
                     std::sync::atomic::Ordering::Relaxed,
@@ -3117,6 +3123,10 @@ impl Workbench {
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
         value["quiet_unread"] = json!(self.quiet_unread);
+        value["paint_options"] = json!([
+            crate::name_paint::paint_option(0),
+            crate::name_paint::paint_option(1)
+        ]);
         value["inline_whispers"] =
             json!(crate::whispers::INLINE.load(std::sync::atomic::Ordering::Relaxed));
         value["names"] = json!({

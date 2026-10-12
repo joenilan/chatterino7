@@ -386,6 +386,19 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "7TV name paints",
+                    "Gradient and image name colours from 7TV, and the glow around them.",
+                    div().h_flex().gap_3().children([(0usize, "Paints"), (1, "Shadows")].map(|(index, label)| {
+                        gpui_kit::component::checkbox::Checkbox::new(("settings-paint-option", index))
+                            .label(label)
+                            .checked(crate::name_paint::paint_option(index))
+                            .on_click(cx.listener(move |this, on: &bool, _, cx| {
+                                crate::name_paint::PAINT_OPTIONS[index].store(*on, std::sync::atomic::Ordering::Relaxed);
+                                this.remeasure_all(cx);
+                            }))
+                    })),
+                ))
+                .child(row(
                     "Lines between messages",
                     "A thin separator under every message.",
                     Switch::new("settings-separators").checked(crate::theme::flag(&crate::theme::SEPARATORS)).on_click(cx.listener(|this, on: &bool, _, cx| {
