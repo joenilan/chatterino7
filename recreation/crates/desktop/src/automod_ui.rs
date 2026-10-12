@@ -362,15 +362,31 @@ impl ChannelPane {
                 .gap_1()
                 .children(platforms.into_iter().map(|platform| {
                     let shown = !self.hidden_platforms.contains(&platform);
-                    Button::new(SharedString::from(format!("platform-{}", platform.key())))
-                        .xsmall()
-                        .label(platform.label())
-                        .when(shown, |b| b.primary())
-                        .when(!shown, |b| b.ghost())
-                        .tooltip(if shown {
-                            format!("Showing {} chat · click to hide it", platform.label())
+                    let icon = crate::assets::platform_icon(platform).small();
+                    let tip = if shown {
+                        format!("Showing {} chat · click to hide it", platform.label())
+                    } else {
+                        format!("{} chat hidden · click to show it", platform.label())
+                    };
+                    div()
+                        .id(SharedString::from(format!("platform-{}", platform.key())))
+                        .size(px(22.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(5.))
+                        .border_1()
+                        .cursor_pointer()
+                        .when(shown, |el| el.bg(rgb(0x241D33)).border_color(rgb(0x4A3D73)))
+                        .when(!shown, |el| el.border_color(rgb(0x2B3038)).opacity(0.45))
+                        .hover(|el| el.bg(rgb(0x2E2640)))
+                        .child(if shown {
+                            icon
                         } else {
-                            format!("{} chat hidden · click to show it", platform.label())
+                            icon.text_color(rgb(theme::MUTED))
+                        })
+                        .tooltip(move |w, cx| {
+                            gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(w, cx)
                         })
                         .on_click(
                             cx.listener(move |this, _, _, cx| this.toggle_platform(platform, cx)),

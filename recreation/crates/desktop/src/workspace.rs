@@ -3360,6 +3360,16 @@ impl Workbench {
                                         .child(Icon::new(gpui_kit::assets::IconName::Pin).xsmall()),
                                 )
                             })
+                            .when(crate::youtube::is_youtube(&channel), |el| {
+                                el.child(
+                                    div().mr_1().child(
+                                        crate::assets::platform_icon(
+                                            crate::combined::Platform::YouTube,
+                                        )
+                                        .xsmall(),
+                                    ),
+                                )
+                            })
                             .child(if crate::youtube::is_youtube(&channel) {
                                 let title = self.tabs[self.active]
                                     .panes
@@ -3369,7 +3379,7 @@ impl Workbench {
                                     .map(|t| t.split(" · ").next().unwrap_or("").to_owned())
                                     .filter(|t| !t.is_empty())
                                     .unwrap_or_else(|| "YouTube".into());
-                                format!("▶ {title}")
+                                title
                             } else {
                                 format!("#{}", crate::combined::title(&channel))
                             })

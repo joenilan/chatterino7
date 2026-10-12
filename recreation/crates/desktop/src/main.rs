@@ -716,6 +716,13 @@ impl Render for ChannelPane {
         let highlight_colors = self.attention.colors.clone();
         let view_filter = self.view_filter.as_ref().map(|(_, q)| q.clone());
         let hidden_platforms = self.hidden_platforms.clone();
+        // Name the Twitch channel on each message only when several are mixed.
+        let origin_names = self
+            .all_sources()
+            .iter()
+            .filter(|s| !youtube::is_youtube(s))
+            .count()
+            > 1;
         let moderating = matches!(
             self.role,
             Some(capabilities::Role::Moderator | capabilities::Role::Broadcaster)
@@ -837,11 +844,13 @@ impl Render for ChannelPane {
                                     cx.new(|cx| stream_preview::StreamPreview::new(channel, info, media, hide, cx)).into()
                                 }
                             })
-                            .child(match &self.display_title {
-                                Some(title) => format!("▶ {title}"),
-                                None if youtube::is_youtube(&self.name) => "▶ YouTube stream".into(),
-                                None => format!("# {}", combined::title(&self.name)),
-                            }),
+                            .child(div().h_flex().gap_1().items_center()
+                                .when(youtube::is_youtube(&self.name), |el| el.child(crate::assets::platform_icon(combined::Platform::YouTube).small()))
+                                .child(match &self.display_title {
+                                    Some(title) => title.clone(),
+                                    None if youtube::is_youtube(&self.name) => "YouTube stream".into(),
+                                    None => format!("# {}", combined::title(&self.name)),
+                                })),
                     )
                     .children(self.render_filter_chip(cx))
                     .children(self.render_platform_toggles(cx))
@@ -1041,10 +1050,16 @@ impl Render for ChannelPane {
                                 })
                                 // Combined feed: which channel this came from, colour-keyed per channel.
                                 .when_some(message.presentation.origin.clone(), |el, origin| {
-                                    let hue = origin.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32)) as usize % highlight_rules::COLORS.len();
-                                    let (_, accent, background) = highlight_rules::COLORS[hue];
-                                    el.child(div().h(first_line_height).flex().items_center().flex_shrink_0()
-                                        .child(div().px(px(4.)).rounded(px(3.)).bg(rgb(background)).text_color(rgb(accent)).text_size(px(10.)).child(combined::label(&origin))))
+                                    let platform = combined::Platform::of(&origin);
+                                    let icon = div().id(SharedString::from(format!("src-{origin}"))).flex().items_center()
+                                        .tooltip({ let label = if platform == combined::Platform::YouTube { "From YouTube".to_owned() } else { format!("From Twitch · #{origin}") }; move |w, cx| gpui_kit::component::tooltip::Tooltip::new(label.clone()).build(w, cx) })
+                                        .child(crate::assets::platform_icon(platform).xsmall());
+                                    el.child(div().h(first_line_height).flex().items_center().gap_1().flex_shrink_0().child(icon)
+                                        .when(platform == combined::Platform::Twitch && origin_names, |el| {
+                                            let hue = origin.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32)) as usize % highlight_rules::COLORS.len();
+                                            let (_, accent, background) = highlight_rules::COLORS[hue];
+                                            el.child(div().px(px(4.)).rounded(px(3.)).bg(rgb(background)).text_color(rgb(accent)).text_size(px(10.)).child(origin.clone()))
+                                        }))
                                 })
                                 .children(badge_images.into_iter().map(|(badge,image,background)|{
                                     div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(div().size(px(18.)).when_some(background,|el,color|el.bg(rgb(color))).child(emote_picker::icon(image,String::new(),18.,18.)))
@@ -1145,7 +1160,7 @@ impl Render for ChannelPane {
                         // Combined feed: one explicit destination, never all of them.
                         let sources = self.all_sources();
                         let owner = cx.entity().downgrade();
-                        el.child(Button::new("send-to").ghost().xsmall().label(format!("to {}", combined::label(&current))).tooltip("Where your messages go: one channel or stream, never all of them")
+                        el.child(Button::new("send-to").ghost().xsmall().icon(crate::assets::platform_icon(combined::Platform::of(&current))).label(format!("to {}", combined::label(&current))).tooltip("Where your messages go: one channel or stream, never all of them")
                             .dropdown_menu(move |mut menu, _, _| {
                                 for source in &sources {
                                     let (owner, source) = (owner.clone(), source.clone());
