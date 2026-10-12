@@ -84,18 +84,25 @@ impl Render for StreamPreview {
                     .v_flex()
                     .gap_1()
                     .child(div().child(info.title.clone()))
-                    .child(
-                        div()
-                            .text_color(rgb(0xC5B8E6))
-                            .child(format!("{} · {} viewers", info.category, info.viewers)),
-                    )
-                    .when_some(info.uptime(), |el, uptime| {
-                        el.child(
-                            div()
-                                .text_color(rgb(theme::STREAM_LIVE))
-                                .child(format!("Live for {uptime}")),
-                        )
-                    }),
+                    .child(div().text_color(rgb(0xC5B8E6)).child(
+                        if crate::streamer_mode::hides(crate::streamer_mode::VIEWER_COUNTS) {
+                            info.category.clone()
+                        } else {
+                            format!("{} · {} viewers", info.category, info.viewers)
+                        },
+                    ))
+                    .when_some(
+                        info.uptime().filter(|_| {
+                            !crate::streamer_mode::hides(crate::streamer_mode::VIEWER_COUNTS)
+                        }),
+                        |el, uptime| {
+                            el.child(
+                                div()
+                                    .text_color(rgb(theme::STREAM_LIVE))
+                                    .child(format!("Live for {uptime}")),
+                            )
+                        },
+                    ),
                 Some(_) => div().text_color(rgb(theme::MUTED)).child("Offline"),
                 None => div()
                     .text_color(rgb(theme::MUTED))

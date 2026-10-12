@@ -187,7 +187,9 @@ pub struct HoverState {
 /// The hover card for a link: a preview once it has loaded (Chatterino-style).
 fn link_card(url: &str, _window: &mut Window, cx: &mut Context<Card>) -> AnyElement {
     use crate::link_preview::{self, State};
-    let state = if link_preview::enabled() {
+    let state = if link_preview::enabled()
+        && !crate::streamer_mode::hides(crate::streamer_mode::LINK_PREVIEWS)
+    {
         Some(link_preview::get(url))
     } else {
         None

@@ -808,7 +808,19 @@ impl Workbench {
                 state["streamer_mode"]["mode"].as_str().unwrap_or(""),
             ),
             streamer_detector: crate::streamer_mode::Detector::new(),
-            streamer_mute: state["streamer_mode"]["mute"].as_bool().unwrap_or(false),
+            streamer_mute: {
+                for (index, (key, _, _, default)) in
+                    crate::streamer_mode::OPTIONS.iter().enumerate()
+                {
+                    crate::streamer_mode::HIDE[index].store(
+                        state["streamer_mode"]["hide"][key]
+                            .as_bool()
+                            .unwrap_or(*default),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
+                state["streamer_mode"]["mute"].as_bool().unwrap_or(false)
+            },
             streamer_live: false,
             restore_popouts: state["popouts"]
                 .as_array()
@@ -1132,6 +1144,8 @@ impl Workbench {
                 let mode = self.similar_mode;
                 pane.update(cx, |p, _| p.similar_mode = mode);
             }
+            crate::streamer_mode::LIVE
+                .store(self.streamer_live, std::sync::atomic::Ordering::Relaxed);
             if pane.read(cx).streamer_mode != self.streamer_live {
                 let live = self.streamer_live;
                 pane.update(cx, |p, _| p.streamer_mode = live);
@@ -2315,6 +2329,9 @@ impl Workbench {
             if !self.live_notify_all && !self.live_notify.contains(&channel) {
                 continue;
             }
+            if crate::streamer_mode::hides(crate::streamer_mode::LIVE_ALERTS) {
+                continue;
+            }
             let owner = cx.entity().downgrade();
             let target = channel.clone();
             let detail = [info.title.as_str(), info.category.as_str()]
@@ -2618,8 +2635,7 @@ impl Workbench {
         value["checklist"] = json!(self.checklist_items);
         value["logs"] =
             json!({"enabled": self.logs_enabled, "folder": self.logs_folder.display().to_string()});
-        value["streamer_mode"] =
-            json!({"mode": self.streamer_mode.key(), "mute": self.streamer_mute});
+        value["streamer_mode"] = json!({"mode": self.streamer_mode.key(), "mute": self.streamer_mute, "hide": crate::streamer_mode::OPTIONS.iter().enumerate().map(|(index, (key, ..))| (key.to_string(), json!(crate::streamer_mode::HIDE[index].load(std::sync::atomic::Ordering::Relaxed)))).collect::<serde_json::Map<_, _>>()});
         value["sound"] = json!({
             "mentions": self.sound_mentions,
             "highlights": self.sound_highlights,
@@ -4839,7 +4855,16 @@ impl Workbench {
                                             .flex_shrink_0()
                                             .text_size(px(10.))
                                             .text_color(rgb(theme::MUTED))
-                                            .child(crate::follows_live::viewers(live.viewers)),
+                                            .when(
+                                                !crate::streamer_mode::hides(
+                                                    crate::streamer_mode::VIEWER_COUNTS,
+                                                ),
+                                                |el| {
+                                                    el.child(crate::follows_live::viewers(
+                                                        live.viewers,
+                                                    ))
+                                                },
+                                            ),
                                     )
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.open_channel(login.clone(), window, cx)

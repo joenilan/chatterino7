@@ -1044,6 +1044,7 @@ impl Render for ChannelPane {
                             };
                             // A filtered-out row draws nothing (rows have no padding of their own).
                             if (message.deleted && theme::flag(&theme::HIDE_DELETED))
+                                || (message.presentation.kind == chat_core::MODERATION && streamer_mode::hides(streamer_mode::MOD_ACTIONS))
                                 || match &message.presentation.source_id {
                                     Some(source) => hidden_sources.contains(source),
                                     None => own_hidden,

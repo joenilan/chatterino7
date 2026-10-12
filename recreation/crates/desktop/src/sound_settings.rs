@@ -231,6 +231,24 @@ impl Workbench {
                 .text_color(rgb(theme::MUTED))
                 .child("Hidden"),
         ))
+        .children(crate::streamer_mode::OPTIONS.iter().enumerate().map(
+            |(index, (_, label, detail, _))| {
+                row(
+                    *label,
+                    *detail,
+                    Switch::new(("settings-streamer-hide", index))
+                        .checked(
+                            crate::streamer_mode::HIDE[index]
+                                .load(std::sync::atomic::Ordering::Relaxed),
+                        )
+                        .on_click(cx.listener(move |this, on: &bool, _, cx| {
+                            crate::streamer_mode::HIDE[index]
+                                .store(*on, std::sync::atomic::Ordering::Relaxed);
+                            this.remeasure_all(cx);
+                        })),
+                )
+            },
+        ))
     }
 }
 

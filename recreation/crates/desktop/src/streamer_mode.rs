@@ -126,3 +126,55 @@ mod tests {
         assert_eq!(Mode::from_key("?"), Mode::Automatic);
     }
 }
+
+/// Whether streamer mode is on right now (set by the workspace).
+pub static LIVE: AtomicBool = AtomicBool::new(false);
+/// What streamer mode hides, as in Chatterino (key, label, detail, default).
+pub const OPTIONS: [(&str, &str, &str, bool); 5] = [
+    (
+        "link_previews",
+        "Link previews",
+        "Hovering a link shows just the address; nothing is loaded.",
+        true,
+    ),
+    (
+        "card_avatars",
+        "User card avatars",
+        "Profile pictures on user cards stay blank.",
+        true,
+    ),
+    (
+        "mod_actions",
+        "Moderation lines",
+        "Timeouts, bans and deletions don't show as lines in chat.",
+        true,
+    ),
+    (
+        "viewer_counts",
+        "Viewer counts and uptime",
+        "Hidden in the live sidebar and channel hover cards.",
+        false,
+    ),
+    (
+        "live_alerts",
+        "Live notifications",
+        "\"Channel is live\" pop-ups don't show.",
+        false,
+    ),
+];
+pub const LINK_PREVIEWS: usize = 0;
+pub const CARD_AVATARS: usize = 1;
+pub const MOD_ACTIONS: usize = 2;
+pub const VIEWER_COUNTS: usize = 3;
+pub const LIVE_ALERTS: usize = 4;
+pub static HIDE: [AtomicBool; 5] = [
+    AtomicBool::new(true),
+    AtomicBool::new(true),
+    AtomicBool::new(true),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+];
+/// True when streamer mode is on and set to hide `option` (an index into OPTIONS).
+pub fn hides(option: usize) -> bool {
+    LIVE.load(Ordering::Relaxed) && HIDE[option].load(Ordering::Relaxed)
+}

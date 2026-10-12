@@ -876,7 +876,7 @@ impl ChannelPane {
                     });
                     if let Some(pane)=owner.upgrade(){pane.read(cx).catalog.borrow_mut().profiles.request(&user_id);}
                     let profile=owner.upgrade().and_then(|pane|pane.read(cx).catalog.borrow().profiles.get(&user_id).cloned());
-                    let avatar=profile.as_ref().and_then(|p|p.avatar.as_ref()).and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(key,cx)}));
+                    let avatar=profile.as_ref().and_then(|p|p.avatar.as_ref()).filter(|_|!crate::streamer_mode::hides(crate::streamer_mode::CARD_AVATARS)).and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(key,cx)}));
                     let cosmetics=owner.upgrade().map(|pane|{
                         let pane=pane.read(cx);let catalog=pane.catalog.borrow();
                         (catalog.paints.for_user(&user_id).cloned(),catalog.paints.preview_for_user(&user_id),catalog.paints.pending_for_user(&user_id),catalog.badges.for_user(&user_id).cloned())
