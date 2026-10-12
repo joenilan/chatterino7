@@ -208,6 +208,8 @@ enum PaneEvent {
         request: twitch_actions::Request,
         draft: String,
     },
+    /// Delete / time out / ban on YouTube: (YouTube source name, action).
+    YouTubeModerate(String, google_auth::Moderation),
     OpenCommands(String),
     EditChatter(chatter_appearance::Target),
     EditChatterNote(chatter_appearance::Target),

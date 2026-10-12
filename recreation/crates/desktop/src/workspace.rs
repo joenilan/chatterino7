@@ -2093,6 +2093,10 @@ impl Workbench {
                 this.confirm_close_channel(channel.clone(), window, cx);
                 return;
             }
+            if let PaneEvent::YouTubeModerate(source, action) = event {
+                this.moderate_youtube(pane.clone(), source.clone(), action.clone(), window, cx);
+                return;
+            }
             if let PaneEvent::TwitchCommand { request, draft } = event {
                 let destination = this.destination(pane, None, &channel, cx);
                 this.run_twitch_command(

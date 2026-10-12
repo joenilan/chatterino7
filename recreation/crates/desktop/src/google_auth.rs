@@ -236,6 +236,77 @@ pub fn access(client: &OAuthClient, tokens: &mut Tokens) -> Result<String, Strin
     Ok(tokens.access.clone())
 }
 
+/// Set while a Google account is signed in (YouTube moderation shows only then).
+pub static SIGNED_IN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A YouTube live chat moderation action.
+#[derive(Clone, Debug)]
+pub enum Moderation {
+    Delete {
+        message_id: String,
+    },
+    /// Time out (`seconds`) or ban (None) the author with this YouTube channel ID.
+    Ban {
+        channel_id: String,
+        seconds: Option<u32>,
+    },
+}
+/// Run a moderation action (liveChatMessages.delete / liveChatBans.insert).
+/// YouTube allows it for the channel owner and its moderators.
+pub fn moderate(access: &str, live_chat: &str, action: &Moderation) -> Result<String, String> {
+    let http = crate::live::client()?;
+    let api = "https://www.googleapis.com/youtube/v3/liveChat";
+    let (request, done) = match action {
+        Moderation::Delete { message_id } => (
+            http.delete(format!("{api}/messages"))
+                .query(&[("id", message_id.as_str())]),
+            "Message deleted on YouTube".to_owned(),
+        ),
+        Moderation::Ban {
+            channel_id,
+            seconds,
+        } => {
+            let mut snippet = json!({
+                "liveChatId": live_chat,
+                "type": if seconds.is_some() { "temporary" } else { "permanent" },
+                "bannedUserDetails": {"channelId": channel_id},
+            });
+            if let Some(seconds) = seconds {
+                snippet["banDurationSeconds"] = json!(seconds);
+            }
+            (
+                http.post(format!("{api}/bans"))
+                    .query(&[("part", "snippet")])
+                    .header("Content-Type", "application/json")
+                    .body(json!({ "snippet": snippet }).to_string()),
+                match seconds {
+                    Some(s) if s % 3600 == 0 => format!("Timed out on YouTube for {} h", s / 3600),
+                    Some(s) => format!("Timed out on YouTube for {} min", (s / 60).max(1)),
+                    None => "Banned on YouTube".to_owned(),
+                },
+            )
+        }
+    };
+    let response = request
+        .bearer_auth(access)
+        .send()
+        .map_err(|_| "Couldn't reach YouTube".to_owned())?;
+    let status = response.status().as_u16();
+    if (200..300).contains(&status) {
+        return Ok(done);
+    }
+    let text = response.text().unwrap_or_default();
+    Err(if text.contains("quota") {
+        "YouTube's daily API limit is used up; try again after it resets.".into()
+    } else if status == 403 {
+        "YouTube refused: only the channel owner and its moderators can do this.".into()
+    } else if status == 404 {
+        "YouTube couldn't find that message or chat any more.".into()
+    } else {
+        format!("YouTube refused ({status}).")
+    })
+}
+
 /// Post a chat message (liveChatMessages.insert, 50 quota units).
 pub fn send(access: &str, live_chat: &str, text: &str) -> Result<(), String> {
     let http = crate::live::client()?;

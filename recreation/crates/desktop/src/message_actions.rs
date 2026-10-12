@@ -444,6 +444,30 @@ pub fn menu(
             }));
         }
     }
+    // YouTube: shown while signed in with Google; YouTube checks you moderate there.
+    if crate::youtube::is_youtube(&message.channel_id)
+        && crate::google_auth::SIGNED_IN.load(std::sync::atomic::Ordering::Relaxed)
+        && message.user_id.starts_with("yt:")
+        && !message.badges.iter().any(|b| b.set_id == "broadcaster")
+    {
+        menu = menu.separator();
+        let mut actions = vec![
+            ("Time out 1 minute (YouTube)", Action::ModTimeout(60)),
+            ("Time out 10 minutes (YouTube)", Action::ModTimeout(600)),
+            ("Time out 1 hour (YouTube)", Action::ModTimeout(3600)),
+            ("Ban from this YouTube chat…", Action::ModBan),
+        ];
+        if !message.deleted {
+            actions.insert(0, ("Delete on YouTube", Action::ModDelete));
+        }
+        for (label, action) in actions {
+            let owner = owner.clone();
+            let id = id.clone();
+            menu = menu.item(PopupMenuItem::new(label).on_click(move |_, w, cx| {
+                let _ = owner.update(cx, |p, cx| p.message_action(&id, action.clone(), w, cx));
+            }));
+        }
+    }
     for link in message_links(&message).into_iter().take(3) {
         let host = reqwest::Url::parse(&link.url)
             .ok()
@@ -496,6 +520,47 @@ impl ChannelPane {
             return;
         };
         let opening = matches!(&action, Action::OpenLink(_));
+        // YouTube messages are moderated through YouTube's API instead.
+        if crate::youtube::is_youtube(&message.channel_id)
+            && matches!(
+                action,
+                Action::ModDelete | Action::ModTimeout(_) | Action::ModBan
+            )
+        {
+            use crate::google_auth::Moderation;
+            let source = message.channel_id.clone();
+            let channel_id = message.user_id.trim_start_matches("yt:").to_owned();
+            let run = match action {
+                Action::ModDelete => Moderation::Delete {
+                    message_id: message.id.clone(),
+                },
+                Action::ModTimeout(seconds) => Moderation::Ban {
+                    channel_id,
+                    seconds: Some(seconds),
+                },
+                _ => {
+                    let owner = cx.entity().downgrade();
+                    let label = message.author_label().to_owned();
+                    window.open_dialog(cx, move |dialog, _, _| {
+                        let (owner, source, channel_id) = (owner.clone(), source.clone(), channel_id.clone());
+                        dialog
+                            .title(format!("Ban {label} from this YouTube chat?"))
+                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("They can't chat on this channel's streams until a moderator unbans them in YouTube Studio."))
+                            .footer(div().h_flex().justify_end().gap_2()
+                                .child(Button::new("yt-ban-cancel").small().label("Cancel").on_click(|_, w, cx| w.close_dialog(cx)))
+                                .child(Button::new("yt-ban-confirm").small().danger().label("Ban").on_click(move |_, w, cx| {
+                                    w.close_dialog(cx);
+                                    let action = Moderation::Ban { channel_id: channel_id.clone(), seconds: None };
+                                    let source = source.clone();
+                                    let _ = owner.update(cx, |_, cx| cx.emit(PaneEvent::YouTubeModerate(source, action)));
+                                })))
+                    });
+                    return;
+                }
+            };
+            cx.emit(PaneEvent::YouTubeModerate(source, run));
+            return;
+        }
         let login = message.login.clone().unwrap_or_default();
         let moderate = |request| PaneEvent::TwitchCommand {
             request,

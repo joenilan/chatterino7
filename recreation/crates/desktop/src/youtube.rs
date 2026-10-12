@@ -67,6 +67,29 @@ pub enum Update {
     },
     Title(String),
     Message(chat_core::Message),
+    /// A deletion or ban made by the channel's moderators.
+    Moderation(chat_core::Event),
+}
+/// messageDeletedEvent / userBannedEvent as chat events (the row is greyed, as on Twitch).
+pub fn moderation(name: &str, item: &Value) -> Option<chat_core::Event> {
+    let snippet = &item["snippet"];
+    match snippet["type"].as_str()? {
+        "messageDeletedEvent" => Some(chat_core::Event::DeleteMessage {
+            channel_id: name.to_owned(),
+            message_id: text(&snippet["messageDeletedDetails"]["deletedMessageId"], 128),
+        }),
+        "userBannedEvent" => Some(chat_core::Event::ClearUser {
+            channel_id: name.to_owned(),
+            user_id: format!(
+                "yt:{}",
+                text(
+                    &snippet["userBannedDetails"]["bannedUserDetails"]["channelId"],
+                    64
+                )
+            ),
+        }),
+        _ => None,
+    }
 }
 
 fn text(v: &Value, max: usize) -> String {
@@ -409,6 +432,11 @@ fn watch(
             {
                 return false;
             }
+            if let Some(event) = moderation(&name, item)
+                && !send(Update::Moderation(event))
+            {
+                return false;
+            }
         }
         true
     };
@@ -619,6 +647,7 @@ impl YouTube {
         &mut self,
         google: Option<(crate::google_auth::OAuthClient, crate::google_auth::Tokens)>,
     ) {
+        crate::google_auth::SIGNED_IN.store(google.is_some(), std::sync::atomic::Ordering::Relaxed);
         let changed = self.auth.lock().map(|mut a| {
             let changed = a.google.is_some() != google.is_some();
             a.google = google;
@@ -675,6 +704,14 @@ impl YouTube {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn moderation_events() {
+        let deleted = json!({"snippet": {"type": "messageDeletedEvent", "messageDeletedDetails": {"deletedMessageId": "m1"}}});
+        assert!(matches!(moderation("yt", &deleted), Some(chat_core::Event::DeleteMessage { message_id, .. }) if message_id == "m1"));
+        let banned = json!({"snippet": {"type": "userBannedEvent", "userBannedDetails": {"bannedUserDetails": {"channelId": "UC1"}}}});
+        assert!(matches!(moderation("yt", &banned), Some(chat_core::Event::ClearUser { user_id, .. }) if user_id == "yt:UC1"));
+        assert!(moderation("yt", &json!({"snippet": {"type": "textMessageEvent"}})).is_none());
+    }
     #[test]
     fn urls_and_messages() {
         assert_eq!(

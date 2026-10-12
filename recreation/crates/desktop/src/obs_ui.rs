@@ -1076,6 +1076,7 @@ impl Workbench {
                         m.presentation.origin = Some(name.clone());
                         p.received(chat_core::Event::Message(m), cx);
                     }
+                    crate::youtube::Update::Moderation(event) => p.received(event.clone(), cx),
                     crate::youtube::Update::Status {
                         connected: true, ..
                     } if !p.connected => {
@@ -1100,6 +1101,7 @@ impl Workbench {
                         crate::youtube::Update::Message(m) => {
                             p.received(chat_core::Event::Message(m.clone()), cx)
                         }
+                        crate::youtube::Update::Moderation(event) => p.received(event.clone(), cx),
                     }
                     cx.notify();
                 });
@@ -1378,6 +1380,53 @@ impl Workbench {
         })
         .detach();
         cx.notify();
+    }
+    /// Delete, time out or ban on YouTube (Google sign-in; YouTube checks you moderate).
+    pub(super) fn moderate_youtube(
+        &mut self,
+        pane: Entity<ChannelPane>,
+        source: String,
+        action: crate::google_auth::Moderation,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (Some(client), Some(tokens)) = (self.google_client.clone(), self.google_tokens.clone())
+        else {
+            window.push_notification(
+                Notification::info("To moderate on YouTube, sign in with Google."),
+                cx,
+            );
+            self.connect_youtube(window, cx);
+            return;
+        };
+        let Some(chat) = self.youtube_chats.get(&source).cloned() else {
+            window.push_notification(
+                Notification::info("This stream's live chat isn't connected yet."),
+                cx,
+            );
+            return;
+        };
+        let task = cx.background_spawn(async move {
+            let mut tokens = tokens;
+            let result = crate::google_auth::access(&client, &mut tokens)
+                .and_then(|access| crate::google_auth::moderate(&access, &chat, &action));
+            (tokens, result)
+        });
+        cx.spawn_in(window, async move |view, cx| {
+            let (tokens, result) = task.await;
+            let _ = view.update_in(cx, |this, window, cx| {
+                if result.as_ref().is_err_and(|e| e.contains("Sign in again")) {
+                    this.google_tokens = None;
+                } else {
+                    this.google_tokens = Some(tokens);
+                }
+                let text = match result {
+                    Ok(done) | Err(done) => done,
+                };
+                pane.update(cx, |p, cx| p.command_feedback(text, window, cx));
+            });
+        })
+        .detach();
     }
     /// Send in a YouTube tab: needs a Google sign-in and the stream's live chat.
     pub(super) fn send_youtube(
