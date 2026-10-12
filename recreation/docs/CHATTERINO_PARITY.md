@@ -31,7 +31,7 @@ Chatterino import.
 - [ ] Inline whispers in channel splits (S)
 - [x] Slow-mode / timeout send countdown (S)
 - [x] Header: stream title, game, viewers, uptime toggles (S)
-- [ ] Emote options: images off, animations off, animate only when focused, zero-width, unlisted 7TV, remove spaces between emotes, stack bits (S each)
+- [ ] Emote options: ~~animations off, animate only when focused~~ done; images off, zero-width, unlisted 7TV, remove spaces between emotes, stack bits (S each)
 - [ ] 7TV paint options (paints, shadows); animated 7TV avatar (S)
 - [ ] Emoji image styles (Twemoji, Apple, Google…) (M)
 - [ ] Watch-streak header/highlight (S) [research]
@@ -40,7 +40,7 @@ Chatterino import.
 - [x] Always on top for the main window (S)
 - [x] Start with Windows; beta update channel; open cache folder (S)
 - [ ] Overlay window: transparent, click-through, opacity (L)
-- [ ] Tab menu: ~~Close others / to the right, Sort A–Z~~ done; Duplicate, Lock layout, Hide all tabs, highlight on new messages (S each)
+- [ ] Tab menu: ~~Close others / to the right, Sort A–Z, Duplicate (workspace), Lock layout~~ done; Hide all tabs, highlight on new messages (S each)
 - [ ] Tab position and style (M) [partly design]
 - [ ] Change channel of an existing split (S)
 - [ ] Input options: hide when empty, send button, reply on hover, hide reply context, strip leading mention (S)
