@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/chat-core", "crates/desktop", "crates/setup"]
+members = ["crates/chat-core", "crates/desktop", "crates/setup", "crates/taskbar"]
 default-members = ["crates/chat-core"]
 resolver = "3"
 

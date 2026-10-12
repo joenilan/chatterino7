@@ -1,0 +1,10 @@
+[package]
+name = "jawjack-taskbar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Flash Jawjack's taskbar button (the one Win32 call the app needs that GPUI doesn't offer)."
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

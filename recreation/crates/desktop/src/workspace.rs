@@ -202,6 +202,8 @@ pub struct Workbench {
     sound_mentions: bool,
     sound_highlights: bool,
     sound_focused: bool,
+    /// Flash the taskbar button on mentions/highlights while Jawjack is in the background.
+    flash_taskbar: bool,
     sound_tone: crate::sound::Tone,
     sound_volume: f32,
     /// Message ids already pinged (the same channel can be open in several panes).
@@ -637,6 +639,7 @@ impl Workbench {
             sound_mentions: state["sound"]["mentions"].as_bool().unwrap_or(true),
             sound_highlights: state["sound"]["highlights"].as_bool().unwrap_or(false),
             sound_focused: state["sound"]["focused"].as_bool().unwrap_or(false),
+            flash_taskbar: state["sound"]["flash"].as_bool().unwrap_or(true),
             sound_tone: crate::sound::Tone::from_key(state["sound"]["tone"].as_str().unwrap_or("")),
             sound_volume: state["sound"]["volume"]
                 .as_f64()
@@ -2459,6 +2462,7 @@ impl Workbench {
             "mentions": self.sound_mentions,
             "highlights": self.sound_highlights,
             "focused": self.sound_focused,
+            "flash": self.flash_taskbar,
             "tone": self.sound_tone.key(),
             "volume": self.sound_volume,
         });

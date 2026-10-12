@@ -20,5 +20,7 @@ image = { version = "=0.25.10", default-features = false, features = ["gif", "pn
 rodio = { version = "=0.20.1", default-features = false, features = ["wav"] }
 spellbook = "=0.4.2"
 getrandom = "=0.3.4"
+jawjack-taskbar = { path = "../taskbar" }
+raw-window-handle = "=0.6.2"
 [lints]
 workspace = true

@@ -23,6 +23,10 @@ impl Workbench {
         if wanted && !muted && (self.sound_focused || !window.is_window_active()) {
             crate::sound::play(&self.sound_tone, self.sound_volume);
         }
+        // Like Chatterino: the taskbar button flashes until you come back.
+        if self.flash_taskbar && !window.is_window_active() {
+            flash_taskbar(window);
+        }
     }
     fn choose_sound(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions {
@@ -87,6 +91,17 @@ impl Workbench {
                     .checked(self.sound_highlights)
                     .on_click(cx.listener(|this, on: &bool, _, cx| {
                         this.sound_highlights = *on;
+                        this.schedule_save(cx);
+                        cx.notify();
+                    })),
+            ))
+            .child(row(
+                "Flash the taskbar",
+                "On a mention or highlight while Jawjack is in the background, its taskbar button flashes until you return.",
+                Switch::new("settings-flash-taskbar")
+                    .checked(self.flash_taskbar)
+                    .on_click(cx.listener(|this, on: &bool, _, cx| {
+                        this.flash_taskbar = *on;
                         this.schedule_save(cx);
                         cx.notify();
                     })),
@@ -291,5 +306,15 @@ impl Workbench {
             Default::default()
         };
         self.ignores.borrow_mut().blocked = blocked;
+    }
+}
+
+/// Flash this window's taskbar button (Windows; no-op elsewhere).
+fn flash_taskbar(window: &Window) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    if let Ok(handle) = HasWindowHandle::window_handle(window)
+        && let RawWindowHandle::Win32(win32) = handle.as_raw()
+    {
+        jawjack_taskbar::flash(win32.hwnd.get());
     }
 }
