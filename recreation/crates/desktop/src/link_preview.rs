@@ -23,6 +23,8 @@ pub struct Preview {
     /// Where the link ends up after redirects, when that's a different site.
     pub redirected_to: Option<String>,
     pub warnings: Vec<String>,
+    /// The page's preview image (og:image), as an absolute HTTPS URL.
+    pub image: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum State {
@@ -152,6 +154,11 @@ fn fetch(url: &str) -> Result<Preview, String> {
     preview.description = meta(&page, "og:description")
         .or_else(|| meta(&page, "description"))
         .unwrap_or_default();
+    preview.image = meta(&page, "og:image")
+        .or_else(|| meta(&page, "twitter:image"))
+        .and_then(|src| reqwest::Url::parse(&final_url).ok()?.join(src.trim()).ok())
+        .filter(|u| u.scheme() == "https")
+        .map(String::from);
     if let Some(site) = meta(&page, "og:site_name") {
         preview.site = site;
     }

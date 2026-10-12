@@ -253,6 +253,30 @@ fn link_card(url: &str, _window: &mut Window, cx: &mut Context<Card>) -> AnyElem
         })
         .detach();
     }
+    // The page's thumbnail, once the preview names one.
+    let thumb_key = match &state {
+        Some(State::Ready(p)) => p
+            .image
+            .as_deref()
+            .and_then(crate::media::EmoteKey::link_thumbnail),
+        _ => None,
+    };
+    let thumb = thumb_key
+        .as_ref()
+        .and_then(|key| crate::media::shared_get(key, cx));
+    if thumb.is_none()
+        && thumb_key
+            .as_ref()
+            .is_some_and(|k| !crate::media::shared_failed(k))
+    {
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(200))
+                .await;
+            let _ = this.update(cx, |_, cx| cx.notify());
+        })
+        .detach();
+    }
     let shown: String = url.chars().take(120).collect();
     let small =
         |text: String, color: u32| div().text_size(px(11.)).text_color(rgb(color)).child(text);
@@ -268,6 +292,33 @@ fn link_card(url: &str, _window: &mut Window, cx: &mut Context<Card>) -> AnyElem
         .border_1()
         .border_color(rgb(theme::BORDER))
         .rounded(px(5.))
+        .when_some(thumb, |el, image| {
+            let size = image.image.size(0);
+            let (w, h) = (
+                (u32::from(size.width) as f32).max(1.),
+                (u32::from(size.height) as f32).max(1.),
+            );
+            let height = (324. * h / w).clamp(40., 200.);
+            let layer = image.clone();
+            el.child(
+                canvas(
+                    |bounds, _, _| bounds,
+                    move |bounds, _, window, _| {
+                        let fitted = ObjectFit::Contain.get_bounds(bounds, layer.image.size(0));
+                        let _ = window.paint_image(
+                            bounds,
+                            fitted,
+                            Corners::all(px(4.)),
+                            layer.image.clone(),
+                            0,
+                            false,
+                        );
+                    },
+                )
+                .w(px(324.))
+                .h(px(height)),
+            )
+        })
         .map(|el| match state {
             Some(State::Ready(p)) => el
                 .when(!p.site.is_empty(), |el| {

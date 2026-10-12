@@ -1043,6 +1043,7 @@ impl Workbench {
         if this.on_top {
             sound_settings::set_on_top(window, true);
         }
+        crate::media::set_shared(this.media.clone());
         this
     }
     fn pump_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {

@@ -210,6 +210,29 @@ impl EmoteKey {
             }),
         })
     }
+    /// A link preview's thumbnail (the page's og:image). Any HTTPS host: it's
+    /// only requested while you hover a link with previews on, like the page itself.
+    pub fn link_thumbnail(value: &str) -> Option<Self> {
+        let url = reqwest::Url::parse(value).ok()?;
+        if value.len() > 2048
+            || url.scheme() != "https"
+            || url.host_str().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+        {
+            return None;
+        }
+        Some(Self {
+            id: format!("thumb:{value}"),
+            animated: false,
+            external: Some(chat_core::EmoteAsset {
+                url: value.into(),
+                static_url: value.into(),
+                width: 320,
+                height: 180,
+            }),
+        })
+    }
     /// Image layer of a 7TV paint (static or animated WebP on cdn.7tv.app/paint/).
     pub fn paint_image(url: &str) -> Option<Self> {
         let parsed = reqwest::Url::parse(url).ok()?;
@@ -406,6 +429,25 @@ impl EmoteKey {
             external: None,
         })
     }
+}
+thread_local! {
+    /// The app's media cache, for hover cards that load images (link thumbnails).
+    static SHARED: std::cell::RefCell<Option<std::rc::Rc<std::cell::RefCell<MediaCache>>>> =
+        const { std::cell::RefCell::new(None) };
+}
+pub fn set_shared(cache: std::rc::Rc<std::cell::RefCell<MediaCache>>) {
+    SHARED.with(|s| *s.borrow_mut() = Some(cache));
+}
+/// An image from the shared cache (starting its download), or None while loading.
+pub fn shared_get(key: &EmoteKey, cx: &mut App) -> Option<Arc<DecodedMedia>> {
+    SHARED
+        .with(|s| s.borrow().clone())
+        .and_then(|cache| cache.borrow_mut().get(key, cx))
+}
+pub fn shared_failed(key: &EmoteKey) -> bool {
+    SHARED
+        .with(|s| s.borrow().clone())
+        .is_some_and(|cache| cache.borrow().failed(key))
 }
 pub struct DecodedMedia {
     pub image: Arc<RenderImage>,
@@ -887,20 +929,26 @@ fn download(
         return Err(MediaFailure::Http(response.status().as_u16()));
     }
     let rich_gif = key.id.starts_with("gif:");
+    // Link thumbnails are often 1200x630; they're scaled down to card size.
+    let thumb = key.id.starts_with("thumb:");
     let max_wire: usize = if rich_gif {
         12 * 1024 * 1024
+    } else if thumb {
+        3 * 1024 * 1024
     } else {
         2 * 1024 * 1024
     };
     let max_dimension = if rich_gif {
         1024
+    } else if thumb {
+        2560
     } else if key.id.starts_with("avatar:") || key.id.starts_with("preview:") {
         512
     } else {
         256
     };
-    let max_decoded = if rich_gif {
-        24 * 1024 * 1024
+    let max_decoded = if rich_gif || thumb {
+        28 * 1024 * 1024
     } else {
         8 * 1024 * 1024
     };
@@ -925,7 +973,13 @@ fn download(
         source_frames: if rich_gif { 600 } else { 1000 },
         kept_frames: if rich_gif { 240 } else { 120 },
         bytes: max_decoded,
-        fit: rich_gif.then_some((192, 128)),
+        fit: if rich_gif {
+            Some((192, 128))
+        } else if thumb {
+            Some((320, 180))
+        } else {
+            None
+        },
     });
     let mut decoded_any = false;
     let mut push = |frame: image::Frame| -> Result<bool, MediaFailure> {
