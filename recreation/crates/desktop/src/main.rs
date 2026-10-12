@@ -1022,6 +1022,8 @@ impl Render for ChannelPane {
                                 // and highlighting a row doesn't shift its text sideways.
                                 .border_l_2().border_color(rgba(0x00000000)).pl(px(6.)).pr(px(4.))
                                 .when(message.deleted, |el| el.opacity(0.45))
+                                // Settings → Appearance → Alternate row backgrounds (Chatterino's option).
+                                .when(theme::alternate_rows() && row % 2 == 1, |el| el.bg(rgba(0xFFFFFF07)))
                                 .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(0xA99CF40D)).py(px(2.)).rounded_r(px(4.)))
                                 .when(highlight_rows.contains(&row),|el|{let (_,accent,background)=highlight_rules::COLORS[highlight_colors.get(&row).copied().unwrap_or(0)];el.bg(rgb(background)).border_color(rgb(accent)).py(px(2.)).rounded_r(px(4.))})
                                 .on_prepaint(move|bounds,window,cx|{

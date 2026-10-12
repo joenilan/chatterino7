@@ -102,13 +102,9 @@ pub struct InlineChat {
 }
 impl InlineChat {
     pub fn line_height(window: &Window, message: &Message) -> Pixels {
-        window.line_height().max(px(
-            if message.presentation.kind == "power_ups_gigantified_emote" {
-                58.
-            } else {
-                30.
-            },
-        ))
+        window
+            .line_height()
+            .max(px(base_emote_size(message) * emote_scale() + 2.))
     }
 
     pub fn with_interaction(mut self, interaction: crate::message_actions::Interaction) -> Self {
@@ -226,11 +222,7 @@ impl InlineChat {
             spans,
             name_color: message.author_color().unwrap_or(crate::theme::MUTED),
             paint,
-            emote_size: if message.presentation.kind == "power_ups_gigantified_emote" {
-                56.
-            } else {
-                28.
-            },
+            emote_size: base_emote_size(message) * emote_scale(),
             interaction: None,
             selection,
             focus,
@@ -752,5 +744,21 @@ impl Element for InlineChat {
                 window.refresh();
             }
         });
+    }
+}
+
+/// Settings → Appearance → Emote size, in percent of the normal 28 px.
+pub static EMOTE_SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(100);
+pub fn emote_scale() -> f32 {
+    EMOTE_SCALE
+        .load(std::sync::atomic::Ordering::Relaxed)
+        .clamp(50, 200) as f32
+        / 100.
+}
+fn base_emote_size(message: &Message) -> f32 {
+    if message.presentation.kind == "power_ups_gigantified_emote" {
+        56.
+    } else {
+        28.
     }
 }

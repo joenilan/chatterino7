@@ -697,6 +697,14 @@ impl Workbench {
                     state["link_previews"].as_bool().unwrap_or(true),
                     std::sync::atomic::Ordering::Relaxed,
                 );
+                crate::inline_chat::EMOTE_SCALE.store(
+                    state["emote_scale"].as_u64().unwrap_or(100).clamp(50, 200) as u32,
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                crate::theme::ALTERNATE_ROWS.store(
+                    state["alternate_rows"].as_bool().unwrap_or(false),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 for (key, flag) in [
                     ("7tv", &crate::catalog::SEVEN_TV),
                     ("bttv", &crate::catalog::BTTV),
@@ -2462,6 +2470,9 @@ impl Workbench {
         value["similar_messages"] = json!(self.similar_mode.key());
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
+        value["emote_scale"] =
+            json!(crate::inline_chat::EMOTE_SCALE.load(std::sync::atomic::Ordering::Relaxed));
+        value["alternate_rows"] = json!(crate::theme::alternate_rows());
         value["emote_providers"] = json!({
             "7tv": crate::catalog::on(&crate::catalog::SEVEN_TV),
             "bttv": crate::catalog::on(&crate::catalog::BTTV),
@@ -3204,6 +3215,21 @@ impl Workbench {
             pane.update(cx, |p, cx| {
                 p.pause_mode = self.pause_mode;
                 p.update_hover_pause(window, cx);
+                cx.notify();
+            });
+        }
+        self.schedule_save(cx);
+        cx.notify();
+    }
+    /// Re-lay out every chat row (after an appearance change).
+    pub(crate) fn remeasure_all(&mut self, cx: &mut Context<Self>) {
+        for pane in self
+            .panes()
+            .iter()
+            .chain(self.closed_tabs.iter().flat_map(|tab| tab.panes.iter()))
+        {
+            pane.update(cx, |p, cx| {
+                p.scroller.update(cx, |s, cx| s.remeasure(cx));
                 cx.notify();
             });
         }

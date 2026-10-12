@@ -86,3 +86,10 @@ pub fn readable_name_color(user_id: &str, color: Option<u32>) -> u32 {
         | ((channels[1] * 255.).round() as u32) << 8
         | (channels[2] * 255.).round() as u32
 }
+
+/// Settings → Appearance → Alternate row backgrounds.
+pub static ALTERNATE_ROWS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+pub fn alternate_rows() -> bool {
+    ALTERNATE_ROWS.load(std::sync::atomic::Ordering::Relaxed)
+}

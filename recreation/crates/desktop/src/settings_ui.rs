@@ -208,6 +208,31 @@ impl Workbench {
                         .children(["Manual", "Hover", "Alt+hover"].map(|l| gpui_kit::component::tab::Tab::new().label(l))),
                 ))
                 .child(row(
+                    "Emote size",
+                    "How big emotes are in chat.",
+                    gpui_kit::component::tab::TabBar::new("settings-emote-size")
+                        .segmented()
+                        .selected_index(
+                            [75u32, 100, 125, 150]
+                                .iter()
+                                .position(|v| *v == crate::inline_chat::EMOTE_SCALE.load(std::sync::atomic::Ordering::Relaxed))
+                                .unwrap_or(1),
+                        )
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            crate::inline_chat::EMOTE_SCALE.store([75, 100, 125, 150][(*index).min(3)], std::sync::atomic::Ordering::Relaxed);
+                            this.remeasure_all(cx);
+                        }))
+                        .children(["Small", "Normal", "Large", "Huge"].map(|l| gpui_kit::component::tab::Tab::new().label(l))),
+                ))
+                .child(row(
+                    "Alternate row backgrounds",
+                    "Every other message gets a slightly lighter background, easier to follow in busy chats.",
+                    Switch::new("settings-alternate-rows").checked(crate::theme::alternate_rows()).on_click(cx.listener(|this, on: &bool, _, cx| {
+                        crate::theme::ALTERNATE_ROWS.store(*on, std::sync::atomic::Ordering::Relaxed);
+                        this.remeasure_all(cx);
+                    })),
+                ))
+                .child(row(
                     "Chatter nicknames & colors",
                     "Rename or recolor people locally. Nobody else sees it.",
                     open_button("settings-nicknames", "Edit").on_click(cx.listener(|this, _, w, cx| this.open_chatter_appearance(None, w, cx))),
