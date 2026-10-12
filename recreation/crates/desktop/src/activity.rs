@@ -142,13 +142,15 @@ impl Workbench {
             cx,
         );
     }
-    fn jump_activity(
+    /// Show a message in its channel: switch workspace and tab, scroll, pulse.
+    /// Returns that channel's pane.
+    pub(super) fn jump_activity(
         &mut self,
         channel: &str,
         id: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Option<Entity<ChannelPane>> {
         let order = std::iter::once(self.active)
             .chain((0..self.tabs.len()).filter(|ix| *ix != self.active));
         let target = order
@@ -157,7 +159,10 @@ impl Workbench {
                     .panes
                     .iter()
                     .find(|p| {
-                        p.read(cx).name.as_ref() == channel
+                        // A combined feed holding that channel counts too.
+                        crate::combined::sources(&p.read(cx).name)
+                            .iter()
+                            .any(|s| s == channel)
                             && p.read(cx)
                                 .timeline
                                 .borrow()
@@ -176,8 +181,10 @@ impl Workbench {
                 ),
                 cx,
             );
-            return;
+            return None;
         };
+        let channel = pane.read(cx).name.to_string();
+        let channel = channel.as_str();
         self.select_tab(ix, cx);
         if let Some(dock) = &mut self.tabs[ix].dock {
             dock.select(channel);
@@ -186,6 +193,7 @@ impl Workbench {
         self.schedule_save(cx);
         pane.update(cx, |p, cx| p.jump_message(id, window, cx));
         cx.notify();
+        Some(pane)
     }
     pub(super) fn open_activity(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let owner = cx.entity().downgrade();

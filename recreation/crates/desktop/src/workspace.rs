@@ -2299,6 +2299,20 @@ impl Workbench {
                 this.open_channel(target.clone(), window, cx);
                 return;
             }
+            if let PaneEvent::GoToMessage { channel, id, reply } = event {
+                if let Some(target) = this.jump_activity(channel, id, window, cx)
+                    && *reply
+                {
+                    target.update(cx, |p, cx| {
+                        p.message_action(id, crate::message_actions::Action::Reply, window, cx)
+                    });
+                }
+                return;
+            }
+            if let PaneEvent::OpenWhisper(login) = event {
+                this.open_whispers(Some(login.clone()), window, cx);
+                return;
+            }
             if matches!(event, PaneEvent::IgnoresChanged) {
                 for pane in this.panes() {
                     pane.update(cx, |p, cx| {
@@ -2313,8 +2327,10 @@ impl Workbench {
                 this.schedule_save(cx);
                 return;
             }
-            if let PaneEvent::Ping(ping, id) = event {
-                if !this.muted_pings.contains(&channel) {
+            if let PaneEvent::Ping(_, id) | PaneEvent::SelfMention(id) = event {
+                if let PaneEvent::Ping(ping, _) = event
+                    && !this.muted_pings.contains(&channel)
+                {
                     this.ping(*ping, id, window);
                 }
                 // Mentions tabs get a copy, tagged with the channel it came from.

@@ -334,6 +334,37 @@ pub fn menu(
     let Some(message) = current else {
         return menu.item(PopupMenuItem::new("Message is no longer retained"));
     };
+    // Mentions/Whispers tabs: get back to where it happened.
+    let special = owner
+        .upgrade()
+        .is_some_and(|p| crate::combined::is_special(&p.read(cx).name));
+    if special {
+        if let Some(channel) = message.presentation.origin.clone() {
+            let (owner, id) = (owner.clone(), id.clone());
+            menu = menu.item(
+                PopupMenuItem::new(format!("Go to message in #{channel}")).on_click(
+                    move |_, _, cx| {
+                        let _ = owner.update(cx, |_, cx| {
+                            cx.emit(PaneEvent::GoToMessage {
+                                channel: channel.clone(),
+                                id: id.clone(),
+                                reply: false,
+                            })
+                        });
+                    },
+                ),
+            );
+        } else if let Some(login) = message.login.clone() {
+            let owner = owner.clone();
+            menu = menu.item(PopupMenuItem::new("Open whisper conversation").on_click(
+                move |_, _, cx| {
+                    let _ =
+                        owner.update(cx, |_, cx| cx.emit(PaneEvent::OpenWhisper(login.clone())));
+                },
+            ));
+        }
+        menu = menu.separator();
+    }
     for (label, action) in [
         ("Reply to message", Action::Reply),
         ("View conversation", Action::Thread),
@@ -710,6 +741,16 @@ impl ChannelPane {
             Action::SearchAuthor => {
                 if !message.user_id.is_empty() {
                     self.search_for_author(&message.user_id, window, cx)
+                }
+            }
+            // A Mentions copy is replied to where it was said.
+            Action::Reply if crate::combined::is_special(&self.name) => {
+                if let Some(channel) = message.presentation.origin.clone() {
+                    cx.emit(PaneEvent::GoToMessage {
+                        channel,
+                        id: message.id,
+                        reply: true,
+                    });
                 }
             }
             Action::Reply => self.begin_reply(&message, window, cx),

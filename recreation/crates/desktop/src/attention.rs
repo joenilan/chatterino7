@@ -202,6 +202,28 @@ impl Attention {
         }
         changed
     }
+    /// Your own live message that tags you (@yourname). Never a ping, but the
+    /// Mentions tab shows it.
+    pub fn mentions_self(&self, message: &Message) -> bool {
+        let Some((user, login)) = self.identity.as_ref() else {
+            return false;
+        };
+        if &message.user_id != user || message.presentation.historical || message.deleted {
+            return false;
+        }
+        let text: String = message
+            .fragments
+            .iter()
+            .filter_map(|f| match f {
+                Fragment::Text(part) | Fragment::Mention { label: part, .. } => Some(part.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase();
+        message.mentions.iter().any(|id| id == user)
+            || crate::highlight_rules::normalized_match(&text, login, true)
+    }
     /// Mention (your name, a reply to you) or a highlight rule/word; event kinds
     /// such as subs and raids are colour only.
     fn ping(&self, message: &Message) -> Option<Ping> {

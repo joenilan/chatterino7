@@ -198,6 +198,8 @@ enum PaneEvent {
     SendAs(SharedString),
     /// A new mention or highlight arrived (message id, for de-duplication across panes).
     Ping(attention::Ping, String),
+    /// You tagged yourself: no ping, but it belongs in Mentions (message id).
+    SelfMention(String),
     /// Allow (true) or deny a held AutoMod message.
     AutoMod(String, bool),
     /// Remove a held message from your screen without acting on it.
@@ -217,6 +219,15 @@ enum PaneEvent {
     IgnoresChanged,
     /// User card → Open channel: jump to it, or add it as a tab here.
     OpenChannel(String),
+    /// Mentions tab: show this message in the channel it was said in
+    /// (and start a reply there).
+    GoToMessage {
+        channel: String,
+        id: String,
+        reply: bool,
+    },
+    /// Whispers tab: open the whisper conversation with this login.
+    OpenWhisper(String),
     /// Delete / time out / ban on YouTube: (YouTube source name, action).
     YouTubeModerate(String, google_auth::Moderation),
     OpenCommands(String),
@@ -636,8 +647,21 @@ impl ChannelPane {
                             .map(|ping| (ping, message.id.clone()))
                     })
                 };
+                let self_mention = ping
+                    .is_none()
+                    .then(|| {
+                        let timeline = self.timeline.borrow();
+                        timeline
+                            .messages()
+                            .back()
+                            .filter(|m| self.attention.mentions_self(m))
+                            .map(|m| m.id.clone())
+                    })
+                    .flatten();
                 if let Some((ping, id)) = ping.filter(|_| !self.quiet_pings) {
                     cx.emit(PaneEvent::Ping(ping, id));
+                } else if let Some(id) = self_mention.filter(|_| !self.quiet_pings) {
+                    cx.emit(PaneEvent::SelfMention(id));
                 }
 
                 self.scroller.update(cx, |scroller, cx| {
@@ -840,6 +864,7 @@ impl Render for ChannelPane {
             .as_ref()
             .is_some_and(|own| self.hidden_sources.contains(own));
         // Name the Twitch channel on each message only when several are mixed.
+        let special_tab = combined::is_special(&self.name);
         let origin_names = self
             .all_sources()
             .iter()
@@ -1214,7 +1239,20 @@ impl Render for ChannelPane {
                                     let icon = div().id(SharedString::from(format!("src-{origin}"))).flex().items_center()
                                         .tooltip({ let label = if platform == combined::Platform::YouTube { "From YouTube".to_owned() } else { format!("From Twitch · #{origin}") }; move |w, cx| gpui_kit::component::tooltip::Tooltip::new(label.clone()).build(w, cx) })
                                         .child(crate::assets::platform_icon(platform).xsmall());
-                                    el.child(div().h(first_line_height).flex().items_center().gap_1().flex_shrink_0().child(icon)
+                                    // In a Mentions tab, the tag takes you to the message in its channel.
+                                    let go = special_tab.then(|| (menu_owner.clone(), origin.clone(), message.id.clone()));
+                                    el.child(div().id(SharedString::from(format!("origin-{}", message.id))).h(first_line_height).flex().items_center().gap_1().flex_shrink_0().child(icon)
+                                        .when_some(go, |el, (owner, channel, id)| {
+                                            let tip = format!("Go to message in #{channel}");
+                                            el.cursor_pointer().rounded(px(3.)).hover(|s| s.bg(rgb(theme::HOVER)))
+                                                .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(w, cx))
+                                                .capture_any_mouse_down(move |event: &MouseDownEvent, _, cx| {
+                                                    // Capture: the message text would otherwise take the press for selecting.
+                                                    if event.button != MouseButton::Left { return; }
+                                                    cx.stop_propagation();
+                                                    let _ = owner.update(cx, |_, cx| cx.emit(PaneEvent::GoToMessage { channel: channel.clone(), id: id.clone(), reply: false }));
+                                                })
+                                        })
                                         .when(platform == combined::Platform::Twitch && origin_names, |el| {
                                             let hue = origin.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32)) as usize % highlight_rules::COLORS.len();
                                             let (_, accent, background) = highlight_rules::COLORS[hue];
