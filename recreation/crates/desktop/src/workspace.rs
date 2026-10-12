@@ -4662,6 +4662,20 @@ impl Workbench {
                                 let notify_now = owner.upgrade().is_some_and(|o| {
                                     o.read(cx).live_notify.contains(&menu_channel)
                                 });
+                                let menu_mod = !menu_special
+                                    && owner.upgrade().is_some_and(|o| {
+                                        o.read(cx).panes().iter().any(|p| {
+                                            let p = p.read(cx);
+                                            p.name.as_ref() == menu_channel
+                                                && matches!(
+                                                    p.role,
+                                                    Some(
+                                                        crate::capabilities::Role::Moderator
+                                                            | crate::capabilities::Role::Broadcaster
+                                                    )
+                                                )
+                                        })
+                                    });
                                 let quiet_owner = owner.clone();
                                 let quiet_channel = menu_channel.clone();
                                 let quiet_now = owner.upgrade().is_some_and(|o| {
@@ -4904,6 +4918,15 @@ impl Workbench {
                                     PopupMenuItem::new("Open stream in browser")
                                         .on_click(move |_, _, cx| cx.open_url(&open_url)),
                                 )
+                                // Twitch's mod view and subscribe pages (Chatterino's split menu).
+                                .item_if(menu_mod, PopupMenuItem::new("Open mod view").on_click({
+                                    let url = format!("https://www.twitch.tv/moderator/{menu_channel}");
+                                    move |_, _, cx| cx.open_url(&url)
+                                }))
+                                .item_if(!menu_special && !crate::youtube::is_youtube(&menu_channel), PopupMenuItem::new("Subscribe…").on_click({
+                                    let url = format!("https://www.twitch.tv/subs/{menu_channel}");
+                                    move |_, _, cx| cx.open_url(&url)
+                                }))
                                 .item_if(!menu_special, PopupMenuItem::new("Open player pop-out").on_click({
                                     let url = crate::streamlink::player_url(&menu_channel);
                                     move |_, _, cx| cx.open_url(&url)
