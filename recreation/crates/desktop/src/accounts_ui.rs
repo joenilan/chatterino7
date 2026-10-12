@@ -65,6 +65,98 @@ impl Workbench {
             .find(|a| a.read(cx).vault() == vault)
             .and_then(|a| a.read(cx).identity())
     }
+    /// Shown over the workspace while no account is signed in: sign in, pick
+    /// another saved account, or read as a guest. Workspaces stay as they are.
+    pub(super) fn render_sign_in_screen(&self, cx: &mut Context<Self>) -> AnyElement {
+        let others: Vec<(usize, String)> = self
+            .accounts
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| **a != self.account)
+            .filter_map(|(i, a)| a.read(cx).login().map(|login| (i, login)))
+            .collect();
+        let tabs = self.tabs.len();
+        div()
+            .id("sign-in-screen")
+            .absolute()
+            .inset_0()
+            .occlude()
+            .bg(rgb(theme::CANVAS))
+            .flex()
+            .items_center()
+            .justify_center()
+            .p_4()
+            .child(
+                div()
+                    .v_flex()
+                    .w_full()
+                    .max_w(px(440.))
+                    .gap_4()
+                    .child(
+                        div()
+                            .h_flex()
+                            .gap_2()
+                            .text_size(px(22.))
+                            .child(div().text_color(rgb(theme::ACCENT)).font_weight(FontWeight::BOLD).child("//"))
+                            .child(div().font_weight(FontWeight::SEMIBOLD).child("JAWJACK")),
+                    )
+                    .child(
+                        div()
+                            .v_flex()
+                            .gap_1()
+                            .child(div().text_size(px(16.)).text_color(rgb(theme::TEXT)).child("Sign in to Twitch"))
+                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(if tabs > 0 {
+                                format!("Your {} and settings are kept and come back as soon as you're signed in.", if tabs == 1 { "workspace".to_owned() } else { format!("{tabs} workspaces") })
+                            } else {
+                                "Sign in to chat, moderate and use your streamer tools.".to_owned()
+                            })),
+                    )
+                    .child(
+                        div()
+                            .rounded(px(8.))
+                            .overflow_hidden()
+                            .border_1()
+                            .border_color(rgb(theme::BORDER))
+                            .child(self.account.clone()),
+                    )
+                    .when(!others.is_empty(), |el| {
+                        el.child(
+                            div()
+                                .v_flex()
+                                .gap_2()
+                                .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Or continue with a saved account"))
+                                .child(div().h_flex().flex_wrap().gap_2().children(others.into_iter().map(|(index, login)| {
+                                    Button::new(SharedString::from(format!("continue-as-{index}")))
+                                        .small()
+                                        .label(login)
+                                        .on_click(cx.listener(move |this, _, _, cx| this.switch_account(index, cx)))
+                                }))),
+                        )
+                    })
+                    .child(
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .justify_between()
+                            .gap_2()
+                            .pt_2()
+                            .border_t_1()
+                            .border_color(rgb(theme::BORDER))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Read-only: no chatting, whispers or tools."))
+                            .child(
+                                Button::new("read-as-guest")
+                                    .ghost()
+                                    .small()
+                                    .label("Read chat as guest")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.guest_reading = true;
+                                        cx.notify();
+                                    })),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
     fn switch_account(&mut self, index: usize, cx: &mut Context<Self>) {
         let Some(account) = self.accounts.get(index).cloned() else {
             return;

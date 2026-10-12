@@ -291,6 +291,8 @@ pub struct Workbench {
     live: crate::live::LiveChat,
     /// Guest (read-only) chat while no account is signed in.
     anon: crate::anon_chat::AnonChat,
+    /// Signed out and chose "Read chat as guest" on the sign-in screen (this run only).
+    guest_reading: bool,
     /// Settings → Shortcuts: listening for a new shortcut's keys.
     pub(crate) hotkey_capture: Option<Subscription>,
     /// Settings → General: keep the main window above other windows.
@@ -585,6 +587,7 @@ impl Workbench {
             zoom_accumulator: 0.,
             live: crate::live::LiveChat::new(),
             anon: crate::anon_chat::AnonChat::new(),
+            guest_reading: false,
             hotkey_capture: None,
             on_top: state["on_top"].as_bool().unwrap_or(false),
             autorun: None,
@@ -1449,12 +1452,13 @@ impl Workbench {
             .cloned()
             .collect();
         let own = self.account.read(cx).login();
-        // Signed out: read chat as a guest until an account is added.
-        self.anon.configure(if identity.is_none() {
-            priority.clone()
-        } else {
-            Vec::new()
-        });
+        // Signed out: read chat as a guest only once that's chosen on the sign-in screen.
+        self.anon
+            .configure(if identity.is_none() && self.guest_reading {
+                priority.clone()
+            } else {
+                Vec::new()
+            });
         if self
             .live
             .configure(identity.clone(), priority, moderated, own)
@@ -5920,10 +5924,16 @@ impl Render for Workbench {
             .child(
                 div()
                     .h_flex()
+                    .relative()
                     .items_stretch()
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
+                    // No account: a sign-in screen instead of tabs that can't connect.
+                    .when(
+                        self.account.read(cx).login().is_none() && !self.guest_reading,
+                        |el| el.child(deferred(self.render_sign_in_screen(cx)).with_priority(1)),
+                    )
                     .when(sidebar_width > 0.1, |el| {
                         el.child(
                             div()
