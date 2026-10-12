@@ -48,7 +48,7 @@ impl Workbench {
     }
     /// Read the optional password from the OS vault, then connect.
     pub(super) fn start_obs(&mut self, cx: &mut Context<Self>) {
-        let read = cx.read_credentials(VAULT);
+        let read = cx.read_credentials(crate::profile::vault(VAULT));
         cx.spawn(async move |view, cx| {
             let password = read
                 .await
@@ -185,7 +185,7 @@ impl Workbench {
                             };
                             w.close_dialog(cx);
                             let save = (!password_value.is_empty())
-                                .then(|| cx.write_credentials(VAULT, "obs", password_value.as_bytes()));
+                                .then(|| cx.write_credentials(crate::profile::vault(VAULT), "obs", password_value.as_bytes()));
                             let _ = owner.update(cx, |this, cx| {
                                 let mut settings = this.obs_settings.clone();
                                 settings.enabled = true;
@@ -1018,7 +1018,7 @@ impl Workbench {
         if !self.youtube_key_loaded {
             self.youtube_key_loaded = true;
             self.load_google(cx);
-            let read = cx.read_credentials(YOUTUBE_VAULT);
+            let read = cx.read_credentials(crate::profile::vault(YOUTUBE_VAULT));
             cx.spawn(async move |view, cx| {
                 let key = read
                     .await
@@ -1111,14 +1111,18 @@ impl Workbench {
     pub(super) fn save_youtube_key(&mut self, key: String, cx: &mut Context<Self>) {
         let key = key.trim().to_owned();
         if key.is_empty() {
-            let delete = cx.delete_credentials(YOUTUBE_VAULT);
+            let delete = cx.delete_credentials(crate::profile::vault(YOUTUBE_VAULT));
             cx.spawn(async move |_, _| {
                 let _ = delete.await;
             })
             .detach();
             self.youtube.set_key(None);
         } else {
-            let save = cx.write_credentials(YOUTUBE_VAULT, "youtube", key.as_bytes());
+            let save = cx.write_credentials(
+                crate::profile::vault(YOUTUBE_VAULT),
+                "youtube",
+                key.as_bytes(),
+            );
             cx.spawn(async move |_, _| {
                 let _ = save.await;
             })
@@ -1226,8 +1230,8 @@ impl Workbench {
     /// Load the saved Google OAuth client and sign-in (once).
     pub(super) fn load_google(&mut self, cx: &mut Context<Self>) {
         let (client, token) = (
-            cx.read_credentials(GOOGLE_CLIENT_VAULT),
-            cx.read_credentials(GOOGLE_TOKEN_VAULT),
+            cx.read_credentials(crate::profile::vault(GOOGLE_CLIENT_VAULT)),
+            cx.read_credentials(crate::profile::vault(GOOGLE_TOKEN_VAULT)),
         );
         cx.spawn(async move |view, cx| {
             let client = client
@@ -1329,12 +1333,12 @@ impl Workbench {
                             json!({"id": client.id, "secret": client.secret}).to_string();
                         for save in [
                             cx.write_credentials(
-                                GOOGLE_CLIENT_VAULT,
+                                crate::profile::vault(GOOGLE_CLIENT_VAULT),
                                 "google",
                                 client_json.as_bytes(),
                             ),
                             cx.write_credentials(
-                                GOOGLE_TOKEN_VAULT,
+                                crate::profile::vault(GOOGLE_TOKEN_VAULT),
                                 "google",
                                 tokens.refresh.as_bytes(),
                             ),
@@ -1373,7 +1377,7 @@ impl Workbench {
     pub(super) fn google_sign_out(&mut self, cx: &mut Context<Self>) {
         self.google_tokens = None;
         self.youtube.set_google(None);
-        let delete = cx.delete_credentials(GOOGLE_TOKEN_VAULT);
+        let delete = cx.delete_credentials(crate::profile::vault(GOOGLE_TOKEN_VAULT));
         cx.spawn(async move |_, _| {
             let _ = delete.await;
         })

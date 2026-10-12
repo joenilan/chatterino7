@@ -47,7 +47,7 @@ impl Workbench {
     }
     /// Read the optional password from the OS vault, then start the connection.
     pub(super) fn start_streamer_bot(&mut self, cx: &mut Context<Self>) {
-        let read = cx.read_credentials(VAULT);
+        let read = cx.read_credentials(crate::profile::vault(VAULT));
         cx.spawn(async move |view, cx| {
             let password = read
                 .await
@@ -150,7 +150,7 @@ impl Workbench {
                             return;
                         };
                         w.close_dialog(cx);
-                        let save = (!password_value.is_empty()).then(|| cx.write_credentials(VAULT, "streamerbot", password_value.as_bytes()));
+                        let save = (!password_value.is_empty()).then(|| cx.write_credentials(crate::profile::vault(VAULT), "streamerbot", password_value.as_bytes()));
                         let _ = owner.update(cx, |this, cx| {
                             let mut settings = this.bot_settings.clone();
                             settings.enabled = true;

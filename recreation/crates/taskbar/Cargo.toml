@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Flash Jawjack's taskbar button (the one Win32 call the app needs that GPUI doesn't offer)."
+description = "The few Win32 calls Jawjack needs that GPUI doesn't offer (taskbar flash, always on top, one window per profile)."
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }

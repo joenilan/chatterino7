@@ -1,7 +1,8 @@
 //! Flash a window's taskbar button until the window is focused, like Chatterino
 //! does on mentions, and keep a window above others ("always on top"). The
-//! desktop app forbids `unsafe`; this crate holds the two Win32 calls GPUI
-//! doesn't offer so that rule stays intact everywhere else.
+//! desktop app forbids `unsafe`; this crate holds the Win32 calls GPUI doesn't
+//! offer so that rule stays intact everywhere else (also: one window per
+//! profile).
 
 /// Flash the taskbar button of the window `hwnd` (a Win32 window handle) until
 /// it comes to the foreground. Does nothing on other platforms or for 0.
@@ -54,4 +55,49 @@ pub fn set_topmost(hwnd: isize, on: bool) -> bool {
     #[cfg(not(windows))]
     let _ = (hwnd, on);
     false
+}
+
+/// Claim "the Jawjack window" for one profile (`key`, e.g. "default" or "dev").
+/// Returns false when another Jawjack on the same profile already holds it; that
+/// window (found by its title, `title`) is brought to the front. The claim lasts
+/// until this process exits. Always true on other platforms.
+pub fn claim_single_window(key: &str, title: &str) -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
+        use windows_sys::Win32::System::Threading::CreateMutexW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            FindWindowW, SW_RESTORE, SetForegroundWindow, ShowWindow,
+        };
+        let wide = |s: &str| {
+            s.encode_utf16()
+                .chain(std::iter::once(0))
+                .collect::<Vec<u16>>()
+        };
+        let name = wide(&format!(r"Local\Jawjack-Window-{key}"));
+        // SAFETY: `name` is a NUL-terminated UTF-16 string that outlives the
+        // call; the handle is deliberately kept open for the process lifetime.
+        let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+        // SAFETY: GetLastError reads the calling thread's last-error value.
+        let exists = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+        if handle.is_null() || !exists {
+            return true;
+        }
+        let title = wide(title);
+        // SAFETY: `title` is NUL-terminated; a null class name matches any class.
+        let window = unsafe { FindWindowW(std::ptr::null(), title.as_ptr()) };
+        if !window.is_null() {
+            // SAFETY: plain calls on a window handle; failures are harmless.
+            unsafe {
+                ShowWindow(window, SW_RESTORE);
+                SetForegroundWindow(window);
+            }
+        }
+        false
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (key, title);
+        true
+    }
 }

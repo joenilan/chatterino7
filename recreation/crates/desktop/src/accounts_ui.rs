@@ -13,12 +13,12 @@ impl Workbench {
             .into_iter()
             .flatten()
             .filter_map(|v| v.as_str())
-            .filter(|v| v.starts_with(VAULT))
+            .filter(|v| v.starts_with(crate::profile::vault(VAULT)))
             .take(8)
             .map(|v| SharedString::from(v.to_owned()))
             .collect();
         if vaults.is_empty() {
-            vaults.push(VAULT.into());
+            vaults.push(crate::profile::vault(VAULT).into());
         }
         let active = state["active_account"]
             .as_str()
@@ -314,7 +314,7 @@ impl Workbench {
             .map(|a| a.read(cx).vault().clone())
             .collect();
         let vault: SharedString = (1..)
-            .map(|n| SharedString::from(format!("{VAULT}/{n}")))
+            .map(|n| SharedString::from(format!("{}/{n}", crate::profile::vault(VAULT))))
             .find(|v| !used.contains(v))
             .expect("free vault slot");
         self.accounts

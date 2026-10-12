@@ -60,6 +60,7 @@ mod mod_buttons;
 mod name_paint;
 mod obs;
 mod owned_emotes;
+mod profile;
 mod profiles;
 mod pronouns;
 mod recent_messages;
@@ -1569,7 +1570,11 @@ fn caption_control(
 const MIN_WINDOW_WIDTH: f32 = 360.;
 const MIN_WINDOW_HEIGHT: f32 = 280.;
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if let Err(error) = profile::init(&mut args) {
+        eprintln!("{error}");
+        std::process::exit(1);
+    }
     if args.first().is_some_and(|arg| arg == "--control-call") {
         let result = if args.len() == 3 {
             control::client(&args[1], &args[2])
@@ -1589,6 +1594,17 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        return;
+    }
+    // One Jawjack window per profile: a second launch brings the first forward.
+    // (Control sessions are test-owned and may run beside it.)
+    let title = match profile::label() {
+        Some(label) => format!("Jawjack {label}"),
+        None => "Jawjack".to_owned(),
+    };
+    if args.is_empty()
+        && !jawjack_taskbar::claim_single_window(profile::name().unwrap_or("default"), &title)
+    {
         return;
     }
     let server = if args.is_empty() {
@@ -1637,7 +1653,7 @@ fn main() {
             ]);
             let options = WindowOptions {
                 titlebar: Some(TitlebarOptions {
-                    title: Some("Jawjack".into()),
+                    title: Some(title.clone().into()),
                     appears_transparent: true,
                     ..Default::default()
                 }),

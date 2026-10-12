@@ -51,12 +51,9 @@ fn session_path(name: &str) -> Result<PathBuf, String> {
     }
     // Use the current user's private application-data hierarchy, never a shared
     // repository, network path or arbitrary caller-selected filesystem location.
-    let base = std::env::var_os("LOCALAPPDATA")
+    let base = crate::profile::data_root()
         .ok_or("Local control currently requires Windows LOCALAPPDATA")?;
-    Ok(PathBuf::from(base)
-        .join("ChatWorkbench")
-        .join("control")
-        .join(name))
+    Ok(base.join("control").join(name))
 }
 pub struct Call {
     pub request: Value,

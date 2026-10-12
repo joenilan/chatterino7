@@ -6,12 +6,8 @@ pub fn folder() -> Option<PathBuf> {
     path().ok().and_then(|p| p.parent().map(PathBuf::from))
 }
 fn path() -> Result<PathBuf, String> {
-    let root = std::env::var_os("LOCALAPPDATA")
-        .or_else(|| std::env::var_os("XDG_CONFIG_HOME"))
-        .or_else(|| std::env::var_os("HOME"))
-        .ok_or("No user settings directory")?;
-    Ok(PathBuf::from(root)
-        .join("ChatWorkbench")
+    Ok(crate::profile::data_root()
+        .ok_or("No user settings directory")?
         .join("workspace.json"))
 }
 pub fn load() -> Result<Value, String> {

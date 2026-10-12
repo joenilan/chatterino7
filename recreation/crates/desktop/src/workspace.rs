@@ -6482,7 +6482,22 @@ impl Render for Workbench {
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_size(px(11.))
                                     .child("JAWJACK"),
-                            ),
+                            )
+                            // A non-default profile (the dev copy) says so.
+                            .when_some(crate::profile::label(), |el, label| {
+                                el.child(
+                                    div()
+                                        .ml_1()
+                                        .px(px(5.))
+                                        .rounded(px(3.))
+                                        .bg(rgb(theme::ELEVATED))
+                                        .border_1()
+                                        .border_color(rgb(0xE8C468))
+                                        .text_color(rgb(0xE8C468))
+                                        .text_size(px(10.))
+                                        .child(label),
+                                )
+                            }),
                     )
                     .child(
                         div()
