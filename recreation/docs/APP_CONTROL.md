@@ -36,6 +36,10 @@ Methods:
 - pointer: kind down/move/up, x/y, optional left/right button, held, shift, and `clicks` (1–3) for double/triple-click gestures.
 - key: a GPUI keystroke name; key-down and key-up are both dispatched.
 - text: single-line committed text, at most 2048 bytes, to the focused editor.
+- Release builds are windowed (no console), so a shell does not wait for `--control-call` or show its
+  output unless you redirect both, e.g. PowerShell `Start-Process ... -NoNewWindow -Wait
+  -RedirectStandardOutput out.txt -RedirectStandardError err.txt` (quote the JSON with Windows
+  argument rules: backslashes before a quote are doubled). The exit code is 1 on error.
 - scroll: x/y plus either signed `lines` (-120 to 120, wheel notches; negative scrolls down) or `pixels`/`dy`
   (-20000 to 20000; positive scrolls down). Also accepted as `{"method":"pointer","kind":"scroll",...}`.
   Scroll applies to whatever is under x/y, including dialogs such as Settings.
