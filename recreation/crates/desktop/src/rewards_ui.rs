@@ -22,7 +22,7 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let active = self.studio_open && self.studio_tab == 2;
+        let active = self.studio_open && self.studio_tab == 3;
         if self.rewards.pump(identity, active) {
             cx.notify();
         }

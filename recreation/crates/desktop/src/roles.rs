@@ -698,7 +698,8 @@ impl Workbench {
             )
             .into_any_element()
     }
-    /// Stream tab: stream info editor, then chat modes as switches.
+    /// Stream tab: the go-live checklist, stream info (title, category), then chat
+    /// modes as switches. OBS has its own tab.
     fn render_stream_tab(
         &mut self,
         pane: Option<Entity<ChannelPane>>,
@@ -757,8 +758,6 @@ impl Workbench {
         div()
             .v_flex()
             .children(self.render_checklist(&own, window, cx))
-            .child(Self::studio_section("OBS"))
-            .child(self.render_obs_card(cx))
             .child(Self::studio_section("Stream info"))
             .children(self.studio_editor.clone())
             .child(Self::studio_section("Chat modes"))
@@ -1276,7 +1275,12 @@ impl Workbench {
         };
         let body = match self.studio_tab {
             1 => self.render_stream_tab(pane.clone(), own.clone(), window, cx),
-            2 => self.render_tools_tab(pane.clone(), own.clone(), live, window, cx),
+            2 => div()
+                .v_flex()
+                .child(Self::studio_section("OBS"))
+                .child(self.render_obs_card(cx))
+                .into_any_element(),
+            3 => self.render_tools_tab(pane.clone(), own.clone(), live, window, cx),
             _ => self.render_feed(cx),
         };
         div()
@@ -1370,6 +1374,7 @@ impl Workbench {
                             "Activity".into()
                         }))
                         .child(gpui_kit::component::tab::Tab::new().label("Stream"))
+                        .child(gpui_kit::component::tab::Tab::new().label("OBS"))
                         .child(gpui_kit::component::tab::Tab::new().label("Tools")),
                 ),
             )

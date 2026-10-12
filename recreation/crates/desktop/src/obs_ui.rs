@@ -353,8 +353,7 @@ impl Workbench {
                 el.child(
                     div()
                         .id("obs-scenes")
-                        .max_h(px(300.))
-                        .overflow_y_scroll()
+                        // The OBS tab scrolls as a whole; no inner scroll box.
                         .child(div().h_flex().flex_wrap().gap_1().children(
                             state.scenes.iter().enumerate().map(|(index, scene)| {
                                 // Divider scenes ("=====[ Live ]=====") become full-width section labels.

@@ -591,9 +591,15 @@ impl Workbench {
             whispers_drawn: std::time::Instant::now() - Duration::from_secs(60),
             engagement: crate::engagement::Engagement::new(),
             feed_filter: None,
-            studio_tab: state["studio_tab"]
+            // Tabs: Activity, Stream, OBS, Tools ("studio_tab" predates the OBS tab).
+            studio_tab: state["studio_page"]
                 .as_u64()
-                .map(|t| t.min(2) as usize)
+                .map(|t| t.min(3) as usize)
+                .or_else(|| {
+                    state["studio_tab"]
+                        .as_u64()
+                        .map(|t| if t >= 2 { 3 } else { t as usize })
+                })
                 .unwrap_or(0),
             studio_tab_switched: std::time::Instant::now(),
             equalizing: None,
@@ -2602,7 +2608,7 @@ impl Workbench {
                 );
             }
         }
-        let mut value = json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"studio_tab":self.studio_tab,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"live_notify":self.live_notify,"live_notify_all":self.live_notify_all,"muted_pings":self.muted_pings,"seventv_activity":self.presence.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        let mut value = json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"studio_page":self.studio_tab,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"live_notify":self.live_notify,"live_notify_all":self.live_notify_all,"muted_pings":self.muted_pings,"seventv_activity":self.presence.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"pinned":t.pinned,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()});
         // Kept outside the macro above, which is at its recursion limit.
         let accounts = self.accounts_json(cx);

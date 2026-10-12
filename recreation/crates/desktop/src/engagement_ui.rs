@@ -17,7 +17,7 @@ impl Workbench {
     }
     pub(super) fn pump_engagement(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let identity = self.account.read(cx).identity();
-        let visible = self.studio_open && self.studio_tab == 2 && self.anchor(cx).is_some();
+        let visible = self.studio_open && self.studio_tab == 3 && self.anchor(cx).is_some();
         let (changed, results) = self.engagement.pump(identity.as_ref(), visible);
         for result in results {
             let text = match result {
