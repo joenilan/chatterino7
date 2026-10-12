@@ -399,6 +399,16 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "Twitch GIF messages",
+                    "Show the GIF from Twitch's GIF messages under the text. Off keeps just the text.",
+                    Switch::new("settings-gifs")
+                        .checked(crate::rich_messages::SHOW_GIFS.load(std::sync::atomic::Ordering::Relaxed))
+                        .on_click(cx.listener(|this, on: &bool, _, cx| {
+                            crate::rich_messages::SHOW_GIFS.store(*on, std::sync::atomic::Ordering::Relaxed);
+                            this.remeasure_all(cx);
+                        })),
+                ))
+                .child(row(
                     "Collapse long messages",
                     "Show only the first lines of very long messages, with Show more to read the rest.",
                     crate::theme::Segmented::new("settings-collapse")

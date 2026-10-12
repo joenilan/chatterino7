@@ -90,7 +90,7 @@ Chatterino import.
 - [x] /mentions /whispers /live as dockable tabs (Add channel or type the command)
 - [x] Scroll speed, smooth scrolling (S) — mouse wheel; touchpads keep native scrolling
 - [ ] Shared chat: badge on all messages; source routing (M)
-- [ ] Twitch GIF messages toggle (S)
+- [x] Twitch GIF messages toggle (S) — Appearance → Twitch GIF messages (not yet seen with a real GIF message)
 - [ ] Blocked users: display modes; hide already-shown messages (S)
 - [ ] Multiple windows with workspaces; drag between windows (M)
 - [ ] Exclude own messages from filters (S)

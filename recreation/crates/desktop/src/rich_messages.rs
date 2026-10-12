@@ -82,8 +82,11 @@ pub fn heading(message: &Message) -> Option<AnyElement> {
             .into_any_element(),
     )
 }
+/// Settings → Appearance → Twitch GIF messages: show the GIF itself (off:
+/// the message text only).
+pub static SHOW_GIFS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 pub fn attachments(message: &Message, media: &mut MediaCache, cx: &mut App) -> Option<AnyElement> {
-    if message.deleted {
+    if message.deleted || !SHOW_GIFS.load(std::sync::atomic::Ordering::Relaxed) {
         return None;
     }
     let gifs: Vec<_> = message
