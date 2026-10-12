@@ -203,6 +203,7 @@ impl Workbench {
                 split: cx.new(|_| ResizableState::default()),
                 dock: None,
                 dock_states: BTreeMap::new(),
+                locked: false,
                 pinned: Vec::new(),
             });
             self.select_tab(self.tabs.len() - 1, cx);

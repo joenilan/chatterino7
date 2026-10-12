@@ -191,7 +191,8 @@ impl Workbench {
         });
     }
     /// Start a popout with the chat already loaded in a tab for the same channel.
-    fn seed_popout(&mut self, pane: &Entity<ChannelPane>, cx: &mut Context<Self>) {
+    /// Copy a channel's current chat into a new pane (pop-outs, duplicated workspaces).
+    pub(super) fn seed_popout(&mut self, pane: &Entity<ChannelPane>, cx: &mut Context<Self>) {
         let channel = pane.read(cx).name.clone();
         let Some(source) = self
             .tab_panes()

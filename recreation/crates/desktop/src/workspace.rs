@@ -179,6 +179,8 @@ struct WorkspaceTab {
     dock_states: BTreeMap<String, Entity<ResizableState>>,
     /// Channels pinned to the front of their group; protected from closing.
     pinned: Vec<String>,
+    /// Lock layout: tabs can't be dragged or closed until unlocked.
+    locked: bool,
 }
 pub struct Workbench {
     account: Entity<crate::auth::TwitchAccount>,
@@ -1012,6 +1014,7 @@ impl Workbench {
                     split: cx.new(|_| ResizableState::default()),
                     dock,
                     dock_states: BTreeMap::new(),
+                    locked: item["locked"].as_bool().unwrap_or(false),
                     pinned: item["pinned"]
                         .as_array()
                         .into_iter()
@@ -1033,6 +1036,7 @@ impl Workbench {
                 split: cx.new(|_| ResizableState::default()),
                 dock: None,
                 dock_states: BTreeMap::new(),
+                locked: false,
                 pinned: Vec::new(),
             });
             this.next_id += 1;
@@ -1871,6 +1875,7 @@ impl Workbench {
                 split: cx.new(|_| ResizableState::default()),
                 dock: Some(dock),
                 dock_states: BTreeMap::new(),
+                locked: false,
                 pinned: Vec::new(),
             });
         }
@@ -2704,6 +2709,9 @@ impl Workbench {
         value["similar_messages"] = json!(self.similar_mode.key());
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
+        for (index, tab) in self.tabs.iter().enumerate() {
+            value["tabs"][index]["locked"] = json!(tab.locked);
+        }
         value["saved_filters"] = crate::chat_search::saved_json();
         value["header"] = json!(
             (0..crate::theme::HEADER.len())
@@ -2877,10 +2885,48 @@ impl Workbench {
             split: cx.new(|_| ResizableState::default()),
             dock: None,
             dock_states: BTreeMap::new(),
+            locked: false,
             pinned: Vec::new(),
         });
         self.select_tab(self.tabs.len() - 1, cx);
         self.open_add(false, window, cx);
+    }
+    /// A copy of a workspace: same channels, layout and pins, as a new workspace.
+    fn duplicate_workspace(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(source) = self.tabs.iter().position(|t| t.id == id) else {
+            return;
+        };
+        let new_id = self.next_id;
+        self.next_id += 1;
+        let names: Vec<String> = self.tabs[source]
+            .panes
+            .iter()
+            .map(|p| p.read(cx).name.to_string())
+            .collect();
+        let panes: Vec<Entity<ChannelPane>> = names
+            .iter()
+            .map(|name| self.make_pane(new_id, name, window, cx))
+            .collect();
+        // Bring the current chat along (found by name before the copy exists).
+        for pane in &panes {
+            self.seed_popout(pane, cx);
+        }
+        let copy = WorkspaceTab {
+            id: new_id,
+            name: format!("{} copy", self.tabs[source].name),
+            panes,
+            vertical: self.tabs[source].vertical,
+            sizes: self.tabs[source].sizes.clone(),
+            split: cx.new(|_| ResizableState::default()),
+            dock: self.tabs[source].dock.clone(),
+            dock_states: BTreeMap::new(),
+            locked: false,
+            pinned: self.tabs[source].pinned.clone(),
+        };
+        self.tabs.insert(source + 1, copy);
+        self.select_tab(source + 1, cx);
+        self.schedule_save(cx);
+        cx.notify();
     }
     fn confirm_close_tab(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         if self.close_tab_pending.is_some() {
@@ -2906,12 +2952,12 @@ impl Workbench {
         window.open_dialog(cx,move|dialog,_,_|{
             let cancel_owner=owner.clone(); let close_owner=owner.clone(); let dismiss_owner=owner.clone();
             dialog.title(title.clone()).close_button(false)
-                .child(div().v_flex().gap_3().child(body.clone()).child("Drafts are kept. You can reopen this tab with Ctrl+Shift+T during this session."))
+                .child(div().v_flex().gap_3().child(body.clone()).child("Drafts are kept. Reopen it with Ctrl+Shift+T (or Reopen closed workspace) during this session."))
                 .on_ok(|_,_,_|true)
                 .on_close(move|_,_,cx|{let _=dismiss_owner.update(cx,|this,cx|{this.close_tab_pending=None;cx.notify();});})
                 .footer(div().h_flex().justify_end().gap_2()
                     .child(Button::new("cancel-tab-close").label("Cancel").on_click(move|_,window,cx|{let _=cancel_owner.update(cx,|this,cx|{this.close_tab_pending=None;cx.notify();});window.close_dialog(cx);}))
-                    .child(Button::new("confirm-tab-close").label("Close tab").on_click(move|_,window,cx|{
+                    .child(Button::new("confirm-tab-close").danger().label("Close workspace").on_click(move|_,window,cx|{
                         let _=close_owner.update(cx,|this,cx|{if let Some(ix)=this.tabs.iter().position(|t|t.id==id){this.close_tab(ix,cx);}this.close_tab_pending=None;this.focus.focus(window,cx);});window.close_dialog(cx);
                     })))
         });
@@ -2944,6 +2990,7 @@ impl Workbench {
                 split: cx.new(|_| ResizableState::default()),
                 dock: None,
                 dock_states: BTreeMap::new(),
+                locked: false,
                 pinned: Vec::new(),
             });
         }
@@ -3614,6 +3661,13 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.tabs[self.active].locked {
+            window.push_notification(
+                Notification::info("This workspace's layout is locked. Right-click it in the sidebar → Unlock layout."),
+                cx,
+            );
+            return;
+        }
         let Some(group) = self.tabs[self.active]
             .dock
             .as_ref()
@@ -3696,6 +3750,13 @@ impl Workbench {
     }
     fn confirm_close_channel(&mut self, name: String, window: &mut Window, cx: &mut Context<Self>) {
         if self.close_channel_pending {
+            return;
+        }
+        if self.tabs[self.active].locked {
+            window.push_notification(
+                Notification::info("This workspace's layout is locked. Right-click it in the sidebar → Unlock layout."),
+                cx,
+            );
             return;
         }
         if self.anchor(cx).as_deref() == Some(name.as_str()) {
@@ -3826,6 +3887,7 @@ impl Workbench {
                             .iter()
                             .find(|p| p.read(cx).name.as_ref() == channel)
                             .cloned();
+                        let locked = self.tabs[self.active].locked;
                         let counts = drag_pane
                             .as_ref()
                             .map(|p| self.displayed_attention(p, reading_available, cx))
@@ -4386,7 +4448,7 @@ impl Workbench {
                                     ),
                                 )
                             };
-                        if let Some(pane) = drag_pane {
+                        if let Some(pane) = drag_pane.filter(|_| !locked) {
                             item.on_drag(
                                 DraggedChannel {
                                     pane,
@@ -4800,6 +4862,7 @@ impl Workbench {
                                 let owner = cx.entity().downgrade();
                                 let (id, last) = (tab.id, self.tabs.len() - 1);
                                 let can_reopen = !self.closed_tabs.is_empty();
+                                let locked = tab.locked;
                                 let live_only = self.live_workspaces;
                                 move |menu, _, _| {
                                     // Each action applies to the workspace that was right-clicked.
@@ -4823,6 +4886,26 @@ impl Workbench {
                                     .item(PopupMenuItem::new("Combine into one chat").on_click(
                                         act(|this, id, w, cx| this.combine_workspace(id, w, cx)),
                                     ))
+                                    .item(PopupMenuItem::new("Duplicate workspace").on_click(
+                                        act(|this, id, w, cx| this.duplicate_workspace(id, w, cx)),
+                                    ))
+                                    .item(
+                                        PopupMenuItem::new("Lock layout")
+                                            .checked(locked)
+                                            .on_click(act(|this, id, w, cx| {
+                                                if let Some(tab) = this.tabs.iter_mut().find(|t| t.id == id) {
+                                                    tab.locked = !tab.locked;
+                                                    let note = if tab.locked {
+                                                        "Layout locked: tabs can't be dragged or closed"
+                                                    } else {
+                                                        "Layout unlocked"
+                                                    };
+                                                    w.push_notification(Notification::info(note), cx);
+                                                }
+                                                this.schedule_save(cx);
+                                                cx.notify();
+                                            })),
+                                    )
                                     .item(PopupMenuItem::new("Move up").disabled(ix == 0).on_click(
                                         act(|this, id, _, cx| {
                                             this.select_tab_id(id, cx);
