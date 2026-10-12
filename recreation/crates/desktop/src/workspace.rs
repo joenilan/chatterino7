@@ -747,6 +747,10 @@ impl Workbench {
                     std::sync::atomic::Ordering::Relaxed,
                 );
                 crate::chat_search::load_saved(&state["saved_filters"]);
+                crate::media::ANIMATE.store(
+                    state["animate"].as_u64().unwrap_or(0).min(2) as u8,
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 for (index, flag) in crate::theme::BADGES.iter().enumerate() {
                     flag.store(
                         state["badges"][index].as_bool().unwrap_or(true),
@@ -1044,6 +1048,15 @@ impl Workbench {
             sound_settings::set_on_top(window, true);
         }
         crate::media::set_shared(this.media.clone());
+        // "Animate only while focused": track whether a Jawjack window is in front.
+        cx.observe_window_activation(window, |_, window, cx| {
+            crate::media::FOCUSED.store(
+                window.is_window_active() || cx.active_window().is_some(),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            cx.notify();
+        })
+        .detach();
         this
     }
     fn pump_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2660,6 +2673,7 @@ impl Workbench {
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
         value["saved_filters"] = crate::chat_search::saved_json();
+        value["animate"] = json!(crate::media::ANIMATE.load(std::sync::atomic::Ordering::Relaxed));
         value["badges"] = json!(
             (0..crate::theme::BADGES.len())
                 .map(crate::theme::badge_shown)

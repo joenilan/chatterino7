@@ -278,6 +278,18 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "Animated emotes",
+                    "Animated emotes, badges and name paints. \"When focused\" freezes them while Jawjack is in the background, which saves CPU while you're in a game.",
+                    crate::theme::Segmented::new("settings-animate")
+                        .selected_index(crate::media::ANIMATE.load(std::sync::atomic::Ordering::Relaxed) as usize)
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            crate::media::ANIMATE.store((*index).min(2) as u8, std::sync::atomic::Ordering::Relaxed);
+                            this.schedule_save(cx);
+                            cx.notify();
+                        }))
+                        .children(["Always", "When focused", "Never"].map(crate::theme::segment)),
+                ))
+                .child(row(
                     "Emote size",
                     "How big emotes are in chat.",
                     crate::theme::Segmented::new("settings-emote-size")

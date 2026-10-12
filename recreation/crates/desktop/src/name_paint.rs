@@ -81,8 +81,8 @@ impl Request {
             (None, _) => None,
             (Some(_), None) => return false,
             (Some(_), Some(media)) => {
-                let index = media.frame(cx.reduce_motion());
-                if media.image.frame_count() > 1 && !cx.reduce_motion() {
+                let index = media.frame(crate::media::still(cx));
+                if media.image.frame_count() > 1 && !crate::media::still(cx) {
                     window.request_animation_frame();
                 }
                 Some(index)

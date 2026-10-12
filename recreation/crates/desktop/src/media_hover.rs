@@ -106,8 +106,8 @@ impl Render for Card {
                     |bounds, _, _| bounds,
                     move |bounds, _, window, cx| {
                         for image in &layers {
-                            let frame = image.frame(cx.reduce_motion());
-                            if image.image.frame_count() > 1 && !cx.reduce_motion() {
+                            let frame = image.frame(crate::media::still(cx));
+                            if image.image.frame_count() > 1 && !crate::media::still(cx) {
                                 window.request_animation_frame();
                             }
                             let fitted =

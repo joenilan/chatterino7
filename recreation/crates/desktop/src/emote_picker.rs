@@ -108,8 +108,8 @@ pub fn avatar(media: Arc<DecodedMedia>, size: f32) -> AnyElement {
     canvas(
         |bounds, _, _| bounds,
         move |bounds, _, window, cx| {
-            let frame = media.frame(cx.reduce_motion());
-            if media.image.frame_count() > 1 && !cx.reduce_motion() {
+            let frame = media.frame(crate::media::still(cx));
+            if media.image.frame_count() > 1 && !crate::media::still(cx) {
                 window.request_animation_frame();
             }
             let fit = ObjectFit::Cover.get_bounds(bounds, media.image.size(frame));
@@ -177,8 +177,8 @@ fn smooth_icon(
                 bounds
             },
             move |bounds, _, window, cx| {
-                let frame = media.frame(cx.reduce_motion());
-                if media.image.frame_count() > 1 && !cx.reduce_motion() {
+                let frame = media.frame(crate::media::still(cx));
+                if media.image.frame_count() > 1 && !crate::media::still(cx) {
                     window.request_animation_frame();
                 }
                 let fit = ObjectFit::Contain.get_bounds(bounds, media.image.size(frame));

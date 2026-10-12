@@ -155,8 +155,8 @@ pub fn attachments(message: &Message, media: &mut MediaCache, cx: &mut App) -> O
                             if clip.size.width <= px(0.) || clip.size.height <= px(0.) {
                                 return;
                             }
-                            let frame = image.frame(cx.reduce_motion());
-                            if image.image.frame_count() > 1 && !cx.reduce_motion() {
+                            let frame = image.frame(crate::media::still(cx));
+                            if image.image.frame_count() > 1 && !crate::media::still(cx) {
                                 window.request_animation_frame();
                             }
                             let fit =

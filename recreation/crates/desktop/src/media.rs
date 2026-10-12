@@ -430,6 +430,21 @@ impl EmoteKey {
         })
     }
 }
+/// Settings → Appearance → Animated emotes: 0 always, 1 only while Jawjack is
+/// focused, 2 never. Windows' reduce-motion setting always stops them.
+pub static ANIMATE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+/// Whether a Jawjack window is in front (updated when focus changes).
+pub static FOCUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+/// True when animated images should hold their first frame.
+pub fn still(cx: &App) -> bool {
+    use std::sync::atomic::Ordering::Relaxed;
+    cx.reduce_motion()
+        || match ANIMATE.load(Relaxed) {
+            1 => !FOCUSED.load(Relaxed),
+            2 => true,
+            _ => false,
+        }
+}
 thread_local! {
     /// The app's media cache, for hover cards that load images (link thumbnails).
     static SHARED: std::cell::RefCell<Option<std::rc::Rc<std::cell::RefCell<MediaCache>>>> =

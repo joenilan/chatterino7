@@ -637,8 +637,8 @@ impl Element for InlineChat {
                 continue;
             }
             for media in piece.media.iter().flatten() {
-                let frame = media.frame(cx.reduce_motion());
-                if media.image.frame_count() > 1 && !cx.reduce_motion() {
+                let frame = media.frame(crate::media::still(cx));
+                if media.image.frame_count() > 1 && !crate::media::still(cx) {
                     window.request_animation_frame();
                 }
                 let image_bounds = ObjectFit::Contain.get_bounds(slot, media.image.size(frame));
