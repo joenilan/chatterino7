@@ -1212,7 +1212,7 @@ impl Render for ChannelPane {
                                 .child(div().flex_1().min_w_0()
                                     // `/me`: the whole message in the chatter's colour, like Chatterino.
                                     .when(message.presentation.kind == "action", |el| el.text_color(rgb(message.author_color().unwrap_or(theme::TEXT))).italic())
-                                    .child(if message.presentation.kind == chat_core::MODERATION {
+                                    .child(if message.presentation.kind == chat_core::MODERATION || message.presentation.kind == chat_core::SYSTEM {
                                     let repeats = message.presentation.repeats;
                                     let text = message.presentation.notice.clone().unwrap_or_default();
                                     div().text_color(rgb(theme::MUTED)).italic()

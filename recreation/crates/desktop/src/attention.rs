@@ -85,6 +85,7 @@ impl Attention {
     fn color(&self, message: &Message) -> Option<usize> {
         if message.deleted
             || message.presentation.kind == chat_core::MODERATION
+            || message.presentation.kind == chat_core::SYSTEM
             || self.excluded(message)
         {
             return None;
@@ -262,7 +263,10 @@ impl Attention {
             }
         }
         // History loaded on open is context, not something new to catch up on.
-        if !own && !message.presentation.historical {
+        if !own
+            && !message.presentation.historical
+            && message.presentation.kind != chat_core::SYSTEM
+        {
             self.unread.insert(row);
         }
         self.arrivals.insert(row, Instant::now());

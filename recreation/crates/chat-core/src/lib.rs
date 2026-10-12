@@ -184,6 +184,32 @@ pub enum Event {
         precise: bool,
     },
 }
+/// Local system notices (e.g. "7TV: added KEKW") use `presentation.kind == SYSTEM`
+/// and the text in `presentation.notice`; they never count as unread.
+pub const SYSTEM: &str = "system";
+/// A local system notice line for `channel_id`.
+pub fn system_notice(channel_id: &str, id: String, sent_at: Option<i64>, text: String) -> Message {
+    Message {
+        sent_at,
+        id,
+        channel_id: channel_id.to_owned(),
+        user_id: String::new(),
+        display_name: String::new(),
+        login: None,
+        reply: None,
+        mentions: vec![],
+        replyable: false,
+        name_color: None,
+        badges: vec![],
+        fragments: vec![],
+        presentation: MessagePresentation {
+            kind: SYSTEM.into(),
+            notice: Some(text),
+            ..Default::default()
+        },
+        deleted: false,
+    }
+}
 /// Moderation lines are written as `presentation.kind == MODERATION`.
 pub const MODERATION: &str = "moderation";
 /// How far back a repeat or a precise update looks for the same user's line.

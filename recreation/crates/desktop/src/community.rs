@@ -24,6 +24,47 @@ impl LoadState {
     }
 }
 pub type Emotes = HashMap<String, Fragment>;
+
+/// What changed between two loads of a channel's emote set, as notice lines
+/// ("7TV: added KEKW", "BTTV: renamed A → B"). `old` and `new` are (name, id).
+pub fn emote_changes(
+    provider: &str,
+    old: &[(String, String)],
+    new: &[(String, String)],
+) -> Vec<String> {
+    let name_of = |set: &[(String, String)], id: &str| {
+        set.iter().find(|(_, i)| i == id).map(|(n, _)| n.clone())
+    };
+    let mut lines = Vec::new();
+    for (name, id) in new {
+        match name_of(old, id) {
+            None => lines.push(format!("{provider}: added {name}")),
+            Some(before) if before != *name => {
+                lines.push(format!("{provider}: renamed {before} → {name}"))
+            }
+            _ => {}
+        }
+    }
+    for (name, id) in old {
+        if name_of(new, id).is_none() {
+            lines.push(format!("{provider}: removed {name}"));
+        }
+    }
+    // A whole set swapped at once is one line, not dozens.
+    if lines.len() > 5 {
+        return vec![format!("{provider}: {} emotes changed", lines.len())];
+    }
+    lines.sort();
+    lines
+}
+fn pairs(set: &Emotes) -> Vec<(String, String)> {
+    set.iter()
+        .filter_map(|(name, f)| match f {
+            Fragment::Emote { id, .. } => Some((name.clone(), id.clone())),
+            _ => None,
+        })
+        .collect()
+}
 #[derive(Default)]
 pub struct Set {
     pub bttv: Emotes,
@@ -36,6 +77,8 @@ pub struct Community {
     pub global_bttv_state: LoadState,
     pub global_ffz_state: LoadState,
     pub channels: HashMap<String, Set>,
+    /// Emote change notices for chat: (channel login, text).
+    pub notices: Vec<(String, String)>,
     requested: HashMap<String, (String, Instant)>,
     tx: mpsc::SyncSender<(String, String)>,
     rx: mpsc::Receiver<(
@@ -101,6 +144,7 @@ impl Community {
             global_bttv_state: LoadState::Loading,
             global_ffz_state: LoadState::Loading,
             channels: HashMap::new(),
+            notices: Vec::new(),
             requested: HashMap::new(),
             tx,
             rx,
@@ -164,11 +208,29 @@ impl Community {
                 self.global_bttv_state = bs;
                 self.global_ffz_state = fs;
             }
+            let name = channel.clone();
             let set = if channel.is_empty() {
                 &mut self.global
             } else {
                 self.channels.entry(channel).or_default()
             };
+            // A reload of a set we already had: say what changed in that chat.
+            if !name.is_empty() {
+                if let Some(new) = &bttv
+                    && !set.bttv.is_empty()
+                {
+                    for line in emote_changes("BTTV", &pairs(&set.bttv), &pairs(new)) {
+                        self.notices.push((name.clone(), line));
+                    }
+                }
+                if let Some((new, _)) = &ffz
+                    && !set.ffz.is_empty()
+                {
+                    for line in emote_changes("FFZ", &pairs(&set.ffz), &pairs(new)) {
+                        self.notices.push((name.clone(), line));
+                    }
+                }
+            }
             if let Some(emotes) = bttv {
                 set.bttv = emotes;
                 changed = true;
@@ -387,4 +449,40 @@ fn parse_ffz(v: &Value, global: bool) -> Emotes {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod change_tests {
+    #[test]
+    fn describes_emote_changes() {
+        let set = |items: &[(&str, &str)]| {
+            items
+                .iter()
+                .map(|(n, i)| (n.to_string(), i.to_string()))
+                .collect::<Vec<_>>()
+        };
+        let old = set(&[("KEKW", "1"), ("Pog", "2"), ("Old", "3")]);
+        let new = set(&[("KEKW", "1"), ("PogU", "2"), ("Fresh", "4")]);
+        assert_eq!(
+            super::emote_changes("7TV", &old, &new),
+            [
+                "7TV: added Fresh",
+                "7TV: removed Old",
+                "7TV: renamed Pog → PogU"
+            ]
+        );
+        assert!(super::emote_changes("BTTV", &old, &old).is_empty());
+        let many = set(&[
+            ("A", "a"),
+            ("B", "b"),
+            ("C", "c"),
+            ("D", "d"),
+            ("E", "e"),
+            ("F", "f"),
+        ]);
+        assert_eq!(
+            super::emote_changes("BTTV", &[], &many),
+            ["BTTV: 6 emotes changed"]
+        );
+    }
 }

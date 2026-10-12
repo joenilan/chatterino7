@@ -447,6 +447,18 @@ impl Catalog {
                         changed = true;
                     }
                 } else if active.contains(&name) && self.channels.get(&name) != Some(&emotes) {
+                    if let Some(old) = self.channels.get(&name).filter(|o| !o.is_empty()) {
+                        let pairs = |set: &Emotes| {
+                            set.iter()
+                                .map(|(n, e)| (n.clone(), e.id.clone()))
+                                .collect::<Vec<_>>()
+                        };
+                        for line in
+                            crate::community::emote_changes("7TV", &pairs(old), &pairs(&emotes))
+                        {
+                            self.community.notices.push((name.clone(), line));
+                        }
+                    }
                     self.channels.insert(name, emotes);
                     changed = true;
                 }
@@ -540,6 +552,10 @@ impl Catalog {
         self.global_requested = Instant::now() - Duration::from_secs(300);
         self.community.invalidate(name);
         self.community.invalidate("");
+    }
+    /// Emote added/removed/renamed notices for chat: (channel login, text).
+    pub fn take_notices(&mut self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.community.notices)
     }
     pub fn can_retry_public(&self) -> bool {
         use crate::community::LoadState;

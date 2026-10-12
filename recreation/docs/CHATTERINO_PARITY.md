@@ -27,7 +27,7 @@ Chatterino import.
 - [ ] Chatterino supporter badges (S)
 - [ ] Join/part messages (via IRC) (M)
 - [ ] Pinned message bar, /pin /unpin (M) [dead for viewers]
-- [ ] Chat notices when 7TV/BTTV emotes are added/removed/renamed (S)
+- [x] Chat notices when 7TV/BTTV emotes are added/removed/renamed (S)
 - [ ] Inline whispers in channel splits (S)
 - [x] Slow-mode / timeout send countdown (S)
 - [ ] Header: stream title, game, viewers, uptime toggles (S)

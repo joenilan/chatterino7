@@ -328,6 +328,8 @@ pub struct Workbench {
     live_notify_all: bool,
     /// Alerts for every followed channel going live, open as a tab or not.
     live_notify_follows: bool,
+    /// Counter for local system notice IDs.
+    next_notice: u64,
     presence: crate::seven_presence::Presence,
     recent_requested: std::collections::HashSet<String>,
     updates: crate::updates::Updates,
@@ -628,6 +630,7 @@ impl Workbench {
                 .collect(),
             live_notify_all: state["live_notify_all"].as_bool().unwrap_or(false),
             live_notify_follows: state["live_notify_follows"].as_bool().unwrap_or(false),
+            next_notice: 0,
             muted_pings: state["muted_pings"]
                 .as_array()
                 .into_iter()
@@ -1348,7 +1351,31 @@ impl Workbench {
                 }
             }
         }
-        if self.catalog.borrow_mut().pump(priority, identity.clone()) {
+        let notices = {
+            let changed = self
+                .catalog
+                .borrow_mut()
+                .pump(priority.clone(), identity.clone());
+            (changed, self.catalog.borrow_mut().take_notices())
+        };
+        for (channel, text) in notices.1 {
+            for pane in &panes {
+                if pane.read(cx).all_sources().contains(&channel) {
+                    let id = format!("system:{}:{}", channel, self.next_notice);
+                    self.next_notice += 1;
+                    let notice = chat_core::system_notice(
+                        &channel,
+                        id,
+                        Some(chrono::Utc::now().timestamp()),
+                        text.clone(),
+                    );
+                    pane.update(cx, |p, cx| {
+                        p.received(chat_core::Event::Message(notice), cx)
+                    });
+                }
+            }
+        }
+        if notices.0 {
             for pane in &panes {
                 pane.update(cx, |p, cx| {
                     p.search.dirty = true;
