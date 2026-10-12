@@ -24,7 +24,7 @@ Chatterino import.
 - [x] Hide deleted messages; show/hide moderation & deletion lines (S)
 - [x] Timeout/ban lines with duration for viewers; stack/combine (M) — an anonymous IRC connection runs beside EventSub for lengths (live and history), and carries chat while a channel's EventSub is down
 - [x] Badge visibility toggles per category; animated 7TV badges (M)
-- [ ] Chatterino supporter badges (S)
+- [x] Chatterino supporter badges (S) — from api.chatterino.com; Appearance → Badges → Chatterino
 - [x] Join/part messages (via IRC) (M) — gathered every 5 s into "Joined: …" / "Left: …" lines; off by default
 - [ ] Pinned message bar, /pin /unpin (M) [dead for viewers]
 - [x] Chat notices when 7TV/BTTV emotes are added/removed/renamed (S)

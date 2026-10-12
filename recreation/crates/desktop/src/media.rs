@@ -64,6 +64,37 @@ impl EmoteKey {
             }),
         })
     }
+    /// Chatterino's badges, served from fourtf.com (its author's site).
+    pub fn chatterino_badge(value: &str) -> Option<Self> {
+        let url = reqwest::Url::parse(value).ok()?;
+        if value.len() > 512
+            || url.scheme() != "https"
+            || url.host_str() != Some("fourtf.com")
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.port().is_some_and(|p| p != 443)
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || !url.path().starts_with("/chatterino/badges/")
+            || url.path().contains("..")
+            || !url
+                .path()
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'.'))
+        {
+            return None;
+        }
+        Some(Self {
+            id: format!("chatterino-badge:{}", url.path()),
+            animated: false,
+            external: Some(chat_core::EmoteAsset {
+                url: value.into(),
+                static_url: value.into(),
+                width: 18,
+                height: 18,
+            }),
+        })
+    }
     pub fn ffz_role_badge(role: &str, value: &str) -> Option<Self> {
         if !matches!(role, "mod" | "vip") {
             return None;
@@ -343,6 +374,9 @@ impl EmoteKey {
         }
         if self.id.starts_with("ffz-role:") {
             return "ffz_role_badge";
+        }
+        if self.id.starts_with("chatterino-badge:") {
+            return "chatterino_badge";
         }
         if self.id.starts_with("7tv-badge:") {
             return "7tv_badge";

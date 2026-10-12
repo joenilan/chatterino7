@@ -218,6 +218,7 @@ pub fn source(provider: &str) -> &'static str {
         "twitch_badge" => "Twitch Badge",
         "ffz_badge" => "FrankerFaceZ Badge",
         "ffz_role_badge" => "FrankerFaceZ Channel Badge",
+        "chatterino_badge" => "Chatterino Badge",
         "7tv_badge" => "7TV Badge",
         "twitch_avatar" => "Twitch Channel",
         "twitch" => "Twitch Emote",

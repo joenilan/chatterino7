@@ -40,6 +40,7 @@ pub struct Catalog {
     entitlements: crate::seven_entitlements::Entitlements,
     pub badges: crate::seven_badges::Badges,
     pub ffz_badges: crate::ffz_badges::Badges,
+    pub chatterino_badges: crate::chatterino_badges::Badges,
     pub paints: crate::seven_paints::Paints,
     pub paint_cache: std::rc::Rc<std::cell::RefCell<crate::name_paint::Cache>>,
     entitled_sets: HashMap<String, Emotes>,
@@ -123,6 +124,7 @@ impl Catalog {
             profiles: crate::profiles::Profiles::new(),
             community: crate::community::Community::new(),
             ffz_badges: crate::ffz_badges::Badges::new(),
+            chatterino_badges: crate::chatterino_badges::Badges::new(),
             channels: HashMap::new(),
             requested: HashMap::new(),
             seven_lookup: crate::seven_lookup::Lookup::new(),
@@ -132,7 +134,7 @@ impl Catalog {
         }
     }
     pub fn inspection(&self) -> Value {
-        serde_json::json!({"bttv_live_updates":self.bttv_events.connected(),"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_owned_emotes":self.owned.items.len(),"twitch_owned_status":self.owned.status,"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"personal_emotes":self.personal.len(),"personal_catalog_loaded":self.personal_ready,"personal_scope":"owned set plus passive session grants","ffz_badges":self.ffz_badges.inspection(),"seventv_badges":self.badges.inspection(),"seventv_paints":self.paints.inspection(),"seventv_entitled_senders":self.entitlements.len(),"seventv_entitled_sets":self.entitled_sets.len(),"seventv_entitled_emotes":self.entitled_sets.values().map(HashMap::len).sum::<usize>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
+        serde_json::json!({"bttv_live_updates":self.bttv_events.connected(),"seventv_live_updates":self.events.connected(),"seventv_update_status":self.events.status(),"community":self.community.inspection(),"twitch_global_emotes":self.twitch.global.emotes.len(),"twitch_owned_emotes":self.owned.items.len(),"twitch_owned_status":self.owned.status,"twitch_global_badges":self.twitch.global.badges.len(),"twitch_channel_badges":self.twitch.channels.iter().map(|(n,a)|(n.clone(),a.badges.len())).collect::<HashMap<_,_>>(),"personal_emotes":self.personal.len(),"personal_catalog_loaded":self.personal_ready,"personal_scope":"owned set plus passive session grants","ffz_badges":self.ffz_badges.inspection(),"chatterino_badge_users":self.chatterino_badges.users(),"seventv_badges":self.badges.inspection(),"seventv_paints":self.paints.inspection(),"seventv_entitled_senders":self.entitlements.len(),"seventv_entitled_sets":self.entitled_sets.len(),"seventv_entitled_emotes":self.entitled_sets.values().map(HashMap::len).sum::<usize>(),"global_emotes":self.global.len(),"channel_emotes":self.channels.iter().map(|(name,emotes)|(name.clone(),emotes.len())).collect::<HashMap<_,_>>()})
     }
     /// Look up a chatter's 7TV paint and badge if not checked recently.
     pub fn want_cosmetics(&mut self, user: &str) {
@@ -366,6 +368,7 @@ impl Catalog {
         }
         changed |= self.community.pump(&channel_requests);
         changed |= self.ffz_badges.pump();
+        changed |= self.chatterino_badges.pump();
         while let Ok((name, requested_id, generation, result)) = self.rx.try_recv() {
             self.in_flight.remove(&name);
             if !name.is_empty()

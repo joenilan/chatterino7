@@ -21,6 +21,7 @@ mod chat_search;
 mod chat_text;
 mod chatter_appearance;
 mod chatter_notes;
+mod chatterino_badges;
 mod chatterino_import;
 mod chatters;
 mod chatters_ui;
@@ -1153,6 +1154,7 @@ impl Render for ChannelPane {
                                 for definition in catalog.ffz_badges.for_user(&message.user_id,room).into_iter().filter(|_|theme::badge_shown(theme::FFZ_BADGES)){let image=media.borrow_mut().get(&definition.badge.key,cx);badge_images.push((definition.badge,image,definition.background));}
                             }
                             if let Some(badge)=catalog.borrow().badges.for_user(&message.user_id).cloned().filter(|_|theme::badge_shown(theme::SEVEN_TV_BADGES)){let image=media.borrow_mut().get(&badge.key,cx);badge_images.push((badge,image,None));}
+                            if theme::badge_shown(theme::CHATTERINO_BADGES){for badge in catalog.borrow().chatterino_badges.for_user(&message.user_id).iter().cloned(){let image=media.borrow_mut().get(&badge.key,cx);badge_images.push((badge,image,None));}}
                             // A definitively failed badge drops its slot instead of leaving a blank gap;
                             // pending art keeps its slot so loading does not reflow the row.
                             badge_images.retain(|(badge,image,_)|image.is_some()||!media.borrow().failed(&badge.key));

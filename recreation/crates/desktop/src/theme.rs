@@ -108,7 +108,7 @@ pub fn chat_font() -> Option<String> {
 }
 
 /// Settings → Appearance → Badges: which kinds show (Chatterino's categories).
-pub const BADGE_KINDS: [&str; 7] = [
+pub const BADGE_KINDS: [&str; 8] = [
     "Staff & admin",
     "Broadcaster, mod & VIP",
     "Predictions",
@@ -116,8 +116,10 @@ pub const BADGE_KINDS: [&str; 7] = [
     "Other Twitch",
     "FFZ",
     "7TV",
+    "Chatterino",
 ];
-pub static BADGES: [std::sync::atomic::AtomicBool; 7] = [
+pub static BADGES: [std::sync::atomic::AtomicBool; 8] = [
+    std::sync::atomic::AtomicBool::new(true),
     std::sync::atomic::AtomicBool::new(true),
     std::sync::atomic::AtomicBool::new(true),
     std::sync::atomic::AtomicBool::new(true),
@@ -128,6 +130,7 @@ pub static BADGES: [std::sync::atomic::AtomicBool; 7] = [
 ];
 pub const FFZ_BADGES: usize = 5;
 pub const SEVEN_TV_BADGES: usize = 6;
+pub const CHATTERINO_BADGES: usize = 7;
 /// The kind of a Twitch badge set (index into BADGE_KINDS).
 pub fn badge_kind(set_id: &str) -> usize {
     match set_id {
