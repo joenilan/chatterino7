@@ -755,19 +755,60 @@ impl Workbench {
             ],
             None => Vec::new(),
         };
+        let reduced_rows = cx.reduce_motion();
         div()
             .v_flex()
             .children(self.render_checklist(&own, window, cx))
             .child(Self::studio_section("Stream info"))
             .children(self.studio_editor.clone())
             .child(Self::studio_section("Chat modes"))
+            // Placeholders shaped like the switches until chat reports its modes.
             .when(rows.is_empty(), |el| {
-                el.child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(rgb(theme::MUTED))
-                        .child("Available once your chat is connected."),
-                )
+                let reduced = cx.reduce_motion();
+                el.children((0..5usize).map(move |index| {
+                    let row = div()
+                        .h_flex()
+                        .items_center()
+                        .gap_3()
+                        .py_2()
+                        .child(
+                            div()
+                                .v_flex()
+                                .flex_1()
+                                .gap(px(6.))
+                                .child(
+                                    div()
+                                        .w(px(70. + 14. * (index % 3) as f32))
+                                        .h(px(10.))
+                                        .rounded(px(3.))
+                                        .bg(rgb(theme::HOVER)),
+                                )
+                                .child(
+                                    div()
+                                        .w(px(110. + 18. * (index % 2) as f32))
+                                        .h(px(8.))
+                                        .rounded(px(3.))
+                                        .bg(rgb(theme::CONTROL)),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .w(px(36.))
+                                .h(px(20.))
+                                .rounded_full()
+                                .bg(rgb(theme::CONTROL)),
+                        );
+                    if reduced {
+                        row.into_any_element()
+                    } else {
+                        row.with_animation(
+                            ("chat-mode-placeholder", index),
+                            Animation::new(std::time::Duration::from_millis(1100)).repeat(),
+                            |el, p| el.opacity(0.55 + 0.35 * (std::f32::consts::PI * p).sin()),
+                        )
+                        .into_any_element()
+                    }
+                }))
             })
             .children(rows.into_iter().enumerate().map(
                 |(index, (label, detail, on, command, arg))| {
@@ -813,6 +854,16 @@ impl Workbench {
                                         );
                                     }
                                 }),
+                        )
+                        // Fades in over the placeholders once chat reports its modes.
+                        .with_animation(
+                            ("chat-mode-row", index),
+                            Animation::new(std::time::Duration::from_millis(if reduced_rows {
+                                1
+                            } else {
+                                200
+                            })),
+                            |el, p| el.opacity(p),
                         )
                 },
             ))
