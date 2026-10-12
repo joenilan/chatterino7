@@ -39,6 +39,12 @@ enabled; consent screen "Jawjack", External; scope `youtube.force-ssl`; Desktop 
   `app/(site)/apps/[slug]/privacy/page.tsx`)
 - terms https://zombie.digital/terms, authorized domain `zombie.digital`.
 
+Status (October 11, 2026): app published (In production), branding verified and shown (logo:
+`assets/brand/jawjack-google-120.png`), zombie.digital verified in Search Console, and data-access
+verification **submitted and under review**. Demo video: https://youtu.be/iSrOtUL__Lw (unlisted on
+DreadedZombie; made with `tools/promo/`). Until Google approves, users see the unverified-app screen and
+there is a 100-user cap; Jawjack labels YouTube "Beta". Next: the quota extension form (step 4 below).
+
 ## Going live, in order
 
 1. **Publish** (owner clicks): Audience → Publish app → Confirm. Anyone can then sign in, and the 7-day
