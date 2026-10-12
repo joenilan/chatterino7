@@ -399,6 +399,17 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "Collapse long messages",
+                    "Show only the first lines of very long messages, with Show more to read the rest.",
+                    crate::theme::Segmented::new("settings-collapse")
+                        .selected_index([0u32, 2, 3, 5, 10].iter().position(|n| *n == crate::COLLAPSE_LINES.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(0))
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            crate::COLLAPSE_LINES.store([0u32, 2, 3, 5, 10][*index], std::sync::atomic::Ordering::Relaxed);
+                            this.remeasure_all(cx);
+                        }))
+                        .children(["Off", "2 lines", "3", "5", "10"].map(crate::theme::segment)),
+                ))
+                .child(row(
                     "Lines between messages",
                     "A thin separator under every message.",
                     Switch::new("settings-separators").checked(crate::theme::flag(&crate::theme::SEPARATORS)).on_click(cx.listener(|this, on: &bool, _, cx| {

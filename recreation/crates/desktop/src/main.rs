@@ -22,6 +22,8 @@ mod chat_text;
 mod chatter_appearance;
 mod chatter_notes;
 mod chatterino_badges;
+/// Settings → Appearance → Collapse long messages: lines shown (0 = never).
+pub static COLLAPSE_LINES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 mod chatterino_import;
 mod chatters;
 mod chatters_ui;
@@ -341,6 +343,8 @@ struct ChannelPane {
     next_id: usize,
     entrances: Vec<MessageEntrance>,
     viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
+    /// Long messages the reader expanded (Settings → Appearance → Collapse).
+    expanded: Rc<RefCell<std::collections::HashSet<String>>>,
 }
 impl ChannelPane {
     fn new(
@@ -458,6 +462,7 @@ impl ChannelPane {
             next_id: 0,
             entrances: Vec::new(),
             viewport: Rc::new(RefCell::new(None)),
+            expanded: Default::default(),
         }
     }
     /// Tab menu → "Clear messages locally": empties this view; nobody else is affected.
@@ -868,6 +873,8 @@ impl Render for ChannelPane {
         let jump_pulse = self.jump_pulse;
         let highlight_rows = self.attention.highlights.clone();
         let highlight_colors = self.attention.colors.clone();
+        let expanded = self.expanded.clone();
+        let collapse_lines = COLLAPSE_LINES.load(std::sync::atomic::Ordering::Relaxed);
         let view_filter = self.view_filter.as_ref().map(|(_, q)| q.clone());
         let hidden_platforms = self.hidden_platforms.clone();
         // Shared Chat: colours per guest channel, hidden channels, and the look.
@@ -1155,6 +1162,16 @@ impl Render for ChannelPane {
                             };
                             let inline = inline_chat::InlineChat::new(message, paint.clone(), row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx);
                             let first_line_height = if inline.is_some() { inline_chat::InlineChat::line_height(window,message) } else { window.line_height() };
+                            // Roughly how many lines this message wraps to at the pane's width.
+                            let collapsed = collapse_lines > 0
+                                && message.presentation.kind != chat_core::MODERATION
+                                && message.presentation.kind != chat_core::SYSTEM
+                                && !expanded.borrow().contains(&message.id)
+                                && viewport.borrow().is_some_and(|bounds| {
+                                    let width = (f32::from(bounds.size.width) - 120.).max(80.);
+                                    let per_line = width / (f32::from(window.rem_size()) * 0.5);
+                                    message.copy_line().chars().count() as f32 / per_line > collapse_lines as f32 + 0.5
+                                });
                             let mut badge_images=message.badges.iter().filter(|badge|theme::badge_shown(theme::badge_kind(&badge.set_id))).filter_map(|badge|{
                                 let custom=if message.presentation.source.is_none(){catalog.borrow().community.channels.get(channel_name.as_ref()).filter(|set|set.ffz_room_id==message.channel_id).and_then(|set|set.roles.get(&badge.set_id)).cloned()}else{None};
                                 if let Some(custom)=custom{
@@ -1328,7 +1345,9 @@ impl Render for ChannelPane {
                                 }).collect::<Vec<_>>())
                                 .when(message.deleted, |el| el.child(div().h(first_line_height).flex().items_center().flex_shrink_0()
                                     .child(div().px(px(4.)).rounded(px(3.)).bg(rgb(0x3A2328)).text_color(rgb(0xF29D9D)).text_size(px(10.)).child("deleted"))))
-                                .child(div().flex_1().min_w_0()
+                                .child(div().flex_1().min_w_0().v_flex().child(div().min_w_0()
+                                    // Collapsed: only the first lines, with "Show more" under them.
+                                    .when(collapsed, |el| el.max_h(first_line_height * collapse_lines as f32).overflow_hidden())
                                     // `/me`: the whole message in the chatter's colour, like Chatterino.
                                     .when(message.presentation.kind == "action", |el| el.text_color(rgb(message.author_color().unwrap_or(theme::TEXT))).italic())
                                     .child(if message.presentation.kind == chat_core::MODERATION || message.presentation.kind == chat_core::SYSTEM {
@@ -1342,6 +1361,21 @@ impl Render for ChannelPane {
                                 } else {
                                     ChatText::new(SharedString::from(format!("text-{}", message.id)), row, message.copy_line(), selection.clone(), focus.clone(), viewport.clone())
                                         .with_author(message.author_label(), message.author_color()).with_paint(paint).with_search(matches).with_interaction(interaction).into_any_element()
+                                }))
+                                .when(collapsed, |el| {
+                                    let (owner, id) = (menu_owner.clone(), message.id.clone());
+                                    el.child(div().id(SharedString::from(format!("expand-{id}"))).text_size(px(11.)).text_color(rgb(theme::ACCENT)).cursor_pointer().hover(|s| s.underline())
+                                        .capture_any_mouse_down(move |event: &MouseDownEvent, _, cx| {
+                                            if event.button != MouseButton::Left { return; }
+                                            cx.stop_propagation();
+                                            let id = id.clone();
+                                            let _ = owner.update(cx, |p, cx| {
+                                                p.expanded.borrow_mut().insert(id);
+                                                p.scroller.update(cx, |s, cx| s.remeasure(cx));
+                                                cx.notify();
+                                            });
+                                        })
+                                        .child("Show more"))
                                 })))
                                 .children(rich_attachments)
                                 .into_any_element()

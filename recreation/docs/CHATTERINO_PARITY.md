@@ -20,7 +20,7 @@ Chatterino import.
 - [ ] UI scale separate from chat text (M)
 - [x] Username display: Username / Localized / Both (S)
 - [x] Message separator lines (S)
-- [ ] Collapse long messages after N lines (M)
+- [x] Collapse long messages after N lines (M) — Appearance → Collapse long messages (Off, 2, 3, 5, 10) with Show more
 - [x] Hide deleted messages; show/hide moderation & deletion lines (S)
 - [x] Timeout/ban lines with duration for viewers; stack/combine (M) — an anonymous IRC connection runs beside EventSub for lengths (live and history), and carries chat while a channel's EventSub is down
 - [x] Badge visibility toggles per category; animated 7TV badges (M)
