@@ -2,7 +2,6 @@
 use super::settings_ui::{heading, row};
 use super::*;
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::tab::{Tab, TabBar};
 
 const VOLUMES: [f32; 3] = [0.3, 0.6, 1.0];
 
@@ -132,8 +131,7 @@ impl Workbench {
                 custom
                     .map(|name| format!("Your file: {name}"))
                     .unwrap_or_else(|| "Choosing one plays it once.".into()),
-                TabBar::new("settings-tone")
-                    .segmented()
+                crate::theme::Segmented::new("settings-tone")
                     .selected_index(tone_index)
                     .on_click(cx.listener(|this, index: &usize, window, cx| {
                         match index {
@@ -145,13 +143,12 @@ impl Workbench {
                         this.schedule_save(cx);
                         cx.notify();
                     }))
-                    .children(["Chime", "Soft", "Your .wav…"].map(|l| Tab::new().label(l))),
+                    .children(["Chime", "Soft", "Your .wav…"].map(|l| crate::theme::segment(l))),
             ))
             .child(row(
                 "Volume",
                 "Relative to your system volume.",
-                TabBar::new("settings-volume")
-                    .segmented()
+                crate::theme::Segmented::new("settings-volume")
                     .selected_index(volume_index)
                     .on_click(cx.listener(|this, index: &usize, _, cx| {
                         this.sound_volume = VOLUMES[*index];
@@ -159,7 +156,7 @@ impl Workbench {
                         this.schedule_save(cx);
                         cx.notify();
                     }))
-                    .children(["Quiet", "Normal", "Loud"].map(|l| Tab::new().label(l))),
+                    .children(["Quiet", "Normal", "Loud"].map(|l| crate::theme::segment(l))),
             ))
     }
 }
@@ -180,8 +177,7 @@ impl Workbench {
         page.child(row(
             "Streamer mode",
             status,
-            TabBar::new("settings-streamer-mode")
-                .segmented()
+            crate::theme::Segmented::new("settings-streamer-mode")
                 .selected_index(
                     crate::streamer_mode::Mode::ALL
                         .iter()
@@ -193,7 +189,9 @@ impl Workbench {
                     this.schedule_save(cx);
                     cx.notify();
                 }))
-                .children(crate::streamer_mode::Mode::ALL.map(|m| Tab::new().label(m.label()))),
+                .children(
+                    crate::streamer_mode::Mode::ALL.map(|m| crate::theme::segment(m.label())),
+                ),
         ))
         .child(row(
             "Mute ping sounds",

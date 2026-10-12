@@ -1356,8 +1356,8 @@ impl Workbench {
             })
             .child(
                 div().px_3().child(
-                    gpui_kit::component::tab::TabBar::new("studio-tabs")
-                        .segmented()
+                    crate::theme::Segmented::new("studio-tabs")
+                        .full_width()
                         .selected_index(self.studio_tab)
                         .on_click(cx.listener(|this, index: &usize, _, cx| {
                             if this.studio_tab != *index {
@@ -1368,14 +1368,14 @@ impl Workbench {
                                 cx.notify();
                             }
                         }))
-                        .child(gpui_kit::component::tab::Tab::new().label(if unseen > 0 {
+                        .child(crate::theme::segment(if unseen > 0 {
                             format!("Activity · {unseen}")
                         } else {
                             "Activity".into()
                         }))
-                        .child(gpui_kit::component::tab::Tab::new().label("Stream"))
-                        .child(gpui_kit::component::tab::Tab::new().label("OBS"))
-                        .child(gpui_kit::component::tab::Tab::new().label("Tools")),
+                        .child(crate::theme::segment("Stream"))
+                        .child(crate::theme::segment("OBS"))
+                        .child(crate::theme::segment("Tools")),
                 ),
             )
             .child(

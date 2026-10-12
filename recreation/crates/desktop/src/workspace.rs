@@ -326,6 +326,8 @@ pub struct Workbench {
     /// Channels whose mentions and highlights don't play a sound.
     muted_pings: Vec<String>,
     live_notify_all: bool,
+    /// Alerts for every followed channel going live, open as a tab or not.
+    live_notify_follows: bool,
     presence: crate::seven_presence::Presence,
     recent_requested: std::collections::HashSet<String>,
     updates: crate::updates::Updates,
@@ -625,6 +627,7 @@ impl Workbench {
                 .take(500)
                 .collect(),
             live_notify_all: state["live_notify_all"].as_bool().unwrap_or(false),
+            live_notify_follows: state["live_notify_follows"].as_bool().unwrap_or(false),
             muted_pings: state["muted_pings"]
                 .as_array()
                 .into_iter()
@@ -2363,6 +2366,39 @@ impl Workbench {
         cx.notify();
     }
     fn pump_live_alerts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Followed channels that aren't open as tabs (open ones are watched below,
+        // faster): alert if you follow-alert everyone or picked this channel.
+        let open: std::collections::HashSet<String> = self
+            .tab_panes()
+            .iter()
+            .map(|p| p.read(cx).name.to_string())
+            .collect();
+        for live in self.follows_live.take_went_live() {
+            if open.contains(&live.login)
+                || !(self.live_notify_follows || self.live_notify.contains(&live.login))
+                || crate::streamer_mode::hides(crate::streamer_mode::LIVE_ALERTS)
+            {
+                continue;
+            }
+            let owner = cx.entity().downgrade();
+            let target = live.login.clone();
+            let detail = [live.title.as_str(), live.game.as_str()]
+                .into_iter()
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join(" · ");
+            window.push_notification(
+                Notification::new()
+                    .title(format!("{} is live", live.label()))
+                    .message(detail)
+                    .in_app_and_system()
+                    .on_click(move |_, window, cx| {
+                        let _ = owner
+                            .update(cx, |this, cx| this.open_channel(target.clone(), window, cx));
+                    }),
+                cx,
+            );
+        }
         for (channel, info) in self.streams.take_went_live() {
             if !self.live_notify_all && !self.live_notify.contains(&channel) {
                 continue;
@@ -2608,7 +2644,7 @@ impl Workbench {
                 );
             }
         }
-        let mut value = json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"studio_page":self.studio_tab,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"live_notify":self.live_notify,"live_notify_all":self.live_notify_all,"muted_pings":self.muted_pings,"seventv_activity":self.presence.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        let mut value = json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"studio_page":self.studio_tab,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"live_notify":self.live_notify,"live_notify_all":self.live_notify_all,"live_notify_follows":self.live_notify_follows,"muted_pings":self.muted_pings,"seventv_activity":self.presence.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"pinned":t.pinned,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()});
         // Kept outside the macro above, which is at its recursion limit.
         let accounts = self.accounts_json(cx);

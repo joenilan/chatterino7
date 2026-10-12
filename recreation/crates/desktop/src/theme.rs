@@ -143,3 +143,99 @@ pub fn badge_shown(kind: usize) -> bool {
         .get(kind)
         .is_none_or(|b| b.load(std::sync::atomic::Ordering::Relaxed))
 }
+
+/// Jawjack's segmented control (Settings choices, Studio tabs): the selected
+/// segment is filled with the lilac accent, like other selected states.
+#[derive(IntoElement)]
+pub struct Segmented {
+    id: ElementId,
+    labels: Vec<SharedString>,
+    selected: usize,
+    full: bool,
+    on_click: Option<std::rc::Rc<dyn Fn(&usize, &mut Window, &mut App)>>,
+}
+/// One segment's label (reads like the kit's `Tab::new().label(..)`).
+pub fn segment(label: impl Into<SharedString>) -> SharedString {
+    label.into()
+}
+impl Segmented {
+    pub fn new(id: impl Into<ElementId>) -> Self {
+        Self {
+            id: id.into(),
+            labels: Vec::new(),
+            selected: 0,
+            full: false,
+            on_click: None,
+        }
+    }
+    /// Stretch across the available width, segments sharing it equally.
+    pub fn full_width(mut self) -> Self {
+        self.full = true;
+        self
+    }
+    pub fn selected_index(mut self, index: usize) -> Self {
+        self.selected = index;
+        self
+    }
+    pub fn on_click(mut self, f: impl Fn(&usize, &mut Window, &mut App) + 'static) -> Self {
+        self.on_click = Some(std::rc::Rc::new(f));
+        self
+    }
+    pub fn child(mut self, label: impl Into<SharedString>) -> Self {
+        self.labels.push(label.into());
+        self
+    }
+    pub fn children(mut self, labels: impl IntoIterator<Item = impl Into<SharedString>>) -> Self {
+        self.labels.extend(labels.into_iter().map(Into::into));
+        self
+    }
+}
+impl RenderOnce for Segmented {
+    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+        use gpui_kit::prelude::FluentBuilder;
+        let selected = self.selected;
+        let on_click = self.on_click;
+        let full = self.full;
+        div()
+            .id(self.id)
+            .when(full, |el| el.w_full())
+            .flex()
+            .flex_row()
+            .items_center()
+            .flex_shrink_0()
+            .p(px(2.))
+            .gap(px(2.))
+            .rounded(px(7.))
+            .bg(rgb(CONTROL))
+            .children(
+                self.labels
+                    .into_iter()
+                    .enumerate()
+                    .map(move |(index, label)| {
+                        let chosen = index == selected;
+                        let on_click = on_click.clone();
+                        div()
+                            .id(("segment", index))
+                            .px(px(10.))
+                            .py(px(3.))
+                            .rounded(px(5.))
+                            .when(full, |el| el.flex_1().flex().justify_center())
+                            .text_size(px(12.))
+                            .cursor_pointer()
+                            .when(chosen, |el| {
+                                el.bg(rgb(ACCENT))
+                                    .text_color(rgb(0x16121F))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                            })
+                            .when(!chosen, |el| {
+                                el.text_color(rgb(MUTED))
+                                    .hover(|s| s.bg(rgb(HOVER)).text_color(rgb(TEXT)))
+                            })
+                            .child(label)
+                            .when_some(on_click, |el, f| {
+                                el.on_click(move |_, window, cx| f(&index, window, cx))
+                            })
+                    }),
+            )
+    }
+}

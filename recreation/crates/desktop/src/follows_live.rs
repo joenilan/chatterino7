@@ -195,6 +195,9 @@ pub fn arrange(
 pub struct FollowsLive {
     /// Live followed channels, most viewers first; None until loaded.
     pub list: Option<Vec<LiveFollow>>,
+    /// Followed channels that appeared live since the last refresh (not on the
+    /// first load after sign-in, which is just who's already live).
+    went_live: Vec<LiveFollow>,
     user: Option<String>,
     last: Option<Instant>,
     pending: bool,
@@ -220,6 +223,7 @@ impl FollowsLive {
             });
         Self {
             list: None,
+            went_live: Vec::new(),
             user: None,
             last: None,
             pending: false,
@@ -242,6 +246,13 @@ impl FollowsLive {
                 && let Some(list) = list
                 && self.list.as_ref() != Some(&list)
             {
+                if let Some(before) = &self.list {
+                    let new = list
+                        .iter()
+                        .filter(|l| !before.iter().any(|b| b.login == l.login))
+                        .cloned();
+                    self.went_live.extend(new);
+                }
                 self.list = Some(list);
                 changed = true;
             }
@@ -255,6 +266,13 @@ impl FollowsLive {
             self.last = Some(Instant::now());
         }
         changed
+    }
+}
+
+impl FollowsLive {
+    /// Channels you follow that went live since this was last asked.
+    pub fn take_went_live(&mut self) -> Vec<LiveFollow> {
+        std::mem::take(&mut self.went_live)
     }
 }
 

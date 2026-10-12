@@ -85,13 +85,12 @@ impl Workbench {
                 page.child(row(
                     "Layout",
                     "What the window is set up for. Moderator adds mod tools; Streamer adds the Studio panel.",
-                    gpui_kit::component::tab::TabBar::new("settings-experience")
-                        .segmented()
+                    crate::theme::Segmented::new("settings-experience")
                         .selected_index(roles::Experience::ALL.iter().position(|e| *e == experience).unwrap_or(0))
                         .on_click(cx.listener(|this, index: &usize, _, cx| {
                             this.set_experience(roles::Experience::ALL[*index], cx)
                         }))
-                        .children(roles::Experience::ALL.map(|e| gpui_kit::component::tab::Tab::new().label(e.label()))),
+                        .children(roles::Experience::ALL.map(|e| crate::theme::segment(e.label()))),
                 ))
                 .when(experience == roles::Experience::Streamer, |el| {
                     el.child(row(
@@ -209,20 +208,18 @@ impl Workbench {
                 .child(row(
                     "Timestamps",
                     "Twitch's event time in your timezone. Hover one for the date.",
-                    gpui_kit::component::tab::TabBar::new("settings-timestamps")
-                        .segmented()
+                    crate::theme::Segmented::new("settings-timestamps")
                         .selected_index(self.timestamps as usize)
                         .on_click(cx.listener(|this, index: &usize, _, cx| this.change_timestamps(*index as u8, cx)))
-                        .children(["Off", "13:34", "13:34:56", "1:34 PM", "1:34:56 PM"].map(|l| gpui_kit::component::tab::Tab::new().label(l))),
+                        .children(["Off", "13:34", "13:34:56", "1:34 PM", "1:34:56 PM"].map(|l| crate::theme::segment(l))),
                 ))
                 .child(row(
                     "Pause scrolling",
                     "When chat stops moving so you can read. Ctrl+Space toggles.",
-                    gpui_kit::component::tab::TabBar::new("settings-pause")
-                        .segmented()
+                    crate::theme::Segmented::new("settings-pause")
                         .selected_index(self.pause_mode as usize)
                         .on_click(cx.listener(|this, index: &usize, w, cx| this.change_pause_mode(*index as u8, w, cx)))
-                        .children(["Manual", "Hover", "Alt+hover"].map(|l| gpui_kit::component::tab::Tab::new().label(l))),
+                        .children(["Manual", "Hover", "Alt+hover"].map(|l| crate::theme::segment(l))),
                 ))
                 .child(row(
                     "Chat font",
@@ -243,14 +240,13 @@ impl Workbench {
                 .child(row(
                     "Names",
                     "Show chatters by display name, login, or both when they differ (e.g. 日本語 names).",
-                    gpui_kit::component::tab::TabBar::new("settings-names")
-                        .segmented()
+                    crate::theme::Segmented::new("settings-names")
                         .selected_index(chat_core::NAME_MODE.load(std::sync::atomic::Ordering::Relaxed) as usize)
                         .on_click(cx.listener(|this, index: &usize, _, cx| {
                             chat_core::NAME_MODE.store((*index).min(2) as u8, std::sync::atomic::Ordering::Relaxed);
                             this.remeasure_all(cx);
                         }))
-                        .children(["Display name", "Login", "Both"].map(|l| gpui_kit::component::tab::Tab::new().label(l))),
+                        .children(["Display name", "Login", "Both"].map(|l| crate::theme::segment(l))),
                 ))
                 .child(row(
                     "Badges",
@@ -284,8 +280,7 @@ impl Workbench {
                 .child(row(
                     "Emote size",
                     "How big emotes are in chat.",
-                    gpui_kit::component::tab::TabBar::new("settings-emote-size")
-                        .segmented()
+                    crate::theme::Segmented::new("settings-emote-size")
                         .selected_index(
                             [75u32, 100, 125, 150]
                                 .iter()
@@ -296,7 +291,7 @@ impl Workbench {
                             crate::inline_chat::EMOTE_SCALE.store([75, 100, 125, 150][(*index).min(3)], std::sync::atomic::Ordering::Relaxed);
                             this.remeasure_all(cx);
                         }))
-                        .children(["Small", "Normal", "Large", "Huge"].map(|l| gpui_kit::component::tab::Tab::new().label(l))),
+                        .children(["Small", "Normal", "Large", "Huge"].map(|l| crate::theme::segment(l))),
                 ))
                 .child(row(
                     "Alternate row backgrounds",
@@ -316,11 +311,10 @@ impl Workbench {
                 .child(row(
                     "Chat memory",
                     "Newest messages kept per channel. Images are capped at 48 MiB separately.",
-                    gpui_kit::component::tab::TabBar::new("settings-history")
-                        .segmented()
+                    crate::theme::Segmented::new("settings-history")
                         .selected_index([500usize, 1000, 2000, 5000, 10_000].iter().position(|l| *l == self.history_limit).unwrap_or(1))
                         .on_click(cx.listener(|this, index: &usize, _, cx| this.change_history_limit([500usize, 1000, 2000, 5000, 10_000][*index], cx)))
-                        .children(["500", "1k", "2k", "5k", "10k"].map(|l| gpui_kit::component::tab::Tab::new().label(l))),
+                        .children(["500", "1k", "2k", "5k", "10k"].map(|l| crate::theme::segment(l))),
                 ))
                 .child(row(
                     "Load recent messages",
@@ -380,14 +374,13 @@ impl Workbench {
                 .child(row(
                     "Shared chat",
                     "When streamers share chat, messages from other channels get a small bar and an avatar ring in that streamer's colour, matching the bubbles at the top of the chat. Your own chat stays plain.",
-                    gpui_kit::component::tab::TabBar::new("settings-shared-chat")
-                        .segmented()
+                    crate::theme::Segmented::new("settings-shared-chat")
                         .selected_index(crate::shared_chat::style() as usize)
                         .on_click(cx.listener(|this, index: &usize, _, cx| {
                             crate::shared_chat::STYLE.store((*index).min(3) as u8, std::sync::atomic::Ordering::Relaxed);
                             this.remeasure_all(cx);
                         }))
-                        .children(crate::shared_chat::STYLES.map(|l| gpui_kit::component::tab::Tab::new().label(l))),
+                        .children(crate::shared_chat::STYLES.map(|l| crate::theme::segment(l))),
                 ))
                 .child(row(
                     "Show pronouns",
@@ -422,15 +415,14 @@ impl Workbench {
                 .child(row(
                     "Repeated messages",
                     "When someone posts nearly the same thing again within a minute (90% alike), like Chatterino's similar-message filter.",
-                    gpui_kit::component::tab::TabBar::new("settings-similar")
-                        .segmented()
+                    crate::theme::Segmented::new("settings-similar")
                         .selected_index(crate::similarity::Mode::ALL.iter().position(|m| *m == self.similar_mode).unwrap_or(0))
                         .on_click(cx.listener(|this, index: &usize, _, cx| {
                             this.similar_mode = crate::similarity::Mode::ALL[*index];
                             this.schedule_save(cx);
                             cx.notify();
                         }))
-                        .children(crate::similarity::Mode::ALL.map(|m| gpui_kit::component::tab::Tab::new().label(m.label()))),
+                        .children(crate::similarity::Mode::ALL.map(|m| crate::theme::segment(m.label()))),
                 ))
                 .when(!self.automod_hidden.is_empty(), |el| {
                     el.child(row(
@@ -485,9 +477,18 @@ impl Workbench {
                 .sound_rows(page, cx)
                 .child(heading("Alerts"))
                 .child(row(
-                    "Live alerts for every channel",
+                    "Live alerts for everyone you follow",
+                    "A Windows notification when anyone you follow goes live, even if their chat isn't open. Click it to open their chat. Checked every two minutes.",
+                    Switch::new("settings-live-follows").checked(self.live_notify_follows).on_click(cx.listener(|this, on: &bool, _, cx| {
+                        this.live_notify_follows = *on;
+                        this.schedule_save(cx);
+                        cx.notify();
+                    })),
+                ))
+                .child(row(
+                    "Live alerts for open channels",
                     format!(
-                        "A Windows notification when any open channel goes live. Otherwise only channels set to Notify when live in their tab menu ({} now).",
+                        "A Windows notification when any channel you have open goes live. Otherwise only channels set to Notify when live in their tab menu ({} now).",
                         self.live_notify.len()
                     ),
                     Switch::new("settings-live-all").checked(self.live_notify_all).on_click(cx.listener(|this, on: &bool, _, cx| {
