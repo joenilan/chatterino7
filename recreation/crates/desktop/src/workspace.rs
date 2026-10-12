@@ -3463,8 +3463,48 @@ impl Workbench {
                                 )
                             })
                             .when(counts.0 > 0, |el| {
+                                let tip = if counts.1 > 0 {
+                                    format!(
+                                        "{} {} you or {} your highlights, among {} unread.\nClick to jump to {}.",
+                                        crate::attention::count(counts.1),
+                                        if counts.1 == 1 { "message mentions" } else { "messages mention" },
+                                        if counts.1 == 1 { "matches" } else { "match" },
+                                        crate::attention::count(counts.0),
+                                        if counts.1 == 1 { "it" } else { "the first one" },
+                                    )
+                                } else {
+                                    format!(
+                                        "{} unread {}. Click to jump to the first.",
+                                        crate::attention::count(counts.0),
+                                        if counts.0 == 1 { "message" } else { "messages" },
+                                    )
+                                };
+                                let jump_channel = channel.clone();
+                                let mentions = counts.1 > 0;
                                 el.child(
                                     div()
+                                        .id(SharedString::from(format!("unread-chip-{channel}")))
+                                        .cursor_pointer()
+                                        .tooltip(move |w, cx| {
+                                            gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(w, cx)
+                                        })
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            cx.stop_propagation();
+                                            if let Some(d) = &mut this.tabs[this.active].dock {
+                                                d.select(&jump_channel);
+                                            }
+                                            let pane = this.tabs[this.active]
+                                                .panes
+                                                .iter()
+                                                .find(|p| p.read(cx).name.as_ref() == jump_channel)
+                                                .cloned();
+                                            if let Some(pane) = pane {
+                                                pane.update(cx, |p, cx| {
+                                                    p.navigate_attention(if mentions { 2 } else { 0 }, window, cx)
+                                                });
+                                            }
+                                            cx.notify();
+                                        }))
                                         .ml_1()
                                         .px_1()
                                         .rounded(px(3.))
@@ -4177,9 +4217,16 @@ impl Workbench {
                                         tab.panes.len(),
                                         if counts.0 > 0 {
                                             format!(
-                                                " · {} unread · @{}",
+                                                " · {} unread{}",
                                                 crate::attention::count(counts.0),
-                                                crate::attention::count(counts.1)
+                                                match counts.1 {
+                                                    0 => String::new(),
+                                                    1 => " · 1 mention".into(),
+                                                    n => format!(
+                                                        " · {} mentions",
+                                                        crate::attention::count(n)
+                                                    ),
+                                                }
                                             )
                                         } else {
                                             String::new()
@@ -4867,7 +4914,7 @@ impl Render for Workbench {
                                     crate::attention::count(counts.0)
                                 })
                             })
-                            .tooltip("Highlights & unread · Ctrl+Shift+M")
+                            .tooltip("Activity: mentions, highlights and unread messages across your channels (\"@\" = messages that mention you or match your highlights) · Ctrl+Shift+M")
                             .on_click(cx.listener(|this, _, w, cx| this.open_activity(w, cx))),
                     )
                     .child(

@@ -39,7 +39,12 @@ impl ChannelPane {
                     .copied()
                     .filter(|row| retained(*row).is_some())
                     .collect::<Vec<_>>();
-                let chosen = if direction > 0 {
+                let chosen = if direction == 2 {
+                    rows.iter()
+                        .copied()
+                        .find(|row| self.attention.unread.contains(row))
+                        .or_else(|| rows.last().copied())
+                } else if direction > 0 {
                     self.attention_cursor
                         .and_then(|at| rows.iter().copied().find(|row| *row > at))
                         .or_else(|| rows.first().copied())
