@@ -102,6 +102,23 @@ pub fn convert(lines: &[&str], channel: &str) -> Vec<Message> {
                 {
                     redact(m);
                 }
+                // "bob was timed out for 10m.", named as they last chatted.
+                if let Some((user_id, mut text, sent_at)) = timeout(&irc) {
+                    if let Some(m) = messages.iter().rev().find(|m| m.user_id == user_id) {
+                        text = text.replacen(irc.text, &m.display_name, 1);
+                    }
+                    let id = format!("mod:{user_id}:{}", sent_at.unwrap_or(0));
+                    let mut line = chat_core::moderation_notice(
+                        channel,
+                        &user_id,
+                        id,
+                        sent_at,
+                        text,
+                        chat_core::Detail::Duration,
+                    );
+                    line.presentation.historical = true;
+                    messages.push(line);
+                }
             }
             _ => {}
         }
@@ -113,11 +130,55 @@ fn redact(message: &mut Message) {
     message.deleted = true;
 }
 
-/// What a live IRC line means, for guest (signed-out) reading.
+/// A CLEARCHAT for one chatter: (user ID, "login was timed out for 10m." or
+/// "login was banned.", sent at). IRC gives every viewer the length.
+fn timeout(irc: &Irc) -> Option<(String, String, Option<i64>)> {
+    let user_id = irc.tags.get("target-user-id")?.clone();
+    let login = irc.text.trim();
+    if login.is_empty() {
+        return None;
+    }
+    let text = match irc
+        .tags
+        .get("ban-duration")
+        .and_then(|s| s.parse::<u64>().ok())
+    {
+        Some(seconds) => format!("{login} was timed out for {}.", duration(seconds)),
+        None => format!("{login} was banned."),
+    };
+    let sent_at = irc
+        .tags
+        .get("tmi-sent-ts")
+        .and_then(|s| s.parse::<i64>().ok())
+        .map(|ms| ms / 1000);
+    Some((user_id, text, sent_at))
+}
+/// "45s", "10m", "1h 30m", "7d", like Chatterino.
+pub fn duration(seconds: u64) -> String {
+    let parts = [
+        (seconds / 86_400, "d"),
+        (seconds % 86_400 / 3600, "h"),
+        (seconds % 3600 / 60, "m"),
+        (seconds % 60, "s"),
+    ];
+    let text: Vec<String> = parts
+        .iter()
+        .filter(|(n, _)| *n > 0)
+        .map(|(n, unit)| format!("{n}{unit}"))
+        .collect();
+    if text.is_empty() {
+        "0s".into()
+    } else {
+        text.join(" ")
+    }
+}
+
+/// What a live IRC line means (guest reading, and timeout lengths when signed in).
 pub enum Live {
     Message(Message),
     Delete(String),
-    ClearUser(String),
+    /// A chatter timed out or banned: (user ID, the line to show, sent at).
+    ClearUser(String, String, Option<i64>),
     Clear,
     /// The channel's Twitch ID (ROOMSTATE), for its emotes.
     Room(String),
@@ -133,8 +194,9 @@ pub fn live_line(line: &str) -> Option<(String, Live)> {
             Live::Message(message)
         }
         "CLEARMSG" => Live::Delete(irc.tags.get("target-msg-id")?.clone()),
-        "CLEARCHAT" => match irc.tags.get("target-user-id") {
-            Some(user) => Live::ClearUser(user.clone()),
+        "CLEARCHAT" => match timeout(&irc) {
+            Some((user_id, text, sent_at)) => Live::ClearUser(user_id, text, sent_at),
+            None if irc.tags.contains_key("target-user-id") => return None,
             None => Live::Clear,
         },
         "ROOMSTATE" => Live::Room(irc.tags.get("room-id").filter(|id| !id.is_empty())?.clone()),
@@ -338,7 +400,8 @@ mod tests {
             "@room-id=1;target-user-id=11;tmi-sent-ts=1700000002000 :tmi.twitch.tv CLEARCHAT #chan :bob",
         ];
         let messages = convert(&lines, "chan");
-        assert_eq!(messages.len(), 2);
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[2].body(), "Bob was banned.");
         assert_eq!(messages[0].display_name, "Alice");
         assert_eq!(messages[0].name_color, Some(0xFF0000));
         assert!(messages[0].presentation.historical);
@@ -370,6 +433,14 @@ mod tests {
                 .1,
             Live::Clear
         ));
+        assert!(matches!(
+            live_line("@ban-duration=5400;room-id=5;target-user-id=7;tmi-sent-ts=1700000002000 :tmi.twitch.tv CLEARCHAT #chan :bob")
+                .unwrap()
+                .1,
+            Live::ClearUser(id, text, Some(1_700_000_002)) if id == "7" && text == "bob was timed out for 1h 30m."
+        ));
+        assert_eq!(duration(600), "10m");
+        assert_eq!(duration(1_209_600), "14d");
         assert!(live_line(":tmi.twitch.tv 001 justinfan1 :Welcome").is_none());
     }
     #[test]

@@ -173,16 +173,43 @@ pub enum Event {
     ClearChannel {
         channel_id: String,
     },
-    /// A moderation line in chat ("X was timed out or banned"). `precise` lines
-    /// (from the moderator's own event, with length and reason) replace the most
-    /// recent vague line for the same user instead of adding another.
+    /// A moderation line in chat ("X was timed out or banned"). A more detailed
+    /// line replaces a less detailed one for the same user from the last few
+    /// seconds instead of adding another.
     Moderation {
         channel_id: String,
         user_id: String,
         text: String,
         sent_at: Option<i64>,
-        precise: bool,
+        detail: Detail,
     },
+}
+/// How much a moderation line says; the same action often arrives from
+/// several sources seconds apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Detail {
+    /// EventSub's "messages cleared": timeout or ban, unknown.
+    Vague,
+    /// IRC's CLEARCHAT: timeout length or ban, seen by every viewer.
+    Duration,
+    /// The moderator's own action (channels you moderate): who, length, reason.
+    Full,
+}
+impl Detail {
+    fn tag(self) -> Option<String> {
+        match self {
+            Detail::Vague => Some("vague".into()),
+            Detail::Duration => Some("duration".into()),
+            Detail::Full => None,
+        }
+    }
+    fn of(source: Option<&str>) -> Self {
+        match source {
+            Some("vague") => Detail::Vague,
+            Some("duration") => Detail::Duration,
+            _ => Detail::Full,
+        }
+    }
 }
 /// Local system notices (e.g. "7TV: added KEKW") use `presentation.kind == SYSTEM`
 /// and the text in `presentation.notice`; they never count as unread.
@@ -209,6 +236,21 @@ pub fn system_notice(channel_id: &str, id: String, sent_at: Option<i64>, text: S
         },
         deleted: false,
     }
+}
+/// A moderation line ("bob was timed out for 10m.") for `channel_id`.
+pub fn moderation_notice(
+    channel_id: &str,
+    user_id: &str,
+    id: String,
+    sent_at: Option<i64>,
+    text: String,
+    detail: Detail,
+) -> Message {
+    let mut message = system_notice(channel_id, id, sent_at, text);
+    message.user_id = user_id.to_owned();
+    message.presentation.kind = MODERATION.into();
+    message.presentation.source = detail.tag();
+    message
 }
 /// Moderation lines are written as `presentation.kind == MODERATION`.
 pub const MODERATION: &str = "moderation";
@@ -342,8 +384,8 @@ impl Timeline {
                 user_id,
                 text,
                 sent_at,
-                precise,
-            } => self.moderation(channel_id, user_id, text, sent_at, precise),
+                detail,
+            } => self.moderation(channel_id, user_id, text, sent_at, detail),
         }
     }
     fn moderation(
@@ -352,16 +394,16 @@ impl Timeline {
         user_id: String,
         text: String,
         sent_at: Option<i64>,
-        precise: bool,
+        detail: Detail,
     ) -> Change {
         if !self.accepts(&channel_id) {
             return Change::Ignored;
         }
-        // Twitch sends a vague "messages cleared" event to everyone and, in channels
-        // you moderate, the precise action too, in either order (seconds apart).
-        // Rules: a precise action upgrades a vague line from the last few seconds;
-        // a vague echo of a fresh precise line is dropped; repeats of the same
-        // action stack into one line ("(3 times)").
+        // Twitch sends a vague "messages cleared" event to everyone, IRC's timeout
+        // length to everyone, and in channels you moderate the full action, in any
+        // order (seconds apart). Rules: a more detailed line upgrades a less
+        // detailed one from the last few seconds; a less (or equally) detailed
+        // echo of a fresh line is dropped; later repeats stack ("(3 times)").
         const ECHO_SECONDS: i64 = 10;
         let close = |a: Option<i64>, b: Option<i64>| match (a, b) {
             (Some(a), Some(b)) => (a - b).abs() <= ECHO_SECONDS,
@@ -378,23 +420,22 @@ impl Timeline {
                     && m.channel_id == channel_id
             });
         if let Some(line) = recent {
-            let vague = line.presentation.source.as_deref() == Some("vague");
-            match (precise, vague) {
-                (true, true) if close(sent_at, line.sent_at) => {
+            let level = Detail::of(line.presentation.source.as_deref());
+            let same = line.presentation.notice.as_deref() == Some(text.as_str());
+            if close(sent_at, line.sent_at) {
+                if detail > level {
                     line.presentation.notice = Some(text);
-                    line.presentation.source = None;
+                    line.presentation.source = detail.tag();
                     return Change::Updated;
                 }
-                (false, false) if close(sent_at, line.sent_at) => return Change::Ignored,
-                // The same precise action again, or another vague clear: stack.
-                (true, false) | (false, true)
-                    if !precise || line.presentation.notice.as_deref() == Some(text.as_str()) =>
-                {
-                    line.presentation.repeats += 1;
-                    line.sent_at = sent_at.or(line.sent_at);
-                    return Change::Updated;
+                if detail < level || same || detail == Detail::Vague {
+                    return Change::Ignored;
                 }
-                _ => {}
+            } else if detail < level || (detail == level && (same || detail == Detail::Vague)) {
+                // The same action again (or a vaguer report of it): stack.
+                line.presentation.repeats += 1;
+                line.sent_at = sent_at.or(line.sent_at);
+                return Change::Updated;
             }
         }
         let id = format!(
@@ -402,27 +443,7 @@ impl Timeline {
             sent_at.unwrap_or(0),
             self.messages.len()
         );
-        let message = Message {
-            sent_at,
-            id,
-            channel_id,
-            user_id,
-            display_name: String::new(),
-            login: None,
-            reply: None,
-            mentions: vec![],
-            replyable: false,
-            name_color: None,
-            badges: vec![],
-            fragments: vec![],
-            presentation: MessagePresentation {
-                kind: MODERATION.into(),
-                notice: Some(text),
-                source: (!precise).then(|| "vague".into()),
-                ..Default::default()
-            },
-            deleted: false,
-        };
+        let message = moderation_notice(&channel_id, &user_id, id, sent_at, text, detail);
         self.apply(Event::Message(message))
     }
     fn redact_quotes(&mut self, channel: &str, matches: impl Fn(&Reply) -> bool) -> bool {
@@ -501,13 +522,81 @@ pub fn fixture(channel: &str, index: usize) -> Message {
 mod tests {
     use super::*;
     fn moderation(user: &str, text: &str, at: i64, precise: bool) -> Event {
+        level(
+            user,
+            text,
+            at,
+            if precise { Detail::Full } else { Detail::Vague },
+        )
+    }
+    fn level(user: &str, text: &str, at: i64, detail: Detail) -> Event {
         Event::Moderation {
             channel_id: "a".into(),
             user_id: user.into(),
             text: text.into(),
             sent_at: Some(at),
-            precise,
+            detail,
         }
+    }
+    #[test]
+    fn duration_lines_sit_between_vague_and_full() {
+        let mut t = Timeline::new("a", 50);
+        // Viewer: vague then IRC's duration, either order: one duration line.
+        t.apply(level(
+            "u1",
+            "bob was timed out or banned.",
+            100,
+            Detail::Vague,
+        ));
+        t.apply(level(
+            "u1",
+            "bob was timed out for 10m.",
+            101,
+            Detail::Duration,
+        ));
+        t.apply(level("u2", "amy was banned.", 200, Detail::Duration));
+        t.apply(level(
+            "u2",
+            "amy was timed out or banned.",
+            201,
+            Detail::Vague,
+        ));
+        assert_eq!(
+            lines(&t),
+            vec![
+                ("bob was timed out for 10m.".into(), 0),
+                ("amy was banned.".into(), 0)
+            ]
+        );
+        // Moderator: all three; the full action wins whatever the order.
+        t.apply(level(
+            "u3",
+            "cat was timed out for 1m.",
+            300,
+            Detail::Duration,
+        ));
+        t.apply(level("u3", "mod timed out cat for 1m", 301, Detail::Full));
+        t.apply(level(
+            "u3",
+            "cat was timed out or banned.",
+            302,
+            Detail::Vague,
+        ));
+        assert_eq!(lines(&t)[2], ("mod timed out cat for 1m".into(), 0));
+        // Again later, vague first: stacks once, not twice.
+        t.apply(level(
+            "u1",
+            "bob was timed out or banned.",
+            500,
+            Detail::Vague,
+        ));
+        t.apply(level(
+            "u1",
+            "bob was timed out for 10m.",
+            501,
+            Detail::Duration,
+        ));
+        assert_eq!(lines(&t)[0], ("bob was timed out for 10m.".into(), 1));
     }
     fn lines(t: &Timeline) -> Vec<(String, u32)> {
         t.messages()

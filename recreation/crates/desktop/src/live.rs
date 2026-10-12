@@ -1305,7 +1305,7 @@ fn deliver(
                     user_id,
                     text: line,
                     sent_at,
-                    precise: true,
+                    detail: chat_core::Detail::Full,
                 },
             ),
         ));
@@ -1329,7 +1329,7 @@ fn deliver(
                     user_id: e["target_user_id"].as_str().unwrap_or("").to_owned(),
                     text: format!("{name} was timed out or banned."),
                     sent_at,
-                    precise: false,
+                    detail: chat_core::Detail::Vague,
                 },
             ),
         ));

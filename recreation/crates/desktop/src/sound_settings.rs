@@ -289,12 +289,12 @@ impl Workbench {
                 None => "A chatter was timed out or banned.".into(),
             },
             chat_core::Event::ClearChannel { .. } => "Chat was cleared by a moderator.".into(),
-            // The vague line duplicates ClearUser above; log only the moderator's precise one.
-            chat_core::Event::Moderation {
-                text,
-                precise: true,
-                ..
-            } => text.clone(),
+            // The vague line duplicates ClearUser above; log the detailed ones.
+            chat_core::Event::Moderation { text, detail, .. }
+                if *detail > chat_core::Detail::Vague =>
+            {
+                text.clone()
+            }
             chat_core::Event::Moderation { .. } => return,
         };
         self.logs.write(&self.logs_folder, channel, text);

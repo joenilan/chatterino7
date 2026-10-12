@@ -1494,9 +1494,10 @@ impl Workbench {
             .cloned()
             .collect();
         let own = self.account.read(cx).login();
-        // Signed out: read chat as a guest only once that's chosen on the sign-in screen.
+        // Signed out: read chat as a guest only once that's chosen on the sign-in
+        // screen. Signed in: IRC runs beside EventSub (timeout lengths, fallback).
         self.anon
-            .configure(if identity.is_none() && self.guest_reading {
+            .configure(if identity.is_some() || self.guest_reading {
                 priority.clone()
             } else {
                 Vec::new()
@@ -1527,12 +1528,29 @@ impl Workbench {
         }
         let guest = identity.is_none();
         for _ in 0..500 {
-            // Guest events count as current only while still signed out.
+            // Signed in, IRC adds timeout lengths everywhere, and chat itself only
+            // where EventSub isn't connected; never connection states.
             let Ok((version, event)) = self.live.events.try_recv().or_else(|_| {
-                self.anon
-                    .events
-                    .try_recv()
-                    .map(|event| (if guest { self.live.version() } else { u64::MAX }, event))
+                self.anon.events.try_recv().map(|event| {
+                    let wanted = guest
+                        || match &event {
+                            crate::live::Event::Chat(_, chat_core::Event::Moderation { .. }) => {
+                                true
+                            }
+                            crate::live::Event::Chat(channel, _) => {
+                                self.channel_ready.get(channel) != Some(&true)
+                            }
+                            _ => false,
+                        };
+                    (
+                        if wanted {
+                            self.live.version()
+                        } else {
+                            u64::MAX
+                        },
+                        event,
+                    )
+                })
             }) else {
                 break;
             };

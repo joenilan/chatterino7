@@ -1,10 +1,11 @@
-//! Read-only Twitch chat while no account is signed in, over Twitch's public
-//! IRC as an anonymous "justinfan" guest, as Chatterino does. There are no
-//! credentials and nothing can be sent; signing in switches to EventSub.
+//! Twitch's public IRC as an anonymous "justinfan" guest, as Chatterino does.
+//! Signed out it is the chat (read-only; nothing can be sent). Signed in it runs
+//! beside EventSub: timeout lengths (which only IRC gives viewers) and a
+//! fallback while a channel's EventSub is down. No credentials either way.
 use crate::live::Event;
 use chat_core::Event as ChatEvent;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     net::{TcpStream, ToSocketAddrs},
     sync::{Arc, Mutex, mpsc},
     time::{Duration, Instant},
@@ -125,6 +126,7 @@ fn session(
     send(&mut socket, &format!("NICK justinfan{guest}"))?;
     let mut joins: Vec<Instant> = Vec::new();
     let mut last_read = Instant::now();
+    let mut names = HashMap::new();
     loop {
         let want = wanted(shared);
         if want.is_empty() {
@@ -173,7 +175,7 @@ fn session(
                     if line.contains(" RECONNECT") && line.starts_with(":tmi.twitch.tv") {
                         return Err("Twitch asked to reconnect".into());
                     }
-                    deliver(line, joined, tx);
+                    deliver(line, joined, &mut names, tx);
                 }
             }
             Ok(Wire::Close(_)) => return Err("Twitch closed the connection".into()),
@@ -194,7 +196,10 @@ fn session(
     }
 }
 
-fn deliver(line: &str, joined: &HashSet<String>, tx: &mpsc::SyncSender<Event>) {
+/// Chatters' display names by user ID, for timeout lines (IRC names the login).
+type Names = HashMap<String, (String, String)>;
+
+fn deliver(line: &str, joined: &HashSet<String>, names: &mut Names, tx: &mpsc::SyncSender<Event>) {
     use crate::recent_messages::Live;
     let Some((channel, live)) = crate::recent_messages::live_line(line) else {
         return;
@@ -204,7 +209,18 @@ fn deliver(line: &str, joined: &HashSet<String>, tx: &mpsc::SyncSender<Event>) {
     }
     let event = match live {
         Live::Room(id) => Event::Resolved(channel, id),
-        Live::Message(message) => Event::Chat(channel, ChatEvent::Message(message)),
+        Live::Message(message) => {
+            if names.len() > 50_000 {
+                names.clear();
+            }
+            if let Some(login) = &message.login {
+                names.insert(
+                    message.user_id.clone(),
+                    (login.clone(), message.display_name.clone()),
+                );
+            }
+            Event::Chat(channel, ChatEvent::Message(message))
+        }
         Live::Delete(message_id) => Event::Chat(
             channel.clone(),
             ChatEvent::DeleteMessage {
@@ -212,13 +228,28 @@ fn deliver(line: &str, joined: &HashSet<String>, tx: &mpsc::SyncSender<Event>) {
                 message_id,
             },
         ),
-        Live::ClearUser(user_id) => Event::Chat(
-            channel.clone(),
-            ChatEvent::ClearUser {
-                channel_id: channel,
-                user_id,
-            },
-        ),
+        Live::ClearUser(user_id, mut text, sent_at) => {
+            if let Some((login, display)) = names.get(&user_id) {
+                text = text.replacen(login.as_str(), display, 1);
+            }
+            let _ = tx.send(Event::Chat(
+                channel.clone(),
+                ChatEvent::ClearUser {
+                    channel_id: channel.clone(),
+                    user_id: user_id.clone(),
+                },
+            ));
+            Event::Chat(
+                channel.clone(),
+                ChatEvent::Moderation {
+                    channel_id: channel,
+                    user_id,
+                    text,
+                    sent_at,
+                    detail: chat_core::Detail::Duration,
+                },
+            )
+        }
         Live::Clear => Event::Chat(
             channel.clone(),
             ChatEvent::ClearChannel {
@@ -248,5 +279,37 @@ mod tests {
             }
         }
         panic!("no ROOMSTATE within 20 s");
+    }
+    /// Network: busy channels' timeouts arrive with their length.
+    #[test]
+    #[ignore]
+    fn timeouts_carry_their_length() {
+        let chat = super::AnonChat::new();
+        let channels = [
+            "kaicenat",
+            "jynxzi",
+            "caseoh_",
+            "zackrawrr",
+            "ishowspeed",
+            "xqc",
+            "summit1g",
+            "tarik",
+            "hasanabi",
+            "stableronaldo",
+        ];
+        chat.configure(channels.iter().map(|c| c.to_string()).collect());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(240);
+        while std::time::Instant::now() < deadline {
+            if let Ok(crate::live::Event::Chat(
+                channel,
+                chat_core::Event::Moderation { text, .. },
+            )) = chat.events.recv_timeout(std::time::Duration::from_secs(1))
+            {
+                println!("#{channel}: {text}");
+                assert!(text.contains(" was timed out for ") || text.ends_with(" was banned."));
+                return;
+            }
+        }
+        panic!("no timeout within 4 minutes");
     }
 }
