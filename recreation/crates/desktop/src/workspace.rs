@@ -4742,6 +4742,36 @@ impl Workbench {
                                         }),
                                 )
                                 .separator()
+                                // Channels you moderate: switch chat modes from here.
+                                .submenu_if(menu_mod, "Room modes", window, cx, {
+                                    let owner = owner.clone();
+                                    let channel = menu_channel.clone();
+                                    move |mut menu, _, cx| {
+                                        let pane = owner.upgrade().and_then(|o| {
+                                            o.read(cx).panes().into_iter().find(|p| p.read(cx).name.as_ref() == channel)
+                                        });
+                                        let settings = pane.as_ref().and_then(|p| p.read(cx).room_settings.clone());
+                                        let Some(settings) = settings else {
+                                            return menu.item(PopupMenuItem::new("Chat modes are loading…").disabled(true));
+                                        };
+                                        for (label, on, enable, disable) in [
+                                            ("Slow mode (30 s)", settings.slow.is_some(), "/slow", "/slowoff"),
+                                            ("Followers only", settings.followers.is_some(), "/followers", "/followersoff"),
+                                            ("Subscribers only", settings.subscribers, "/subscribers", "/subscribersoff"),
+                                            ("Emote only", settings.emote, "/emoteonly", "/emoteonlyoff"),
+                                            ("Unique chat", settings.unique, "/uniquechat", "/uniquechatoff"),
+                                        ] {
+                                            let pane = pane.clone();
+                                            menu = menu.item(PopupMenuItem::new(label).checked(on).on_click(move |_, _, cx| {
+                                                let command = if on { disable } else { enable };
+                                                if let (Some(pane), Some(Ok(request))) = (&pane, crate::twitch_actions::parse(command, "")) {
+                                                    pane.update(cx, |_, cx| cx.emit(PaneEvent::TwitchCommand { request, draft: String::new() }));
+                                                }
+                                            }));
+                                        }
+                                        menu
+                                    }
+                                })
                                 .submenu(
                                     "Reading & highlights",
                                     window,
@@ -6705,11 +6735,43 @@ fn stream_marker(channel: &str, status: Option<bool>) -> impl IntoElement {
 }
 
 /// Menu items that only apply sometimes (e.g. not on Mentions/Whispers/Live).
-trait ItemIf {
+trait ItemIf: Sized {
     fn item_if(self, show: bool, item: PopupMenuItem) -> Self;
+    fn submenu_if(
+        self,
+        show: bool,
+        label: &'static str,
+        window: &mut Window,
+        cx: &mut Context<gpui_kit::component::menu::PopupMenu>,
+        f: impl Fn(
+            gpui_kit::component::menu::PopupMenu,
+            &mut Window,
+            &mut Context<gpui_kit::component::menu::PopupMenu>,
+        ) -> gpui_kit::component::menu::PopupMenu
+        + 'static,
+    ) -> Self;
 }
 impl ItemIf for gpui_kit::component::menu::PopupMenu {
     fn item_if(self, show: bool, item: PopupMenuItem) -> Self {
         if show { self.item(item) } else { self }
+    }
+    fn submenu_if(
+        self,
+        show: bool,
+        label: &'static str,
+        window: &mut Window,
+        cx: &mut Context<gpui_kit::component::menu::PopupMenu>,
+        f: impl Fn(
+            gpui_kit::component::menu::PopupMenu,
+            &mut Window,
+            &mut Context<gpui_kit::component::menu::PopupMenu>,
+        ) -> gpui_kit::component::menu::PopupMenu
+        + 'static,
+    ) -> Self {
+        if show {
+            self.submenu(label, window, cx, f)
+        } else {
+            self
+        }
     }
 }

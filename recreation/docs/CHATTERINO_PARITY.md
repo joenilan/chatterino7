@@ -44,7 +44,7 @@ Chatterino import.
 - [ ] Tab position and style (M) [partly design]
 - [x] Change channel of an existing split (tab menu → Change channel…)
 - [ ] Input options: ~~send button, reply on hover, hide reply context, strip leading mention~~ done; hide when empty (S)
-- [ ] Header: ~~Subscribe, Mod view~~ done (tab menu); Changelog, room modes menu, custom player URI (S each)
+- [ ] Header: ~~Subscribe, Mod view, room modes menu~~ done (tab menu); Changelog, custom player URI (S each)
 
 ### Menus and links
 - [x] Emote right-click: copy name, copy/open link, provider page (S)
