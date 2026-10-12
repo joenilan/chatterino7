@@ -280,6 +280,42 @@ fn copy(text: String, window: &mut Window, cx: &mut App) {
         cx,
     );
 }
+/// (image URL, provider page URL, site name) for an emote; Twitch emotes have no page.
+fn emote_links(provider: &str, id: &str) -> (Option<String>, Option<String>, &'static str) {
+    let safe = !id.is_empty()
+        && id.len() <= 64
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+    if !safe {
+        return (None, None, "");
+    }
+    match provider {
+        "7tv" => (
+            Some(format!("https://cdn.7tv.app/emote/{id}/4x.webp")),
+            Some(format!("https://7tv.app/emotes/{id}")),
+            "7TV",
+        ),
+        "bttv" => (
+            Some(format!("https://cdn.betterttv.net/emote/{id}/3x")),
+            Some(format!("https://betterttv.com/emotes/{id}")),
+            "BetterTTV",
+        ),
+        "ffz" => (
+            Some(format!("https://cdn.frankerfacez.com/emote/{id}/4")),
+            Some(format!("https://www.frankerfacez.com/emoticon/{id}")),
+            "FrankerFaceZ",
+        ),
+        "twitch" => (
+            Some(format!(
+                "https://static-cdn.jtvnw.net/emoticons/v2/{id}/default/dark/3.0"
+            )),
+            None,
+            "Twitch",
+        ),
+        _ => (None, None, ""),
+    }
+}
 pub fn menu(
     owner: WeakEntity<ChannelPane>,
     id: String,
@@ -466,6 +502,45 @@ pub fn menu(
             menu = menu.item(PopupMenuItem::new(label).on_click(move |_, w, cx| {
                 let _ = owner.update(cx, |p, cx| p.message_action(&id, action.clone(), w, cx));
             }));
+        }
+    }
+    // Emotes in the message (up to three): copy the name, open the image or its page.
+    let mut emotes: Vec<(String, String, String)> = Vec::new();
+    for fragment in &message.fragments {
+        if let chat_core::Fragment::Emote {
+            provider,
+            id,
+            label,
+            ..
+        } = fragment
+            && !emotes.iter().any(|(_, i, _)| i == id)
+            && emotes.len() < 3
+        {
+            emotes.push((provider.clone(), id.clone(), label.clone()));
+        }
+    }
+    for (provider, id, label) in emotes {
+        let (image, page, site) = emote_links(&provider, &id);
+        menu = menu.separator().item(
+            PopupMenuItem::new(format!("Copy emote name · {label}")).on_click({
+                let label = label.clone();
+                move |_, w, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(label.clone()));
+                    w.push_notification(Notification::info(format!("Copied {label}")), cx);
+                }
+            }),
+        );
+        if let Some(image) = image {
+            menu = menu.item(
+                PopupMenuItem::new(format!("Open {label} image"))
+                    .on_click(move |_, _, cx| cx.open_url(&image)),
+            );
+        }
+        if let Some(page) = page {
+            menu = menu.item(
+                PopupMenuItem::new(format!("Open {label} on {site}"))
+                    .on_click(move |_, _, cx| cx.open_url(&page)),
+            );
         }
     }
     for link in message_links(&message).into_iter().take(3) {

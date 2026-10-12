@@ -16,12 +16,12 @@ Chatterino import.
 ## A. Missing
 
 ### Chat display
-- [ ] Font family / weight choice (S)
+- [x] Font family / weight choice (S)
 - [ ] UI scale separate from chat text (M)
-- [ ] Username display: Username / Localized / Both (S)
-- [ ] Message separator lines (S)
+- [x] Username display: Username / Localized / Both (S)
+- [x] Message separator lines (S)
 - [ ] Collapse long messages after N lines (M)
-- [ ] Hide deleted messages; show/hide moderation & deletion lines (S)
+- [x] Hide deleted messages; show/hide moderation & deletion lines (S)
 - [ ] Timeout/ban lines with duration for viewers; stack/combine (M)
 - [ ] Badge visibility toggles per category; animated 7TV badges (M)
 - [ ] Chatterino supporter badges (S)
@@ -37,8 +37,8 @@ Chatterino import.
 - [ ] Watch-streak header/highlight (S) [research]
 
 ### Windows, tabs, splits
-- [ ] Always on top for the main window (S)
-- [ ] Start with Windows; beta update channel; open cache folder (S)
+- [x] Always on top for the main window (S)
+- [x] Start with Windows; beta update channel; open cache folder (S)
 - [ ] Overlay window: transparent, click-through, opacity (L)
 - [ ] Tab menu: Duplicate, Close others / to the right, Sort A–Z, Lock layout, Hide all tabs, highlight on new messages (S each)
 - [ ] Tab position and style (M) [partly design]
@@ -54,9 +54,9 @@ Chatterino import.
 - [ ] "Go to message" from search/mentions; copy message JSON (S)
 
 ### Commands
-- [ ] /ignore /unignore /copy /streamlink /clearmessages /banid /requests /lowtrust (S each)
-- [ ] /monitor /unmonitor /restrict /unrestrict (S–M)
-- [ ] /poll /endpoll /cancelpoll /prediction /lockprediction /cancelprediction /completeprediction (S)
+- [x] /ignore /unignore /copy /streamlink /clearmessages /banid /requests /lowtrust (S each)
+- [x] /monitor /unmonitor /restrict /unrestrict (S–M)
+- [x] /poll /endpoll /cancelpoll /prediction /lockprediction /cancelprediction /completeprediction (S)
 - /follow /unfollow [dead]; /raw, /fakemsg, /debug-*, /c2-* not needed
 
 ### Integrations
@@ -73,7 +73,7 @@ Chatterino import.
 - [ ] User card: block, ignore, follower count, open channel, avatar link, 7TV profile, warn, custom timeout, pin card, emotes in recent messages (M)
 - [ ] Custom command placeholders: {my.name} {my.id} {channel.id} {stream.title} {stream.game} {user.name} {msg.id} {msg.text} {input.text}; show in message menu (S–M)
 - [ ] Mod buttons: any command, image icons (S)
-- [ ] Timestamps: 12-hour, custom format, hide while live (S)
+- [x] Timestamps: 12-hour, custom format, hide while live (S)
 - [ ] Streamer mode: hide avatars, link previews, viewers/uptime, mod actions, restricted users, blocked terms; suppress live alerts (S)
 - [ ] Live alerts: closed-channel list, sound, flash, click action, /live split (M)
 - [ ] Link previews: thumbnails; Twitch clip/VOD/channel cards (M)

@@ -323,6 +323,17 @@ impl Dock {
             _ => None,
         }
     }
+    /// Sort the tab group holding `name` alphabetically.
+    pub fn sort_group(&mut self, name: &str) -> bool {
+        match self {
+            Self::Deck { channels, .. } if channels.iter().any(|n| n == name) => {
+                channels.sort_by_key(|n| n.to_lowercase());
+                true
+            }
+            Self::Split { children, .. } => children.iter_mut().any(|c| c.sort_group(name)),
+            _ => false,
+        }
+    }
     pub fn shift_tab(&mut self, name: &str, right: bool) -> bool {
         match self {
             Self::Deck { channels, .. } if channels.iter().any(|n| n == name) => {

@@ -3445,6 +3445,95 @@ impl Workbench {
         self.schedule_save(cx);
         cx.notify();
     }
+    /// Tab menu → Close other tabs / Close tabs to the right: one confirmation for
+    /// all of them. Pinned tabs (and your own in Streamer setup) are kept.
+    fn confirm_close_group(
+        &mut self,
+        channel: String,
+        right_only: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(group) = self.tabs[self.active]
+            .dock
+            .as_ref()
+            .and_then(|d| d.group(&channel))
+        else {
+            return;
+        };
+        // Only tabs you can see: with "Only show live channel tabs", offline tabs are
+        // hidden from the strip and must not be closed by a bulk action.
+        let group: Vec<String> = group
+            .into_iter()
+            .filter(|n| !self.live_channels || *n == channel || self.streams.get(n) != Some(false))
+            .collect();
+        let at = group.iter().position(|n| *n == channel).unwrap_or(0);
+        let names: Vec<String> = group
+            .iter()
+            .enumerate()
+            .filter(|(i, n)| **n != channel && (!right_only || *i > at) && !self.is_pinned(n, cx))
+            .map(|(_, n)| n.clone())
+            .collect();
+        if names.is_empty() {
+            window.push_notification(
+                Notification::info("No other visible, unpinned tabs to close."),
+                cx,
+            );
+            return;
+        }
+        let panes: Vec<Entity<ChannelPane>> = self.tabs[self.active]
+            .panes
+            .iter()
+            .filter(|p| names.iter().any(|n| p.read(cx).name.as_ref() == n))
+            .cloned()
+            .collect();
+        let count = panes.len();
+        let shown = names
+            .iter()
+            .take(6)
+            .map(|n| crate::combined::title(n))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let more = if names.len() > 6 {
+            format!(" and {} more", names.len() - 6)
+        } else {
+            String::new()
+        };
+        window.open_dialog(cx, move |dialog, _, _| {
+            let panes = panes.clone();
+            dialog
+                .title(if count == 1 {
+                    "Close 1 tab?".to_owned()
+                } else {
+                    format!("Close {count} tabs?")
+                })
+                .child(format!(
+                    "{shown}{more}. Drafts stay saved; pinned and hidden (offline) tabs stay open."
+                ))
+                .footer(
+                    div()
+                        .h_flex()
+                        .justify_end()
+                        .gap_2()
+                        .child(
+                            Button::new("cancel-group-close")
+                                .label("Cancel")
+                                .on_click(|_, w, cx| w.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("confirm-group-close")
+                                .danger()
+                                .label(format!("Close {count}"))
+                                .on_click(move |_, w, cx| {
+                                    for pane in &panes {
+                                        pane.update(cx, |_, cx| cx.emit(PaneEvent::Close));
+                                    }
+                                    w.close_dialog(cx);
+                                }),
+                        ),
+                )
+        });
+    }
     fn confirm_close_channel(&mut self, name: String, window: &mut Window, cx: &mut Context<Self>) {
         if self.close_channel_pending {
             return;
@@ -4007,6 +4096,23 @@ impl Workbench {
                                         }),
                                 )
                                 .separator()
+                                .item(PopupMenuItem::new("Sort tabs A–Z").on_click({
+                                    let owner = owner.clone();
+                                    let channel = menu_channel.clone();
+                                    move |_, _, cx| {
+                                        let _ = owner.update(cx, |this, cx| {
+                                            if let Some(d) = &mut this.tabs[this.active].dock {
+                                                d.sort_group(&channel);
+                                            }
+                                            let pinned = this.tabs[this.active].pinned.clone();
+                                            if let Some(d) = &mut this.tabs[this.active].dock {
+                                                d.pin_front(&pinned);
+                                            }
+                                            this.schedule_save(cx);
+                                            cx.notify();
+                                        });
+                                    }
+                                }))
                                 .item(PopupMenuItem::new("Move tab left").on_click(
                                     move |_, _, cx| {
                                         let _ = left.update(cx, |this, cx| {
@@ -4088,6 +4194,24 @@ impl Workbench {
                                     },
                                 ))
                                 .separator()
+                                .item(PopupMenuItem::new("Close other tabs…").on_click({
+                                    let owner = owner.clone();
+                                    let channel = menu_channel.clone();
+                                    move |_, w, cx| {
+                                        let _ = owner.update(cx, |this, cx| {
+                                            this.confirm_close_group(channel.clone(), false, w, cx)
+                                        });
+                                    }
+                                }))
+                                .item(PopupMenuItem::new("Close tabs to the right…").on_click({
+                                    let owner = owner.clone();
+                                    let channel = menu_channel.clone();
+                                    move |_, w, cx| {
+                                        let _ = owner.update(cx, |this, cx| {
+                                            this.confirm_close_group(channel.clone(), true, w, cx)
+                                        });
+                                    }
+                                }))
                                 .item(
                                     PopupMenuItem::new("Close channel…").on_click(
                                         move |_, window, cx| {
