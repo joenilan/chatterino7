@@ -492,6 +492,18 @@ impl Workbench {
                         })),
                 ))
                 .child(row(
+                    "Web search",
+                    "Select text in chat, then Shift+right-click → Search the web. (Plain right-click copies the selection.)",
+                    crate::theme::Segmented::new("settings-search-engine")
+                        .selected_index(crate::message_actions::SEARCH_ENGINE.load(std::sync::atomic::Ordering::Relaxed))
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            crate::message_actions::SEARCH_ENGINE.store(*index, std::sync::atomic::Ordering::Relaxed);
+                            this.schedule_save(cx);
+                            cx.notify();
+                        }))
+                        .children(crate::message_actions::SEARCH_ENGINES.map(|(l, _)| crate::theme::segment(l))),
+                ))
+                .child(row(
                     "Joins and parts",
                     "Chatters arriving and leaving, listed every few seconds. Twitch only reports these in channels with fewer than 1,000 chatters.",
                     Switch::new("settings-joins-parts")

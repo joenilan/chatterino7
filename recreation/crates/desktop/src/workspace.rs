@@ -898,6 +898,11 @@ impl Workbench {
                         .filter_map(|c| c.as_str().map(str::to_owned))
                         .collect();
                 }
+                crate::message_actions::SEARCH_ENGINE.store(
+                    (state["search_engine"].as_u64().unwrap_or(0) as usize)
+                        .min(crate::message_actions::SEARCH_ENGINES.len() - 1),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 crate::mention_names::COLOR_MENTIONS.store(
                     state["mentions"]["color"].as_bool().unwrap_or(true),
                     std::sync::atomic::Ordering::Relaxed,
@@ -3075,6 +3080,8 @@ impl Workbench {
         value["popouts"] = json!(self.popout_channels(cx));
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
+        value["search_engine"] =
+            json!(crate::message_actions::SEARCH_ENGINE.load(std::sync::atomic::Ordering::Relaxed));
         let mut completion = serde_json::Map::new();
         for (index, name) in crate::emote_picker::COMPLETION_NAMES.iter().enumerate() {
             completion.insert(

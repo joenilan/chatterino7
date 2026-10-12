@@ -1449,7 +1449,8 @@ impl Render for ChannelPane {
                         let copy_owner = copy_owner.clone();
                         let copy_viewport = copy_viewport.clone();
                         window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
-                            if phase.capture() && event.button == MouseButton::Right && !window.has_active_dialog(cx)
+                            // Right-click on a selection copies it; Shift+right-click opens the menu (Search the web).
+                            if phase.capture() && event.button == MouseButton::Right && !event.modifiers.shift && !window.has_active_dialog(cx)
                                 && !emote_picker::covers(event.position,window,cx)
                                 && copy_viewport.borrow().is_some_and(|bounds| bounds.contains(&event.position))
                             {

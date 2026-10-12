@@ -321,6 +321,31 @@ fn emote_links(provider: &str, id: &str) -> (Option<String>, Option<String>, &'s
         _ => (None, None, ""),
     }
 }
+/// Settings → Chat → Web search: which engine "Search the web" uses.
+pub const SEARCH_ENGINES: [(&str, &str); 4] = [
+    ("Google", "https://www.google.com/search?q="),
+    ("DuckDuckGo", "https://duckduckgo.com/?q="),
+    ("Bing", "https://www.bing.com/search?q="),
+    ("Startpage", "https://www.startpage.com/do/search?q="),
+];
+pub static SEARCH_ENGINE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub fn web_search_url(text: &str) -> String {
+    let base = SEARCH_ENGINES[SEARCH_ENGINE
+        .load(std::sync::atomic::Ordering::Relaxed)
+        .min(SEARCH_ENGINES.len() - 1)]
+    .1;
+    let mut query = String::with_capacity(text.len() * 3);
+    for byte in text.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                query.push(byte as char)
+            }
+            b' ' => query.push('+'),
+            _ => query.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    format!("{base}{query}")
+}
 pub fn menu(
     owner: WeakEntity<ChannelPane>,
     id: String,
@@ -339,6 +364,27 @@ pub fn menu(
     let Some(message) = current else {
         return menu.item(PopupMenuItem::new("Message is no longer retained"));
     };
+    // Selected text: search the web for it (Chatterino's "Search the web").
+    let selected = owner
+        .upgrade()
+        .map(|p| p.read(cx).selected_text())
+        .unwrap_or_default();
+    let selected = selected.split_whitespace().collect::<Vec<_>>().join(" ");
+    if !selected.is_empty() && selected.chars().count() <= 400 {
+        let shown: String = selected.chars().take(28).collect();
+        let shown = if shown.len() < selected.len() {
+            format!("{}…", shown.trim_end())
+        } else {
+            shown
+        };
+        let url = web_search_url(&selected);
+        menu = menu
+            .item(
+                PopupMenuItem::new(format!("Search the web for “{shown}”"))
+                    .on_click(move |_, _, cx| cx.open_url(&url)),
+            )
+            .separator();
+    }
     // Mentions/Whispers tabs: get back to where it happened.
     let special = owner
         .upgrade()
@@ -1063,4 +1109,15 @@ fn created_label(raw: &str) -> String {
                 .to_string()
         })
         .unwrap_or_else(|_| raw.to_owned())
+}
+
+#[cfg(test)]
+mod web_search_tests {
+    #[test]
+    fn queries_are_encoded() {
+        assert_eq!(
+            super::web_search_url("épée & co"),
+            "https://www.google.com/search?q=%C3%A9p%C3%A9e+%26+co"
+        );
+    }
 }
