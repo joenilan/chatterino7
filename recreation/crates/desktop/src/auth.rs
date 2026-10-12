@@ -170,6 +170,17 @@ impl TwitchAccount {
         })
         .detach();
     }
+    /// Restoring the saved sign-in at startup (reading the vault, validating or
+    /// renewing it), as opposed to a sign-in the user started.
+    pub fn restoring(&self) -> bool {
+        self.account.is_none()
+            && self.busy
+            && self.code.is_none()
+            && (self.generation == 0 || self.started_refresh.is_some())
+    }
+    pub fn status(&self) -> &str {
+        &self.status
+    }
     pub fn login(&self) -> Option<String> {
         self.account.as_ref().map(|a| a.login.clone())
     }

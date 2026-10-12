@@ -293,6 +293,12 @@ pub struct Workbench {
     anon: crate::anon_chat::AnonChat,
     /// Signed out and chose "Read chat as guest" on the sign-in screen (this run only).
     guest_reading: bool,
+    /// When the startup splash finished (it fades out from here).
+    splash_done: Option<std::time::Instant>,
+    /// When this window opened (caps how long the splash waits).
+    opened: std::time::Instant,
+    /// The splash's give-up wake-up is scheduled (once).
+    splash_wake: bool,
     /// Settings → Shortcuts: listening for a new shortcut's keys.
     pub(crate) hotkey_capture: Option<Subscription>,
     /// Settings → General: keep the main window above other windows.
@@ -588,6 +594,9 @@ impl Workbench {
             live: crate::live::LiveChat::new(),
             anon: crate::anon_chat::AnonChat::new(),
             guest_reading: false,
+            splash_done: None,
+            opened: std::time::Instant::now(),
+            splash_wake: false,
             hotkey_capture: None,
             on_top: state["on_top"].as_bool().unwrap_or(false),
             autorun: None,
@@ -5931,9 +5940,13 @@ impl Render for Workbench {
                     .overflow_hidden()
                     // No account: a sign-in screen instead of tabs that can't connect.
                     .when(
-                        self.account.read(cx).login().is_none() && !self.guest_reading,
+                        self.account.read(cx).login().is_none()
+                            && !self.guest_reading
+                            && !self.account.read(cx).restoring(),
                         |el| el.child(deferred(self.render_sign_in_screen(cx)).with_priority(1)),
                     )
+                    // Startup: a splash while the saved sign-in is restored, fading out.
+                    .children(self.render_splash(cx).map(|splash| deferred(splash).with_priority(2)))
                     .when(sidebar_width > 0.1, |el| {
                         el.child(
                             div()

@@ -67,6 +67,129 @@ impl Workbench {
     }
     /// Shown over the workspace while no account is signed in: sign in, pick
     /// another saved account, or read as a guest. Workspaces stay as they are.
+    /// The startup splash: logo and a loading bar while the saved sign-in is
+    /// restored, then a short fade into whatever comes next.
+    pub(super) fn render_splash(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        const FADE: std::time::Duration = std::time::Duration::from_millis(260);
+        // With "Only show live channel tabs", wait for the first live check (up
+        // to a few seconds) so offline tabs don't show and then vanish.
+        let checking_live = self.live_channels
+            && self.account.read(cx).login().is_some()
+            && self.opened.elapsed() < std::time::Duration::from_secs(4)
+            && !self
+                .tab_panes()
+                .iter()
+                .any(|p| self.streams.get(&p.read(cx).name).is_some());
+        if checking_live && !self.splash_wake {
+            self.splash_wake = true;
+            // Re-check when the cap runs out even if nothing else redraws.
+            let left = std::time::Duration::from_secs(4).saturating_sub(self.opened.elapsed());
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(left).await;
+                let _ = this.update(cx, |_, cx| cx.notify());
+            })
+            .detach();
+        }
+        let restoring = self.account.read(cx).restoring() || checking_live;
+        let reduced = cx.reduce_motion();
+        let fading = match (restoring, self.splash_done) {
+            (true, _) => false,
+            (false, None) => {
+                let now = std::time::Instant::now();
+                self.splash_done = Some(now);
+                // Drop the splash once the fade has played.
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(FADE).await;
+                    let _ = this.update(cx, |_, cx| cx.notify());
+                })
+                .detach();
+                true
+            }
+            (false, Some(done)) => done.elapsed() < FADE,
+        };
+        if !(restoring || fading) || (fading && reduced) {
+            return None;
+        }
+        let status = if checking_live {
+            "Checking which channels are live…".to_owned()
+        } else {
+            self.account.read(cx).status().to_owned()
+        };
+        let bar = div()
+            .w(px(56.))
+            .h(px(3.))
+            .rounded_full()
+            .bg(rgb(theme::ACCENT))
+            .absolute()
+            .top_0();
+        let bar = if reduced {
+            bar.left(px(52.)).into_any_element()
+        } else {
+            bar.with_animation(
+                "splash-bar",
+                Animation::new(std::time::Duration::from_millis(1100))
+                    .repeat()
+                    .with_easing(ease_in_out),
+                |el, p| el.left(px(-56. + 216. * p)),
+            )
+            .into_any_element()
+        };
+        let splash = div()
+            .id("startup-splash")
+            .absolute()
+            .inset_0()
+            .occlude()
+            .bg(rgb(theme::CANVAS))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                div()
+                    .v_flex()
+                    .items_center()
+                    .gap_4()
+                    .child(
+                        div()
+                            .h_flex()
+                            .gap_2()
+                            .text_size(px(26.))
+                            .child(
+                                div()
+                                    .text_color(rgb(theme::ACCENT))
+                                    .font_weight(FontWeight::BOLD)
+                                    .child("//"),
+                            )
+                            .child(div().font_weight(FontWeight::SEMIBOLD).child("JAWJACK")),
+                    )
+                    .child(
+                        div()
+                            .relative()
+                            .w(px(160.))
+                            .h(px(3.))
+                            .rounded_full()
+                            .overflow_hidden()
+                            .bg(rgb(theme::CONTROL))
+                            .child(bar),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .text_color(rgb(theme::MUTED))
+                            .child(status),
+                    ),
+            );
+        Some(if fading {
+            splash
+                .with_animation(
+                    "splash-out",
+                    Animation::new(FADE).with_easing(ease_in_out),
+                    |el, p| el.opacity(1. - p),
+                )
+                .into_any_element()
+        } else {
+            splash.into_any_element()
+        })
+    }
     pub(super) fn render_sign_in_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         let others: Vec<(usize, String)> = self
             .accounts
@@ -154,6 +277,12 @@ impl Workbench {
                                     })),
                             ),
                     ),
+            )
+            .with_animation(
+                "sign-in-in",
+                Animation::new(std::time::Duration::from_millis(if cx.reduce_motion() { 1 } else { 220 }))
+                    .with_easing(ease_in_out),
+                |el, p| el.opacity(p),
             )
             .into_any_element()
     }
