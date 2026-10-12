@@ -1192,7 +1192,7 @@ impl Render for ChannelPane {
                                     // Ringed in the channel's colour, matching its bubble at the top of the chat.
                                     let ring = (shared_style < 3).then(|| shared_colors.get(&source_id).copied().unwrap_or_else(|| shared_chat::color_of(&source_id)));
                                     el.child(div().id(SharedString::from(format!("shared-{source_id}"))).w(px(20.)).h(first_line_height).flex().items_center().flex_shrink_0()
-                                        .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(format!("Shared Chat · sent in {name}'s channel")).build(w, cx))
+                                        .tooltip(media_hover::image_card(name.clone(), "Shared Chat · sent in their channel".into(), image.clone()))
                                         .child(div().size(px(20.)).rounded_full().flex().items_center().justify_center().when_some(ring, |el, ring| el.border_2().border_color(rgb(ring))).child(match image {
                                             Some(image) => emote_picker::avatar(image, if ring.is_some() { 14. } else { 18. }),
                                             None => div().size(px(14.)).rounded_full().bg(rgb(0x3A3350)).flex().items_center().justify_center().text_size(px(9.)).text_color(rgb(theme::TEXT))
@@ -1200,7 +1200,7 @@ impl Render for ChannelPane {
                                         })))
                                 })
                                 .children(badge_images.into_iter().map(|(badge,image,background)|{
-                                    div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(badge.title.clone()).build(w,cx)).child(div().size(px(18.)).when_some(background,|el,color|el.bg(rgb(color))).child(emote_picker::icon(image,String::new(),18.,18.)))
+                                    div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(media_hover::image_card(badge.title.clone(),media_hover::source(badge.key.provider()).to_owned(),image.clone())).child(div().size(px(18.)).when_some(background,|el,color|el.bg(rgb(color))).child(emote_picker::icon(image,String::new(),18.,18.)))
                                 }).collect::<Vec<_>>())
                                 .when(message.deleted, |el| el.child(div().h(first_line_height).flex().items_center().flex_shrink_0()
                                     .child(div().px(px(4.)).rounded(px(3.)).bg(rgb(0x3A2328)).text_color(rgb(0xF29D9D)).text_size(px(10.)).child("deleted"))))

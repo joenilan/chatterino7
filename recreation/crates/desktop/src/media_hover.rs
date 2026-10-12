@@ -151,8 +151,26 @@ pub fn region(
     );
     element
 }
+/// A hover card for any image: picture, name and where it's from.
+pub fn image_card(
+    label: String,
+    source: String,
+    image: Option<Arc<DecodedMedia>>,
+) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    let content = Content::Emote {
+        label,
+        source,
+        images: image.into_iter().collect(),
+    };
+    move |_, cx| cx.new(|_| Card(content.clone())).into()
+}
 pub fn source(provider: &str) -> &'static str {
     match provider {
+        "twitch_badge" => "Twitch Badge",
+        "ffz_badge" => "FrankerFaceZ Badge",
+        "ffz_role_badge" => "FrankerFaceZ Channel Badge",
+        "7tv_badge" => "7TV Badge",
+        "twitch_avatar" => "Twitch Channel",
         "twitch" => "Twitch Emote",
         "7tv" => "7TV Emote",
         "bttv" => "BetterTTV Emote",

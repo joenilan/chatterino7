@@ -215,11 +215,13 @@ impl ChannelPane {
                 .unwrap_or(0.);
             pulsing |= pulse > 0.;
             let tip = match (mine, hidden) {
-                (true, false) => format!("{name} (this channel) · click to hide its messages"),
-                (true, true) => format!("{name} (this channel) hidden · click to show"),
-                (false, false) => format!("{name}'s chat · click to hide it"),
-                (false, true) => format!("{name}'s chat hidden · click to show it"),
-            };
+                (true, false) => "This channel · click to hide its messages",
+                (true, true) => "This channel · hidden, click to show",
+                (false, false) => "Shared chat · click to hide their messages",
+                (false, true) => "Shared chat · hidden, click to show",
+            }
+            .to_owned();
+            let image_for_card = image.clone();
             let initial = name
                 .chars()
                 .next()
@@ -261,9 +263,11 @@ impl ChannelPane {
                             .child(initial)
                             .into_any_element(),
                     })
-                    .tooltip(move |w, cx| {
-                        gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(w, cx)
-                    })
+                    .tooltip(crate::media_hover::image_card(
+                        name.clone(),
+                        tip,
+                        image_for_card,
+                    ))
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_shared_source(&id, cx)))
                     .into_any_element(),
             );
