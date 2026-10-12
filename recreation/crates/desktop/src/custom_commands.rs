@@ -1,4 +1,6 @@
-//! Profile-local text templates. Expansion prepares a draft, never sends or executes.
+//! Profile-local command templates. Text expands into a draft to review; a
+//! template that is itself a slash command (e.g. "/timeout {1} 600 spam") runs
+//! that built-in or Twitch command, like Chatterino's custom commands.
 use crate::theme;
 use gpui_kit::component::{
     Sizable, StyledExt,
@@ -89,9 +91,6 @@ pub fn validate(name: &str, template: &str) -> Result<String, String> {
     {
         return Err("The message template must contain 1–500 characters on one line.".into());
     }
-    if template.trim_start().starts_with('/') {
-        return Err("Templates must produce chat text, not another slash command.".into());
-    }
     // Validate syntax independently of sample arguments.
     expand_inner(
         template,
@@ -141,9 +140,20 @@ fn expand_inner(
                     .get(token.parse::<usize>().unwrap() - 1)
                     .copied()
                     .ok_or_else(|| format!("Missing argument {{{token}}}. Your draft is kept."))?,
+                // {2+}: argument 2 and everything after it (Chatterino's syntax).
+                rest if rest.ends_with('+')
+                    && rest[..rest.len() - 1]
+                        .parse::<usize>()
+                        .is_ok_and(|n| (1..=9).contains(&n)) =>
+                {
+                    let from = rest[..rest.len() - 1].parse::<usize>().unwrap() - 1;
+                    let joined = words.get(from..).map(|w| w.join(" ")).unwrap_or_default();
+                    result.push_str(&joined);
+                    continue;
+                }
                 _ => {
                     return Err(format!(
-                        "Unknown placeholder {{{token}}}. Use {{channel}}, {{args}}, or {{1}}–{{9}}."
+                        "Unknown placeholder {{{token}}}. Use {{channel}}, {{args}}, {{1}}–{{9}} or {{2+}}."
                     ));
                 }
             };
@@ -169,12 +179,8 @@ fn expand_inner(
             "Expanded message exceeds Twitch's 500-character limit. Your draft is kept.".into(),
         );
     }
-    if enforce_output
-        && (result.trim().is_empty()
-            || result.trim_start().starts_with('/')
-            || result.chars().any(char::is_control))
-    {
-        return Err("Expansion must be nonempty, single-line chat text, not a slash command. Your draft is kept.".into());
+    if enforce_output && (result.trim().is_empty() || result.chars().any(char::is_control)) {
+        return Err("Expansion must be nonempty, single-line text. Your draft is kept.".into());
     }
     Ok(result)
 }
@@ -323,7 +329,7 @@ impl Render for Editor {
         };
         let height = (f32::from(window.viewport_size().height) - 160.).clamp(100., 580.);
         div().id("custom-command-editor").v_flex().gap_2().max_h(px(height)).overflow_y_scroll()
-            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Personal text shortcuts for every workspace. Enter expands a command into your draft; review it, then Send. Existing reply targets are kept."))
+            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Personal shortcuts for every workspace. Text templates expand into your draft to review, then Send. A template starting with a command (e.g. /timeout {1} 600 spam) runs that command right away."))
             .child(div().h_flex().gap_2().child(Button::new("new-custom-command").small().label("New command").on_click(cx.listener(|this,_,w,cx|this.select(None,w,cx))))
                 .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("{}/32 saved",entries.len()))))
             .child(div().id("saved-custom-commands").v_flex().gap_1().max_h(px(140.)).overflow_y_scroll().children(entries.into_iter().map(|name|{
@@ -334,7 +340,7 @@ impl Render for Editor {
             .child(Input::new(&self.name).small())
             .child(div().text_size(px(11.)).child("Message template"))
             .child(Input::new(&self.template).small())
-            .child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child("{channel} = channel login · {args} = all arguments · {1}–{9} = individual words · {{ and }} = literal braces"))
+            .child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child("{channel} = channel login · {args} = all arguments · {1}–{9} = individual words · {2+} = word 2 onward · {{ and }} = literal braces"))
             .child(Input::new(&self.sample).small())
             .child(div().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL)).text_size(px(12.)).child(preview))
             .child(div().h_flex().gap_2().child(Button::new("save-custom-command").small().label("Save command").on_click(cx.listener(|this,_,w,cx|this.save(w,cx))))
@@ -343,5 +349,24 @@ impl Render for Editor {
                     if let Some(name)=this.selected.take(){this.definitions.borrow_mut().remove(&name);cx.emit(Changed);this.switch_pending=Some(String::new());this.select(None,w,cx);this.status="Command removed.".into();}
                 })))))
             .when(!self.status.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xE9C99C)).child(self.status.clone())))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{expand, validate};
+    #[test]
+    fn templates_can_run_commands_and_take_rest_args() {
+        assert!(validate("spam", "/timeout {1} 600 {2+}").is_ok());
+        assert_eq!(
+            expand("/timeout {1} 600 {2+}", "chan", "bob being rude").unwrap(),
+            "/timeout bob 600 being rude"
+        );
+        assert_eq!(expand("hi {2+}!", "chan", "a").unwrap(), "hi !");
+        assert!(expand("{1}", "chan", "").is_err());
+        assert!(
+            validate("ban", "x").is_err(),
+            "reserved names stay reserved"
+        );
     }
 }

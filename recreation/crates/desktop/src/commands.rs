@@ -280,6 +280,25 @@ impl ChannelPane {
                     }
                 } else if let Some(template) = template {
                     match crate::custom_commands::expand(&template, &self.name, args) {
+                        // A template that is a slash command runs it (one level deep:
+                        // a custom command can't call another custom command).
+                        Ok(value) if is_command(&value) => {
+                            let (inner, _) = split(&value);
+                            let inner = inner.to_ascii_lowercase();
+                            if self
+                                .custom_commands
+                                .borrow()
+                                .contains_key(inner.trim_start_matches('/'))
+                            {
+                                self.command_feedback(
+                                    format!("{name} runs another custom command ({inner}); custom commands can only run built-in or Twitch commands."),
+                                    window,
+                                    cx,
+                                );
+                            } else {
+                                return self.route_command(&value, window, cx);
+                            }
+                        }
                         Ok(value) => {
                             self.command_draft(&value, window, cx);
                             self.command_feedback(
