@@ -282,6 +282,8 @@ pub struct Workbench {
     live: crate::live::LiveChat,
     /// Guest (read-only) chat while no account is signed in.
     anon: crate::anon_chat::AnonChat,
+    /// Settings → Shortcuts: listening for a new shortcut's keys.
+    pub(crate) hotkey_capture: Option<Subscription>,
     streams: crate::stream_status::Streams,
     capabilities: crate::capabilities::Capabilities,
     experience: roles::Experience,
@@ -565,6 +567,7 @@ impl Workbench {
             zoom_accumulator: 0.,
             live: crate::live::LiveChat::new(),
             anon: crate::anon_chat::AnonChat::new(),
+            hotkey_capture: None,
             streams: crate::stream_status::Streams::new(),
             capabilities: crate::capabilities::Capabilities::new(),
             experience: roles::Experience::from_key(state["experience"].as_str().unwrap_or("")),
@@ -701,6 +704,7 @@ impl Workbench {
                     std::sync::atomic::Ordering::Relaxed,
                 );
                 crate::chat_search::load_saved(&state["saved_filters"]);
+                crate::hotkeys::load(&state["hotkeys"], cx);
                 crate::inline_chat::EMOTE_SCALE.store(
                     state["emote_scale"].as_u64().unwrap_or(100).clamp(50, 200) as u32,
                     std::sync::atomic::Ordering::Relaxed,
@@ -2488,6 +2492,7 @@ impl Workbench {
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
         value["saved_filters"] = crate::chat_search::saved_json();
+        value["hotkeys"] = crate::hotkeys::json();
         value["emote_scale"] =
             json!(crate::inline_chat::EMOTE_SCALE.load(std::sync::atomic::Ordering::Relaxed));
         value["alternate_rows"] = json!(crate::theme::alternate_rows());

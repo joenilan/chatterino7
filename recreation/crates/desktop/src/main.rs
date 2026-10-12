@@ -38,6 +38,7 @@ mod follows_live;
 mod frame_sampler;
 mod google_auth;
 mod highlight_rules;
+mod hotkeys;
 mod hype;
 mod ignores;
 mod inline_chat;

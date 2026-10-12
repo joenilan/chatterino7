@@ -15,26 +15,12 @@ const SECTIONS: [(&str, Kit); 9] = [
     ("Shortcuts", Kit::Keyboard),
     ("Updates", Kit::Download),
 ];
-const SHORTCUTS: [(&str, &str); 18] = [
-    ("Ctrl+P", "Switch channel"),
-    ("Ctrl+K", "Add a channel"),
-    ("Ctrl+Tab", "Next workspace"),
-    ("Ctrl+PageDown / PageUp", "Next / previous channel"),
-    ("Ctrl+I", "Channel details"),
-    ("Ctrl+F", "Search this channel"),
-    ("Ctrl+Shift+F", "Search open channels"),
-    ("Ctrl+Shift+M", "Highlights & unread"),
-    ("Ctrl+Shift+R", "Mark all read"),
-    ("Ctrl+Shift+S", "Show or hide the Studio panel"),
-    ("Ctrl+Shift+H", "Sent message history"),
+/// Fixed shortcuts shown under the customisable ones.
+const SHORTCUTS: [(&str, &str); 3] = [
     (
         "Up / Down (or Alt+Up / Down)",
         "Previous / next sent message",
     ),
-    ("Ctrl+T", "New workspace"),
-    ("Ctrl+W", "Close workspace"),
-    ("Ctrl+Shift+T", "Reopen workspace"),
-    ("Ctrl+Space", "Pause or resume scrolling"),
     ("Ctrl+plus / minus", "Text size (Ctrl+0 resets)"),
     ("Double-click a divider", "Make the splits equal"),
 ];
@@ -438,7 +424,30 @@ impl Workbench {
                         })),
                     ))
             }
-            7 => page.children(SHORTCUTS.iter().map(|(keys, what)| {
+            7 => page
+                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).pb_1().child("Click a shortcut to change it, then press the new keys. Esc cancels."))
+                .children(crate::hotkeys::HOTKEYS.iter().map(|hotkey| {
+                    let keys = crate::hotkeys::keys(hotkey);
+                    let custom = keys != hotkey.default;
+                    let id = hotkey.id;
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_1()
+                        .py(px(5.))
+                        .border_b_1()
+                        .border_color(rgb(theme::BORDER))
+                        .child(div().flex_1().text_size(px(13.)).child(hotkey.label))
+                        .when(custom, |el| {
+                            el.child(Button::new(SharedString::from(format!("hotkey-reset-{id}"))).xsmall().ghost().label("Reset").tooltip(format!("Back to {}", crate::hotkeys::label(hotkey.default))).on_click(cx.listener(move |this, _, _, cx| {
+                                crate::hotkeys::set(id, None, cx);
+                                this.schedule_save(cx);
+                                cx.notify();
+                            })))
+                        })
+                        .child(Button::new(SharedString::from(format!("hotkey-{id}"))).small().label(crate::hotkeys::label(&keys)).when(custom, |b| b.primary()).on_click(cx.listener(move |this, _, w, cx| this.record_hotkey(id, w, cx))))
+                }))
+                .children(SHORTCUTS.iter().map(|(keys, what)| {
                 div()
                     .h_flex()
                     .items_center()
@@ -682,5 +691,85 @@ impl Workbench {
                         }))),
                 )
             })
+    }
+}
+
+impl Workbench {
+    /// Settings → Shortcuts: press the new keys for a hotkey. The keystroke is
+    /// intercepted before any binding runs, so it can't trigger its old action.
+    fn record_hotkey(&mut self, id: &'static str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(hotkey) = crate::hotkeys::HOTKEYS.iter().find(|h| h.id == id) else {
+            return;
+        };
+        let owner = cx.entity().downgrade();
+        let label = hotkey.label;
+        let status: std::rc::Rc<std::cell::RefCell<String>> = Default::default();
+        let shown = status.clone();
+        self.hotkey_capture = Some(cx.intercept_keystrokes(move |event, window, cx| {
+            let key = event.keystroke.key.as_str();
+            if matches!(
+                key,
+                "shift" | "control" | "alt" | "platform" | "function" | "capslock"
+            ) {
+                return;
+            }
+            cx.stop_propagation();
+            let done = if key == "escape" && !event.keystroke.modifiers.modified() {
+                true
+            } else {
+                match crate::hotkeys::validate(&event.keystroke.unparse()) {
+                    Ok(keys) => {
+                        crate::hotkeys::set(id, Some(keys), cx);
+                        true
+                    }
+                    Err(problem) => {
+                        *status.borrow_mut() = problem;
+                        window.refresh();
+                        false
+                    }
+                }
+            };
+            if done {
+                window.close_dialog(cx);
+                let _ = owner.update(cx, |this, cx| {
+                    this.hotkey_capture = None;
+                    this.schedule_save(cx);
+                    cx.notify();
+                });
+            }
+        }));
+        let closing = cx.entity().downgrade();
+        window.open_dialog(cx, move |dialog, _, _| {
+            let closing = closing.clone();
+            dialog
+                .title(format!("Shortcut for {label}"))
+                .on_close(move |_, _, cx| {
+                    let _ = closing.update(cx, |this, _| this.hotkey_capture = None);
+                })
+                .child(
+                    div()
+                        .v_flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_size(px(13.))
+                                .child("Press the new keys, e.g. Ctrl+Shift+K or Alt+J."),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(rgb(theme::MUTED))
+                                .child("Use Ctrl or Alt with a key, or an F-key. Esc cancels."),
+                        )
+                        .when(!shown.borrow().is_empty(), |el| {
+                            el.child(
+                                div()
+                                    .text_size(px(11.))
+                                    .text_color(rgb(0xE9C99C))
+                                    .child(shown.borrow().clone()),
+                            )
+                        }),
+                )
+        });
     }
 }

@@ -1,0 +1,267 @@
+//! Customisable keyboard shortcuts (Chatterino's hotkey settings). Built-in
+//! bindings stay registered; a custom key is bound after them (later bindings
+//! win) and the key it replaces is disabled with NoAction, so text input
+//! bindings from the UI kit are never cleared.
+use gpui_kit::{App, KeyBinding, NoAction};
+use std::{collections::BTreeMap, sync::Mutex};
+
+pub struct Hotkey {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub default: &'static str,
+    context: &'static str,
+    bind: fn(&str, Option<&str>) -> KeyBinding,
+}
+
+macro_rules! hotkey {
+    ($id:literal, $label:literal, $default:literal, $context:literal, $action:expr) => {
+        Hotkey {
+            id: $id,
+            label: $label,
+            default: $default,
+            context: $context,
+            bind: |keys, context| KeyBinding::new(keys, $action, context),
+        }
+    };
+}
+
+pub const HOTKEYS: &[Hotkey] = {
+    use crate::workspace::*;
+    &[
+        hotkey!(
+            "switch-channel",
+            "Switch channel",
+            "ctrl-p",
+            "ChatWorkspace",
+            SwitchChannel
+        ),
+        hotkey!(
+            "add-channel",
+            "Add a channel",
+            "ctrl-k",
+            "ChatWorkspace",
+            AddChannel
+        ),
+        hotkey!(
+            "next-workspace",
+            "Next workspace",
+            "ctrl-tab",
+            "ChatWorkspace",
+            NextTab
+        ),
+        hotkey!(
+            "previous-workspace",
+            "Previous workspace",
+            "ctrl-shift-tab",
+            "ChatWorkspace",
+            PreviousTab
+        ),
+        hotkey!(
+            "next-channel",
+            "Next channel",
+            "ctrl-pagedown",
+            "ChatWorkspace",
+            NextChannel
+        ),
+        hotkey!(
+            "previous-channel",
+            "Previous channel",
+            "ctrl-pageup",
+            "ChatWorkspace",
+            PreviousChannel
+        ),
+        hotkey!(
+            "channel-details",
+            "Channel details",
+            "ctrl-i",
+            "ChatWorkspace",
+            ChannelDetails
+        ),
+        hotkey!(
+            "search-channel",
+            "Search this channel",
+            "ctrl-f",
+            "JawjackChannel",
+            crate::FindChat
+        ),
+        hotkey!(
+            "search-open",
+            "Search open channels",
+            "ctrl-shift-f",
+            "ChatWorkspace",
+            SearchOpenChannels
+        ),
+        hotkey!(
+            "activity",
+            "Highlights & unread",
+            "ctrl-shift-m",
+            "ChatWorkspace",
+            OpenActivity
+        ),
+        hotkey!(
+            "mark-all-read",
+            "Mark all read",
+            "ctrl-shift-r",
+            "ChatWorkspace",
+            MarkAllRead
+        ),
+        hotkey!(
+            "studio",
+            "Show or hide the Studio panel",
+            "ctrl-shift-s",
+            "ChatWorkspace",
+            ToggleStudio
+        ),
+        hotkey!(
+            "sent-history",
+            "Sent message history",
+            "ctrl-shift-h",
+            "JawjackChannel",
+            crate::SentHistory
+        ),
+        hotkey!(
+            "new-workspace",
+            "New workspace",
+            "ctrl-t",
+            "ChatWorkspace",
+            NewTab
+        ),
+        hotkey!(
+            "close-workspace",
+            "Close workspace",
+            "ctrl-w",
+            "ChatWorkspace",
+            CloseTab
+        ),
+        hotkey!(
+            "reopen-workspace",
+            "Reopen workspace",
+            "ctrl-shift-t",
+            "ChatWorkspace",
+            ReopenTab
+        ),
+        hotkey!(
+            "pause-chat",
+            "Pause or resume scrolling",
+            "ctrl-space",
+            "JawjackChannel",
+            crate::ToggleChatPause
+        ),
+        hotkey!(
+            "next-pane",
+            "Focus next split",
+            "f6",
+            "ChatWorkspace",
+            FocusNextPane
+        ),
+    ]
+};
+
+/// Custom keys by hotkey ID (saved with the workspace).
+static OVERRIDES: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap::new());
+
+pub fn overrides() -> BTreeMap<String, String> {
+    OVERRIDES.lock().map(|o| o.clone()).unwrap_or_default()
+}
+/// The keys currently in effect for a hotkey.
+pub fn keys(hotkey: &Hotkey) -> String {
+    overrides()
+        .get(hotkey.id)
+        .cloned()
+        .unwrap_or_else(|| hotkey.default.to_owned())
+}
+
+/// "ctrl-shift-k" → "Ctrl+Shift+K".
+pub fn label(keys: &str) -> String {
+    let Ok(keystroke) = gpui_kit::Keystroke::parse(keys) else {
+        return keys.to_owned();
+    };
+    let m = &keystroke.modifiers;
+    let mut parts: Vec<String> = [
+        (m.control, "Ctrl"),
+        (m.alt, "Alt"),
+        (m.shift, "Shift"),
+        (m.platform, "Win"),
+    ]
+    .into_iter()
+    .filter(|(on, _)| *on)
+    .map(|(_, name)| name.to_owned())
+    .collect();
+    parts.push(match keystroke.key.as_str() {
+        "pagedown" => "PageDown".to_owned(),
+        "pageup" => "PageUp".to_owned(),
+        key => {
+            let mut chars = key.chars();
+            chars
+                .next()
+                .map(|c| c.to_uppercase().chain(chars).collect())
+                .unwrap_or_default()
+        }
+    });
+    parts.join("+")
+}
+
+/// A shortcut must use Ctrl or Alt (or be a function key), so it can't take over typing.
+pub fn validate(keys: &str) -> Result<String, String> {
+    let keys = keys.trim().to_ascii_lowercase();
+    let keystroke =
+        gpui_kit::Keystroke::parse(&keys).map_err(|_| "That isn't a key combination.")?;
+    let function_key = keystroke.key.len() > 1
+        && keystroke.key.starts_with('f')
+        && keystroke.key[1..].parse::<u8>().is_ok();
+    let m = &keystroke.modifiers;
+    if !(m.control || m.alt || m.platform || function_key) {
+        return Err("Use Ctrl or Alt with a key (or an F-key), so typing isn't affected.".into());
+    }
+    if let Some(other) = HOTKEYS.iter().find(|h| keys == self::keys(h)) {
+        return Err(format!("{} already uses {}.", other.label, label(&keys)));
+    }
+    Ok(keystroke.unparse())
+}
+
+/// Use `keys` for a hotkey (None = back to its default).
+pub fn set(id: &str, keys: Option<String>, cx: &mut App) {
+    let Some(hotkey) = HOTKEYS.iter().find(|h| h.id == id) else {
+        return;
+    };
+    let before = self::keys(hotkey);
+    if let Ok(mut overrides) = OVERRIDES.lock() {
+        match keys.filter(|k| k != hotkey.default) {
+            Some(keys) => overrides.insert(id.to_owned(), keys),
+            None => overrides.remove(id),
+        };
+    }
+    let after = self::keys(hotkey);
+    if before != after {
+        cx.bind_keys([
+            KeyBinding::new(&before, NoAction, Some(hotkey.context)),
+            (hotkey.bind)(&after, Some(hotkey.context)),
+        ]);
+    }
+}
+
+pub fn load(value: &serde_json::Value, cx: &mut App) {
+    for hotkey in HOTKEYS {
+        if let Some(keys) = value[hotkey.id].as_str()
+            && let Ok(keys) = gpui_kit::Keystroke::parse(keys).map(|k| k.unparse())
+        {
+            set(hotkey.id, Some(keys), cx);
+        }
+    }
+}
+pub fn json() -> serde_json::Value {
+    serde_json::json!(overrides())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn labels_and_validation() {
+        assert_eq!(super::label("ctrl-shift-k"), "Ctrl+Shift+K");
+        assert_eq!(super::label("ctrl--"), "Ctrl+-");
+        assert!(super::validate("k").is_err());
+        assert!(super::validate("ctrl-p").is_err()); // taken by Switch channel
+        assert_eq!(super::validate("alt-j").as_deref(), Ok("alt-j"));
+        assert_eq!(super::validate("f9").as_deref(), Ok("f9"));
+    }
+}
