@@ -1416,6 +1416,10 @@ pub(crate) fn chat_message(
             local_alias: None,
             local_color: None,
             repeats: 0,
+            source_id: e["source_broadcaster_user_id"]
+                .as_str()
+                .filter(|source| !source.is_empty() && *source != id && source.len() <= 64)
+                .map(str::to_owned),
             kind: e["message_type"]
                 .as_str()
                 .unwrap_or("text")

@@ -228,6 +228,8 @@ fn message(irc: &Irc, channel: &str) -> Option<Message> {
         "primepaidupgrade" => "prime_paid_upgrade".into(),
         "paybackgift" => "pay_it_forward".into(),
         "bitsbadgetier" => "bits_badge_tier".into(),
+        // Shared Chat: the original notice type is in source-msg-id.
+        "sharedchatnotice" => format!("shared_chat_{}", tag("source-msg-id")),
         other => other.to_owned(),
     });
     let message_type = match tag("msg-id").as_str() {
@@ -256,6 +258,14 @@ fn message(irc: &Irc, channel: &str) -> Option<Message> {
         "message_type": message_type,
         "message": {"text": body, "fragments": fragments(body, irc.tags.get("emotes"))},
     });
+    // Shared Chat: sent in another channel of the session.
+    if let Some(source) = irc
+        .tags
+        .get("source-room-id")
+        .filter(|source| !source.is_empty() && **source != tag("room-id"))
+    {
+        event["source_broadcaster_user_id"] = json!(source);
+    }
     if let Some(kind) = &notice_type {
         event["notice_type"] = json!(kind);
         event["system_message"] = json!(tag("system-msg"));

@@ -48,9 +48,7 @@ pub fn heading(message: &Message) -> Option<AnyElement> {
     if p.reward_id.is_some() && !p.kind.starts_with("channel_points_") {
         labels.push("Channel reward".into());
     }
-    if let Some(source) = &p.source {
-        labels.push(format!("From #{source}"));
-    }
+    // Shared Chat shows the source channel's avatar beside the badges instead.
     if labels.is_empty() && p.notice.is_none() {
         return None;
     }

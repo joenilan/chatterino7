@@ -217,6 +217,8 @@ pub struct Workbench {
     view_filters: std::collections::HashMap<String, String>,
     /// Combined feeds: hidden platforms per "tab:pane".
     platform_filters: std::collections::HashMap<String, Vec<String>>,
+    /// Twitch Shared Chat sessions of open channels ("+N" on tabs).
+    shared_chat: crate::shared_chat::SharedChat,
     /// Your own channel's live YouTube broadcast ("yt:<id>"), linked into your own tab.
     own_youtube: Option<String>,
     own_youtube_checked: Option<std::time::Instant>,
@@ -682,6 +684,7 @@ impl Workbench {
             own_youtube: None,
             own_youtube_checked: None,
             own_youtube_busy: false,
+            shared_chat: crate::shared_chat::SharedChat::new(),
             platform_filters: state["platform_filters"]
                 .as_object()
                 .map(|o| {
@@ -966,6 +969,7 @@ impl Workbench {
         self.pump_ads(identity.as_ref(), window, cx);
         self.pump_rewards(identity.as_ref(), window, cx);
         self.pump_youtube(cx);
+        self.pump_shared_chat(identity.as_ref(), cx);
         // Goals, charity and Shield Mode already running at sign-in.
         if let Some(identity) = identity.clone()
             && self.hype_loaded_for.as_deref() != Some(identity.user_id.as_str())
@@ -2689,6 +2693,63 @@ impl Workbench {
             .or_else(|| p.send_to.clone())
             .unwrap_or_else(|| crate::combined::sources(channel)[0].clone())
     }
+    /// Shared Chat: look sessions up for channels showing messages from other
+    /// channels, keep them fresh, and load the participants' names and avatars.
+    fn pump_shared_chat(
+        &mut self,
+        identity: Option<&crate::live::Identity>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(identity) = identity {
+            for pane in self.panes() {
+                let pane = pane.read(cx);
+                let name = pane.name.to_string();
+                if crate::combined::is_combined(&name) || crate::youtube::is_youtube(&name) {
+                    continue;
+                }
+                let seen = pane
+                    .timeline
+                    .borrow()
+                    .messages()
+                    .iter()
+                    .rev()
+                    .take(30)
+                    .any(|m| m.presentation.source_id.is_some());
+                if let Some(id) = self.catalog.borrow().channel_id(&name) {
+                    self.shared_chat.want(&name, &id, identity, seen);
+                }
+            }
+        }
+        if self.shared_chat.pump() {
+            cx.notify();
+        }
+    }
+    /// "+N" and the names for a channel's Shared Chat session, if it has one.
+    fn shared_chat_label(&self, channel: &str) -> Option<(String, String)> {
+        let session = self.shared_chat.get(channel)?;
+        let own = self.catalog.borrow().channel_id(channel);
+        let mut catalog = self.catalog.borrow_mut();
+        let names: Vec<String> = session
+            .participants
+            .iter()
+            .filter(|id| Some(*id) != own.as_ref())
+            .map(|id| {
+                catalog.profiles.request(id);
+                catalog
+                    .profiles
+                    .get(id)
+                    .map(|p| p.display_name.clone())
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_else(|| "…".into())
+            })
+            .collect();
+        (!names.is_empty()).then(|| {
+            (
+                format!("+{}", names.len()),
+                format!("Shared Chat with {}", names.join(", ")),
+            )
+        })
+    }
     /// One chat for every channel and stream in a workspace (Twitch and YouTube),
     /// added as a tab there; platforms can then be shown or hidden in its header.
     fn combine_workspace(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
@@ -3382,6 +3443,24 @@ impl Workbench {
                                 title
                             } else {
                                 format!("#{}", crate::combined::title(&channel))
+                            })
+                            // Shared Chat: "+N" with who it's shared with on hover.
+                            .when_some(self.shared_chat_label(&channel), |el, (plus, who)| {
+                                el.child(
+                                    div()
+                                        .id(SharedString::from(format!("shared-tab-{channel}")))
+                                        .ml_1()
+                                        .px_1()
+                                        .rounded(px(3.))
+                                        .text_size(px(10.))
+                                        .bg(rgb(0x2A2340))
+                                        .text_color(rgb(theme::ACCENT))
+                                        .child(plus)
+                                        .tooltip(move |w, cx| {
+                                            gpui_kit::component::tooltip::Tooltip::new(who.clone())
+                                                .build(w, cx)
+                                        }),
+                                )
                             })
                             .when(counts.0 > 0, |el| {
                                 el.child(

@@ -60,6 +60,7 @@ mod seven_events;
 mod seven_lookup;
 mod seven_paints;
 mod seven_presence;
+mod shared_chat;
 mod similarity;
 mod sound;
 mod spell;
@@ -1061,6 +1062,19 @@ impl Render for ChannelPane {
                                             let hue = origin.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32)) as usize % highlight_rules::COLORS.len();
                                             let (_, accent, background) = highlight_rules::COLORS[hue];
                                             el.child(div().px(px(4.)).rounded(px(3.)).bg(rgb(background)).text_color(rgb(accent)).text_size(px(10.)).child(origin.clone()))
+                                        }))
+                                })
+                                .when_some(message.presentation.source_id.clone(), |el, source_id| {
+                                    // Shared Chat: the channel it was sent in, as that streamer's avatar (like Twitch).
+                                    let (avatar, profile_name) = { let mut c = catalog.borrow_mut(); c.profiles.request(&source_id); let p = c.profiles.get(&source_id); (p.and_then(|p| p.avatar.clone()), p.map(|p| p.display_name.clone()).filter(|n| !n.is_empty())) };
+                                    let name = profile_name.or_else(|| message.presentation.source.clone().filter(|s| s != "Shared Chat")).unwrap_or_else(|| "another channel".into());
+                                    let image = avatar.and_then(|key| media.borrow_mut().get(&key, cx));
+                                    el.child(div().id(SharedString::from(format!("shared-{source_id}"))).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0()
+                                        .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(format!("Shared Chat · sent in {name}'s channel")).build(w, cx))
+                                        .child(match image {
+                                            Some(image) => div().size(px(18.)).rounded_full().overflow_hidden().child(emote_picker::icon(Some(image), String::new(), 18., 18.)).into_any_element(),
+                                            None => div().size(px(18.)).rounded_full().bg(rgb(0x3A3350)).flex().items_center().justify_center().text_size(px(10.)).text_color(rgb(theme::TEXT))
+                                                .child(message.presentation.source.as_deref().and_then(|n| n.chars().next()).unwrap_or('?').to_uppercase().to_string()).into_any_element(),
                                         }))
                                 })
                                 .children(badge_images.into_iter().map(|(badge,image,background)|{

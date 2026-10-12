@@ -93,6 +93,8 @@ pub struct MessagePresentation {
     pub origin: Option<String>,
     /// Moderation lines: how many times this action was stacked into one line.
     pub repeats: u32,
+    /// Shared Chat: the broadcaster ID of the channel this message was sent in.
+    pub source_id: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
