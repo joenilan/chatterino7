@@ -408,6 +408,20 @@ impl ChannelPane {
             viewport: Rc::new(RefCell::new(None)),
         }
     }
+    /// Tab menu → "Clear messages locally": empties this view; nobody else is affected.
+    pub(crate) fn clear_locally(&mut self, cx: &mut Context<Self>) {
+        self.search.dirty = true;
+        let removed = self.timeline.borrow_mut().clear();
+        self.selection.borrow_mut().clear();
+        self.entrances.clear();
+        if removed > 0 {
+            self.scroller
+                .update(cx, |s, cx| s.splice(0..removed, 0, cx));
+        }
+        self.attention
+            .reconcile(&self.timeline.borrow(), self.next_id as u64);
+        cx.notify();
+    }
     fn change_history_limit(&mut self, limit: usize, cx: &mut Context<Self>) {
         self.search.dirty = true;
         let removed = self.timeline.borrow_mut().set_capacity(limit);

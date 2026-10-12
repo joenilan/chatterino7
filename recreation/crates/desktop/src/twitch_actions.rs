@@ -77,6 +77,12 @@ pub enum Request {
     Unraid,
     /// Clip the last ~30 seconds of this channel's live stream.
     Clip,
+    Shield {
+        on: bool,
+    },
+    Chatters,
+    Moderators,
+    Vips,
 }
 
 pub struct Command {
@@ -204,6 +210,26 @@ pub const COMMANDS: &[Command] = &[
         name: "/raid",
         usage: "/raid login",
         description: "Start a raid; /unraid cancels",
+    },
+    Command {
+        name: "/shield",
+        usage: "/shield",
+        description: "Turn on Shield Mode; /shieldoff turns it off",
+    },
+    Command {
+        name: "/mods",
+        usage: "/mods",
+        description: "List this channel's moderators (broadcaster)",
+    },
+    Command {
+        name: "/vips",
+        usage: "/vips",
+        description: "List this channel's VIPs (broadcaster)",
+    },
+    Command {
+        name: "/chatters",
+        usage: "/chatters",
+        description: "How many chatters are connected (moderator)",
     },
 ];
 
@@ -401,6 +427,12 @@ pub fn parse(name: &str, args: &str) -> Option<Result<Request, String>> {
         "/raid" => login(first).map(|login| Request::Raid { login }),
         "/unraid" => no_args(Request::Unraid),
         "/clip" => no_args(Request::Clip),
+        "/shield" | "/shieldoff" => no_args(Request::Shield {
+            on: name == "/shield",
+        }),
+        "/chatters" => no_args(Request::Chatters),
+        "/mods" => no_args(Request::Moderators),
+        "/vips" => no_args(Request::Vips),
         _ => return None,
     })
 }
@@ -425,6 +457,10 @@ impl Request {
             Commercial { .. } => Action::Commercial,
             Raid { .. } | Unraid => Action::Raid,
             Clip => Action::Clip,
+            Shield { .. } => Action::Shield,
+            Chatters => Action::ReadChatters,
+            Moderators => Action::ReadModerators,
+            Vips => Action::ReadVips,
         }
     }
 }
@@ -738,6 +774,73 @@ pub fn run(identity: &Identity, channel: &str, request: &Request) -> Result<Stri
             }
             Ok(format!(
                 "Clip created: https://clips.twitch.tv/{id} (it can take a few seconds to process)"
+            ))
+        }
+        Request::Shield { on } => {
+            helix.ok(
+                M::PUT,
+                "moderation/shield_mode",
+                &moderation,
+                Some(json!({"is_active": on})),
+            )?;
+            Ok(if *on {
+                "Shield Mode on".into()
+            } else {
+                "Shield Mode off".into()
+            })
+        }
+        Request::Chatters => {
+            let value = helix.ok(
+                M::GET,
+                "chat/chatters",
+                &[
+                    ("broadcaster_id", room),
+                    ("moderator_id", me),
+                    ("first", "1"),
+                ],
+                None,
+            )?;
+            let total = value["total"].as_u64().unwrap_or(0);
+            Ok(format!("{total} chatters connected to #{channel}"))
+        }
+        Request::Moderators | Request::Vips => {
+            let (path, what) = if matches!(request, Request::Moderators) {
+                ("moderation/moderators", "moderators")
+            } else {
+                ("channels/vips", "VIPs")
+            };
+            let mut names = Vec::new();
+            let mut cursor = String::new();
+            // Up to 1,000 names, 100 per page.
+            for _ in 0..10 {
+                let mut query = vec![("broadcaster_id", room), ("first", "100")];
+                if !cursor.is_empty() {
+                    query.push(("after", cursor.as_str()));
+                }
+                let value = helix.ok(M::GET, path, &query, None)?;
+                names.extend(
+                    value["data"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|u| u["user_name"].as_str().map(str::to_owned)),
+                );
+                cursor = value["pagination"]["cursor"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
+                if cursor.is_empty() {
+                    break;
+                }
+            }
+            if names.is_empty() {
+                return Ok(format!("#{channel} has no {what}"));
+            }
+            names.sort_by_key(|n| n.to_lowercase());
+            Ok(format!(
+                "#{channel} {what} ({}): {}",
+                names.len(),
+                names.join(", ")
             ))
         }
     }

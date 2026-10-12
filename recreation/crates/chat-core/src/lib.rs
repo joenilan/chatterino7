@@ -238,6 +238,14 @@ impl Timeline {
         self.ids.shrink_to_fit();
         removed
     }
+    /// Remove every message from this view only (Chatterino's "Clear messages").
+    /// Returns how many rows were removed.
+    pub fn clear(&mut self) -> usize {
+        let removed = self.messages.len();
+        self.messages.clear();
+        self.ids.clear();
+        removed
+    }
     pub fn messages(&self) -> &VecDeque<Message> {
         &self.messages
     }

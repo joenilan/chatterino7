@@ -25,6 +25,9 @@ pub fn validate(name: &str, template: &str) -> Result<String, String> {
     if crate::commands::COMMANDS
         .iter()
         .any(|c| c.name.trim_start_matches('/') == name)
+        || crate::twitch_actions::COMMANDS
+            .iter()
+            .any(|c| c.name.trim_start_matches('/') == name)
         || [
             "user",
             "cancelreply",

@@ -517,6 +517,20 @@ impl Catalog {
         }
         labels.join(" · ")
     }
+    /// Tab menu → "Reload emotes": refetch this channel's 7TV, BTTV and FFZ
+    /// emotes, and the global sets, right away.
+    pub fn reload_channel(&mut self, name: &str) {
+        if let Some((_, at)) = self.requested.get_mut(name) {
+            *at = Instant::now() - Duration::from_secs(300);
+        }
+        self.retry_after.remove(name);
+        self.retry_after.remove("");
+        self.dirty.insert(name.into());
+        self.dirty.insert(String::new());
+        self.global_requested = Instant::now() - Duration::from_secs(300);
+        self.community.invalidate(name);
+        self.community.invalidate("");
+    }
     pub fn can_retry_public(&self) -> bool {
         use crate::community::LoadState;
         self.last_manual_refresh

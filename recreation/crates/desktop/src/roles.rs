@@ -390,6 +390,22 @@ impl Workbench {
                                     });
                                 }),
                         )
+                        .child(div().font_weight(FontWeight::SEMIBOLD).child("Shield Mode"))
+                        .child({
+                            let run = |on: bool| {
+                                let (owner, pane, channel) = (owner.clone(), pane.clone(), channel.clone());
+                                move |_: &ClickEvent, w: &mut Window, cx: &mut App| {
+                                    w.close_dialog(cx);
+                                    let (pane, channel) = (pane.clone(), channel.clone());
+                                    let _ = owner.update(cx, |this, cx| this.run_twitch_command(pane, channel, Request::Shield { on }, String::new(), w, cx));
+                                }
+                            };
+                            div()
+                                .h_flex()
+                                .gap_2()
+                                .child(Button::new("mod-shield-on").small().danger().icon(Icon::new(gpui_kit::assets::IconName::Shield)).label("Turn on").tooltip("Shield Mode applies your stricter Shield Mode settings in Twitch's mod view (/shield)").on_click(run(true)))
+                                .child(Button::new("mod-shield-off").small().label("Turn off").tooltip("/shieldoff").on_click(run(false)))
+                        })
                         .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
                             "Right-click a message to delete, time out or ban. Type /help for every moderator command.",
                         )),

@@ -74,6 +74,8 @@ pub struct LiveChat {
     output: mpsc::SyncSender<(u64, Event)>,
     epoch: Arc<std::sync::atomic::AtomicU64>,
     sends: Mutex<VecDeque<(Instant, String)>>,
+    /// Channels to drop and resubscribe on the next pass (tab menu → Reconnect).
+    reconnects: Arc<Mutex<Vec<String>>>,
 }
 impl Drop for LiveChat {
     fn drop(&mut self) {
@@ -86,13 +88,15 @@ impl LiveChat {
         let cancel = Arc::new(AtomicBool::new(false));
         let (output, events) = mpsc::sync_channel(4096);
         let epoch = Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let (c, stop, tx, e) = (
+        let reconnects: Arc<Mutex<Vec<String>>> = Default::default();
+        let (c, stop, tx, e, r) = (
             config.clone(),
             cancel.clone(),
             output.clone(),
             epoch.clone(),
+            reconnects.clone(),
         );
-        std::thread::spawn(move || run(c, stop, tx, e));
+        std::thread::spawn(move || run(c, stop, tx, e, r));
         Self {
             config,
             cancel,
@@ -100,6 +104,13 @@ impl LiveChat {
             output,
             epoch,
             sends: Mutex::new(VecDeque::new()),
+            reconnects,
+        }
+    }
+    /// Drop this channel's chat subscriptions and subscribe again.
+    pub fn reconnect(&self, channel: &str) {
+        if let Ok(mut r) = self.reconnects.lock() {
+            r.push(channel.to_owned());
         }
     }
     pub fn version(&self) -> u64 {
@@ -529,6 +540,7 @@ fn run(
     stop: Arc<AtomicBool>,
     tx: mpsc::SyncSender<(u64, Event)>,
     epoch: Arc<std::sync::atomic::AtomicU64>,
+    reconnects: Arc<Mutex<Vec<String>>>,
 ) {
     let snapshots = room_snapshot_worker(tx.clone(), epoch.clone());
     let names: Arc<Mutex<HashMap<String, String>>> = Default::default();
@@ -587,10 +599,15 @@ fn run(
             }
         }
         over_cap.retain(|ch| c.channels.iter().skip(MAX_CHANNELS).any(|c| c == ch));
-        // Removed channels release their subscriptions.
+        // Removed channels release their subscriptions; a reconnect request
+        // releases them too, and the channel is subscribed afresh just below.
+        let again = reconnects
+            .lock()
+            .map(|mut r| std::mem::take(&mut *r))
+            .unwrap_or_default();
         let removed: Vec<String> = assigned
             .keys()
-            .filter(|ch| !wanted.contains(ch))
+            .filter(|ch| !wanted.contains(ch) || again.contains(ch))
             .cloned()
             .collect();
         for channel in removed {

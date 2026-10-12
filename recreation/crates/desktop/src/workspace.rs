@@ -3757,6 +3757,60 @@ impl Workbench {
                                         });
                                     },
                                 ))
+                                .item(PopupMenuItem::new("Reconnect").on_click({
+                                    let owner = owner.clone();
+                                    let channel = menu_channel.clone();
+                                    move |_, window, cx| {
+                                        let _ = owner.update(cx, |this, cx| {
+                                            for source in crate::combined::sources(&channel) {
+                                                if !crate::youtube::is_youtube(&source) {
+                                                    this.live.reconnect(&source);
+                                                }
+                                            }
+                                            cx.notify();
+                                        });
+                                        window.push_notification(
+                                            Notification::info(format!("Reconnecting #{channel}…")),
+                                            cx,
+                                        );
+                                    }
+                                }))
+                                .item(PopupMenuItem::new("Reload emotes").on_click({
+                                    let owner = owner.clone();
+                                    let channel = menu_channel.clone();
+                                    move |_, window, cx| {
+                                        let _ = owner.update(cx, |this, cx| {
+                                            let mut catalog = this.catalog.borrow_mut();
+                                            for source in crate::combined::sources(&channel) {
+                                                catalog.reload_channel(&source);
+                                            }
+                                            drop(catalog);
+                                            cx.notify();
+                                        });
+                                        window.push_notification(
+                                            Notification::info("Reloading emotes…"),
+                                            cx,
+                                        );
+                                    }
+                                }))
+                                .item(PopupMenuItem::new("Clear messages locally").on_click({
+                                    let owner = owner.clone();
+                                    let channel = menu_channel.clone();
+                                    move |_, _, cx| {
+                                        let pane = owner.upgrade().and_then(|o| {
+                                            let o = o.read(cx);
+                                            o.tabs[o.active]
+                                                .panes
+                                                .iter()
+                                                .find(|p| p.read(cx).name.as_ref() == channel)
+                                                .cloned()
+                                        });
+                                        if let Some(pane) = pane {
+                                            pane.update(cx, |p, cx| p.clear_locally(cx));
+                                        }
+                                    }
+                                }))
+                                .separator()
                                 .item(
                                     PopupMenuItem::new("Open stream in browser")
                                         .on_click(move |_, _, cx| cx.open_url(&open_url)),

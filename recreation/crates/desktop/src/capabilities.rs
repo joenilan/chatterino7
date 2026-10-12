@@ -54,6 +54,13 @@ pub enum Action {
     Block,
     /// Create a clip of a live channel (anyone signed in).
     Clip,
+    /// Turn Shield Mode on or off (moderator).
+    Shield,
+    /// How many chatters are connected (moderator).
+    ReadChatters,
+    /// List the channel's moderators / VIPs (Twitch allows only the broadcaster).
+    ReadModerators,
+    ReadVips,
 }
 enum Needs {
     Moderator,
@@ -80,13 +87,18 @@ impl Action {
             Whisper => &["user:manage:whispers"],
             Block => &["user:manage:blocked_users"],
             Clip => &["clips:edit"],
+            Shield => &["moderator:manage:shield_mode"],
+            ReadChatters => &["moderator:read:chatters"],
+            ReadModerators => &["channel:manage:moderators"],
+            ReadVips => &["channel:manage:vips"],
         }
     }
     fn needs(self) -> Needs {
         use Action::*;
         match self {
-            Ban | Warn | DeleteMessages | ManageRoom | Announce | Shoutout => Needs::Moderator,
-            ManageModerators | ManageVips => Needs::Broadcaster,
+            Ban | Warn | DeleteMessages | ManageRoom | Announce | Shoutout | Shield
+            | ReadChatters => Needs::Moderator,
+            ManageModerators | ManageVips | ReadModerators | ReadVips => Needs::Broadcaster,
             EditStreamInfo | Marker | Commercial | Raid => Needs::OwnChannel,
             ChatColor | Whisper | Block | Clip => Needs::Account,
         }
