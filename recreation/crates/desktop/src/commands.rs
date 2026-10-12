@@ -65,6 +65,36 @@ pub const COMMANDS: &[Command] = &[
         usage: "/popout",
         description: "Open this channel in its own window",
     },
+    Command {
+        name: "/ignore",
+        usage: "/ignore login",
+        description: "Hide a chatter's messages here (local; /unignore undoes)",
+    },
+    Command {
+        name: "/copy",
+        usage: "/copy text",
+        description: "Copy text to the clipboard",
+    },
+    Command {
+        name: "/streamlink",
+        usage: "/streamlink [channel]",
+        description: "Watch in Streamlink",
+    },
+    Command {
+        name: "/clearmessages",
+        usage: "/clearmessages",
+        description: "Clear this view locally (nobody else is affected)",
+    },
+    Command {
+        name: "/requests",
+        usage: "/requests [channel]",
+        description: "Open the channel points reward queue",
+    },
+    Command {
+        name: "/lowtrust",
+        usage: "/lowtrust [channel]",
+        description: "Open the suspicious users list (moderator)",
+    },
 ];
 pub fn is_command(value: &str) -> bool {
     value.trim_start().starts_with('/')
@@ -182,6 +212,86 @@ impl ChannelPane {
             "/popout" => {
                 self.command_draft("", window, cx);
                 cx.emit(PaneEvent::PopOut);
+            }
+            "/ignore" | "/unignore" => {
+                let Some(login) = chat_core::twitch_login(args.trim().trim_start_matches('@'))
+                else {
+                    self.command_feedback(
+                        format!("Use {name} login. Your draft is kept."),
+                        window,
+                        cx,
+                    );
+                    return true;
+                };
+                let result = if name == "/ignore" {
+                    self.ignores.borrow_mut().add_user(&login).map(|()| {
+                        format!("Ignoring @{login} (only you; /unignore {login} undoes it)")
+                    })
+                } else {
+                    let mut ignores = self.ignores.borrow_mut();
+                    let before = ignores.users.len();
+                    ignores.users.retain(|u| *u != login);
+                    Ok(if ignores.users.len() < before {
+                        format!("No longer ignoring @{login}")
+                    } else {
+                        format!("@{login} wasn't ignored")
+                    })
+                };
+                match result {
+                    Ok(done) => {
+                        self.command_draft("", window, cx);
+                        cx.emit(PaneEvent::IgnoresChanged);
+                        self.command_feedback(done, window, cx);
+                    }
+                    Err(problem) => self.command_feedback(problem, window, cx),
+                }
+            }
+            "/copy" => {
+                if args.is_empty() {
+                    self.command_feedback("Use /copy text. Your draft is kept.", window, cx);
+                } else {
+                    cx.write_to_clipboard(ClipboardItem::new_string(args.to_owned()));
+                    self.command_draft("", window, cx);
+                    self.command_feedback("Copied", window, cx);
+                }
+            }
+            "/clearmessages" => {
+                self.command_draft("", window, cx);
+                self.clear_locally(cx);
+            }
+            "/streamlink" | "/requests" | "/lowtrust" => {
+                let target = if args.is_empty() {
+                    crate::combined::sources(&self.name)
+                        .into_iter()
+                        .find(|s| !crate::youtube::is_youtube(s))
+                        .unwrap_or_default()
+                } else {
+                    args.trim().trim_start_matches(['#', '@']).to_owned()
+                };
+                let Some(channel) = chat_core::twitch_login(&target) else {
+                    self.command_feedback(
+                        format!("Use {name} channel. Your draft is kept."),
+                        window,
+                        cx,
+                    );
+                    return true;
+                };
+                self.command_draft("", window, cx);
+                match name.as_str() {
+                    "/streamlink" => {
+                        let note = match crate::streamlink::open(&channel) {
+                            Ok(()) => format!("Starting #{channel} in Streamlink…"),
+                            Err(problem) => problem,
+                        };
+                        self.command_feedback(note, window, cx);
+                    }
+                    "/requests" => cx.open_url(&format!(
+                        "https://www.twitch.tv/popout/{channel}/reward-queue"
+                    )),
+                    _ => cx.open_url(&format!(
+                        "https://www.twitch.tv/popout/moderator/{channel}/low-trust-users"
+                    )),
+                }
             }
             "/find" => {
                 if args.chars().count() > 256 {

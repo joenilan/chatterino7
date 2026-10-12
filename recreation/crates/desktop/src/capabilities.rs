@@ -61,6 +61,11 @@ pub enum Action {
     /// List the channel's moderators / VIPs (Twitch allows only the broadcaster).
     ReadModerators,
     ReadVips,
+    /// Monitor or restrict a suspicious chatter (moderator).
+    Suspicious,
+    /// Start or end polls / predictions (own channel).
+    Polls,
+    Predictions,
 }
 enum Needs {
     Moderator,
@@ -91,15 +96,18 @@ impl Action {
             ReadChatters => &["moderator:read:chatters"],
             ReadModerators => &["channel:manage:moderators"],
             ReadVips => &["channel:manage:vips"],
+            Suspicious => &["moderator:manage:suspicious_users"],
+            Polls => &["channel:manage:polls"],
+            Predictions => &["channel:manage:predictions"],
         }
     }
     fn needs(self) -> Needs {
         use Action::*;
         match self {
             Ban | Warn | DeleteMessages | ManageRoom | Announce | Shoutout | Shield
-            | ReadChatters => Needs::Moderator,
+            | ReadChatters | Suspicious => Needs::Moderator,
             ManageModerators | ManageVips | ReadModerators | ReadVips => Needs::Broadcaster,
-            EditStreamInfo | Marker | Commercial | Raid => Needs::OwnChannel,
+            EditStreamInfo | Marker | Commercial | Raid | Polls | Predictions => Needs::OwnChannel,
             ChatColor | Whisper | Block | Clip => Needs::Account,
         }
     }

@@ -2131,6 +2131,16 @@ impl Workbench {
                 this.open_popout(pane.read(cx).name.to_string(), cx);
                 return;
             }
+            if matches!(event, PaneEvent::IgnoresChanged) {
+                for pane in this.panes() {
+                    pane.update(cx, |p, cx| {
+                        p.scroller.update(cx, |s, cx| s.remeasure(cx));
+                        cx.notify();
+                    });
+                }
+                this.schedule_save(cx);
+                return;
+            }
             if matches!(event, PaneEvent::ViewFilterChanged) {
                 this.schedule_save(cx);
                 return;

@@ -83,6 +83,36 @@ pub enum Request {
     Chatters,
     Moderators,
     Vips,
+    BanId {
+        user_id: String,
+        reason: String,
+    },
+    /// Monitor or restrict (`restrict`), or clear (`remove`) suspicious treatment.
+    Suspicious {
+        login: String,
+        restrict: bool,
+        remove: bool,
+    },
+    Poll {
+        title: String,
+        choices: Vec<String>,
+        seconds: u32,
+        points: Option<u32>,
+    },
+    /// End the running poll: show results (TERMINATED) or hide it (ARCHIVED).
+    EndPoll {
+        archive: bool,
+    },
+    Prediction {
+        title: String,
+        choices: Vec<String>,
+        seconds: u32,
+    },
+    /// LOCKED, CANCELED, or RESOLVED with the winning choice (title or 1-based index).
+    UpdatePrediction {
+        status: &'static str,
+        winner: Option<String>,
+    },
 }
 
 pub struct Command {
@@ -231,7 +261,119 @@ pub const COMMANDS: &[Command] = &[
         usage: "/chatters",
         description: "How many chatters are connected (moderator)",
     },
+    Command {
+        name: "/banid",
+        usage: "/banid user-id [reason]",
+        description: "Ban by Twitch user ID",
+    },
+    Command {
+        name: "/monitor",
+        usage: "/monitor login",
+        description: "Monitor a suspicious chatter; /unmonitor ends it",
+    },
+    Command {
+        name: "/restrict",
+        usage: "/restrict login",
+        description: "Restrict a suspicious chatter; /unrestrict ends it",
+    },
+    Command {
+        name: "/poll",
+        usage: "/poll --title \"…\" --choice \"…\" --choice \"…\" --duration 2m [--points 100]",
+        description: "Start a poll; /endpoll shows results, /cancelpoll hides it",
+    },
+    Command {
+        name: "/prediction",
+        usage: "/prediction --title \"…\" --choice \"…\" --choice \"…\" --duration 2m",
+        description: "Start a prediction; /lockprediction, /cancelprediction, /completeprediction --index 1",
+    },
 ];
+
+/// `--title "a b" --choice x` → ("title", "a b"), ("choice", "x"). Quotes group words.
+fn flags(args: &str) -> Result<Vec<(String, String)>, String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+    let mut any = false;
+    for c in args.chars() {
+        match c {
+            '"' => {
+                quoted = !quoted;
+                any = true;
+            }
+            c if c.is_whitespace() && !quoted => {
+                if any || !current.is_empty() {
+                    words.push(std::mem::take(&mut current));
+                }
+                any = false;
+            }
+            c => current.push(c),
+        }
+    }
+    if quoted {
+        return Err("A quote isn't closed.".into());
+    }
+    if any || !current.is_empty() {
+        words.push(current);
+    }
+    let mut out = Vec::new();
+    let mut words = words.into_iter();
+    while let Some(word) = words.next() {
+        let Some(flag) = word.strip_prefix("--") else {
+            return Err(format!("Expected an option like --title, found “{word}”."));
+        };
+        let value = words
+            .next()
+            .ok_or_else(|| format!("--{flag} needs a value."))?;
+        out.push((flag.to_ascii_lowercase(), value));
+    }
+    Ok(out)
+}
+/// Shared parsing for /poll and /prediction.
+fn engagement(
+    args: &str,
+    title_limit: usize,
+    choice_range: (usize, usize),
+    choice_limit: usize,
+) -> Result<(String, Vec<String>, u32, Option<u32>), String> {
+    let flags = flags(args)?;
+    let get = |key: &'static str| {
+        flags
+            .iter()
+            .filter(move |(k, _)| k == key)
+            .map(|(_, v)| v.trim())
+    };
+    let title = get("title").next().unwrap_or("").to_owned();
+    if title.is_empty() || title.chars().count() > title_limit {
+        return Err(format!("Give a --title of 1–{title_limit} characters."));
+    }
+    let choices: Vec<String> = get("choice").map(str::to_owned).collect();
+    if choices.len() < choice_range.0
+        || choices.len() > choice_range.1
+        || choices
+            .iter()
+            .any(|c| c.is_empty() || c.chars().count() > choice_limit)
+    {
+        return Err(format!(
+            "Give {}–{} --choice options of up to {choice_limit} characters.",
+            choice_range.0, choice_range.1
+        ));
+    }
+    let seconds = get("duration")
+        .next()
+        .and_then(duration)
+        .filter(|s| (15..=1800).contains(s))
+        .ok_or("Give a --duration from 15s to 30m.")?;
+    let points = match get("points").next() {
+        Some(p) => Some(
+            p.parse::<u32>()
+                .ok()
+                .filter(|p| (1..=1_000_000).contains(p))
+                .ok_or("--points must be 1–1000000.")?,
+        ),
+        None => None,
+    };
+    Ok((title, choices, seconds, points))
+}
 
 fn login(raw: &str) -> Result<String, String> {
     chat_core::twitch_login(raw.trim().trim_start_matches('@'))
@@ -433,6 +575,72 @@ pub fn parse(name: &str, args: &str) -> Option<Result<Request, String>> {
         "/chatters" => no_args(Request::Chatters),
         "/mods" => no_args(Request::Moderators),
         "/vips" => no_args(Request::Vips),
+        "/banid" => {
+            if first.is_empty() || !first.bytes().all(|b| b.is_ascii_digit()) || first.len() > 20 {
+                Err("Use /banid user-id [reason].".into())
+            } else {
+                Ok(Request::BanId {
+                    user_id: first.to_owned(),
+                    reason: rest.chars().take(500).collect(),
+                })
+            }
+        }
+        "/monitor" | "/restrict" | "/unmonitor" | "/unrestrict" => {
+            login(first).map(|login| Request::Suspicious {
+                login,
+                restrict: name.ends_with("restrict"),
+                remove: name.starts_with("/un"),
+            })
+        }
+        "/poll" => engagement(args, 60, (2, 5), 25).map(|(title, choices, seconds, points)| {
+            Request::Poll {
+                title,
+                choices,
+                seconds,
+                points,
+            }
+        }),
+        "/endpoll" => no_args(Request::EndPoll { archive: false }),
+        "/cancelpoll" => no_args(Request::EndPoll { archive: true }),
+        "/prediction" => {
+            engagement(args, 45, (2, 10), 25).and_then(|(title, choices, seconds, points)| {
+                if points.is_some() {
+                    return Err("Predictions don't take --points.".into());
+                }
+                Ok(Request::Prediction {
+                    title,
+                    choices,
+                    seconds,
+                })
+            })
+        }
+        "/lockprediction" => no_args(Request::UpdatePrediction {
+            status: "LOCKED",
+            winner: None,
+        }),
+        "/cancelprediction" => no_args(Request::UpdatePrediction {
+            status: "CANCELED",
+            winner: None,
+        }),
+        "/completeprediction" => flags(args).and_then(|flags| {
+            let pick = |key: &str| flags.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+            match (pick("choice"), pick("index")) {
+                (Some(_), Some(_)) | (None, None) => {
+                    Err("Use /completeprediction --choice \"…\" or --index N.".into())
+                }
+                (Some(choice), None) => Ok(Request::UpdatePrediction {
+                    status: "RESOLVED",
+                    winner: Some(choice),
+                }),
+                (None, Some(index)) => match index.parse::<usize>() {
+                    Ok(i) if i >= 1 => Ok(Request::UpdatePrediction {
+                        status: "RESOLVED",
+                        winner: Some(format!("#{i}")),
+                    }),
+                    _ => Err("--index is the winning choice's number, from 1.".into()),
+                },
+            }
+        }),
         _ => return None,
     })
 }
@@ -461,6 +669,10 @@ impl Request {
             Chatters => Action::ReadChatters,
             Moderators => Action::ReadModerators,
             Vips => Action::ReadVips,
+            BanId { .. } => Action::Ban,
+            Suspicious { .. } => Action::Suspicious,
+            Poll { .. } | EndPoll { .. } => Action::Polls,
+            Prediction { .. } | UpdatePrediction { .. } => Action::Predictions,
         }
     }
 }
@@ -803,6 +1015,159 @@ pub fn run(identity: &Identity, channel: &str, request: &Request) -> Result<Stri
             let total = value["total"].as_u64().unwrap_or(0);
             Ok(format!("{total} chatters connected to #{channel}"))
         }
+        Request::BanId { user_id, reason } => {
+            let mut data = json!({"user_id": user_id});
+            if !reason.is_empty() {
+                data["reason"] = json!(reason);
+            }
+            helix.ok(
+                M::POST,
+                "moderation/bans",
+                &moderation,
+                Some(json!({"data": data})),
+            )?;
+            Ok(format!("User {user_id} banned"))
+        }
+        Request::Suspicious {
+            login,
+            restrict,
+            remove,
+        } => {
+            let target = helix.user_id(login)?;
+            if *remove {
+                helix.ok(
+                    M::DELETE,
+                    "moderation/suspicious_users",
+                    &[
+                        ("broadcaster_id", room),
+                        ("moderator_id", me),
+                        ("user_id", &target),
+                    ],
+                    None,
+                )?;
+                Ok(format!("@{login} is no longer monitored or restricted"))
+            } else {
+                helix.ok(
+                    M::POST,
+                    "moderation/suspicious_users",
+                    &moderation,
+                    Some(json!({
+                        "user_id": target,
+                        "status": if *restrict { "RESTRICTED" } else { "ACTIVE_MONITORING" },
+                    })),
+                )?;
+                Ok(if *restrict {
+                    format!("@{login} is restricted")
+                } else {
+                    format!("@{login} is monitored")
+                })
+            }
+        }
+        Request::Poll {
+            title,
+            choices,
+            seconds,
+            points,
+        } => {
+            let mut body = json!({
+                "broadcaster_id": me,
+                "title": title,
+                "choices": choices.iter().map(|c| json!({"title": c})).collect::<Vec<_>>(),
+                "duration": seconds,
+            });
+            if let Some(points) = points {
+                body["channel_points_voting_enabled"] = json!(true);
+                body["channel_points_per_vote"] = json!(points);
+            }
+            helix.ok(M::POST, "polls", &[], Some(body))?;
+            Ok(format!("Poll started: {title}"))
+        }
+        Request::EndPoll { archive } => {
+            let found = helix.ok(
+                M::GET,
+                "polls",
+                &[("broadcaster_id", me), ("first", "1")],
+                None,
+            )?;
+            let poll = &found["data"][0];
+            if poll["status"].as_str() != Some("ACTIVE") {
+                return Err("There's no poll running.".into());
+            }
+            helix.ok(
+                M::PATCH,
+                "polls",
+                &[],
+                Some(json!({
+                    "broadcaster_id": me,
+                    "id": poll["id"],
+                    "status": if *archive { "ARCHIVED" } else { "TERMINATED" },
+                })),
+            )?;
+            Ok(if *archive {
+                "Poll cancelled".into()
+            } else {
+                "Poll ended; results are showing".into()
+            })
+        }
+        Request::Prediction {
+            title,
+            choices,
+            seconds,
+        } => {
+            helix.ok(
+                M::POST,
+                "predictions",
+                &[],
+                Some(json!({
+                    "broadcaster_id": me,
+                    "title": title,
+                    "outcomes": choices.iter().map(|c| json!({"title": c})).collect::<Vec<_>>(),
+                    "prediction_window": seconds,
+                })),
+            )?;
+            Ok(format!("Prediction started: {title}"))
+        }
+        Request::UpdatePrediction { status, winner } => {
+            let found = helix.ok(
+                M::GET,
+                "predictions",
+                &[("broadcaster_id", me), ("first", "1")],
+                None,
+            )?;
+            let prediction = &found["data"][0];
+            let current = prediction["status"].as_str().unwrap_or("");
+            if !(current == "ACTIVE" || (current == "LOCKED" && *status != "LOCKED")) {
+                return Err("There's no open prediction.".into());
+            }
+            let mut body = json!({
+                "broadcaster_id": me,
+                "id": prediction["id"],
+                "status": status,
+            });
+            if let Some(winner) = winner {
+                let outcomes = prediction["outcomes"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                let picked = match winner
+                    .strip_prefix('#')
+                    .and_then(|i| i.parse::<usize>().ok())
+                {
+                    Some(i) => outcomes.get(i - 1),
+                    None => outcomes
+                        .iter()
+                        .find(|o| o["title"].as_str() == Some(winner.as_str())),
+                }
+                .ok_or("No choice matches; use the exact wording or --index N.")?;
+                body["winning_outcome_id"] = picked["id"].clone();
+            }
+            helix.ok(M::PATCH, "predictions", &[], Some(body))?;
+            Ok(match *status {
+                "LOCKED" => "Prediction locked".into(),
+                "CANCELED" => "Prediction cancelled; points refunded".into(),
+                _ => "Prediction resolved".into(),
+            })
+        }
         Request::Moderators | Request::Vips => {
             let (path, what) = if matches!(request, Request::Moderators) {
                 ("moderation/moderators", "moderators")
@@ -857,6 +1222,54 @@ fn human(seconds: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn poll_and_prediction_syntax() {
+        match parse(
+            "/poll",
+            r#"--title "Best map?" --choice "Dust 2" --choice Mirage --duration 2m --points 50"#,
+        ) {
+            Some(Ok(Request::Poll {
+                title,
+                choices,
+                seconds,
+                points,
+            })) => {
+                assert_eq!(title, "Best map?");
+                assert_eq!(choices, ["Dust 2", "Mirage"]);
+                assert_eq!((seconds, points), (120, Some(50)));
+            }
+            _ => panic!("poll didn't parse"),
+        }
+        assert!(matches!(
+            parse("/poll", r#"--title x --choice only --duration 60"#),
+            Some(Err(_))
+        ));
+        assert!(matches!(
+            parse("/poll", r#"--title "open --choice a"#),
+            Some(Err(_))
+        ));
+        assert!(matches!(
+            parse("/completeprediction", "--index 2"),
+            Some(Ok(Request::UpdatePrediction { status: "RESOLVED", winner: Some(w) })) if w == "#2"
+        ));
+        assert!(matches!(
+            parse("/restrict", "@Bob"),
+            Some(Ok(Request::Suspicious {
+                restrict: true,
+                remove: false,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            parse("/unmonitor", "bob"),
+            Some(Ok(Request::Suspicious {
+                restrict: false,
+                remove: true,
+                ..
+            }))
+        ));
+        assert!(matches!(parse("/banid", "abc"), Some(Err(_))));
+    }
     #[test]
     fn durations() {
         assert_eq!(duration("90"), Some(90));

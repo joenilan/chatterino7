@@ -209,6 +209,8 @@ enum PaneEvent {
         request: twitch_actions::Request,
         draft: String,
     },
+    /// /ignore or /unignore changed the local ignore list (save it).
+    IgnoresChanged,
     /// Delete / time out / ban on YouTube: (YouTube source name, action).
     YouTubeModerate(String, google_auth::Moderation),
     OpenCommands(String),
