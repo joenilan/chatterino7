@@ -608,7 +608,11 @@ impl ChannelPane {
             }
             if self.similar_mode != similarity::Mode::Show
                 && !historical
-                && similarity::is_repeat(message, self.timeline.borrow().messages().iter())
+                && similarity::is_repeat(
+                    message,
+                    self.timeline.borrow().messages().iter(),
+                    self.attention.identity().map(|(id, _)| id.as_str()),
+                )
             {
                 if self.similar_mode == similarity::Mode::Hide {
                     return;

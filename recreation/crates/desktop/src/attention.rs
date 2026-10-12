@@ -87,6 +87,7 @@ impl Attention {
             || message.presentation.kind == chat_core::MODERATION
             || message.presentation.kind == chat_core::SYSTEM
             || self.excluded(message)
+            || (message.presentation.similar && !crate::similarity::flag(2))
         {
             return None;
         }

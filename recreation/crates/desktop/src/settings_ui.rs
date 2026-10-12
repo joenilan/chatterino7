@@ -552,7 +552,7 @@ impl Workbench {
                 ))
                 .child(row(
                     "Repeated messages",
-                    "When someone posts nearly the same thing again within a minute (90% alike), like Chatterino's similar-message filter.",
+                    "When someone posts nearly the same thing again, like Chatterino's similar-message filter.",
                     crate::theme::Segmented::new("settings-similar")
                         .selected_index(crate::similarity::Mode::ALL.iter().position(|m| *m == self.similar_mode).unwrap_or(0))
                         .on_click(cx.listener(|this, index: &usize, _, cx| {
@@ -562,6 +562,46 @@ impl Workbench {
                         }))
                         .children(crate::similarity::Mode::ALL.map(|m| crate::theme::segment(m.label()))),
                 ))
+                .when(self.similar_mode != crate::similarity::Mode::Show, |el| {
+                    use std::sync::atomic::Ordering::Relaxed;
+                    let choice = |id: &'static str, value: &'static std::sync::atomic::AtomicUsize, labels: Vec<String>| {
+                        crate::theme::Segmented::new(id)
+                            .selected_index(value.load(Relaxed))
+                            .on_click(cx.listener(move |this, index: &usize, _, cx| {
+                                value.store(*index, Relaxed);
+                                this.schedule_save(cx);
+                                cx.notify();
+                            }))
+                            .children(labels.into_iter().map(crate::theme::segment))
+                    };
+                    el.child(row(
+                        "How alike",
+                        "How close a message must be to an earlier one to count as a repeat.",
+                        choice("settings-similar-percent", &crate::similarity::PERCENT, crate::similarity::PERCENTS.iter().map(|p| format!("{p}%")).collect()),
+                    ))
+                    .child(stacked_row(
+                        "Within",
+                        "Only messages this recent are compared, up to this many of them.",
+                        div().h_flex().gap_2()
+                            .child(choice("settings-similar-window", &crate::similarity::WINDOW, ["10 s", "30 s", "1 min", "5 min"].map(String::from).to_vec()))
+                            .child(choice("settings-similar-count", &crate::similarity::COUNT, crate::similarity::COUNTS.iter().map(|n| format!("{n} msg")).collect())),
+                    ))
+                    .child(stacked_row(
+                        "Repeat options",
+                        "Same chatter only compares a chatter with themselves; off catches copy-paste across chatters. Repeats normally never highlight or ping.",
+                        div().h_flex().flex_wrap().gap_x_4().gap_y_1()
+                            .children([(0usize, "Same chatter only"), (1, "Include my messages"), (2, "Repeats can highlight")].map(|(index, label)| {
+                                gpui_kit::component::checkbox::Checkbox::new(("settings-similar-flag", index))
+                                    .label(label)
+                                    .checked(crate::similarity::flag(index))
+                                    .on_click(cx.listener(move |this, on: &bool, _, cx| {
+                                        crate::similarity::FLAGS[index].store(*on, Relaxed);
+                                        this.schedule_save(cx);
+                                        cx.notify();
+                                    }))
+                            })),
+                    ))
+                })
                 .when(!self.automod_hidden.is_empty(), |el| {
                     el.child(row(
                         "AutoMod hidden in",

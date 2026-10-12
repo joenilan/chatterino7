@@ -839,6 +839,24 @@ impl Workbench {
                     crate::message_scroller::SMOOTH_SCROLL
                         .store(smooth, std::sync::atomic::Ordering::Relaxed);
                 }
+                {
+                    use std::sync::atomic::Ordering::Relaxed;
+                    let similar = &state["similar_options"];
+                    for (key, value) in [
+                        ("percent", &crate::similarity::PERCENT),
+                        ("window", &crate::similarity::WINDOW),
+                        ("count", &crate::similarity::COUNT),
+                    ] {
+                        if let Some(index) = similar[key].as_u64() {
+                            value.store((index as usize).min(3), Relaxed);
+                        }
+                    }
+                    for (index, name) in crate::similarity::FLAG_NAMES.iter().enumerate() {
+                        if let Some(on) = similar[name].as_bool() {
+                            crate::similarity::FLAGS[index].store(on, Relaxed);
+                        }
+                    }
+                }
                 crate::mention_names::COLOR_MENTIONS.store(
                     state["mentions"]["color"].as_bool().unwrap_or(true),
                     std::sync::atomic::Ordering::Relaxed,
@@ -2921,6 +2939,26 @@ impl Workbench {
         value["popouts"] = json!(self.popout_channels(cx));
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
+        {
+            use std::sync::atomic::Ordering::Relaxed;
+            let mut similar = serde_json::Map::new();
+            similar.insert(
+                "percent".into(),
+                json!(crate::similarity::PERCENT.load(Relaxed)),
+            );
+            similar.insert(
+                "window".into(),
+                json!(crate::similarity::WINDOW.load(Relaxed)),
+            );
+            similar.insert(
+                "count".into(),
+                json!(crate::similarity::COUNT.load(Relaxed)),
+            );
+            for (index, name) in crate::similarity::FLAG_NAMES.iter().enumerate() {
+                similar.insert((*name).into(), json!(crate::similarity::flag(index)));
+            }
+            value["similar_options"] = Value::Object(similar);
+        }
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
         for (index, tab) in self.tabs.iter().enumerate() {

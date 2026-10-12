@@ -80,7 +80,7 @@ Chatterino import.
 - [ ] AutoMod: inline caught rows, blocked-term messages, own-held notice (M)
 - [ ] Chat logs: channel allow-list, per-stream logs, timestamp format (S)
 - [ ] Recent messages: custom URL and limit; reconnect gap fill (S)
-- [ ] Repeated-message filter options (S)
+- [x] Repeated-message filter options (S) — how alike, window, count, same chatter only, own messages, repeats highlight
 - [ ] Nicknames: regex, case sensitivity (S)
 - [ ] Completion options: only with @, comma after mention, include broadcaster, smart emote completion (S)
 - [x] Mentions: bold/coloured in the chatter's colour, detect names without @ (option), colourless names get a stable colour
