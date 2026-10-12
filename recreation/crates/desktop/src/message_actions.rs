@@ -867,7 +867,9 @@ impl ChannelPane {
                                             .child(Button::new("card-ban-cancel").small().label("Cancel").on_click(|_,w,cx|w.close_dialog(cx)))
                                             .child(Button::new("card-ban-confirm").small().danger().label("Ban").on_click(move|_,w,cx|{w.close_dialog(cx);let login=login.clone();let _=owner.update(cx,|_,cx|cx.emit(PaneEvent::TwitchCommand{request:crate::twitch_actions::Request::Ban{login,reason:String::new()},draft:String::new()}));})))});
                                 })})
-                                .child(act("Unban","card-unban",crate::twitch_actions::Request::Unban{login:target.clone()})))
+                                .child(act("Unban","card-unban",crate::twitch_actions::Request::Unban{login:target.clone()}))
+                                // A warning needs a reason: start the command in the message box.
+                                .child({let owner=owner.clone();let target=target.clone();Button::new("card-warn").small().label("Warn…").tooltip("Starts /warn in the message box; type the reason and send").on_click(move|_,w,cx|{w.close_dialog(cx);let text=format!("/warn {target} ");let _=owner.update(cx,|p,cx|p.command_draft(&text,w,cx));})}))
                             .when(broadcaster,|el|el.child(div().h_flex().flex_wrap().gap_1()
                                 .child(act("Make mod","card-mod",crate::twitch_actions::Request::Moderator{login:target.clone(),add:true}))
                                 .child(act("Remove mod","card-unmod",crate::twitch_actions::Request::Moderator{login:target.clone(),add:false}))
@@ -902,7 +904,7 @@ impl ChannelPane {
                     let mention_owner=owner.clone();let mention_login=login.clone();let profile_login=login.clone();let id=user_id.clone();let search_id=user_id.clone();let search_owner=owner.clone();let note_owner=owner.clone();let note_target=crate::chatter_appearance::Target{id:user_id.clone(),login:login.clone().unwrap_or_default(),name:name.clone()};
                     dialog.w(px(width)).title(name).child(div().id("chatter-body").v_flex().gap_2().min_w_0().max_h(px(body_height)).overflow_y_scroll()
                         .when_some(profile,|el,profile|el.child(div().h_flex().items_start().gap_2()
-                            .child(crate::emote_picker::icon(avatar,String::new(),48.,48.))
+                            .child(div().id("chatter-avatar").flex_shrink_0().tooltip(crate::media_hover::image_card(profile.display_name.clone(),"Twitch profile picture".into(),avatar.clone())).child(crate::emote_picker::icon(avatar,String::new(),48.,48.)))
                             .child(div().v_flex().gap_1().flex_1().min_w_0().child(profile.display_name)
                                 .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Created · {}",created_label(&profile.created))))
                                 .when(!profile.role.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(profile.role)))))
@@ -926,7 +928,30 @@ impl ChannelPane {
                                 .child(Button::new("chatter-profile").small().label("Twitch profile").on_click(move|_,_,cx|{if let Some(login)=&profile_login{cx.open_url(&format!("https://www.twitch.tv/{login}"));}})))
                             .child(Button::new("chatter-search").small().label("Search messages").tooltip("Find this chatter in retained channel history").on_click(move|_,w,cx|{w.close_dialog(cx);let _=search_owner.update(cx,|p,cx|p.search_for_author(&search_id,w,cx));}))
                             .child(Button::new("chatter-private-note").small().label("Private note…").on_click(move|_,w,cx|{w.close_dialog(cx);let _=note_owner.update(cx,|_,cx|cx.emit(PaneEvent::EditChatterNote(note_target.clone())));}))
-                            .child(Button::new("chatter-copy-id").small().label("Copy ID").on_click(move|_,w,cx|copy(id.clone(),w,cx)))))
+                            .child(Button::new("chatter-copy-id").small().label("Copy ID").on_click(move|_,w,cx|copy(id.clone(),w,cx)))
+                            .when_some(login.clone(),|el,login|{
+                                let ignored=owner.upgrade().is_some_and(|pane|pane.read(cx).ignores.borrow().users.contains(&login));
+                                let (open_owner,open_login)=(owner.clone(),login.clone());
+                                let (ignore_owner,ignore_login)=(owner.clone(),login.clone());
+                                let (block_owner,block_login)=(owner.clone(),login.clone());
+                                el.child(Button::new("chatter-open-channel").small().label("Open channel").tooltip("Open their chat as a tab").on_click(move|_,w,cx|{w.close_dialog(cx);let target=open_login.clone();let _=open_owner.update(cx,|_,cx|cx.emit(PaneEvent::OpenChannel(target)));}))
+                                .child(Button::new("chatter-ignore").small().label(if ignored{"Unignore"}else{"Ignore"}).tooltip("Hide their messages in Jawjack (only you)").on_click(move|_,w,cx|{
+                                    let login=ignore_login.clone();
+                                    let _=ignore_owner.update(cx,|p,cx|{
+                                        let note=if ignored{p.ignores.borrow_mut().users.retain(|u|*u!=login);format!("No longer ignoring @{login}")}else{match p.ignores.borrow_mut().add_user(&login){Ok(())=>format!("Ignoring @{login} (only you)"),Err(problem)=>problem}};
+                                        cx.emit(PaneEvent::IgnoresChanged);
+                                        p.command_feedback(note,w,cx);
+                                    });
+                                }))
+                                .child(Button::new("chatter-block").small().label("Block…").tooltip("Block on Twitch: no whispers from them, and they're hidden from your chat").on_click(move|_,w,cx|{
+                                    w.close_dialog(cx);let (owner,login)=(block_owner.clone(),block_login.clone());
+                                    w.open_dialog(cx,move|dialog,_,_|{let (owner,login)=(owner.clone(),login.clone());dialog.title(format!("Block @{login} on Twitch?"))
+                                        .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(format!("They can't whisper you, and their messages are hidden while \"Hide blocked users\" is on. Undo with /unblock {login}.")))
+                                        .footer(div().h_flex().justify_end().gap_2()
+                                            .child(Button::new("card-block-cancel").small().label("Cancel").on_click(|_,w,cx|w.close_dialog(cx)))
+                                            .child(Button::new("card-block-confirm").small().danger().label("Block").on_click(move|_,w,cx|{w.close_dialog(cx);let login=login.clone();let _=owner.update(cx,|_,cx|cx.emit(PaneEvent::TwitchCommand{request:crate::twitch_actions::Request::Block{login,add:true},draft:String::new()}));})))})
+                                }))
+                            })))
                 });
     }
     pub(crate) fn insert_mention(

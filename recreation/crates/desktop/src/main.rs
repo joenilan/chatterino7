@@ -214,6 +214,8 @@ enum PaneEvent {
     },
     /// /ignore or /unignore changed the local ignore list (save it).
     IgnoresChanged,
+    /// User card → Open channel: jump to it, or add it as a tab here.
+    OpenChannel(String),
     /// Delete / time out / ban on YouTube: (YouTube source name, action).
     YouTubeModerate(String, google_auth::Moderation),
     OpenCommands(String),

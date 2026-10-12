@@ -2182,6 +2182,10 @@ impl Workbench {
                 this.open_popout(pane.read(cx).name.to_string(), cx);
                 return;
             }
+            if let PaneEvent::OpenChannel(target) = event {
+                this.open_channel(target.clone(), window, cx);
+                return;
+            }
             if matches!(event, PaneEvent::IgnoresChanged) {
                 for pane in this.panes() {
                     pane.update(cx, |p, cx| {
