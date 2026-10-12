@@ -108,6 +108,8 @@ impl Workbench {
     pub(super) fn attention_counts(&self, reading_available: bool, cx: &App) -> (usize, usize) {
         self.tab_panes()
             .iter()
+            // Mentions/Whispers tabs hold copies; their originals already count.
+            .filter(|p| !crate::combined::is_special(&p.read(cx).name))
             .map(|p| self.displayed_attention(p, reading_available, cx))
             .fold((0, 0), |(u, h), (a, b)| (u + a, h + b))
     }

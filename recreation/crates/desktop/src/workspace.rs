@@ -4813,6 +4813,7 @@ impl Workbench {
                         let counts = tab
                             .panes
                             .iter()
+                            .filter(|p| !crate::combined::is_special(&p.read(cx).name))
                             .map(|p| self.displayed_attention(p, reading_available, cx))
                             .fold((0, 0), |(u, h), (a, b)| (u + a, h + b));
                         div()
