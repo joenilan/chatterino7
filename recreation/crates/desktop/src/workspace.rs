@@ -532,6 +532,7 @@ impl Workbench {
             .collect()
     }
     pub fn new(control_enabled: bool, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        storage::backup_daily();
         let loaded = storage::load();
         let save_enabled = loaded.is_ok();
         let save_status = loaded
@@ -3264,6 +3265,25 @@ impl Workbench {
             "volume": self.sound_volume,
         });
         value
+    }
+    /// Settings → General → Restore a backup: write it, then close without
+    /// saving so it's what opens next time.
+    pub(super) fn restore_backup(
+        &mut self,
+        file: &std::path::Path,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match storage::restore(file) {
+            Ok(()) => {
+                self.save_enabled = false;
+                self.save_revision = 0;
+                cx.quit();
+            }
+            Err(error) => {
+                window.push_notification(Notification::error(format!("Not restored: {error}")), cx)
+            }
+        }
     }
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
         self.save_revision += 1;

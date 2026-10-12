@@ -226,6 +226,35 @@ impl Workbench {
                         cx.notify();
                     })),
                 ))
+                .child({
+                    let backups = crate::storage::backups();
+                    stacked_row(
+                        "Restore a backup",
+                        "Jawjack keeps a copy of your settings each day (the last 7). Restoring one replaces your current settings and closes Jawjack; open it again to continue.",
+                        div().h_flex().flex_wrap().gap_1()
+                            .when(backups.is_empty(), |el| el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("No backups yet; the first is made the next time Jawjack starts.")))
+                            .children(backups.into_iter().enumerate().map(|(index, (date, file))| {
+                                let label = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d").map(|d| d.format("%b %-d").to_string()).unwrap_or(date.clone());
+                                Button::new(("settings-backup", index)).small().label(label.clone()).on_click(cx.listener(move |_, _, window, cx| {
+                                    let file = file.clone();
+                                    let owner = cx.entity().downgrade();
+                                    let label = label.clone();
+                                    window.open_dialog(cx, move |dialog, _, _| {
+                                        let (file, owner) = (file.clone(), owner.clone());
+                                        dialog.title(format!("Restore settings from {label}?"))
+                                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Your current workspaces, channels and settings are replaced by that day's copy, and Jawjack closes. Sign-ins are unaffected."))
+                                            .footer(div().h_flex().justify_end().gap_2()
+                                                .child(Button::new("backup-cancel").small().label("Cancel").on_click(|_, w, cx| w.close_dialog(cx)))
+                                                .child(Button::new("backup-restore").small().danger().label("Restore and close").on_click(move |_, w, cx| {
+                                                    w.close_dialog(cx);
+                                                    let file = file.clone();
+                                                    let _ = owner.update(cx, |this, cx| this.restore_backup(&file, w, cx));
+                                                })))
+                                    });
+                                }))
+                            })),
+                    )
+                })
                 .child(row(
                     "Data folder",
                     "Where Jawjack keeps your workspace and settings (sign-ins are in Windows Credential Manager).",
