@@ -19,6 +19,19 @@ pub const TIME_FORMATS: [(&str, &str); 4] = [
 ];
 pub static TIME_FORMAT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static ONLY_CHOSEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// A separate file per stream while the channel is live (Chatterino's option);
+/// offline chat still goes to the day's file.
+pub static PER_STREAM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// A stream's start time (Twitch RFC 3339) as a file-name stamp, local time.
+pub fn stream_stamp(started_at: &str) -> Option<String> {
+    chrono::DateTime::parse_from_rfc3339(started_at)
+        .ok()
+        .map(|t| {
+            t.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d-%H%M")
+                .to_string()
+        })
+}
 /// Channels logged when only chosen ones are (tab menu → Log this channel).
 pub static CHOSEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 pub fn chosen(channel: &str) -> bool {
@@ -50,6 +63,8 @@ pub fn default_folder() -> PathBuf {
 struct Line {
     folder: PathBuf,
     channel: String,
+    /// The stream's start stamp, when logging per stream.
+    stream: Option<String>,
     at: chrono::DateTime<chrono::Local>,
     text: String,
 }
@@ -65,6 +80,18 @@ pub fn file_for(folder: &Path, channel: &str, day: chrono::NaiveDate) -> Option<
     )
 }
 
+/// `<folder>/<channel>/<channel>-stream-YYYY-MM-DD-HHMM.log` for one stream.
+pub fn stream_file_for(folder: &Path, channel: &str, stamp: &str) -> Option<PathBuf> {
+    chat_core::twitch_login(channel).filter(|c| c == channel)?;
+    if stamp.len() != 15 || !stamp.bytes().all(|b| b.is_ascii_digit() || b == b'-') {
+        return None;
+    }
+    Some(
+        folder
+            .join(channel)
+            .join(format!("{channel}-stream-{stamp}.log")),
+    )
+}
 pub fn format(at: chrono::DateTime<chrono::Local>, text: &str) -> String {
     let time = TIME_FORMATS[TIME_FORMAT
         .load(std::sync::atomic::Ordering::Relaxed)
@@ -104,8 +131,11 @@ impl Logs {
                 // Open files stay open until the day or folder changes.
                 let mut open: HashMap<String, (PathBuf, File)> = HashMap::new();
                 while let Ok(line) = rx.recv() {
-                    let Some(path) = file_for(&line.folder, &line.channel, line.at.date_naive())
-                    else {
+                    let path = match &line.stream {
+                        Some(stamp) => stream_file_for(&line.folder, &line.channel, stamp),
+                        None => file_for(&line.folder, &line.channel, line.at.date_naive()),
+                    };
+                    let Some(path) = path else {
                         continue;
                     };
                     // Reopen on a new day or folder, or if the file was deleted meanwhile.
@@ -132,10 +162,11 @@ impl Logs {
             });
         Self { tx }
     }
-    pub fn write(&self, folder: &Path, channel: &str, text: String) {
+    pub fn write(&self, folder: &Path, channel: &str, stream: Option<String>, text: String) {
         let _ = self.tx.send(Line {
             folder: folder.to_owned(),
             channel: channel.to_owned(),
+            stream,
             at: chrono::Local::now(),
             text,
         });
@@ -145,6 +176,21 @@ impl Logs {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn per_stream_files() {
+        let path = stream_file_for(Path::new("L"), "bessvibes", "2026-10-12-1930").unwrap();
+        assert_eq!(
+            path,
+            Path::new("L")
+                .join("bessvibes")
+                .join("bessvibes-stream-2026-10-12-1930.log")
+        );
+        assert!(stream_file_for(Path::new("L"), "bessvibes", "../x").is_none());
+        assert_eq!(
+            stream_stamp("2026-10-12T19:30:00Z").map(|s| s.len()),
+            Some(15)
+        );
+    }
     #[test]
     fn chosen_channels_and_time_formats() {
         use std::sync::atomic::Ordering::Relaxed;

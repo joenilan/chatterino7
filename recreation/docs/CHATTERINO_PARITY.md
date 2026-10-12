@@ -78,7 +78,7 @@ Chatterino import.
 - [x] Live alerts: followed channels not open as tabs, /live tab, sound and taskbar flash (Notifications → With each live alert; not yet seen on a real go-live) (M)
 - [x] Link previews: thumbnails; Twitch clip/VOD/channel cards (M)
 - [ ] AutoMod: inline caught rows, blocked-term messages, own-held notice (M)
-- [ ] Chat logs: ~~channel allow-list (tab menu → Log this channel), timestamp format~~ done; per-stream logs (S)
+- [x] Chat logs: channel allow-list (tab menu → Log this channel), timestamp format, a file per stream (S)
 - [ ] Recent messages: ~~limit~~ done; ~~reconnect gap fill~~ covered by the IRC fallback, and live chat now waits for history; custom URL (S)
 - [x] Repeated-message filter options (S) — how alike, window, count, same chatter only, own messages, repeats highlight
 - [ ] Nicknames: regex, case sensitivity (S)

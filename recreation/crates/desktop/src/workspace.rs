@@ -929,6 +929,10 @@ impl Workbench {
                         .min(crate::chat_logs::TIME_FORMATS.len() - 1),
                     std::sync::atomic::Ordering::Relaxed,
                 );
+                crate::chat_logs::PER_STREAM.store(
+                    state["logs"]["per_stream"].as_bool().unwrap_or(false),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 crate::chat_logs::ONLY_CHOSEN.store(
                     state["logs"]["only_chosen"].as_bool().unwrap_or(false),
                     std::sync::atomic::Ordering::Relaxed,
@@ -3278,6 +3282,7 @@ impl Workbench {
             "folder": self.logs_folder.display().to_string(),
             "time": crate::chat_logs::TIME_FORMAT.load(std::sync::atomic::Ordering::Relaxed),
             "only_chosen": crate::chat_logs::ONLY_CHOSEN.load(std::sync::atomic::Ordering::Relaxed),
+            "per_stream": crate::chat_logs::PER_STREAM.load(std::sync::atomic::Ordering::Relaxed),
             "channels": crate::chat_logs::CHOSEN.lock().map(|c| c.clone()).unwrap_or_default(),
         });
         value["streamer_mode"] = json!({"mode": self.streamer_mode.key(), "mute": self.streamer_mute, "hide": crate::streamer_mode::OPTIONS.iter().enumerate().map(|(index, (key, ..))| (key.to_string(), json!(crate::streamer_mode::HIDE[index].load(std::sync::atomic::Ordering::Relaxed)))).collect::<serde_json::Map<_, _>>()});

@@ -307,7 +307,13 @@ impl Workbench {
             chat_core::Event::Moderation { .. } => return,
         };
         if crate::chat_logs::wanted(channel) {
-            self.logs.write(&self.logs_folder, channel, text);
+            let stream = crate::chat_logs::PER_STREAM
+                .load(std::sync::atomic::Ordering::Relaxed)
+                .then(|| self.streams.detail(channel))
+                .flatten()
+                .filter(|(info, _)| info.live)
+                .and_then(|(info, _)| crate::chat_logs::stream_stamp(&info.started_at));
+            self.logs.write(&self.logs_folder, channel, stream, text);
         }
     }
     pub(super) fn choose_logs_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {

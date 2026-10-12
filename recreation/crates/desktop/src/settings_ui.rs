@@ -646,6 +646,17 @@ impl Workbench {
                             .children(crate::chat_logs::TIME_FORMATS.map(|(l, _)| crate::theme::segment(l))),
                     ))
                     .child(row(
+                        "A file per stream",
+                        "While a channel is live, its chat goes to a file for that stream (channel-stream-date-time.log); offline chat stays in the day's file.",
+                        Switch::new("settings-log-per-stream")
+                            .checked(crate::chat_logs::PER_STREAM.load(std::sync::atomic::Ordering::Relaxed))
+                            .on_click(cx.listener(|this, on: &bool, _, cx| {
+                                crate::chat_logs::PER_STREAM.store(*on, std::sync::atomic::Ordering::Relaxed);
+                                this.schedule_save(cx);
+                                cx.notify();
+                            })),
+                    ))
+                    .child(row(
                         "Which channels",
                         "Only chosen channels: right-click a tab → Log this channel.",
                         crate::theme::Segmented::new("settings-log-which")
