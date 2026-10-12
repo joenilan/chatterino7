@@ -67,6 +67,7 @@ pub fn sources(name: &str) -> Vec<String> {
 /// (Chatterino's /mentions and /whispers). They never connect to Twitch.
 pub const MENTIONS: &str = "/mentions";
 pub const WHISPERS: &str = "/whispers";
+pub const LIVE: &str = "/live";
 pub fn is_special(name: &str) -> bool {
     name.starts_with('/')
 }
@@ -74,6 +75,7 @@ pub fn special_title(name: &str) -> Option<&'static str> {
     match name {
         MENTIONS => Some("Mentions"),
         WHISPERS => Some("Whispers"),
+        LIVE => Some("Live"),
         _ => None,
     }
 }

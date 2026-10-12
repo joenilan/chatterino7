@@ -87,7 +87,7 @@ Chatterino import.
 - [ ] Settings search; restore backups (S)
 - [ ] Spellcheck: more languages, personal dictionary (S)
 - [ ] Theme: light / system / custom (M) [design]
-- [ ] ~~/mentions /whispers~~ done (type them in Add channel); /live as a dockable split (S)
+- [x] /mentions /whispers /live as dockable tabs (Add channel or type the command)
 - [ ] Scroll speed, smooth scrolling (S)
 - [ ] Shared chat: badge on all messages; source routing (M)
 - [ ] Twitch GIF messages toggle (S)

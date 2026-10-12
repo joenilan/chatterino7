@@ -37,6 +37,8 @@ pub fn heading(message: &Message) -> Option<AnyElement> {
         "power_ups_message_effect" => labels.push("Bits · Message effect".to_owned()),
         "power_ups_gigantified_emote" => labels.push("Bits · Gigantified emote".to_owned()),
         "" | "text" | "action" => {}
+        // Jawjack's own notices (emote changes, Live tab) and moderation lines.
+        k if k == chat_core::SYSTEM || k == chat_core::MODERATION => {}
         _ => labels.push("Twitch special message".to_owned()),
     }
     if let Some(kind) = &p.notice_type {

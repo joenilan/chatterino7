@@ -81,6 +81,11 @@ pub const COMMANDS: &[Command] = &[
         description: "Open a tab collecting mentions and highlights from all your channels",
     },
     Command {
+        name: "/live",
+        usage: "/live",
+        description: "Open a tab listing channels as they go live",
+    },
+    Command {
         name: "/whispers",
         usage: "/whispers",
         description: "Open a tab collecting the whispers you receive",
@@ -265,7 +270,7 @@ impl ChannelPane {
                     self.command_feedback("Copied", window, cx);
                 }
             }
-            "/mentions" | "/whispers" => {
+            "/mentions" | "/whispers" | "/live" => {
                 self.command_draft("", window, cx);
                 cx.emit(PaneEvent::OpenChannel(name.to_string()));
             }

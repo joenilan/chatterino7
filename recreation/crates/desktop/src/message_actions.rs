@@ -338,21 +338,27 @@ pub fn menu(
     let special = owner
         .upgrade()
         .is_some_and(|p| crate::combined::is_special(&p.read(cx).name));
+    let live = owner
+        .upgrade()
+        .is_some_and(|p| p.read(cx).name.as_ref() == crate::combined::LIVE);
     if special {
         if let Some(channel) = message.presentation.origin.clone() {
             let (owner, id) = (owner.clone(), id.clone());
             menu = menu.item(
-                PopupMenuItem::new(format!("Go to message in #{channel}")).on_click(
-                    move |_, _, cx| {
-                        let _ = owner.update(cx, |_, cx| {
-                            cx.emit(PaneEvent::GoToMessage {
-                                channel: channel.clone(),
-                                id: id.clone(),
-                                reply: false,
-                            })
-                        });
-                    },
-                ),
+                PopupMenuItem::new(if live {
+                    format!("Open #{channel}")
+                } else {
+                    format!("Go to message in #{channel}")
+                })
+                .on_click(move |_, _, cx| {
+                    let _ = owner.update(cx, |_, cx| {
+                        cx.emit(PaneEvent::GoToMessage {
+                            channel: channel.clone(),
+                            id: id.clone(),
+                            reply: false,
+                        })
+                    });
+                }),
             );
         } else if let Some(login) = message.login.clone() {
             let owner = owner.clone();

@@ -865,6 +865,7 @@ impl Render for ChannelPane {
             .is_some_and(|own| self.hidden_sources.contains(own));
         // Name the Twitch channel on each message only when several are mixed.
         let special_tab = combined::is_special(&self.name);
+        let live_tab = self.name.as_ref() == combined::LIVE;
         let origin_names = self
             .all_sources()
             .iter()
@@ -1243,7 +1244,7 @@ impl Render for ChannelPane {
                                     let go = special_tab.then(|| (menu_owner.clone(), origin.clone(), message.id.clone()));
                                     el.child(div().id(SharedString::from(format!("origin-{}", message.id))).h(first_line_height).flex().items_center().gap_1().flex_shrink_0().child(icon)
                                         .when_some(go, |el, (owner, channel, id)| {
-                                            let tip = format!("Go to message in #{channel}");
+                                            let tip = if live_tab { format!("Open #{channel}") } else { format!("Go to message in #{channel}") };
                                             el.cursor_pointer().rounded(px(3.)).hover(|s| s.bg(rgb(theme::HOVER)))
                                                 .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(w, cx))
                                                 .capture_any_mouse_down(move |event: &MouseDownEvent, _, cx| {

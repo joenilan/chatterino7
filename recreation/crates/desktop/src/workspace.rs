@@ -299,6 +299,8 @@ pub struct Workbench {
     opened: std::time::Instant,
     /// The splash's give-up wake-up is scheduled (once).
     splash_wake: bool,
+    /// Live tabs have been given the "who's live now" list.
+    live_seeded: bool,
     /// Settings → Shortcuts: listening for a new shortcut's keys.
     pub(crate) hotkey_capture: Option<Subscription>,
     /// Settings → General: keep the main window above other windows.
@@ -529,8 +531,9 @@ impl Workbench {
         let state = loaded.unwrap_or(json!({"version":1}));
         let (accounts, active_account) = Self::load_accounts(&state, cx);
         let input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("Twitch channel or link, a YouTube live link, /mentions or /whispers")
+            InputState::new(window, cx).placeholder(
+                "Twitch channel or link, a YouTube live link, /mentions, /whispers or /live",
+            )
         });
         cx.subscribe_in(&input, window, |this: &mut Self, _, event, window, cx| {
             if this.adding && matches!(event, InputEvent::PressEnter { shift: false, .. }) {
@@ -597,6 +600,7 @@ impl Workbench {
             splash_done: None,
             opened: std::time::Instant::now(),
             splash_wake: false,
+            live_seeded: false,
             hotkey_capture: None,
             on_top: state["on_top"].as_bool().unwrap_or(false),
             autorun: None,
@@ -2143,6 +2147,8 @@ impl Workbench {
                 p.connection = if name == crate::combined::MENTIONS {
                     "Mentions, replies and highlights from all your open channels collect here."
                         .into()
+                } else if name == crate::combined::LIVE {
+                    "Channels you follow or have open show up here when they go live.".into()
                 } else {
                     "Whispers you receive collect here. Type /w name message to whisper.".into()
                 };
@@ -2321,6 +2327,15 @@ impl Workbench {
                 return;
             }
             if let PaneEvent::OpenChannel(target) = event {
+                this.open_channel(target.clone(), window, cx);
+                return;
+            }
+            // Live tab lines aren't messages in that chat: open the channel.
+            if let PaneEvent::GoToMessage {
+                channel: target, ..
+            } = event
+                && channel == crate::combined::LIVE
+            {
                 this.open_channel(target.clone(), window, cx);
                 return;
             }
@@ -2505,6 +2520,10 @@ impl Workbench {
         cx.notify();
     }
     fn pump_live_alerts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.live_seeded && self.follows_live.list.is_some() {
+            self.live_seeded = true;
+            self.seed_live(cx);
+        }
         // Followed channels that aren't open as tabs (open ones are watched below,
         // faster): alert if you follow-alert everyone or picked this channel.
         let open: std::collections::HashSet<String> = self
@@ -2513,6 +2532,19 @@ impl Workbench {
             .map(|p| p.read(cx).name.to_string())
             .collect();
         for live in self.follows_live.take_went_live() {
+            let detail = [live.title.as_str(), live.game.as_str()]
+                .into_iter()
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join(" · ");
+            if !open.contains(&live.login) {
+                self.post_live(
+                    &live.login,
+                    &format!("{} went live", live.label()),
+                    &detail,
+                    cx,
+                );
+            }
             if open.contains(&live.login)
                 || !(self.live_notify_follows || self.live_notify.contains(&live.login))
                 || crate::streamer_mode::hides(crate::streamer_mode::LIVE_ALERTS)
@@ -2539,6 +2571,12 @@ impl Workbench {
             );
         }
         for (channel, info) in self.streams.take_went_live() {
+            let detail = [info.title.as_str(), info.category.as_str()]
+                .into_iter()
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join(" · ");
+            self.post_live(&channel, &format!("{channel} went live"), &detail, cx);
             if !self.live_notify_all && !self.live_notify.contains(&channel) {
                 continue;
             }
@@ -2562,6 +2600,50 @@ impl Workbench {
                     }),
                 cx,
             );
+        }
+    }
+    /// Live tabs: one line per channel going live, tagged with the channel.
+    fn post_live(&mut self, login: &str, label: &str, detail: &str, cx: &mut Context<Self>) {
+        let targets: Vec<_> = self
+            .panes()
+            .into_iter()
+            .filter(|p| p.read(cx).name.as_ref() == crate::combined::LIVE)
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        let text = if detail.is_empty() {
+            label.to_owned()
+        } else {
+            format!("{label} · {detail}")
+        };
+        let id = format!("system:live:{}", self.next_notice);
+        self.next_notice += 1;
+        let mut notice = chat_core::system_notice(
+            crate::combined::LIVE,
+            id,
+            Some(chrono::Utc::now().timestamp()),
+            text,
+        );
+        notice.presentation.origin = Some(login.to_owned());
+        for pane in targets {
+            let copy = notice.clone();
+            pane.update(cx, |p, cx| p.received(chat_core::Event::Message(copy), cx));
+        }
+    }
+    /// A new Live tab starts with who's live right now.
+    pub(super) fn seed_live(&mut self, cx: &mut Context<Self>) {
+        let Some(list) = self.follows_live.list.clone() else {
+            return;
+        };
+        for live in list.iter().rev() {
+            let detail = [live.title.as_str(), live.game.as_str()]
+                .into_iter()
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join(" · ");
+            let label = live.label();
+            self.post_live(&live.login, &format!("{label} is live"), &detail, cx);
         }
     }
     pub(super) fn toggle_live_notify(&mut self, channel: &str, cx: &mut Context<Self>) {
@@ -3276,6 +3358,9 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) {
         let id = self.tabs[self.active].id;
+        if channel == crate::combined::LIVE {
+            self.live_seeded = false;
+        }
         let pane = self.make_pane(id, &channel, window, cx);
         let tab = &mut self.tabs[self.active];
         tab.panes.push(pane);
@@ -3327,9 +3412,13 @@ impl Workbench {
                 return;
             }
             self.tabs[self.active].name = value;
-        } else if let Some(special) = [crate::combined::MENTIONS, crate::combined::WHISPERS]
-            .into_iter()
-            .find(|s| value.eq_ignore_ascii_case(s))
+        } else if let Some(special) = [
+            crate::combined::MENTIONS,
+            crate::combined::WHISPERS,
+            crate::combined::LIVE,
+        ]
+        .into_iter()
+        .find(|s| value.eq_ignore_ascii_case(s))
         {
             if self.tabs[self.active]
                 .panes
