@@ -76,6 +76,16 @@ pub const COMMANDS: &[Command] = &[
         description: "Copy text to the clipboard",
     },
     Command {
+        name: "/mentions",
+        usage: "/mentions",
+        description: "Open a tab collecting mentions and highlights from all your channels",
+    },
+    Command {
+        name: "/whispers",
+        usage: "/whispers",
+        description: "Open a tab collecting the whispers you receive",
+    },
+    Command {
         name: "/streamlink",
         usage: "/streamlink [channel]",
         description: "Watch in Streamlink",
@@ -254,6 +264,10 @@ impl ChannelPane {
                     self.command_draft("", window, cx);
                     self.command_feedback("Copied", window, cx);
                 }
+            }
+            "/mentions" | "/whispers" => {
+                self.command_draft("", window, cx);
+                cx.emit(PaneEvent::OpenChannel(name.to_string()));
             }
             "/clearmessages" => {
                 self.command_draft("", window, cx);
