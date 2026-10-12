@@ -704,6 +704,24 @@ impl Workbench {
                     std::sync::atomic::Ordering::Relaxed,
                 );
                 crate::chat_search::load_saved(&state["saved_filters"]);
+                chat_core::NAME_MODE.store(
+                    state["name_mode"].as_u64().unwrap_or(2).min(2) as u8,
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                crate::theme::SEPARATORS.store(
+                    state["separators"].as_bool().unwrap_or(false),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                crate::theme::HIDE_DELETED.store(
+                    state["hide_deleted"].as_bool().unwrap_or(false),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                if let Ok(mut font) = crate::theme::CHAT_FONT.lock() {
+                    *font = state["chat_font"]
+                        .as_str()
+                        .filter(|f| !f.is_empty() && f.len() <= 80)
+                        .map(str::to_owned);
+                }
                 crate::pronouns::ENABLED.store(
                     state["pronouns"].as_bool().unwrap_or(false),
                     std::sync::atomic::Ordering::Relaxed,
@@ -829,7 +847,7 @@ impl Workbench {
                 .unwrap_or(14.)
                 .clamp(12., 24.) as f32,
             pause_mode: state["pause_mode"].as_u64().unwrap_or(0).min(2) as u8,
-            timestamps: state["timestamps"].as_u64().unwrap_or(0).min(2) as u8,
+            timestamps: state["timestamps"].as_u64().unwrap_or(0).min(4) as u8,
             history_limit: state["history_limit"]
                 .as_u64()
                 .unwrap_or(10_000)
@@ -2530,6 +2548,10 @@ impl Workbench {
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
         value["saved_filters"] = crate::chat_search::saved_json();
+        value["name_mode"] = json!(chat_core::NAME_MODE.load(std::sync::atomic::Ordering::Relaxed));
+        value["separators"] = json!(crate::theme::flag(&crate::theme::SEPARATORS));
+        value["hide_deleted"] = json!(crate::theme::flag(&crate::theme::HIDE_DELETED));
+        value["chat_font"] = json!(crate::theme::chat_font());
         value["pronouns"] = json!(crate::pronouns::enabled());
         value["hotkeys"] = crate::hotkeys::json();
         value["emote_scale"] =
@@ -3299,7 +3321,7 @@ impl Workbench {
         cx.notify();
     }
     fn change_timestamps(&mut self, mode: u8, cx: &mut Context<Self>) {
-        self.timestamps = mode.min(2);
+        self.timestamps = mode.min(4);
         for pane in self
             .panes()
             .iter()

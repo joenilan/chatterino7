@@ -961,6 +961,7 @@ impl Render for ChannelPane {
                         *viewport_layout.borrow_mut() = Some(bounds);
                         if changed&&picker_is_open{let owner=picker_layout_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}
                     })
+                    .when_some(theme::chat_font(), |el, font| el.font_family(font))
                     .when(retained == 0, |el| el.child(div().v_flex().p_6().gap_2().text_color(rgb(theme::MUTED))
                         .child(div().text_color(rgb(theme::TEXT)).text_size(px(16.)).child(if youtube::is_youtube(&self.name) { format!("{} is ready", combined::title(&self.name)) } else { format!("#{} is ready", combined::title(&self.name)) }))
                         .child(if self.connected { "Connected. Waiting for messages…".to_string() } else { self.connection.clone() })
@@ -973,7 +974,8 @@ impl Render for ChannelPane {
                                 return div().into_any_element();
                             };
                             // A filtered-out row draws nothing (rows have no padding of their own).
-                            if view_filter.as_ref().is_some_and(|q| q.matches(message).is_none())
+                            if (message.deleted && theme::flag(&theme::HIDE_DELETED))
+                                || view_filter.as_ref().is_some_and(|q| q.matches(message).is_none())
                                 || (!hidden_platforms.is_empty() && hidden_platforms.contains(&message.presentation.origin.as_deref().map(combined::Platform::of).unwrap_or(combined::Platform::Twitch))) {
                                 return div().into_any_element();
                             }
@@ -1006,7 +1008,7 @@ impl Render for ChannelPane {
                             badge_images.retain(|(badge,image,_)|image.is_some()||!media.borrow().failed(&badge.key));
                             let row_owner=menu_owner.clone();let row_id=message.id.clone();
                             let timestamp=if timestamps>0{message.sent_at.and_then(|time|chrono::DateTime::from_timestamp(time,0)).map(|time|{
-                                let local=time.with_timezone(&chrono::Local);(local.format(if timestamps==2{"%H:%M:%S"}else{"%H:%M"}).to_string(),local.format("%Y-%m-%d %H:%M:%S %:z").to_string())
+                                let local=time.with_timezone(&chrono::Local);(local.format(match timestamps{2=>"%H:%M:%S",3=>"%-I:%M %p",4=>"%-I:%M:%S %p",_=>"%H:%M"}).to_string(),local.format("%Y-%m-%d %H:%M:%S %:z").to_string())
                             })}else{None};
                             let pulse=jump_pulse.filter(|(target,at)|*target==row&&at.elapsed()<Duration::from_millis(1200));
                             if pulse.is_some()&&!cx.reduce_motion(){window.request_animation_frame();}
@@ -1035,6 +1037,7 @@ impl Render for ChannelPane {
                                 .when(message.deleted, |el| el.opacity(0.45))
                                 // Settings → Appearance → Alternate row backgrounds (Chatterino's option).
                                 .when(theme::alternate_rows() && row % 2 == 1, |el| el.bg(rgba(0xFFFFFF07)))
+                                .when(theme::flag(&theme::SEPARATORS), |el| el.child(div().absolute().left_0().right_0().bottom_0().h(px(1.)).bg(rgb(theme::BORDER))))
                                 .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(0xA99CF40D)).py(px(2.)).rounded_r(px(4.)))
                                 .when(highlight_rows.contains(&row),|el|{let (_,accent,background)=highlight_rules::COLORS[highlight_colors.get(&row).copied().unwrap_or(0)];el.bg(rgb(background)).border_color(rgb(accent)).py(px(2.)).rounded_r(px(4.))})
                                 .on_prepaint(move|bounds,window,cx|{
@@ -1059,7 +1062,7 @@ impl Render for ChannelPane {
                                 .children(rich_heading)
                                 .children(reply_line)
                                 .child(div().h_flex().items_start().min_w_0().gap_1()
-                                .when_some(timestamp,|el,(label,full)|el.child(div().id(SharedString::from(format!("timestamp-{}",message.id))).w(px(if timestamps==2{55.}else{37.})).h(first_line_height).flex_shrink_0().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(w,cx)).child(label)))
+                                .when_some(timestamp,|el,(label,full)|el.child(div().id(SharedString::from(format!("timestamp-{}",message.id))).w(px(match timestamps{2=>55.,3=>58.,4=>76.,_=>37.})).h(first_line_height).flex_shrink_0().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(w,cx)).child(label)))
                                 .when(mod_buttons && !message.deleted && message.login.is_some() && own_user.as_deref() != Some(message.user_id.as_str()), |el| {
                                     let tool = |id: &'static str, icon: gpui_kit::assets::IconName, tip: &'static str, hover: u32, action: message_actions::Action| {
                                         let (owner, message_id) = (menu_owner.clone(), message.id.clone());

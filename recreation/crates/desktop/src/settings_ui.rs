@@ -182,7 +182,7 @@ impl Workbench {
                         .segmented()
                         .selected_index(self.timestamps as usize)
                         .on_click(cx.listener(|this, index: &usize, _, cx| this.change_timestamps(*index as u8, cx)))
-                        .children(["Off", "12:34", "12:34:56"].map(|l| gpui_kit::component::tab::Tab::new().label(l))),
+                        .children(["Off", "13:34", "13:34:56", "1:34 PM", "1:34:56 PM"].map(|l| gpui_kit::component::tab::Tab::new().label(l))),
                 ))
                 .child(row(
                     "Pause scrolling",
@@ -192,6 +192,50 @@ impl Workbench {
                         .selected_index(self.pause_mode as usize)
                         .on_click(cx.listener(|this, index: &usize, w, cx| this.change_pause_mode(*index as u8, w, cx)))
                         .children(["Manual", "Hover", "Alt+hover"].map(|l| gpui_kit::component::tab::Tab::new().label(l))),
+                ))
+                .child(row(
+                    "Chat font",
+                    "The font for chat messages. Click to pick one installed on this PC.",
+                    div()
+                        .h_flex()
+                        .gap_1()
+                        .when(crate::theme::chat_font().is_some(), |el| {
+                            el.child(Button::new("chat-font-reset").small().ghost().label("Default").on_click(cx.listener(|this, _, _, cx| {
+                                if let Ok(mut font) = crate::theme::CHAT_FONT.lock() {
+                                    *font = None;
+                                }
+                                this.remeasure_all(cx);
+                            })))
+                        })
+                        .child(Button::new("chat-font").small().label(crate::theme::chat_font().unwrap_or_else(|| "Default".into())).on_click(cx.listener(|this, _, w, cx| this.choose_chat_font(w, cx)))),
+                ))
+                .child(row(
+                    "Names",
+                    "Show chatters by display name, login, or both when they differ (e.g. 日本語 names).",
+                    gpui_kit::component::tab::TabBar::new("settings-names")
+                        .segmented()
+                        .selected_index(chat_core::NAME_MODE.load(std::sync::atomic::Ordering::Relaxed) as usize)
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            chat_core::NAME_MODE.store((*index).min(2) as u8, std::sync::atomic::Ordering::Relaxed);
+                            this.remeasure_all(cx);
+                        }))
+                        .children(["Display name", "Login", "Both"].map(|l| gpui_kit::component::tab::Tab::new().label(l))),
+                ))
+                .child(row(
+                    "Lines between messages",
+                    "A thin separator under every message.",
+                    Switch::new("settings-separators").checked(crate::theme::flag(&crate::theme::SEPARATORS)).on_click(cx.listener(|this, on: &bool, _, cx| {
+                        crate::theme::SEPARATORS.store(*on, std::sync::atomic::Ordering::Relaxed);
+                        this.remeasure_all(cx);
+                    })),
+                ))
+                .child(row(
+                    "Hide deleted messages",
+                    "Off: deleted and timed-out messages stay readable, greyed out. On: they disappear.",
+                    Switch::new("settings-hide-deleted").checked(crate::theme::flag(&crate::theme::HIDE_DELETED)).on_click(cx.listener(|this, on: &bool, _, cx| {
+                        crate::theme::HIDE_DELETED.store(*on, std::sync::atomic::Ordering::Relaxed);
+                        this.remeasure_all(cx);
+                    })),
                 ))
                 .child(row(
                     "Emote size",
@@ -779,6 +823,52 @@ impl Workbench {
                             )
                         }),
                 )
+        });
+    }
+}
+
+impl Workbench {
+    /// Settings → Appearance → Chat font: a menu of the fonts installed on this PC.
+    fn choose_chat_font(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let mut fonts = cx.text_system().all_font_names();
+        fonts.retain(|f| !f.starts_with('.') && !f.starts_with('@'));
+        fonts.sort_by_key(|f| f.to_lowercase());
+        fonts.dedup();
+        let owner = cx.entity().downgrade();
+        let width = (f32::from(window.viewport_size().width) - 24.).clamp(240., 380.);
+        let height = (f32::from(window.viewport_size().height) - 200.).clamp(160., 480.);
+        window.open_dialog(cx, move |dialog, _, _| {
+            let current = crate::theme::chat_font();
+            dialog.w(px(width)).title("Chat font").child(
+                div()
+                    .id("chat-font-list")
+                    .v_flex()
+                    .max_h(px(height))
+                    .overflow_y_scroll()
+                    .children(fonts.iter().enumerate().map(|(index, font)| {
+                        let (owner, chosen) = (owner.clone(), font.clone());
+                        let selected = current.as_deref() == Some(font.as_str());
+                        div()
+                            .id(("chat-font-option", index))
+                            .px_2()
+                            .py(px(4.))
+                            .rounded(px(4.))
+                            .cursor_pointer()
+                            .font_family(font.clone())
+                            .when(selected, |el| {
+                                el.bg(rgb(theme::CONTROL)).text_color(rgb(theme::ACCENT))
+                            })
+                            .hover(|s| s.bg(rgb(theme::HOVER)))
+                            .child(font.clone())
+                            .on_click(move |_, w, cx| {
+                                if let Ok(mut font) = crate::theme::CHAT_FONT.lock() {
+                                    *font = Some(chosen.clone());
+                                }
+                                w.close_dialog(cx);
+                                let _ = owner.update(cx, |this, cx| this.remeasure_all(cx));
+                            })
+                    })),
+            )
         });
     }
 }

@@ -1437,6 +1437,7 @@ pub(crate) fn chat_message(
             local_alias: None,
             local_color: None,
             repeats: 0,
+            name_both: None,
             source_id: e["source_broadcaster_user_id"]
                 .as_str()
                 .filter(|source| !source.is_empty() && *source != id && source.len() <= 64)

@@ -93,3 +93,16 @@ pub static ALTERNATE_ROWS: std::sync::atomic::AtomicBool =
 pub fn alternate_rows() -> bool {
     ALTERNATE_ROWS.load(std::sync::atomic::Ordering::Relaxed)
 }
+
+/// Settings → Appearance → Lines between messages.
+pub static SEPARATORS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Settings → Appearance → Deleted messages: hide instead of showing them greyed.
+pub static HIDE_DELETED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub fn flag(flag: &std::sync::atomic::AtomicBool) -> bool {
+    flag.load(std::sync::atomic::Ordering::Relaxed)
+}
+/// Settings → Appearance → Chat font (None: the app font).
+pub static CHAT_FONT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+pub fn chat_font() -> Option<String> {
+    CHAT_FONT.lock().ok().and_then(|f| f.clone())
+}

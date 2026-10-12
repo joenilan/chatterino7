@@ -95,7 +95,12 @@ pub struct MessagePresentation {
     pub repeats: u32,
     /// Shared Chat: the broadcaster ID of the channel this message was sent in.
     pub source_id: Option<String>,
+    /// "表示名 (login)" when the display name is more than a recased login.
+    pub name_both: Option<String>,
 }
+/// How chatters' names show: 0 display name, 1 login, 2 both when they differ
+/// (Chatterino's "Username and localized name", the default).
+pub static NAME_MODE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(2);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     pub sent_at: Option<i64>,
@@ -115,11 +120,27 @@ pub struct Message {
 }
 impl Message {
     pub fn author_label(&self) -> &str {
-        self.presentation
+        if let Some(alias) = self
+            .presentation
             .local_alias
             .as_deref()
             .filter(|s| !s.is_empty())
-            .unwrap_or(&self.display_name)
+        {
+            return alias;
+        }
+        match NAME_MODE.load(std::sync::atomic::Ordering::Relaxed) {
+            1 => self
+                .login
+                .as_deref()
+                .filter(|l| !l.is_empty())
+                .unwrap_or(&self.display_name),
+            2 => self
+                .presentation
+                .name_both
+                .as_deref()
+                .unwrap_or(&self.display_name),
+            _ => &self.display_name,
+        }
     }
     pub fn author_color(&self) -> Option<u32> {
         self.presentation.local_color.or(self.name_color)
@@ -251,7 +272,14 @@ impl Timeline {
     }
     pub fn apply(&mut self, event: Event) -> Change {
         match event {
-            Event::Message(message) => {
+            Event::Message(mut message) => {
+                if let Some(login) = message.login.as_deref()
+                    && !login.is_empty()
+                    && !message.display_name.eq_ignore_ascii_case(login)
+                {
+                    message.presentation.name_both =
+                        Some(format!("{} ({login})", message.display_name));
+                }
                 if !self.accepts(&message.channel_id)
                     || message.id.is_empty()
                     || self.ids.contains(&message.id)
