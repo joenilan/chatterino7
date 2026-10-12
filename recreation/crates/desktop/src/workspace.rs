@@ -306,6 +306,8 @@ pub struct Workbench {
     recent_enabled: bool,
     /// Go-live alerts: channels opted in from the tab menu, or every open channel.
     live_notify: Vec<String>,
+    /// Channels whose mentions and highlights don't play a sound.
+    muted_pings: Vec<String>,
     live_notify_all: bool,
     presence: crate::seven_presence::Presence,
     recent_requested: std::collections::HashSet<String>,
@@ -596,6 +598,13 @@ impl Workbench {
                 .take(500)
                 .collect(),
             live_notify_all: state["live_notify_all"].as_bool().unwrap_or(false),
+            muted_pings: state["muted_pings"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| c.as_str().map(str::to_owned))
+                .take(500)
+                .collect(),
             presence: crate::seven_presence::Presence::new(
                 state["seventv_activity"].as_bool().unwrap_or(true),
             ),
@@ -2032,7 +2041,9 @@ impl Workbench {
                 return;
             }
             if let PaneEvent::Ping(ping, id) = event {
-                this.ping(*ping, id, window);
+                if !this.muted_pings.contains(&channel) {
+                    this.ping(*ping, id, window);
+                }
                 return;
             }
             if let PaneEvent::DismissAutoMod(id) = event {
@@ -2400,7 +2411,7 @@ impl Workbench {
                 );
             }
         }
-        let mut value = json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"studio_tab":self.studio_tab,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"live_notify":self.live_notify,"live_notify_all":self.live_notify_all,"seventv_activity":self.presence.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        let mut value = json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"studio_tab":self.studio_tab,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"live_notify":self.live_notify,"live_notify_all":self.live_notify_all,"muted_pings":self.muted_pings,"seventv_activity":self.presence.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"pinned":t.pinned,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()});
         // Kept outside the macro above, which is at its recursion limit.
         let accounts = self.accounts_json(cx);
@@ -3592,6 +3603,11 @@ impl Workbench {
                                 let notify_now = owner.upgrade().is_some_and(|o| {
                                     o.read(cx).live_notify.contains(&menu_channel)
                                 });
+                                let mute_owner = owner.clone();
+                                let mute_channel = menu_channel.clone();
+                                let muted_now = owner.upgrade().is_some_and(|o| {
+                                    o.read(cx).muted_pings.contains(&menu_channel)
+                                });
                                 menu.item(
                                     PopupMenuItem::new(if pinned_now {
                                         "Unpin tab"
@@ -3612,6 +3628,21 @@ impl Workbench {
                                         .on_click(move |_, _, cx| {
                                             let _ = notify_owner.update(cx, |this, cx| {
                                                 this.toggle_live_notify(&notify_channel, cx)
+                                            });
+                                        }),
+                                )
+                                .item(
+                                    PopupMenuItem::new("Mute ping sounds here")
+                                        .checked(muted_now)
+                                        .on_click(move |_, _, cx| {
+                                            let _ = mute_owner.update(cx, |this, cx| {
+                                                if let Some(at) = this.muted_pings.iter().position(|c| *c == mute_channel) {
+                                                    this.muted_pings.remove(at);
+                                                } else {
+                                                    this.muted_pings.push(mute_channel.clone());
+                                                }
+                                                this.schedule_save(cx);
+                                                cx.notify();
                                             });
                                         }),
                                 )
