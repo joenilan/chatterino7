@@ -1650,6 +1650,11 @@ mod tests {
         assert_eq!(message.body(), "imagine?");
         assert_eq!(message.presentation.kind, "action");
         let plain = serde_json::json!({"message_id": "m2", "message": {"text": "hi", "fragments": [{"type": "text", "text": "hi"}]}});
-        assert_eq!(chat_message(&plain, "e2", "chan", "100", None, true).presentation.kind, "text");
+        assert_eq!(
+            chat_message(&plain, "e2", "chan", "100", None, true)
+                .presentation
+                .kind,
+            "text"
+        );
     }
 }

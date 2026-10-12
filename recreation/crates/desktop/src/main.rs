@@ -26,6 +26,7 @@ mod community;
 mod control;
 mod custom_commands;
 mod dock;
+mod duplicates;
 mod emote_picker;
 mod engagement;
 mod event_highlights;
@@ -177,6 +178,8 @@ enum PaneEvent {
     OpenModTools,
     /// Open the YouTube setup guide (a YouTube tab without an API key).
     SetUpYouTube,
+    /// Open this channel in its own window (/popout).
+    PopOut,
     /// The view filter changed (saved with the workspace).
     ViewFilterChanged,
     /// Show or hide the inline moderator buttons (all channels).
@@ -242,6 +245,8 @@ struct ChannelPane {
     view_filter: Option<(String, std::rc::Rc<chat_search::Query>)>,
     /// Combined feeds: platforms whose messages are hidden here.
     pub(crate) hidden_platforms: Vec<combined::Platform>,
+    /// The last message sent here and when, so an identical one can still go through.
+    last_sent: Option<(String, Instant)>,
     /// Extra sources shown in this pane: your own YouTube live chat in your own channel.
     pub(crate) linked: Vec<String>,
     /// A friendlier title than the pane name (YouTube: "Channel · Stream title").
@@ -353,6 +358,7 @@ impl ChannelPane {
             spelling: Vec::new(),
             view_filter: None,
             hidden_platforms: Vec::new(),
+            last_sent: None,
             linked: Vec::new(),
             display_title: None,
             suspicious_pending: Default::default(),
@@ -449,6 +455,8 @@ impl ChannelPane {
             return;
         }
         let reply_parent = self.reply_target.as_ref().map(|target| target.id.clone());
+        let text =
+            duplicates::duplicate_safe(&mut self.last_sent, text, youtube::is_youtube(&self.name));
         self.pending = Some((
             request,
             text.clone(),

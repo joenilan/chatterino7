@@ -2023,6 +2023,10 @@ impl Workbench {
                 this.connect_youtube(window, cx);
                 return;
             }
+            if matches!(event, PaneEvent::PopOut) {
+                this.open_popout(pane.read(cx).name.to_string(), cx);
+                return;
+            }
             if matches!(event, PaneEvent::ViewFilterChanged) {
                 this.schedule_save(cx);
                 return;

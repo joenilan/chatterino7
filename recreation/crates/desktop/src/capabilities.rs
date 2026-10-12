@@ -52,6 +52,8 @@ pub enum Action {
     ChatColor,
     Whisper,
     Block,
+    /// Create a clip of a live channel (anyone signed in).
+    Clip,
 }
 enum Needs {
     Moderator,
@@ -77,6 +79,7 @@ impl Action {
             ChatColor => &["user:manage:chat_color"],
             Whisper => &["user:manage:whispers"],
             Block => &["user:manage:blocked_users"],
+            Clip => &["clips:edit"],
         }
     }
     fn needs(self) -> Needs {
@@ -85,7 +88,7 @@ impl Action {
             Ban | Warn | DeleteMessages | ManageRoom | Announce | Shoutout => Needs::Moderator,
             ManageModerators | ManageVips => Needs::Broadcaster,
             EditStreamInfo | Marker | Commercial | Raid => Needs::OwnChannel,
-            ChatColor | Whisper | Block => Needs::Account,
+            ChatColor | Whisper | Block | Clip => Needs::Account,
         }
     }
 }

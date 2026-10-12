@@ -75,6 +75,8 @@ pub enum Request {
         login: String,
     },
     Unraid,
+    /// Clip the last ~30 seconds of this channel's live stream.
+    Clip,
 }
 
 pub struct Command {
@@ -83,6 +85,11 @@ pub struct Command {
     pub description: &'static str,
 }
 pub const COMMANDS: &[Command] = &[
+    Command {
+        name: "/clip",
+        usage: "/clip",
+        description: "Clip the last ~30 seconds of this live stream",
+    },
     Command {
         name: "/ban",
         usage: "/ban login [reason]",
@@ -393,6 +400,7 @@ pub fn parse(name: &str, args: &str) -> Option<Result<Request, String>> {
         }
         "/raid" => login(first).map(|login| Request::Raid { login }),
         "/unraid" => no_args(Request::Unraid),
+        "/clip" => no_args(Request::Clip),
         _ => return None,
     })
 }
@@ -416,6 +424,7 @@ impl Request {
             Marker { .. } => Action::Marker,
             Commercial { .. } => Action::Commercial,
             Raid { .. } | Unraid => Action::Raid,
+            Clip => Action::Clip,
         }
     }
 }
@@ -720,6 +729,16 @@ pub fn run(identity: &Identity, channel: &str, request: &Request) -> Result<Stri
         Request::Unraid => {
             helix.ok(M::DELETE, "raids", &[("broadcaster_id", me)], None)?;
             Ok("Raid cancelled".into())
+        }
+        Request::Clip => {
+            let value = helix.ok(M::POST, "clips", &[("broadcaster_id", room)], None)?;
+            let id = value["data"][0]["id"].as_str().unwrap_or("");
+            if id.is_empty() {
+                return Err("Twitch didn't create a clip (is the channel live?)".into());
+            }
+            Ok(format!(
+                "Clip created: https://clips.twitch.tv/{id} (it can take a few seconds to process)"
+            ))
         }
     }
 }

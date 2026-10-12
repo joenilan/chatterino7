@@ -50,6 +50,21 @@ pub const COMMANDS: &[Command] = &[
         usage: "/latest",
         description: "Return to the live end of chat",
     },
+    Command {
+        name: "/uptime",
+        usage: "/uptime",
+        description: "How long this channel has been live",
+    },
+    Command {
+        name: "/openurl",
+        usage: "/openurl https://…",
+        description: "Open a link in your browser",
+    },
+    Command {
+        name: "/popout",
+        usage: "/popout",
+        description: "Open this channel in its own window",
+    },
 ];
 pub fn is_command(value: &str) -> bool {
     value.trim_start().starts_with('/')
@@ -138,6 +153,35 @@ impl ChannelPane {
                 self.command_draft("", window, cx);
                 self.cancel_reply(window, cx);
                 self.command_feedback("Reply target removed", window, cx);
+            }
+            "/uptime" => {
+                self.command_draft("", window, cx);
+                let text = match &self.stream {
+                    Some(info) if info.live => match info.uptime() {
+                        Some(uptime) => format!("#{} has been live for {uptime}.", self.name),
+                        None => format!("#{} is live.", self.name),
+                    },
+                    Some(_) => format!("#{} is offline.", self.name),
+                    None => "Stream status isn't loaded yet.".into(),
+                };
+                self.command_feedback(text, window, cx);
+            }
+            "/openurl" => {
+                let url = args.trim();
+                if url.starts_with("https://") || url.starts_with("http://") {
+                    cx.open_url(url);
+                    self.command_draft("", window, cx);
+                } else {
+                    self.command_feedback(
+                        "Use /openurl https://… (web links only). Your draft is kept.",
+                        window,
+                        cx,
+                    );
+                }
+            }
+            "/popout" => {
+                self.command_draft("", window, cx);
+                cx.emit(PaneEvent::PopOut);
             }
             "/find" => {
                 if args.chars().count() > 256 {
