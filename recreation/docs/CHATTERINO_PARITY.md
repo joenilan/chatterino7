@@ -28,7 +28,7 @@ Chatterino import.
 - [x] Join/part messages (via IRC) (M) — gathered every 5 s into "Joined: …" / "Left: …" lines; off by default
 - [ ] Pinned message bar, /pin /unpin (M) [dead for viewers]
 - [x] Chat notices when 7TV/BTTV emotes are added/removed/renamed (S)
-- [ ] Inline whispers in channel splits (S)
+- [x] Inline whispers in channel splits (S) — Chat → Whispers in chat (off by default; not yet seen with a real whisper)
 - [x] Slow-mode / timeout send countdown (S)
 - [x] Header: stream title, game, viewers, uptime toggles (S)
 - [x] Emote options: animations off/when focused, images off, zero-width stacking, unlisted 7TV, remove spaces between emotes, combine bits (S each)

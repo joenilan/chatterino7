@@ -1,5 +1,8 @@
 //! Twitch whispers: session-only conversations (nothing is written to disk),
 //! received through EventSub and sent through Helix.
+/// Settings → Chat → Whispers in chat: also show each whisper as a line
+/// in the chats on screen (Chatterino's inline whispers).
+pub static INLINE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 use std::collections::VecDeque;
 
 const CONVERSATIONS: usize = 50;

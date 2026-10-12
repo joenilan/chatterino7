@@ -880,6 +880,10 @@ impl Workbench {
                         std::sync::atomic::Ordering::Relaxed,
                     );
                 }
+                crate::whispers::INLINE.store(
+                    state["inline_whispers"].as_bool().unwrap_or(false),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 crate::anon_chat::SHOW_MEMBERSHIP.store(
                     state["joins_parts"].as_bool().unwrap_or(false),
                     std::sync::atomic::Ordering::Relaxed,
@@ -3099,6 +3103,8 @@ impl Workbench {
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
         value["quiet_unread"] = json!(self.quiet_unread);
+        value["inline_whispers"] =
+            json!(crate::whispers::INLINE.load(std::sync::atomic::Ordering::Relaxed));
         value["names"] = json!({
             "click": crate::message_actions::PLAIN_NAME_CLICK.load(std::sync::atomic::Ordering::Relaxed),
             "right_click": crate::message_actions::RIGHT_CLICK_NAME.load(std::sync::atomic::Ordering::Relaxed),

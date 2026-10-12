@@ -62,6 +62,33 @@ impl Workbench {
                 pane.update(cx, |p, cx| p.received(chat_core::Event::Message(copy), cx));
             }
         }
+        // Chatterino's "show whispers inline": a line in the chats on screen.
+        if crate::whispers::INLINE.load(std::sync::atomic::Ordering::Relaxed) && !self.streamer_live
+        {
+            let name = if from_name.is_empty() {
+                &from_login
+            } else {
+                &from_name
+            };
+            let text = format!("Whisper from {name}: {text}");
+            for pane in self.visible_panes(cx) {
+                if crate::combined::is_special(&pane.read(cx).name) {
+                    continue;
+                }
+                let id = format!("system:whisper:{id}:{}", self.next_notice);
+                self.next_notice += 1;
+                let channel = pane.read(cx).name.to_string();
+                let notice = chat_core::system_notice(
+                    &channel,
+                    id,
+                    Some(chrono::Utc::now().timestamp()),
+                    text.clone(),
+                );
+                pane.update(cx, |p, cx| {
+                    p.received(chat_core::Event::Message(notice), cx)
+                });
+            }
+        }
         let looking = reading && self.whispers.selected.as_deref() == Some(from_login.as_str());
         if !looking && self.streamer_live {
             // Streamer mode: say that one arrived, never who or what.

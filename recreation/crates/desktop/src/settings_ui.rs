@@ -529,6 +529,17 @@ impl Workbench {
                         .children(crate::message_actions::SEARCH_ENGINES.map(|(l, _)| crate::theme::segment(l))),
                 ))
                 .child(row(
+                    "Whispers in chat",
+                    "Also show each whisper you get as a line in the chats on screen, like Chatterino's inline whispers. Hidden in streamer mode.",
+                    Switch::new("settings-inline-whispers")
+                        .checked(crate::whispers::INLINE.load(std::sync::atomic::Ordering::Relaxed))
+                        .on_click(cx.listener(|this, on: &bool, _, cx| {
+                            crate::whispers::INLINE.store(*on, std::sync::atomic::Ordering::Relaxed);
+                            this.schedule_save(cx);
+                            cx.notify();
+                        })),
+                ))
+                .child(row(
                     "Joins and parts",
                     "Chatters arriving and leaving, listed every few seconds. Twitch only reports these in channels with fewer than 1,000 chatters.",
                     Switch::new("settings-joins-parts")
