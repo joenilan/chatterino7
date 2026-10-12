@@ -511,6 +511,17 @@ impl ChannelPane {
         if self.route_command(&text, window, cx) {
             return;
         }
+        // Mentions/Whispers tabs only collect; chat goes to a real channel.
+        if combined::is_special(&self.name) {
+            if !text.trim().is_empty() {
+                self.command_feedback(
+                    "This tab collects messages. Reply from the message's channel (right-click → Reply), or type /w name message to whisper. Your draft is kept.",
+                    window,
+                    cx,
+                );
+            }
+            return;
+        }
         if !self.connected || text.trim().is_empty() || text.chars().count() > 500 {
             window.push_notification(
                 Notification::info(if !self.connected {
@@ -834,7 +845,8 @@ impl Render for ChannelPane {
             .iter()
             .filter(|s| !youtube::is_youtube(s))
             .count()
-            > 1;
+            > 1
+            || combined::is_special(&self.name);
         let moderating = matches!(
             self.role,
             Some(capabilities::Role::Moderator | capabilities::Role::Broadcaster)
@@ -1056,8 +1068,8 @@ impl Render for ChannelPane {
                     .relative()
                     .when_some(theme::chat_font(), |el, font| el.font_family(font))
                     .when(retained == 0, |el| el.child(div().v_flex().p_6().gap_2().text_color(rgb(theme::MUTED))
-                        .child(div().text_color(rgb(theme::TEXT)).text_size(px(16.)).child(if youtube::is_youtube(&self.name) { format!("{} is ready", combined::title(&self.name)) } else { format!("#{} is ready", combined::title(&self.name)) }))
-                        .child(if self.connected { "Connected. Waiting for messages…".to_string() } else { self.connection.clone() })
+                        .child(div().text_color(rgb(theme::TEXT)).text_size(px(16.)).child(if let Some(title) = combined::special_title(&self.name) { title.to_owned() } else if youtube::is_youtube(&self.name) { format!("{} is ready", combined::title(&self.name)) } else { format!("#{} is ready", combined::title(&self.name)) }))
+                        .child(if self.connected && !combined::is_special(&self.name) { "Connected. Waiting for messages…".to_string() } else { self.connection.clone() })
                         .when(youtube::is_youtube(&self.name) && self.connection.contains("Connect YouTube"), |el| el.child(div().pt_2().h_flex().child(
                             Button::new("youtube-setup").small().primary().label("Connect YouTube").on_click(cx.listener(|_, _, _, cx| cx.emit(PaneEvent::SetUpYouTube))))))))
                     .child(

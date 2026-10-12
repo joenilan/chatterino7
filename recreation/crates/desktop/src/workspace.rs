@@ -491,6 +491,7 @@ impl Workbench {
         // Combined feeds stand for their source channels; repeats are dropped downstream.
         order
             .iter()
+            .filter(|n| !crate::combined::is_special(n))
             .flat_map(|n| crate::combined::sources(n))
             // YouTube tabs never reach Twitch.
             .filter(|n| !crate::youtube::is_youtube(n))
@@ -521,7 +522,7 @@ impl Workbench {
         let (accounts, active_account) = Self::load_accounts(&state, cx);
         let input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Twitch channel or link, or a YouTube live link")
+                .placeholder("Twitch channel or link, a YouTube live link, /mentions or /whispers")
         });
         cx.subscribe_in(&input, window, |this: &mut Self, _, event, window, cx| {
             if this.adding && matches!(event, InputEvent::PressEnter { shift: false, .. }) {
@@ -965,7 +966,10 @@ impl Workbench {
                 if let Some(channels) = item["channels"].as_array() {
                     for channel in channels.iter() {
                         if let Some(name) = channel.as_str().and_then(|n| {
-                            valid_channel(n)
+                            // Special tabs first: channel cleanup would turn "/mentions" into "mentions".
+                            crate::combined::special_title(n)
+                                .map(|_| n.to_owned())
+                                .or_else(|| valid_channel(n))
                                 .or_else(|| crate::combined::from_saved(n))
                                 .or_else(|| crate::youtube::parse(n))
                         }) && !panes.iter().any(|p: &Entity<ChannelPane>| {
@@ -993,15 +997,11 @@ impl Workbench {
                     .iter()
                     .map(|p| p.read(cx).name.to_string())
                     .collect::<Vec<_>>();
+                // A saved layout that doesn't match the channels that loaded is
+                // repaired (missing names dropped, unplaced channels added as tabs),
+                // never thrown away: the fallback would put every channel in its own split.
                 let dock = Dock::from_json(&item["dock"])
-                    .filter(|d| {
-                        let mut actual = Vec::new();
-                        d.names(&mut actual);
-                        let mut expected = names.clone();
-                        actual.sort();
-                        expected.sort();
-                        actual == expected
-                    })
+                    .and_then(|d| crate::dock::reconcile(d, &names))
                     .or_else(|| {
                         Dock::legacy(&names, item["vertical"].as_bool().unwrap_or(false), &sizes)
                     });
@@ -1459,7 +1459,13 @@ impl Workbench {
             .live
             .configure(identity.clone(), priority, moderated, own)
         {
-            for pane in &panes {
+            // Special tabs (Mentions, Whispers) never connect, so they never reset.
+            let connecting: Vec<_> = panes
+                .iter()
+                .filter(|p| !crate::combined::is_special(&p.read(cx).name))
+                .cloned()
+                .collect();
+            for pane in &connecting {
                 pane.update(cx, |p, cx| {
                     p.connected = false;
                     p.room_settings = None;
@@ -2105,6 +2111,20 @@ impl Workbench {
                 cx,
             )
         });
+        if let Some(title) = crate::combined::special_title(name) {
+            pane.update(cx, |p, _| {
+                p.display_title = Some(title.into());
+                p.connected = true;
+                p.connection = if name == crate::combined::MENTIONS {
+                    "Mentions, replies and highlights from all your open channels collect here."
+                        .into()
+                } else {
+                    "Whispers you receive collect here. Type /w name message to whisper.".into()
+                };
+                // It only shows copies; the source channel already pinged.
+                p.quiet_pings = true;
+            });
+        }
         pane.update(cx, |p, _| {
             p.timestamps = self.timestamps;
             p.pause_mode = self.pause_mode;
@@ -2242,7 +2262,11 @@ impl Workbench {
                 return;
             }
             if let PaneEvent::TwitchCommand { request, draft } = event {
-                let destination = this.destination(pane, None, &channel, cx);
+                let destination = if crate::combined::is_special(&channel) {
+                    this.account.read(cx).login().unwrap_or_default()
+                } else {
+                    this.destination(pane, None, &channel, cx)
+                };
                 this.run_twitch_command(
                     pane.clone(),
                     destination,
@@ -2292,6 +2316,28 @@ impl Workbench {
             if let PaneEvent::Ping(ping, id) = event {
                 if !this.muted_pings.contains(&channel) {
                     this.ping(*ping, id, window);
+                }
+                // Mentions tabs get a copy, tagged with the channel it came from.
+                let found = if crate::combined::is_special(&channel) {
+                    None
+                } else {
+                    let p = pane.read(cx);
+                    let timeline = p.timeline.borrow();
+                    timeline.messages().iter().find(|m| &m.id == id).cloned()
+                };
+                if let Some(mut message) = found {
+                    if message.presentation.origin.is_none() {
+                        message.presentation.origin = Some(message.channel_id.clone());
+                    }
+                    message.channel_id = crate::combined::MENTIONS.into();
+                    for target in this.panes() {
+                        if target.read(cx).name.as_ref() == crate::combined::MENTIONS {
+                            let copy = message.clone();
+                            target.update(cx, |p, cx| {
+                                p.received(chat_core::Event::Message(copy), cx)
+                            });
+                        }
+                    }
                 }
                 return;
             }
@@ -3228,6 +3274,20 @@ impl Workbench {
                 return;
             }
             self.tabs[self.active].name = value;
+        } else if let Some(special) = [crate::combined::MENTIONS, crate::combined::WHISPERS]
+            .into_iter()
+            .find(|s| value.eq_ignore_ascii_case(s))
+        {
+            if self.tabs[self.active]
+                .panes
+                .iter()
+                .any(|p| p.read(cx).name.as_ref() == special)
+            {
+                self.add_error = Some("That tab is already in this workspace".into());
+                cx.notify();
+                return;
+            }
+            self.add_channel_to_active(special.to_owned(), window, cx);
         } else if let Some(video) = crate::youtube::parse(&value) {
             if self.tabs[self.active]
                 .panes
@@ -3943,6 +4003,8 @@ impl Workbench {
                                     .filter(|t| !t.is_empty())
                                     .unwrap_or_else(|| "YouTube".into());
                                 title
+                            } else if let Some(title) = crate::combined::special_title(&channel) {
+                                title.to_owned()
                             } else {
                                 format!("#{}", crate::combined::title(&channel))
                             })

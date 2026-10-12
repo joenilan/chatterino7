@@ -120,6 +120,9 @@ impl Streams {
         std::mem::take(&mut self.went_live)
     }
     pub fn pump(&mut self, identity: Option<Identity>, mut channels: Vec<String>) -> bool {
+        // Only real Twitch logins: one invalid name (a /mentions tab, a YouTube
+        // stream) would make Twitch reject the whole batch.
+        channels.retain(|c| chat_core::twitch_login(c).as_deref() == Some(c.as_str()));
         channels.sort();
         channels.dedup();
         let mut changed = false;

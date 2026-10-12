@@ -63,6 +63,20 @@ pub fn sources(name: &str) -> Vec<String> {
         None => vec![name.to_owned()],
     }
 }
+/// Special tabs that collect from everywhere instead of reading one chat
+/// (Chatterino's /mentions and /whispers). They never connect to Twitch.
+pub const MENTIONS: &str = "/mentions";
+pub const WHISPERS: &str = "/whispers";
+pub fn is_special(name: &str) -> bool {
+    name.starts_with('/')
+}
+pub fn special_title(name: &str) -> Option<&'static str> {
+    match name {
+        MENTIONS => Some("Mentions"),
+        WHISPERS => Some("Whispers"),
+        _ => None,
+    }
+}
 pub fn is_combined(name: &str) -> bool {
     name.starts_with('+')
 }

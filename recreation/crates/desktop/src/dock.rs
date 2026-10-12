@@ -454,9 +454,42 @@ impl Dock {
     }
 }
 
+/// Make a saved layout fit the channels that actually loaded: drop names that
+/// didn't load, and add loaded channels the layout lacks as tabs beside the
+/// first group. None only when nothing in the layout survived.
+pub fn reconcile(mut dock: Dock, names: &[String]) -> Option<Dock> {
+    let mut present = Vec::new();
+    dock.names(&mut present);
+    for gone in present.iter().filter(|n| !names.contains(n)) {
+        dock = dock.remove(gone)?;
+    }
+    let mut placed = Vec::new();
+    dock.names(&mut placed);
+    for name in names.iter().filter(|n| !placed.contains(n)) {
+        let mut first = Vec::new();
+        dock.active_names(&mut first);
+        let target = first.first().cloned()?;
+        dock.tabify(&target, name.clone());
+    }
+    Some(dock)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reconcile_repairs_instead_of_resetting() {
+        let deck = Dock::Deck {
+            channels: vec!["a".into(), "/mentions".into(), "b".into()],
+            active: "a".into(),
+        };
+        // "/mentions" didn't load and "c" isn't in the layout: still one group.
+        let fixed = reconcile(deck, &["a".into(), "b".into(), "c".into()]).unwrap();
+        let mut names = Vec::new();
+        fixed.names(&mut names);
+        names.sort();
+        assert_eq!(names, ["a", "b", "c"]);
+        assert!(matches!(fixed, Dock::Deck { .. }));
+    }
     #[test]
     fn pin_first_moves_into_primary_group() {
         let dock = Dock::Split {

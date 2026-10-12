@@ -23,6 +23,45 @@ impl Workbench {
         {
             return;
         }
+        // Whispers tabs get every whisper (only "a whisper arrived" in streamer mode).
+        let whisper_tabs: Vec<_> = self
+            .panes()
+            .into_iter()
+            .filter(|p| p.read(cx).name.as_ref() == crate::combined::WHISPERS)
+            .collect();
+        if !whisper_tabs.is_empty() {
+            let hidden = self.streamer_live;
+            let message = chat_core::Message {
+                sent_at: Some(chrono::Utc::now().timestamp()),
+                id: format!("whisper:{id}"),
+                channel_id: crate::combined::WHISPERS.into(),
+                user_id: format!("whisper:{from_login}"),
+                display_name: if hidden {
+                    "Whisper".into()
+                } else if from_name.is_empty() {
+                    from_login.clone()
+                } else {
+                    from_name.clone()
+                },
+                login: (!hidden).then(|| from_login.clone()),
+                reply: None,
+                mentions: vec![],
+                replyable: false,
+                name_color: None,
+                badges: vec![],
+                fragments: vec![chat_core::Fragment::Text(if hidden {
+                    "(hidden while streamer mode is on)".into()
+                } else {
+                    text.clone()
+                })],
+                presentation: Default::default(),
+                deleted: false,
+            };
+            for pane in whisper_tabs {
+                let copy = message.clone();
+                pane.update(cx, |p, cx| p.received(chat_core::Event::Message(copy), cx));
+            }
+        }
         let looking = reading && self.whispers.selected.as_deref() == Some(from_login.as_str());
         if !looking && self.streamer_live {
             // Streamer mode: say that one arrived, never who or what.
