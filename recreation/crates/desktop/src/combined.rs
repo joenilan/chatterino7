@@ -36,10 +36,6 @@ impl Platform {
             .find(|p| p.key() == key)
     }
 }
-/// The platforms a combined feed draws from, Twitch first.
-pub fn platforms(name: &str) -> Vec<Platform> {
-    platforms_of(&sources(name))
-}
 /// The platforms among some sources, Twitch first.
 pub fn platforms_of(sources: &[String]) -> Vec<Platform> {
     [Platform::Twitch, Platform::YouTube]
@@ -141,8 +137,11 @@ mod tests {
         assert_eq!(name, "+dreadedzombie,yt:dQw4w9WgXcQ");
         assert_eq!(from_saved(&name).as_deref(), Some(name.as_str()));
         assert_eq!(title(&name), "dreadedzombie + YouTube");
-        assert_eq!(platforms(&name), vec![Platform::Twitch, Platform::YouTube]);
-        assert_eq!(platforms("+a,b"), vec![Platform::Twitch]);
+        assert_eq!(
+            platforms_of(&sources(&name)),
+            vec![Platform::Twitch, Platform::YouTube]
+        );
+        assert_eq!(platforms_of(&sources("+a,b")), vec![Platform::Twitch]);
         assert_eq!(label("yt:dQw4w9WgXcQ"), "YouTube");
         assert_eq!(Platform::from_key("youtube"), Some(Platform::YouTube));
     }

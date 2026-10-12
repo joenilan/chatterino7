@@ -448,7 +448,7 @@ impl Workbench {
         json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()})
     }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"own_extras_refused":self.own_extras_refused,"automod_channels":self.mod_automod_channels,"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"capabilities":self.capabilities.inspection(),"seventv_presence":self.presence.last.lock().map(|s|s.clone()).unwrap_or_default(),"roles":self.panes().iter().map(|p|{let p=p.read(cx);(p.name.to_string(),p.role.map(|r|r.label()))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
+        json!({"own_extras_refused":self.own_extras_refused,"automod_channels":self.mod_automod_channels,"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"capabilities":self.capabilities.inspection(),"seventv_presence":self.presence.last.lock().map(|s|s.clone()).unwrap_or_default(),"roles":self.panes().iter().map(|p|{let p=p.read(cx);(p.name.to_string(),p.role.map(|r|r.label()))}).collect::<BTreeMap<_,_>>(),"shared_sessions":self.panes().iter().filter_map(|p|{let p=p.read(cx);p.shared_session.clone().map(|s|(p.name.to_string(),json!({"participants":s,"hidden":p.hidden_sources})))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
     }
     /// Channels to connect, highest priority first: visible panes, the rest of the
     /// active workspace, then other workspaces by most recent use. Beyond the
@@ -710,6 +710,10 @@ impl Workbench {
                     std::sync::atomic::Ordering::Relaxed,
                 );
                 crate::chat_search::load_saved(&state["saved_filters"]);
+                crate::shared_chat::STYLE.store(
+                    state["shared_chat_style"].as_u64().unwrap_or(0).min(3) as u8,
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 chat_core::NAME_MODE.store(
                     state["name_mode"].as_u64().unwrap_or(2).min(2) as u8,
                     std::sync::atomic::Ordering::Relaxed,
@@ -2557,6 +2561,7 @@ impl Workbench {
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
         value["saved_filters"] = crate::chat_search::saved_json();
+        value["shared_chat_style"] = json!(crate::shared_chat::style());
         value["on_top"] = json!(self.on_top);
         value["name_mode"] = json!(chat_core::NAME_MODE.load(std::sync::atomic::Ordering::Relaxed));
         value["separators"] = json!(crate::theme::flag(&crate::theme::SEPARATORS));
@@ -2887,6 +2892,12 @@ impl Workbench {
         }
         if self.shared_chat.pump() {
             cx.notify();
+        }
+        for pane in self.panes() {
+            let name = pane.read(cx).name.to_string();
+            let session = self.shared_chat.get(&name).map(|s| s.participants.clone());
+            let own = self.catalog.borrow().channel_id(&name);
+            pane.update(cx, |p, cx| p.set_shared_session(session, own, cx));
         }
     }
     /// "+N" and the names for a channel's Shared Chat session, if it has one.

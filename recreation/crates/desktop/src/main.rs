@@ -258,6 +258,11 @@ struct ChannelPane {
     view_filter: Option<(String, std::rc::Rc<chat_search::Query>)>,
     /// Combined feeds: platforms whose messages are hidden here.
     pub(crate) hidden_platforms: Vec<combined::Platform>,
+    /// Shared Chat: broadcaster IDs in this channel's session (host first), this
+    /// channel's own ID, and the channels whose messages are hidden here.
+    pub(crate) shared_session: Option<Vec<String>>,
+    pub(crate) shared_own: Option<String>,
+    pub(crate) hidden_sources: Vec<String>,
     /// User card: follow dates by user ID (Ok(None) = not following, Err = unavailable).
     pub(crate) follow_ages: std::collections::HashMap<String, Result<Option<String>, String>>,
     /// User card in your own channel: subscription by user ID (None = not subscribed).
@@ -375,6 +380,9 @@ impl ChannelPane {
             spelling: Vec::new(),
             view_filter: None,
             hidden_platforms: Vec::new(),
+            shared_session: None,
+            shared_own: None,
+            hidden_sources: Vec::new(),
             follow_ages: Default::default(),
             sub_status: Default::default(),
             last_sent: None,
@@ -758,6 +766,18 @@ impl Render for ChannelPane {
         let highlight_colors = self.attention.colors.clone();
         let view_filter = self.view_filter.as_ref().map(|(_, q)| q.clone());
         let hidden_platforms = self.hidden_platforms.clone();
+        // Shared Chat: colours per guest channel, hidden channels, and the look.
+        let shared_style = shared_chat::style();
+        let shared_colors = self
+            .shared_session
+            .as_ref()
+            .map(|s| shared_chat::colors(s, self.shared_own.as_deref()))
+            .unwrap_or_default();
+        let hidden_sources = self.hidden_sources.clone();
+        let own_hidden = self
+            .shared_own
+            .as_ref()
+            .is_some_and(|own| self.hidden_sources.contains(own));
         // Name the Twitch channel on each message only when several are mixed.
         let origin_names = self
             .all_sources()
@@ -897,6 +917,7 @@ impl Render for ChannelPane {
                     )
                     .children(self.render_filter_chip(cx))
                     .children(self.render_platform_toggles(cx))
+                    .children(self.render_shared_avatars(cx))
                     .child(
                         div()
                             .min_w_0()
@@ -976,6 +997,10 @@ impl Render for ChannelPane {
                             };
                             // A filtered-out row draws nothing (rows have no padding of their own).
                             if (message.deleted && theme::flag(&theme::HIDE_DELETED))
+                                || match &message.presentation.source_id {
+                                    Some(source) => hidden_sources.contains(source),
+                                    None => own_hidden,
+                                }
                                 || view_filter.as_ref().is_some_and(|q| q.matches(message).is_none())
                                 || (!hidden_platforms.is_empty() && hidden_platforms.contains(&message.presentation.origin.as_deref().map(combined::Platform::of).unwrap_or(combined::Platform::Twitch))) {
                                 return div().into_any_element();
@@ -1041,6 +1066,11 @@ impl Render for ChannelPane {
                                 .when(theme::flag(&theme::SEPARATORS), |el| el.child(div().absolute().left_0().right_0().bottom_0().h(px(1.)).bg(rgb(theme::BORDER))))
                                 .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(0xA99CF40D)).py(px(2.)).rounded_r(px(4.)))
                                 .when(highlight_rows.contains(&row),|el|{let (_,accent,background)=highlight_rules::COLORS[highlight_colors.get(&row).copied().unwrap_or(0)];el.bg(rgb(background)).border_color(rgb(accent)).py(px(2.)).rounded_r(px(4.))})
+                                // Shared Chat: a stripe (and light tint) in the guest channel's colour; yours stays plain.
+                                .when_some(message.presentation.source_id.as_ref().filter(|_| shared_style < 3).map(|id| shared_colors.get(id).copied().unwrap_or_else(|| shared_chat::color_of(id))), |el, color| {
+                                    let el = el.border_color(rgb(color));
+                                    if shared_style == 0 && !highlight_rows.contains(&row) { el.bg(rgba((color << 8) | 0x14)) } else { el }
+                                })
                                 .on_prepaint(move|bounds,window,cx|{
                                     let clip=window.content_mask().bounds;
                                     if following&&eligible.get()&&window.is_window_active()&&!window.has_active_dialog(cx)
@@ -1054,7 +1084,7 @@ impl Render for ChannelPane {
                                 .left(px(12.0 * (1.0 - eased)))
                                 .top(px(6.0 * (1.0 - eased)))
                                 // Recent history is dimmed, as in Chatterino.
-                                .opacity(if message.presentation.similar { 0.4 } else if message.presentation.historical { 0.6 } else { 0.25 + 0.75 * eased })
+                                .opacity((if message.presentation.similar { 0.4 } else if message.presentation.historical { 0.6 } else { 0.25 + 0.75 * eased }) * if shared_style == 2 && message.presentation.source_id.is_some() { 0.55 } else { 1.0 })
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()

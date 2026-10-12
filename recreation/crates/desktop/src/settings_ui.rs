@@ -365,6 +365,18 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "Shared chat",
+                    "When streamers share chat, messages from the other channels get their streamer's colour (shown on the avatars in the channel header). Your own chat stays plain.",
+                    gpui_kit::component::tab::TabBar::new("settings-shared-chat")
+                        .segmented()
+                        .selected_index(crate::shared_chat::style() as usize)
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            crate::shared_chat::STYLE.store((*index).min(3) as u8, std::sync::atomic::Ordering::Relaxed);
+                            this.remeasure_all(cx);
+                        }))
+                        .children(crate::shared_chat::STYLES.map(|l| gpui_kit::component::tab::Tab::new().label(l))),
+                ))
+                .child(row(
                     "Show pronouns",
                     format!("On user cards, from {} (as Chatterino does). It sees the names of chatters whose cards you open.", crate::pronouns::SERVICE),
                     Switch::new("settings-pronouns").checked(crate::pronouns::enabled()).on_click(cx.listener(|this, on: &bool, _, cx| {
