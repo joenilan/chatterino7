@@ -36,7 +36,11 @@ Methods:
 - pointer: kind down/move/up, x/y, optional left/right button, held, shift, and `clicks` (1–3) for double/triple-click gestures.
 - key: a GPUI keystroke name; key-down and key-up are both dispatched.
 - text: single-line committed text, at most 2048 bytes, to the focused editor.
-- scroll: x/y and signed lines from -120 to 120.
+- scroll: x/y plus either signed `lines` (-120 to 120, wheel notches; negative scrolls down) or `pixels`/`dy`
+  (-20000 to 20000; positive scrolls down). Also accepted as `{"method":"pointer","kind":"scroll",...}`.
+  Scroll applies to whatever is under x/y, including dialogs such as Settings.
+- hover: send two `pointer` `move` events a pixel apart over the target, then wait about a second; tooltips,
+  emote cards and link previews open the same way as with a real mouse.
 - resize: width/height within 1050x640 through 8192x8192.
 
 No fixture injection or test controls are part of the protocol. A successful

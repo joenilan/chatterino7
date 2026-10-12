@@ -321,10 +321,15 @@ pub fn dispatch(
             };
             // Optional click count (1–3) for double/triple-click gestures.
             let clicks = request["clicks"].as_u64().unwrap_or(1).clamp(1, 3) as usize;
+            if request["kind"].as_str() == Some("scroll") {
+                let mut scroll = request.clone();
+                scroll["method"] = json!("scroll");
+                return dispatch(view, &scroll, window, cx);
+            }
             let kind = request["kind"]
                 .as_str()
                 .filter(|k| matches!(*k, "move" | "down" | "up"))
-                .ok_or("Use down/move/up, one event per call")?;
+                .ok_or("Use down/move/up/scroll, one event per call")?;
             view.update(cx, |view, _| view.control_pointer(true));
             match kind {
                 "move" => {
@@ -371,19 +376,31 @@ pub fn dispatch(
             view.update(cx, |view, _| view.control_pointer(false));
             Ok(json!({"dispatched":true}))
         }
+        // Also reachable as {"method":"pointer","kind":"scroll",...}.
         "scroll" => {
             let position = point(
                 px(number(request, "x", 16384.)?),
                 px(number(request, "y", 16384.)?),
             );
-            let lines = request["lines"]
-                .as_i64()
-                .filter(|n| (-120..=120).contains(n))
-                .ok_or("Invalid scroll lines")?;
+            // "lines" (wheel notches; negative scrolls down the page) or "pixels"/"dy"
+            // (positive dy scrolls down, like a trackpad).
+            let delta = if let Some(lines) = request["lines"].as_f64() {
+                if !(-120.0..=120.0).contains(&lines) {
+                    return Err("Invalid scroll lines (-120 to 120)".into());
+                }
+                ScrollDelta::Lines(point(0., lines as f32))
+            } else if let Some(pixels) = request["pixels"].as_f64().or(request["dy"].as_f64()) {
+                if !(-20000.0..=20000.0).contains(&pixels) {
+                    return Err("Invalid scroll pixels (-20000 to 20000)".into());
+                }
+                ScrollDelta::Pixels(point(px(0.), px(-pixels as f32)))
+            } else {
+                return Err("Scroll needs \"lines\" or \"pixels\"".into());
+            };
             window.dispatch_event(
                 ScrollWheelEvent {
                     position,
-                    delta: ScrollDelta::Lines(point(0., lines as f32)),
+                    delta,
                     modifiers: Modifiers {
                         control: request["control"].as_bool().unwrap_or(false),
                         ..Default::default()
