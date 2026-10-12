@@ -261,6 +261,9 @@ pub struct Workbench {
     stats_tick: u64,
     /// Latest connection state per channel (for combined feeds).
     channel_ready: std::collections::HashMap<String, bool>,
+    /// Joins and parts waiting to be posted: channel → (joined, left).
+    membership: std::collections::HashMap<String, (Vec<String>, Vec<String>)>,
+    membership_flushed: std::time::Instant,
     /// Live chat held per channel until its recent history arrives (≤ 6 s).
     recent_holding: std::collections::HashMap<String, (std::time::Instant, Vec<chat_core::Event>)>,
     youtube: crate::youtube::YouTube,
@@ -757,6 +760,8 @@ impl Workbench {
             stats_tick: 0,
             channel_ready: Default::default(),
             recent_holding: Default::default(),
+            membership: Default::default(),
+            membership_flushed: std::time::Instant::now(),
             youtube: crate::youtube::YouTube::new(),
             youtube_key_loaded: false,
             guide_status: None,
@@ -866,6 +871,10 @@ impl Workbench {
                         std::sync::atomic::Ordering::Relaxed,
                     );
                 }
+                crate::anon_chat::SHOW_MEMBERSHIP.store(
+                    state["joins_parts"].as_bool().unwrap_or(false),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 crate::mention_names::COLOR_MENTIONS.store(
                     state["mentions"]["color"].as_bool().unwrap_or(true),
                     std::sync::atomic::Ordering::Relaxed,
@@ -1197,6 +1206,7 @@ impl Workbench {
         self.pump_live_alerts(window, cx);
         self.pump_imported_nicknames(cx);
         self.pump_recent_messages(cx);
+        self.flush_membership(cx);
         self.ensure_anchor(window, cx);
         if !self.bot_started {
             self.bot_started = true;
@@ -1571,9 +1581,8 @@ impl Workbench {
                 self.anon.events.try_recv().map(|event| {
                     let wanted = guest
                         || match &event {
-                            crate::live::Event::Chat(_, chat_core::Event::Moderation { .. }) => {
-                                true
-                            }
+                            crate::live::Event::Chat(_, chat_core::Event::Moderation { .. })
+                            | crate::live::Event::Membership(..) => true,
                             crate::live::Event::Chat(channel, _) => {
                                 self.channel_ready.get(channel) != Some(&true)
                             }
@@ -1732,6 +1741,16 @@ impl Workbench {
                         continue;
                     }
                     self.deliver_chat(&panes, &channel, event, cx);
+                }
+                crate::live::Event::Membership(channel, login, joined) => {
+                    if crate::anon_chat::SHOW_MEMBERSHIP.load(std::sync::atomic::Ordering::Relaxed)
+                    {
+                        let entry = self.membership.entry(channel).or_default();
+                        let list = if joined { &mut entry.0 } else { &mut entry.1 };
+                        if !list.contains(&login) && list.len() < 500 {
+                            list.push(login);
+                        }
+                    }
                 }
                 crate::live::Event::Sent(request, result) => {
                     // Share 7TV activity for the channel this send came from.
@@ -2657,6 +2676,50 @@ impl Workbench {
             );
         }
     }
+    /// Joins and parts, gathered for a few seconds then posted as one line each
+    /// ("Joined: a, b, c"), like Chatterino.
+    fn flush_membership(&mut self, cx: &mut Context<Self>) {
+        if self.membership.is_empty() || self.membership_flushed.elapsed() < Duration::from_secs(5)
+        {
+            return;
+        }
+        self.membership_flushed = std::time::Instant::now();
+        let panes = self.panes();
+        for (channel, (joined, parted)) in std::mem::take(&mut self.membership) {
+            for (label, names) in [("Joined", joined), ("Left", parted)] {
+                if names.is_empty() {
+                    continue;
+                }
+                let shown = names
+                    .iter()
+                    .take(40)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let more = names.len().saturating_sub(40);
+                let text = if more > 0 {
+                    format!("{label}: {shown} and {more} more")
+                } else {
+                    format!("{label}: {shown}")
+                };
+                let id = format!("system:membership:{}", self.next_notice);
+                self.next_notice += 1;
+                let notice = chat_core::system_notice(
+                    &channel,
+                    id,
+                    Some(chrono::Utc::now().timestamp()),
+                    text,
+                );
+                for pane in &panes {
+                    if pane.read(cx).name.as_ref() != channel {
+                        continue;
+                    }
+                    let copy = notice.clone();
+                    pane.update(cx, |p, cx| p.received(chat_core::Event::Message(copy), cx));
+                }
+            }
+        }
+    }
     /// Live tabs: one line per channel going live, tagged with the channel.
     fn post_live(&mut self, login: &str, label: &str, detail: &str, cx: &mut Context<Self>) {
         let targets: Vec<_> = self
@@ -2989,6 +3052,8 @@ impl Workbench {
         value["popouts"] = json!(self.popout_channels(cx));
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
+        value["joins_parts"] =
+            json!(crate::anon_chat::SHOW_MEMBERSHIP.load(std::sync::atomic::Ordering::Relaxed));
         value["recent_limit"] =
             json!(crate::recent_messages::LIMIT.load(std::sync::atomic::Ordering::Relaxed));
         {

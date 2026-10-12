@@ -189,6 +189,9 @@ pub enum Live {
     Clear,
     /// The channel's Twitch ID (ROOMSTATE), for its emotes.
     Room(String),
+    /// A chatter joined (true) or left (false); Twitch only sends these in
+    /// channels with fewer than 1,000 chatters.
+    Membership(String, bool),
 }
 /// Parse one live IRC line into (channel login, event).
 pub fn live_line(line: &str) -> Option<(String, Live)> {
@@ -207,6 +210,10 @@ pub fn live_line(line: &str) -> Option<(String, Live)> {
             None => Live::Clear,
         },
         "ROOMSTATE" => Live::Room(irc.tags.get("room-id").filter(|id| !id.is_empty())?.clone()),
+        // Guests (justinfan…) are anonymous readers like us; never shown.
+        "JOIN" | "PART" if !irc.nick.is_empty() && !irc.nick.starts_with("justinfan") => {
+            Live::Membership(irc.nick.to_ascii_lowercase(), irc.command == "JOIN")
+        }
         _ => return None,
     };
     Some((channel, live))
@@ -449,6 +456,11 @@ mod tests {
         assert_eq!(duration(600), "10m");
         assert_eq!(duration(1_209_600), "14d");
         assert!(live_line(":tmi.twitch.tv 001 justinfan1 :Welcome").is_none());
+        assert!(matches!(
+            live_line(":bob!bob@bob.tmi.twitch.tv JOIN #chan").unwrap().1,
+            Live::Membership(login, true) if login == "bob"
+        ));
+        assert!(live_line(":justinfan5!justinfan5@justinfan5.tmi.twitch.tv PART #chan").is_none());
     }
     #[test]
     fn escaped_tags() {

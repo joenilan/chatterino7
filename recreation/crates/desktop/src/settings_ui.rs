@@ -477,6 +477,18 @@ impl Workbench {
                         }))),
                 ))
                 .child(row(
+                    "Joins and parts",
+                    "Chatters arriving and leaving, listed every few seconds. Twitch only reports these in channels with fewer than 1,000 chatters.",
+                    Switch::new("settings-joins-parts")
+                        .checked(crate::anon_chat::SHOW_MEMBERSHIP.load(std::sync::atomic::Ordering::Relaxed))
+                        .on_click(cx.listener(|this, on: &bool, _, cx| {
+                            crate::anon_chat::SHOW_MEMBERSHIP.store(*on, std::sync::atomic::Ordering::Relaxed);
+                            this.membership.clear();
+                            this.schedule_save(cx);
+                            cx.notify();
+                        })),
+                ))
+                .child(row(
                     "Save chat logs",
                     "A text file per channel per day, like Chatterino's logs. Off by default.",
                     Switch::new("settings-logs").checked(self.logs_enabled).on_click(cx.listener(|this, on: &bool, _, cx| {

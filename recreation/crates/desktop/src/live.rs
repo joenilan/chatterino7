@@ -64,6 +64,8 @@ pub enum Event {
         text: String,
     },
     RoomSettings(String, crate::room_settings::RoomSettings, bool),
+    /// A chatter joined (true) or left (false) a channel, from IRC.
+    Membership(String, String, bool),
     Chat(String, ChatEvent),
     Sent(u64, Result<(), String>),
 }

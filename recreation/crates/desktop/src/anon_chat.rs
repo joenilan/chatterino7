@@ -17,6 +17,9 @@ const HOST: &str = "irc-ws.chat.twitch.tv";
 const JOINS_PER_WINDOW: usize = 20;
 const MAX_CHANNELS: usize = 100;
 pub const STATUS: &str = "Reading as a guest · sign in to chat";
+/// Settings → Chat → Joins and parts.
+pub static SHOW_MEMBERSHIP: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 type Socket = tungstenite::WebSocket<MaybeTlsStream<TcpStream>>;
 
@@ -121,7 +124,10 @@ fn session(
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.subsec_nanos() % 80_000)
             .unwrap_or(0);
-    send(&mut socket, "CAP REQ :twitch.tv/tags twitch.tv/commands")?;
+    send(
+        &mut socket,
+        "CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership",
+    )?;
     send(&mut socket, "PASS SCHMOOPIIE")?;
     send(&mut socket, &format!("NICK justinfan{guest}"))?;
     let mut joins: Vec<Instant> = Vec::new();
@@ -209,6 +215,7 @@ fn deliver(line: &str, joined: &HashSet<String>, names: &mut Names, tx: &mpsc::S
     }
     let event = match live {
         Live::Room(id) => Event::Resolved(channel, id),
+        Live::Membership(login, joined) => Event::Membership(channel, login, joined),
         Live::Message(message) => {
             if names.len() > 50_000 {
                 names.clear();
