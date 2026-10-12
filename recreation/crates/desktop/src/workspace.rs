@@ -261,6 +261,8 @@ pub struct Workbench {
     stats_tick: u64,
     /// Latest connection state per channel (for combined feeds).
     channel_ready: std::collections::HashMap<String, bool>,
+    /// Live chat held per channel until its recent history arrives (≤ 6 s).
+    recent_holding: std::collections::HashMap<String, (std::time::Instant, Vec<chat_core::Event>)>,
     youtube: crate::youtube::YouTube,
     youtube_key_loaded: bool,
     /// The open setup guide's result line: (ok, text).
@@ -754,6 +756,7 @@ impl Workbench {
             peak_viewers: 0,
             stats_tick: 0,
             channel_ready: Default::default(),
+            recent_holding: Default::default(),
             youtube: crate::youtube::YouTube::new(),
             youtube_key_loaded: false,
             guide_status: None,
@@ -856,6 +859,12 @@ impl Workbench {
                             crate::similarity::FLAGS[index].store(on, Relaxed);
                         }
                     }
+                }
+                if let Some(index) = state["recent_limit"].as_u64() {
+                    crate::recent_messages::LIMIT.store(
+                        (index as usize).min(crate::recent_messages::LIMITS.len() - 1),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
                 }
                 crate::mention_names::COLOR_MENTIONS.store(
                     state["mentions"]["color"].as_bool().unwrap_or(true),
@@ -1717,29 +1726,12 @@ impl Workbench {
                     if self.logs_enabled {
                         self.log_event(&channel, &event, cx);
                     }
-                    let moderation = !matches!(&event, chat_core::Event::Message(_));
-                    for pane in panes.iter().chain(
-                        self.closed_tabs
-                            .iter()
-                            .flat_map(|tab| tab.panes.iter())
-                            .filter(|_| moderation),
-                    ) {
-                        let name = pane.read(cx).name.to_string();
-                        if crate::combined::is_combined(&name) {
-                            // Clearing one channel must not wipe the whole combined feed.
-                            if crate::combined::sources(&name).contains(&channel)
-                                && !matches!(event, chat_core::Event::ClearChannel { .. })
-                            {
-                                let mut tagged = event.clone();
-                                if let chat_core::Event::Message(m) = &mut tagged {
-                                    m.presentation.origin = Some(channel.clone());
-                                }
-                                pane.update(cx, |p, cx| p.received(tagged, cx));
-                            }
-                        } else if name == channel {
-                            pane.update(cx, |p, cx| p.received(event.clone(), cx));
-                        }
+                    // Live chat waits for the channel's history so it lands after it.
+                    if let Some((_, held)) = self.recent_holding.get_mut(&channel) {
+                        held.push(event);
+                        continue;
                     }
+                    self.deliver_chat(&panes, &channel, event, cx);
                 }
                 crate::live::Event::Sent(request, result) => {
                     // Share 7TV activity for the channel this send came from.
@@ -2718,6 +2710,39 @@ impl Workbench {
         self.schedule_save(cx);
         cx.notify();
     }
+    /// A live chat event into the panes showing its channel (and, for
+    /// moderation, closed tabs too, so reopening them is accurate).
+    fn deliver_chat(
+        &mut self,
+        panes: &[Entity<ChannelPane>],
+        channel: &str,
+        event: chat_core::Event,
+        cx: &mut Context<Self>,
+    ) {
+        let moderation = !matches!(&event, chat_core::Event::Message(_));
+        for pane in panes.iter().chain(
+            self.closed_tabs
+                .iter()
+                .flat_map(|tab| tab.panes.iter())
+                .filter(|_| moderation),
+        ) {
+            let name = pane.read(cx).name.to_string();
+            if crate::combined::is_combined(&name) {
+                // Clearing one channel must not wipe the whole combined feed.
+                if crate::combined::sources(&name).iter().any(|s| s == channel)
+                    && !matches!(event, chat_core::Event::ClearChannel { .. })
+                {
+                    let mut tagged = event.clone();
+                    if let chat_core::Event::Message(m) = &mut tagged {
+                        m.presentation.origin = Some(channel.to_owned());
+                    }
+                    pane.update(cx, |p, cx| p.received(tagged, cx));
+                }
+            } else if name == channel {
+                pane.update(cx, |p, cx| p.received(event.clone(), cx));
+            }
+        }
+    }
     /// Request recent history once per opened channel (visible ones first) and
     /// fill panes that have not received anything yet.
     fn pump_recent_messages(&mut self, cx: &mut Context<Self>) {
@@ -2731,11 +2756,26 @@ impl Workbench {
             for channel in self.connection_priority(cx) {
                 if self.recent_requested.insert(channel.clone()) {
                     self.recent.request(&channel);
+                    self.recent_holding
+                        .insert(channel.clone(), (std::time::Instant::now(), Vec::new()));
                 }
             }
         }
+        // History slow or unavailable: let held live chat through anyway.
+        let stale: Vec<String> = self
+            .recent_holding
+            .iter()
+            .filter(|(c, (since, _))| since.elapsed() > Duration::from_secs(6) || !open.contains(c))
+            .map(|(c, _)| c.clone())
+            .collect();
+        for channel in stale {
+            self.release_held(&channel, cx);
+        }
         while let Some((channel, result)) = self.recent.poll() {
-            let Ok(messages) = result else { continue };
+            let Ok(messages) = result else {
+                self.release_held(&channel, cx);
+                continue;
+            };
             for pane in &self.panes() {
                 if pane.read(cx).name.as_ref() != channel
                     || !pane.read(cx).timeline.borrow().messages().is_empty()
@@ -2749,6 +2789,16 @@ impl Workbench {
                     p.scroller.update(cx, |s, cx| s.scroll_to_end(cx));
                 });
             }
+            self.release_held(&channel, cx);
+        }
+    }
+    fn release_held(&mut self, channel: &str, cx: &mut Context<Self>) {
+        let Some((_, held)) = self.recent_holding.remove(channel) else {
+            return;
+        };
+        let panes = self.panes();
+        for event in held {
+            self.deliver_chat(&panes, channel, event, cx);
         }
     }
     /// Download the published installer, or start it once verified.
@@ -2939,6 +2989,8 @@ impl Workbench {
         value["popouts"] = json!(self.popout_channels(cx));
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
+        value["recent_limit"] =
+            json!(crate::recent_messages::LIMIT.load(std::sync::atomic::Ordering::Relaxed));
         {
             use std::sync::atomic::Ordering::Relaxed;
             let mut similar = serde_json::Map::new();

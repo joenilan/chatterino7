@@ -457,11 +457,24 @@ impl Workbench {
                 .child(row(
                     "Load recent messages",
                     format!("Recent chat when a channel opens, from {} (as Chatterino does). It sees the channel names you open.", crate::recent_messages::SERVICE),
-                    Switch::new("settings-recent").checked(self.recent_enabled).on_click(cx.listener(|this, on: &bool, _, cx| {
-                        this.recent_enabled = *on;
-                        this.schedule_save(cx);
-                        cx.notify();
-                    })),
+                    div().h_flex().gap_3().items_center()
+                        .when(self.recent_enabled, |el| {
+                            el.child(
+                                crate::theme::Segmented::new("settings-recent-limit")
+                                    .selected_index(crate::recent_messages::LIMIT.load(std::sync::atomic::Ordering::Relaxed))
+                                    .on_click(cx.listener(|this, index: &usize, _, cx| {
+                                        crate::recent_messages::LIMIT.store(*index, std::sync::atomic::Ordering::Relaxed);
+                                        this.schedule_save(cx);
+                                        cx.notify();
+                                    }))
+                                    .children(crate::recent_messages::LIMITS.map(|n| crate::theme::segment(n.to_string()))),
+                            )
+                        })
+                        .child(Switch::new("settings-recent").checked(self.recent_enabled).on_click(cx.listener(|this, on: &bool, _, cx| {
+                            this.recent_enabled = *on;
+                            this.schedule_save(cx);
+                            cx.notify();
+                        }))),
                 ))
                 .child(row(
                     "Save chat logs",

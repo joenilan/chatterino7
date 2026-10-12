@@ -7,7 +7,14 @@ use serde_json::{Value, json};
 use std::{collections::HashMap, sync::mpsc};
 
 pub const SERVICE: &str = "recent-messages.robotty.de";
-const LIMIT: usize = 500;
+/// Settings → Chat → Load recent messages: how many (an index into `LIMITS`).
+pub const LIMITS: [usize; 4] = [100, 250, 500, 800];
+pub static LIMIT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(2);
+fn limit() -> usize {
+    LIMITS[LIMIT
+        .load(std::sync::atomic::Ordering::Relaxed)
+        .min(LIMITS.len() - 1)]
+}
 const MAX_BODY: u64 = 4 * 1024 * 1024;
 
 pub struct RecentMessages {
@@ -44,7 +51,7 @@ fn fetch(client: &reqwest::blocking::Client, channel: &str) -> Result<Vec<Messag
     let login = chat_core::twitch_login(channel).ok_or("Invalid channel")?;
     let response = client
         .get(format!("https://{SERVICE}/api/v2/recent-messages/{login}"))
-        .query(&[("limit", LIMIT.to_string())])
+        .query(&[("limit", limit().to_string())])
         .header("User-Agent", concat!("Jawjack/", env!("CARGO_PKG_VERSION")))
         .send()
         .map_err(|_| "Recent messages unavailable")?;
@@ -69,7 +76,7 @@ fn fetch(client: &reqwest::blocking::Client, channel: &str) -> Result<Vec<Messag
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
-        .take(LIMIT)
+        .take(limit())
         .collect();
     Ok(convert(&lines, &login))
 }
