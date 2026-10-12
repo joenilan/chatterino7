@@ -307,7 +307,7 @@ impl Render for Editor {
             .child(Input::new(&self.alias).small())
             .child(div().h_flex().flex_wrap().gap_1()
                 .child(Button::new("appearance-color-auto").small().label("Twitch color").disabled(self.color.is_none()).on_click(cx.listener(|this,_,_,cx|{this.color=None;this.edited(cx);})))
-                .children(COLORS.iter().enumerate().map(|(i,(label,color,_))|Button::new(("appearance-color",i)).small().label(if self.color==Some(i){format!("✓ {label}")}else{label.to_string()}).text_color(rgb(*color)).selected(self.color==Some(i)).on_click(cx.listener(move|this,_,_,cx|{this.color=Some(i);this.edited(cx);})))) )
+                .children(COLORS.iter().enumerate().map(|(i,(label,color,_))|Button::new(("appearance-color",i)).small().label(*label).when(self.color==Some(i),|b|b.icon(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check))).text_color(rgb(*color)).selected(self.color==Some(i)).on_click(cx.listener(move|this,_,_,cx|{this.color=Some(i);this.edited(cx);})))) )
             .child(div().p_3().rounded(px(4.)).bg(rgb(theme::CANVAS)).v_flex().gap_1()
                 .child(div().text_color(rgb(color)).font_weight(FontWeight::SEMIBOLD).child(preview))
                 .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Nickname and color preview · not a chat message")))

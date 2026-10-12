@@ -82,11 +82,16 @@ impl Workbench {
                                     .whitespace_nowrap()
                                     .text_ellipsis()
                                     .when(won, |el| el.font_weight(FontWeight::SEMIBOLD))
-                                    .child(if won {
-                                        format!("✓ {}", choice.title)
-                                    } else {
-                                        choice.title.clone()
-                                    }),
+                                    .when(won, |el| {
+                                        el.child(
+                                            gpui_kit::component::Icon::new(
+                                                gpui_kit::assets::IconName::Check,
+                                            )
+                                            .xsmall()
+                                            .mr_1(),
+                                        )
+                                    })
+                                    .child(choice.title.clone()),
                             )
                             .child(
                                 div()

@@ -143,10 +143,11 @@ pub(super) fn mode_buttons(
             let (owner, pane, channel) = (owner.clone(), pane.clone(), channel.clone());
             Button::new(SharedString::from(format!("mode-{channel}-{label}")))
                 .xsmall()
-                .label(if on {
-                    format!("✓ {label}")
-                } else {
-                    label.to_owned()
+                .label(label)
+                .when(on, |b| {
+                    b.icon(gpui_kit::component::Icon::new(
+                        gpui_kit::assets::IconName::Check,
+                    ))
                 })
                 .selected(on)
                 .when(on, |b| b.primary())
@@ -314,11 +315,9 @@ impl Workbench {
                                 .bg(rgb(if selected { 0x272237 } else { theme::CONTROL }))
                                 .cursor_pointer()
                                 .hover(|s| s.bg(rgb(theme::HOVER)))
-                                .child(div().font_weight(FontWeight::SEMIBOLD).child(if selected {
-                                    format!("✓ {}", experience.label())
-                                } else {
-                                    experience.label().to_owned()
-                                }))
+                                .child(div().h_flex().gap_1().items_center().font_weight(FontWeight::SEMIBOLD)
+                                    .when(selected, |el| el.child(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check).small().text_color(rgb(theme::ACCENT))))
+                                    .child(experience.label()))
                                 .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(experience.description()))
                                 .on_click(move |_, window, cx| {
                                     window.close_dialog(cx);

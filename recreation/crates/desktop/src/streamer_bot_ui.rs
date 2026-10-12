@@ -190,7 +190,7 @@ impl Workbench {
                     let owner = owner.clone();
                     let toggle = action.clone();
                     div().h_flex().gap_2().items_center().min_w_0()
-                        .child(Button::new(("bot-pin", index)).xsmall().label(if on { "✓ Pinned" } else { "Pin" }).selected(on).when(on, |b| b.primary())
+                        .child(Button::new(("bot-pin", index)).xsmall().label(if on { "Pinned" } else { "Pin" }).when(on, |b| b.icon(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check))).selected(on).when(on, |b| b.primary())
                             .on_click(move |_, w, cx| {
                                 let toggle = toggle.clone();
                                 let _ = owner.update(cx, |this, cx| {

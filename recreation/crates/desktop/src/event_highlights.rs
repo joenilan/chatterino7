@@ -235,7 +235,8 @@ impl Render for Editor {
                             .child(
                                 Button::new(SharedString::from(format!("event-{key}-off")))
                                     .xsmall()
-                                    .label(if current.is_none() { "✓ Off" } else { "Off" })
+                                    .label("Off")
+                                    .when(current.is_none(), |b| b.icon(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check)))
                                     .selected(current.is_none())
                                     .when(current.is_none(), |b| b.primary())
                                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -248,7 +249,8 @@ impl Render for Editor {
                                 let selected = current == Some(index);
                                 Button::new(SharedString::from(format!("event-{key}-{index}")))
                                     .xsmall()
-                                    .label(if selected { format!("✓ {name}") } else { (*name).to_owned() })
+                                    .label(*name)
+                                    .when(selected, |b| b.icon(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check)))
                                     .selected(selected)
                                     .bg(rgb(*background))
                                     .border_1()

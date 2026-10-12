@@ -526,7 +526,7 @@ impl Render for Editor {
                 .child(Button::new("rule-case").small().label(if self.draft.case_sensitive{"Match case"}else{"Ignore case"}).on_click(cx.listener(|this,_,_,cx|{this.draft.case_sensitive = !this.draft.case_sensitive;this.edited(cx);})))
                 .when(!self.draft.regex,|el|el.child(Button::new("rule-word").small().label(if self.draft.whole_word{"Whole words"}else{"Anywhere in text"}).on_click(cx.listener(|this,_,_,cx|{this.draft.whole_word = !this.draft.whole_word;this.edited(cx);}))))))
             .child(div().h_flex().flex_wrap().gap_1().children(COLORS.iter().enumerate().map(|(index,(name,color,_))|
-                Button::new(("rule-color",index)).small().label(if self.draft.color==index{format!("✓ {name}")}else{name.to_string()}).text_color(rgb(*color)).selected(self.draft.color==index).on_click(cx.listener(move|this,_,_,cx|{this.draft.color=index;this.edited(cx);})))))
+                Button::new(("rule-color",index)).small().label(*name).when(self.draft.color==index,|b|b.icon(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check))).text_color(rgb(*color)).selected(self.draft.color==index).on_click(cx.listener(move|this,_,_,cx|{this.draft.color=index;this.edited(cx);})))))
             .child(div().h_flex().flex_wrap().items_center().gap_1()
                 .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Sound"))
                 .children(SOUNDS.iter().enumerate().map(|(index,label)|{let index=index as u8;

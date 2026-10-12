@@ -6,6 +6,7 @@ use gpui_kit::component::{
     Disableable, IconName, Sizable, StyledExt,
     button::{Button, ButtonVariants},
 };
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use std::{collections::BTreeMap, ops::Range, rc::Rc};
 
@@ -503,10 +504,11 @@ impl ChannelPane {
                 .any(|r| &self.search.query[r] == token);
             Button::new(SharedString::from(format!("search-filter-{token}")))
                 .xsmall()
-                .label(if active {
-                    format!("✓ {label}")
-                } else {
-                    label.into()
+                .label(label)
+                .when(active, |b| {
+                    b.icon(gpui_kit::component::Icon::new(
+                        gpui_kit::assets::IconName::Check,
+                    ))
                 })
                 .tooltip(format!("Toggle {token} filter"))
                 .on_click(

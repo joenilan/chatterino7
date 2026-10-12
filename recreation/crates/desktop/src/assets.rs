@@ -8,6 +8,7 @@ use std::borrow::Cow;
 gpui_kit::assets::icon_assets!(
     ExtraIcons,
     [
+        Check,
         Plus,
         Reply,
         Pencil,
