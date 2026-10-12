@@ -88,7 +88,7 @@ Chatterino import.
 - [ ] Spellcheck: more languages, personal dictionary (S)
 - [ ] Theme: light / system / custom (M) [design]
 - [x] /mentions /whispers /live as dockable tabs (Add channel or type the command)
-- [ ] Scroll speed, smooth scrolling (S)
+- [x] Scroll speed, smooth scrolling (S) — mouse wheel; touchpads keep native scrolling
 - [ ] Shared chat: badge on all messages; source routing (M)
 - [ ] Twitch GIF messages toggle (S)
 - [ ] Blocked users: display modes; hide already-shown messages (S)

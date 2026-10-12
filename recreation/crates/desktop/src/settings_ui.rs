@@ -249,6 +249,31 @@ impl Workbench {
                         .children(["Manual", "Hover", "Alt+hover"].map(|l| crate::theme::segment(l))),
                 ))
                 .child(row(
+                    "Scrolling",
+                    "How far the mouse wheel moves chat, and whether each step glides instead of jumping.",
+                    div().h_flex().gap_3().items_center()
+                        .child(
+                            crate::theme::Segmented::new("settings-scroll-speed")
+                                .selected_index(crate::message_scroller::SCROLL_SPEED.load(std::sync::atomic::Ordering::Relaxed))
+                                .on_click(cx.listener(|this, index: &usize, _, cx| {
+                                    crate::message_scroller::SCROLL_SPEED.store(*index, std::sync::atomic::Ordering::Relaxed);
+                                    this.schedule_save(cx);
+                                    cx.notify();
+                                }))
+                                .children(crate::message_scroller::SPEEDS.map(|(l, _)| crate::theme::segment(l))),
+                        )
+                        .child(
+                            gpui_kit::component::checkbox::Checkbox::new("settings-smooth-scroll")
+                                .label("Smooth")
+                                .checked(crate::message_scroller::SMOOTH_SCROLL.load(std::sync::atomic::Ordering::Relaxed))
+                                .on_click(cx.listener(|this, on: &bool, _, cx| {
+                                    crate::message_scroller::SMOOTH_SCROLL.store(*on, std::sync::atomic::Ordering::Relaxed);
+                                    this.schedule_save(cx);
+                                    cx.notify();
+                                })),
+                        ),
+                ))
+                .child(row(
                     "Chat font",
                     "The font for chat messages. Click to pick one installed on this PC.",
                     div()

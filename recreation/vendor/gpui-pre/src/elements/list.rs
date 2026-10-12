@@ -73,6 +73,10 @@ struct StateInner {
     measuring_behavior: ListMeasuringBehavior,
     pending_scroll: Option<PendingScroll>,
     follow_state: FollowState,
+    /// Jump the whole pending distance on the next paint instead of gliding.
+    smooth_jump: bool,
+    /// Distance still to scroll for an animated wheel step.
+    smooth_pending: Pixels,
 }
 
 /// Deferred scroll adjustment applied after the scroll-top item has been remeasured.
@@ -325,6 +329,8 @@ impl ListState {
             measuring_behavior: ListMeasuringBehavior::default(),
             pending_scroll: None,
             follow_state: FollowState::default(),
+            smooth_jump: false,
+            smooth_pending: px(0.),
         })));
         this.splice(0..0, item_count);
         this
@@ -559,6 +565,14 @@ impl ListState {
     /// Get the current scroll offset, in terms of the list's items.
     pub fn logical_scroll_top(&self) -> ListOffset {
         self.0.borrow().logical_scroll_top()
+    }
+
+    /// Scroll by a wheel delta (positive moves toward the top) on the next
+    /// paint, gliding over a few frames when `smooth`. The caller repaints.
+    pub fn scroll_wheel(&self, wheel_delta: Pixels, smooth: bool) {
+        let state = &mut *self.0.borrow_mut();
+        state.smooth_pending += wheel_delta;
+        state.smooth_jump = !smooth;
     }
 
     /// Scroll the list by the given offset
@@ -1597,6 +1611,28 @@ impl Element for List {
         let height = bounds.size.height;
         let scroll_top = prepaint.layout.scroll_top;
         let hitbox_id = prepaint.hitbox.id;
+        // An animated wheel step still in progress: move part of the way each frame.
+        {
+            let mut state = self.state.0.borrow_mut();
+            let pending = state.smooth_pending;
+            if pending != px(0.) {
+                let step = if state.smooth_jump || pending.abs() < px(1.) {
+                    pending
+                } else {
+                    pending * 0.3
+                };
+                state.smooth_pending = pending - step;
+                state.scroll(
+                    &scroll_top,
+                    height,
+                    point(px(0.), step),
+                    current_view,
+                    window,
+                    cx,
+                );
+                window.request_animation_frame();
+            }
+        }
         let mut accumulated_scroll_delta = ScrollDelta::default();
         window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
             if phase == DispatchPhase::Bubble && hitbox_id.should_handle_scroll(window) {

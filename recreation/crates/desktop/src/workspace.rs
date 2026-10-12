@@ -829,6 +829,16 @@ impl Workbench {
                             .store(on, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
+                if let Some(speed) = state["scrolling"]["speed"].as_u64() {
+                    crate::message_scroller::SCROLL_SPEED.store(
+                        (speed as usize).min(crate::message_scroller::SPEEDS.len() - 1),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
+                if let Some(smooth) = state["scrolling"]["smooth"].as_bool() {
+                    crate::message_scroller::SMOOTH_SCROLL
+                        .store(smooth, std::sync::atomic::Ordering::Relaxed);
+                }
                 crate::mention_names::COLOR_MENTIONS.store(
                     state["mentions"]["color"].as_bool().unwrap_or(true),
                     std::sync::atomic::Ordering::Relaxed,
@@ -2956,6 +2966,10 @@ impl Workbench {
             inputs.insert((*name).into(), json!(crate::replies::option(index)));
         }
         value["input_options"] = Value::Object(inputs);
+        value["scrolling"] = json!({
+            "speed": crate::message_scroller::SCROLL_SPEED.load(std::sync::atomic::Ordering::Relaxed),
+            "smooth": crate::message_scroller::SMOOTH_SCROLL.load(std::sync::atomic::Ordering::Relaxed),
+        });
         value["mentions"] = json!({
             "color": crate::mention_names::COLOR_MENTIONS.load(std::sync::atomic::Ordering::Relaxed),
             "find_names": crate::mention_names::FIND_NAMES.load(std::sync::atomic::Ordering::Relaxed),

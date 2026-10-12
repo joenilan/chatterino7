@@ -21,6 +21,16 @@ use gpui_kit::component::{
 };
 
 const LIST_OVERDRAW: gpui_kit::Pixels = px(400.);
+/// Settings → Appearance → Scrolling: wheel speed (an index into `SPEEDS`)
+/// and animated mouse-wheel steps.
+pub const SPEEDS: [(&str, f32); 4] = [
+    ("Slow", 0.5),
+    ("Normal", 1.),
+    ("Fast", 1.6),
+    ("Faster", 2.5),
+];
+pub static SCROLL_SPEED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+pub static SMOOTH_SCROLL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 const JUMP_BUTTON_TRANSITION: Duration = Duration::from_millis(200);
 const BOTTOM_FADE_TRANSITION: Duration = Duration::from_millis(200);
 
@@ -403,6 +413,7 @@ impl RenderOnce for MessageScroller {
                 state.is_scrolled_up() || state.paused(),
             )
         };
+
         let show_jump_button = self.jump_button && scrolled_up;
         let jump_button_visibility = if self.jump_button {
             transition(
@@ -503,6 +514,43 @@ impl RenderOnce for MessageScroller {
             .size_full()
             .min_h_0()
             .overflow_hidden()
+            // Mouse-wheel notches at the chosen speed, gliding when smooth is on.
+            // Registered before the mask below so it runs first; touchpads
+            // (precise deltas) and Ctrl+wheel zoom pass through untouched.
+            .child({
+                let list_state = list_state.clone();
+                gpui_kit::canvas(
+                    |bounds, window, _| {
+                        window.insert_hitbox(bounds, gpui_kit::HitboxBehavior::Normal)
+                    },
+                    move |_, hitbox, window, _| {
+                        let list_state = list_state.clone();
+                        window.on_mouse_event(
+                            move |event: &gpui_kit::ScrollWheelEvent, phase, window, cx| {
+                                use std::sync::atomic::Ordering::Relaxed;
+                                let gpui_kit::ScrollDelta::Lines(lines) = event.delta else {
+                                    return;
+                                };
+                                if !phase.capture()
+                                    || event.modifiers.control
+                                    || lines.y == 0.
+                                    || !hitbox.should_handle_scroll(window)
+                                {
+                                    return;
+                                }
+                                let speed =
+                                    SPEEDS[SCROLL_SPEED.load(Relaxed).min(SPEEDS.len() - 1)].1;
+                                let delta = window.line_height() * (lines.y * speed);
+                                list_state.scroll_wheel(delta, SMOOTH_SCROLL.load(Relaxed));
+                                window.refresh();
+                                cx.stop_propagation();
+                            },
+                        );
+                    },
+                )
+                .absolute()
+                .size_full()
+            })
             .child(viewport)
             // Keep vertical wheel scrolling from leaking into an ancestor
             // scroller (like in Table): the mask consumes vertical-dominant
