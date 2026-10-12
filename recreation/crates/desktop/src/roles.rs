@@ -827,7 +827,7 @@ impl Workbench {
         raid_input: &Entity<InputState>,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        use crate::follows_live::Sort;
+        use crate::follows_live::SortBy;
         use gpui_kit::component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
         let all: Vec<_> = self
             .follows_live
@@ -961,23 +961,40 @@ impl Workbench {
                                 .ghost()
                                 .xsmall()
                                 .icon(Icon::new(gpui_kit::assets::IconName::ArrowDownWideNarrow))
-                                .label(sort.label())
+                                .label(sort.by.label())
+                                .tooltip("Sort the raid list · click a field again to flip it")
                                 .dropdown_menu(move |mut menu: PopupMenu, _, _| {
-                                    for choice in Sort::RAID {
+                                    for by in [SortBy::Viewers, SortBy::LiveTime, SortBy::Name] {
                                         let owner = owner.clone();
-                                        menu = menu.item(
-                                            PopupMenuItem::new(choice.label())
-                                                .checked(choice == sort)
-                                                .on_click(move |_, _, cx| {
-                                                    let _ = owner.update(cx, |this, cx| {
-                                                        this.raid_sort = choice;
-                                                        this.schedule_save(cx);
-                                                        cx.notify();
-                                                    });
-                                                }),
-                                        );
+                                        let mut item = PopupMenuItem::new(by.label());
+                                        if by == sort.by {
+                                            item = item.icon(Icon::new(if sort.descending {
+                                                gpui_kit::component::IconName::ArrowDown
+                                            } else {
+                                                gpui_kit::component::IconName::ArrowUp
+                                            }));
+                                        }
+                                        menu = menu.item(item.on_click(move |_, _, cx| {
+                                            let _ = owner.update(cx, |this, cx| {
+                                                this.raid_sort = this.raid_sort.pick(by);
+                                                this.schedule_save(cx);
+                                                cx.notify();
+                                            });
+                                        }));
                                     }
-                                    menu
+                                    let owner = owner.clone();
+                                    menu.separator().item(
+                                        PopupMenuItem::new("Your category first")
+                                            .checked(sort.same_category_first)
+                                            .on_click(move |_, _, cx| {
+                                                let _ = owner.update(cx, |this, cx| {
+                                                    this.raid_sort.same_category_first =
+                                                        !this.raid_sort.same_category_first;
+                                                    this.schedule_save(cx);
+                                                    cx.notify();
+                                                });
+                                            }),
+                                    )
                                 }),
                         ),
                 )

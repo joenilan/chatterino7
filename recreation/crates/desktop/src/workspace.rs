@@ -678,7 +678,7 @@ impl Workbench {
             follows_open: state["follows_open"].as_bool().unwrap_or(true),
             live_sort: crate::follows_live::Sort::from_key(
                 state["live_sort"].as_str().unwrap_or(""),
-                crate::follows_live::Sort::MostViewers,
+                crate::follows_live::Sort::SIDEBAR,
             ),
             live_filter: {
                 let filter = cx.new(|cx| {
@@ -695,7 +695,7 @@ impl Workbench {
             live_filter_open: false,
             raid_sort: crate::follows_live::Sort::from_key(
                 state["raid_sort"].as_str().unwrap_or(""),
-                crate::follows_live::Sort::SameCategory,
+                crate::follows_live::Sort::RAID,
             ),
             stream_presets: crate::studio::load_presets(&state["stream_presets"]),
             obs: crate::obs::Obs::new(),
@@ -4779,7 +4779,7 @@ impl Workbench {
     /// Sidebar LIVE NOW: followed channels that are live, sortable (most viewers
     /// first by default) and filterable; hover one for its stream card.
     fn render_live_follows(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        use crate::follows_live::Sort;
+        use crate::follows_live::SortBy;
         use gpui_kit::component::menu::{DropdownMenu as _, PopupMenu};
         let all = self.follows_live.list.as_ref()?;
         let query = if self.live_filter_open {
@@ -4800,7 +4800,7 @@ impl Workbench {
         let mut last_game: Option<String> = None;
         for (index, live) in list.iter().enumerate() {
             // "By category": a small heading above each category.
-            if sort == Sort::Category && last_game.as_deref() != Some(live.game.as_str()) {
+            if sort.by == SortBy::Category && last_game.as_deref() != Some(live.game.as_str()) {
                 last_game = Some(live.game.clone());
                 rows.push(
                     div()
@@ -4916,7 +4916,7 @@ impl Workbench {
                                     .when(is_open, |el| el.text_color(rgb(theme::ACCENT)))
                                     .child(live.label().to_owned()),
                             )
-                            .when(sort != Sort::Category, |el| {
+                            .when(sort.by != SortBy::Category, |el| {
                                 el.child(
                                     div()
                                         .overflow_hidden()
@@ -4934,10 +4934,8 @@ impl Workbench {
                             .text_size(px(10.))
                             .text_color(rgb(theme::MUTED))
                             .when(!hide_counts, |el| {
-                                el.child(match sort {
-                                    Sort::LongestLive | Sort::JustWentLive => {
-                                        live.uptime().unwrap_or_default()
-                                    }
+                                el.child(match sort.by {
+                                    SortBy::LiveTime => live.uptime().unwrap_or_default(),
                                     _ => crate::follows_live::viewers(live.viewers),
                                 })
                             }),
@@ -5019,21 +5017,29 @@ impl Workbench {
                                     .icon(Icon::new(
                                         gpui_kit::assets::IconName::ArrowDownWideNarrow,
                                     ))
-                                    .tooltip(format!("Sort: {}", sort.label()))
+                                    .tooltip(format!(
+                                        "Sorted by {} · click a field again to flip it",
+                                        sort.by.label().to_lowercase()
+                                    ))
                                     .dropdown_menu(move |mut menu: PopupMenu, _, _| {
-                                        for choice in Sort::SIDEBAR {
+                                        for by in SortBy::ALL {
                                             let owner = owner.clone();
-                                            menu = menu.item(
-                                                PopupMenuItem::new(choice.label())
-                                                    .checked(choice == sort)
-                                                    .on_click(move |_, _, cx| {
-                                                        let _ = owner.update(cx, |this, cx| {
-                                                            this.live_sort = choice;
-                                                            this.schedule_save(cx);
-                                                            cx.notify();
-                                                        });
-                                                    }),
-                                            );
+                                            let mut item = PopupMenuItem::new(by.label());
+                                            // The arrow shows the direction; picking it again flips it.
+                                            if by == sort.by {
+                                                item = item.icon(Icon::new(if sort.descending {
+                                                    IconName::ArrowDown
+                                                } else {
+                                                    IconName::ArrowUp
+                                                }));
+                                            }
+                                            menu = menu.item(item.on_click(move |_, _, cx| {
+                                                let _ = owner.update(cx, |this, cx| {
+                                                    this.live_sort = this.live_sort.pick(by);
+                                                    this.schedule_save(cx);
+                                                    cx.notify();
+                                                });
+                                            }));
                                         }
                                         menu
                                     }),
