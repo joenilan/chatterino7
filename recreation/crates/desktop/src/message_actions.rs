@@ -676,6 +676,38 @@ impl ChannelPane {
                         }).unwrap_or_default())
                     });
                     let Some((channel,count,name,login,recent,badges))=current else{return dialog.title("Channel closed");};
+                    // Moderator actions for this chatter, where you can moderate (like Chatterino's user card).
+                    let role=owner.upgrade().and_then(|pane|pane.read(cx).role);
+                    let moderating=matches!(role,Some(crate::capabilities::Role::Moderator|crate::capabilities::Role::Broadcaster));
+                    let broadcaster=matches!(role,Some(crate::capabilities::Role::Broadcaster));
+                    let mod_row=login.clone().filter(|_|moderating).map(|target|{
+                        let act=|label:&'static str,id:&'static str,request:crate::twitch_actions::Request|{
+                            let owner=owner.clone();
+                            Button::new(id).small().label(label).on_click(move|_,w,cx|{w.close_dialog(cx);let request=request.clone();let _=owner.update(cx,|_,cx|cx.emit(PaneEvent::TwitchCommand{request,draft:String::new()}));})
+                        };
+                        let timeout=|s:u32|crate::twitch_actions::Request::Timeout{login:target.clone(),seconds:s,reason:String::new()};
+                        div().v_flex().gap_1().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL))
+                            .child(div().text_size(px(11.)).text_color(rgb(0xB6A9E6)).child("Moderate"))
+                            .child(div().h_flex().flex_wrap().gap_1()
+                                .child(act("1m","card-timeout-1m",timeout(60)))
+                                .child(act("10m","card-timeout-10m",timeout(600)))
+                                .child(act("1h","card-timeout-1h",timeout(3600)))
+                                .child(act("1d","card-timeout-1d",timeout(86_400)))
+                                .child({let owner=owner.clone();let target=target.clone();let channel=channel.clone();Button::new("card-ban").small().danger().label("Ban…").on_click(move|_,w,cx|{
+                                    // Same confirmation as the message menu's ban.
+                                    w.close_dialog(cx);let owner=owner.clone();let login=target.clone();let channel=channel.clone();
+                                    w.open_dialog(cx,move|dialog,_,_|{let owner=owner.clone();let login=login.clone();dialog.title(format!("Ban @{login} from #{channel}?"))
+                                        .footer(div().h_flex().justify_end().gap_2()
+                                            .child(Button::new("card-ban-cancel").small().label("Cancel").on_click(|_,w,cx|w.close_dialog(cx)))
+                                            .child(Button::new("card-ban-confirm").small().danger().label("Ban").on_click(move|_,w,cx|{w.close_dialog(cx);let login=login.clone();let _=owner.update(cx,|_,cx|cx.emit(PaneEvent::TwitchCommand{request:crate::twitch_actions::Request::Ban{login,reason:String::new()},draft:String::new()}));})))});
+                                })})
+                                .child(act("Unban","card-unban",crate::twitch_actions::Request::Unban{login:target.clone()})))
+                            .when(broadcaster,|el|el.child(div().h_flex().flex_wrap().gap_1()
+                                .child(act("Make mod","card-mod",crate::twitch_actions::Request::Moderator{login:target.clone(),add:true}))
+                                .child(act("Remove mod","card-unmod",crate::twitch_actions::Request::Moderator{login:target.clone(),add:false}))
+                                .child(act("Make VIP","card-vip",crate::twitch_actions::Request::Vip{login:target.clone(),add:true}))
+                                .child(act("Remove VIP","card-unvip",crate::twitch_actions::Request::Vip{login:target.clone(),add:false}))))
+                    });
                     if let Some(pane)=owner.upgrade(){pane.read(cx).catalog.borrow_mut().profiles.request(&user_id);}
                     let profile=owner.upgrade().and_then(|pane|pane.read(cx).catalog.borrow().profiles.get(&user_id).cloned());
                     let avatar=profile.as_ref().and_then(|p|p.avatar.as_ref()).and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(key,cx)}));
@@ -716,6 +748,7 @@ impl ChannelPane {
                             div().h_flex().gap_1().items_center().when_some(image,|el,image|el.child(crate::emote_picker::icon(Some(image),String::new(),18.,18.))).child(title)
                         }))))
                         .children(cosmetic_panel)
+                        .children(mod_row)
                         .child(div().id("chatter-recent").v_flex().gap_2()
                             .children(recent.into_iter().map(|body|div().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL)).min_w_0().child(body))))
                         .child(div().h_flex().flex_wrap().gap_1()
