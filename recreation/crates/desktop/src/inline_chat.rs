@@ -454,7 +454,7 @@ impl Element for InlineChat {
                     use crate::media_hover::Content;
                     let mut targets = vec![(
                         0..interaction.author_len,
-                        Content::Hint("Ctrl+click to inspect this chatter".to_owned()),
+                        Content::Hint(crate::message_actions::name_hint("this chatter")),
                     )];
                     targets.extend(
                         interaction
@@ -465,7 +465,7 @@ impl Element for InlineChat {
                     targets.extend(interaction.mentions.iter().map(|mention| {
                         (
                             mention.range.clone(),
-                            Content::Hint("Ctrl+click to inspect mentioned chatter".into()),
+                            Content::Hint(crate::message_actions::name_hint("mentioned chatter")),
                         )
                     }));
                     for (target, (range, content)) in targets.into_iter().enumerate() {
@@ -544,12 +544,16 @@ impl Element for InlineChat {
                 }
             }
             if hitbox.is_hovered(window)
-                && window.modifiers().control
                 && self
                     .layout
                     .borrow()
                     .exact_text_hit(window.mouse_position())
-                    .is_some_and(|b| interaction.target(b).is_some())
+                    .is_some_and(|b| {
+                        interaction.target(b).is_some_and(|action| {
+                            window.modifiers().control
+                                || crate::message_actions::plain_click(&action)
+                        })
+                    })
             {
                 window.set_cursor_style(CursorStyle::PointingHand, hitbox);
             }
@@ -700,6 +704,22 @@ impl Element for InlineChat {
             });
         }
         window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+            // Capture phase: the message menu opens in bubble before this text sees it.
+            if phase.capture()
+                && event.button == MouseButton::Right
+                && hitbox.is_hovered(window)
+                && down_interaction.as_ref().is_some_and(|i| {
+                    i.right_click(
+                        event,
+                        layout.borrow().exact_text_hit(event.position),
+                        window,
+                        cx,
+                    )
+                })
+            {
+                cx.stop_propagation();
+                return;
+            }
             if !phase.bubble() || event.button != MouseButton::Left || !hitbox.is_hovered(window) {
                 return;
             }

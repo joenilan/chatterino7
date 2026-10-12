@@ -196,7 +196,7 @@ impl Element for ChatText {
             use crate::media_hover::Content;
             let mut targets = vec![(
                 0..interaction.author_len,
-                Content::Hint("Ctrl+click to inspect this chatter".into()),
+                Content::Hint(crate::message_actions::name_hint("this chatter")),
             )];
             targets.extend(
                 interaction
@@ -207,7 +207,7 @@ impl Element for ChatText {
             targets.extend(interaction.mentions.iter().map(|mention| {
                 (
                     mention.range.clone(),
-                    Content::Hint("Ctrl+click to inspect mentioned chatter".into()),
+                    Content::Hint(crate::message_actions::name_hint("mentioned chatter")),
                 )
             }));
             for (target, (range, content)) in targets.into_iter().enumerate() {
@@ -345,14 +345,16 @@ impl Element for ChatText {
         let down_hitbox = hitbox.clone();
         let down_interaction = self.interaction.clone();
         if hitbox.is_hovered(window)
-            && window.modifiers().control
             && layout
                 .index_for_position(window.mouse_position())
                 .ok()
                 .is_some_and(|b| {
-                    self.interaction
-                        .as_ref()
-                        .is_some_and(|i| i.target(b).is_some())
+                    self.interaction.as_ref().is_some_and(|i| {
+                        i.target(b).is_some_and(|action| {
+                            window.modifiers().control
+                                || crate::message_actions::plain_click(&action)
+                        })
+                    })
                 })
         {
             window.set_cursor_style(CursorStyle::PointingHand, hitbox);
@@ -372,6 +374,22 @@ impl Element for ChatText {
         }
 
         window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+            // Capture phase: the message menu opens in bubble before this text sees it.
+            if phase.capture()
+                && event.button == MouseButton::Right
+                && down_hitbox.is_hovered(window)
+                && down_interaction.as_ref().is_some_and(|i| {
+                    i.right_click(
+                        event,
+                        down_layout.index_for_position(event.position).ok(),
+                        window,
+                        cx,
+                    )
+                })
+            {
+                cx.stop_propagation();
+                return;
+            }
             if !phase.bubble()
                 || event.button != MouseButton::Left
                 || !down_hitbox.is_hovered(window)

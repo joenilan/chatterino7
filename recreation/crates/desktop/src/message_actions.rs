@@ -168,6 +168,27 @@ pub struct Press {
     pub position: Point<Pixels>,
 }
 pub type PressState = std::rc::Rc<std::cell::RefCell<Option<Press>>>;
+/// Settings → Chat → Names: a plain click on a name opens its card (else
+/// Ctrl+click), and what right-clicking a name does (an index into
+/// `RIGHT_CLICK_NAMES`: the message menu, mention them, or their card).
+pub static PLAIN_NAME_CLICK: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+pub const RIGHT_CLICK_NAMES: [&str; 3] = ["Message menu", "Mention", "User card"];
+pub static RIGHT_CLICK_NAME: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+/// The hover hint on a name: "Click to inspect this chatter" (or Ctrl+click).
+pub fn name_hint(who: &str) -> String {
+    if PLAIN_NAME_CLICK.load(std::sync::atomic::Ordering::Relaxed) {
+        format!("Click to inspect {who}")
+    } else {
+        format!("Ctrl+click to inspect {who}")
+    }
+}
+/// Whether `action` runs on a plain click (no Ctrl): names, when that's on.
+pub fn plain_click(action: &Action) -> bool {
+    matches!(action, Action::Inspect | Action::InspectMention(_))
+        && PLAIN_NAME_CLICK.load(std::sync::atomic::Ordering::Relaxed)
+}
 #[derive(Clone)]
 pub struct Interaction {
     pub owner: WeakEntity<ChannelPane>,
@@ -198,20 +219,43 @@ impl Interaction {
         selection: &chat_core::selection::Selection,
     ) -> bool {
         self.pressed.borrow_mut().take();
-        if event.click_count != 1
-            || !event.modifiers.control
-            || event.modifiers.shift
-            || selection.anchor != selection.head
-        {
+        if event.click_count != 1 || event.modifiers.shift || selection.anchor != selection.head {
             return false;
         }
         let Some(action) = byte.and_then(|byte| self.target(byte)) else {
             return false;
         };
+        if !event.modifiers.control && !plain_click(&action) {
+            return false;
+        }
         *self.pressed.borrow_mut() = Some(Press {
             message: self.message.clone(),
             action,
             position: event.position,
+        });
+        true
+    }
+    /// Right-click on a name: mention them or open their card, when set
+    /// (Shift+right-click always opens the message menu). True if handled.
+    pub fn right_click(
+        &self,
+        event: &MouseDownEvent,
+        byte: Option<usize>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> bool {
+        if event.button != MouseButton::Right || event.modifiers.shift {
+            return false;
+        }
+        let choice = RIGHT_CLICK_NAME.load(std::sync::atomic::Ordering::Relaxed);
+        let action = match (byte.and_then(|b| self.target(b)), choice) {
+            (Some(Action::Inspect), 1) => Action::Mention,
+            (Some(action @ (Action::Inspect | Action::InspectMention(_))), 2) => action,
+            _ => return false,
+        };
+        let message = self.message.clone();
+        let _ = self.owner.update(cx, |pane, cx| {
+            pane.message_action(&message, action, window, cx)
         });
         true
     }
@@ -228,7 +272,7 @@ impl Interaction {
             return;
         };
         if event.button != MouseButton::Left
-            || !event.modifiers.control
+            || !(event.modifiers.control || plain_click(&press.action))
             || event.modifiers.shift
             || (event.position - press.position).magnitude() > 4.
             || byte.and_then(|b| self.target(b)) != Some(press.action.clone())

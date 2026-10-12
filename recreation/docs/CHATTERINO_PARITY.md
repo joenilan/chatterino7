@@ -50,7 +50,7 @@ Chatterino import.
 - [x] Emote right-click: copy name, copy/open link, provider page (S)
 - [ ] Link actions: incognito, open Twitch link as split, Streamlink from link, double-click, lowercase domains (S)
 - [x] Web search of selected text, configurable engine (S) — Shift+right-click a selection (right-click still copies)
-- [ ] Username right-click behaviour (mention vs card, modifier) (S)
+- [x] Username right-click behaviour (mention vs card, modifier) (S) — plain click opens the card; right-click: menu / mention / card; Shift+right-click = menu
 - [x] "Go to message" from mentions (channel tag) and search (Jump); Copy message details
 
 ### Commands

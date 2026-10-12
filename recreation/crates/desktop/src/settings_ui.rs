@@ -491,6 +491,31 @@ impl Workbench {
                                 }))
                         })),
                 ))
+                .child(stacked_row(
+                    "Clicking names",
+                    "Click a name to open the chatter's card (off: Ctrl+click), and what right-clicking a name does. Shift+right-click always opens the message menu.",
+                    div().h_flex().gap_3().items_center()
+                        .child(
+                            gpui_kit::component::checkbox::Checkbox::new("settings-name-click")
+                                .label("Click opens card")
+                                .checked(crate::message_actions::PLAIN_NAME_CLICK.load(std::sync::atomic::Ordering::Relaxed))
+                                .on_click(cx.listener(|this, on: &bool, _, cx| {
+                                    crate::message_actions::PLAIN_NAME_CLICK.store(*on, std::sync::atomic::Ordering::Relaxed);
+                                    this.schedule_save(cx);
+                                    cx.notify();
+                                })),
+                        )
+                        .child(
+                            crate::theme::Segmented::new("settings-name-right-click")
+                                .selected_index(crate::message_actions::RIGHT_CLICK_NAME.load(std::sync::atomic::Ordering::Relaxed))
+                                .on_click(cx.listener(|this, index: &usize, _, cx| {
+                                    crate::message_actions::RIGHT_CLICK_NAME.store(*index, std::sync::atomic::Ordering::Relaxed);
+                                    this.schedule_save(cx);
+                                    cx.notify();
+                                }))
+                                .children(crate::message_actions::RIGHT_CLICK_NAMES.map(crate::theme::segment)),
+                        ),
+                ))
                 .child(row(
                     "Web search",
                     "Select text in chat, then Shift+right-click → Search the web. (Plain right-click copies the selection.)",

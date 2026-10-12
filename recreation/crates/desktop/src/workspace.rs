@@ -898,6 +898,15 @@ impl Workbench {
                         .filter_map(|c| c.as_str().map(str::to_owned))
                         .collect();
                 }
+                crate::message_actions::PLAIN_NAME_CLICK.store(
+                    state["names"]["click"].as_bool().unwrap_or(true),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                crate::message_actions::RIGHT_CLICK_NAME.store(
+                    (state["names"]["right_click"].as_u64().unwrap_or(0) as usize)
+                        .min(crate::message_actions::RIGHT_CLICK_NAMES.len() - 1),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 crate::message_actions::SEARCH_ENGINE.store(
                     (state["search_engine"].as_u64().unwrap_or(0) as usize)
                         .min(crate::message_actions::SEARCH_ENGINES.len() - 1),
@@ -3080,6 +3089,10 @@ impl Workbench {
         value["popouts"] = json!(self.popout_channels(cx));
         value["hide_blocked"] = json!(self.hide_blocked);
         value["similar_messages"] = json!(self.similar_mode.key());
+        value["names"] = json!({
+            "click": crate::message_actions::PLAIN_NAME_CLICK.load(std::sync::atomic::Ordering::Relaxed),
+            "right_click": crate::message_actions::RIGHT_CLICK_NAME.load(std::sync::atomic::Ordering::Relaxed),
+        });
         value["search_engine"] =
             json!(crate::message_actions::SEARCH_ENGINE.load(std::sync::atomic::Ordering::Relaxed));
         let mut completion = serde_json::Map::new();
