@@ -129,7 +129,11 @@ gpui_kit::actions!(
         CatchUpChat,
         PreviousHighlight,
         NextHighlight,
-        OpenEmotePicker
+        OpenEmotePicker,
+        OpenChatterList,
+        WatchInStreamlink,
+        OpenStreamInBrowser,
+        OpenPlayerPopout
     ]
 );
 
@@ -959,6 +963,16 @@ impl Render for ChannelPane {
             .on_action(cx.listener(|this,_:&OpenEmotePicker,w,cx|{this.toggle_picker(w,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&NextHighlight,w,cx|{this.navigate_attention(1,w,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&SentHistory,w,cx|{this.open_input_history(w,cx);cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&OpenChatterList,w,cx|{this.open_chatter_list(w,cx);cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&WatchInStreamlink,w,cx|{
+                if !combined::is_special(&this.name) {
+                    let note=match streamlink::open(&this.name){Ok(())=>format!("Starting #{} in Streamlink…",this.name),Err(problem)=>problem};
+                    w.push_notification(Notification::info(note),cx);
+                }
+                cx.stop_propagation();
+            }))
+            .on_action(cx.listener(|this,_:&OpenStreamInBrowser,_,cx|{if !combined::is_special(&this.name){cx.open_url(&format!("https://www.twitch.tv/{}",this.name));}cx.stop_propagation();}))
+            .on_action(cx.listener(|this,_:&OpenPlayerPopout,_,cx|{if !combined::is_special(&this.name){cx.open_url(&streamlink::player_url(&this.name));}cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&ToggleChatPause,_,cx|{this.scroller.update(cx,|s,cx|s.toggle_pause(cx));cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&ResumeChat,_,cx|{this.scroller.update(cx,|s,cx|s.scroll_to_end(cx));cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&FindChat,w,cx|{this.open_search(w,cx);cx.stop_propagation();}))

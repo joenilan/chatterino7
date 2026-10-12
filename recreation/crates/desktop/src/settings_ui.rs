@@ -458,7 +458,7 @@ impl Workbench {
                 ))
                 .child(stacked_row(
                     "Mentions",
-                    "Colour @mentions like the chatter's name (once they've chatted). Finding names without @ makes a chatter's bare name work like a mention: coloured, and Ctrl+click opens their card.",
+                    "Colour @mentions like the chatter's name (once they've chatted). Finding names without @ makes a chatter's bare name work like a mention: coloured, and clicking it opens their card.",
                     div().h_flex().flex_wrap().gap_x_4().gap_y_1()
                         .child(
                             gpui_kit::component::checkbox::Checkbox::new("settings-color-mentions")
@@ -920,6 +920,7 @@ impl Workbench {
                     let keys = crate::hotkeys::keys(hotkey);
                     let custom = keys != hotkey.default;
                     let id = hotkey.id;
+                    let shown = matches_search(&format!("{} shortcut hotkey", hotkey.label), &crate::hotkeys::label(&keys));
                     div()
                         .h_flex()
                         .items_center()
@@ -927,6 +928,7 @@ impl Workbench {
                         .py(px(5.))
                         .border_b_1()
                         .border_color(rgb(theme::BORDER))
+                        .when(!shown, |el| el.hidden())
                         .child(div().flex_1().text_size(px(13.)).child(hotkey.label))
                         .when(custom, |el| {
                             el.child(Button::new(SharedString::from(format!("hotkey-reset-{id}"))).xsmall().ghost().label("Reset").tooltip(format!("Back to {}", crate::hotkeys::label(hotkey.default))).on_click(cx.listener(move |this, _, _, cx| {
@@ -938,12 +940,14 @@ impl Workbench {
                         .child(Button::new(SharedString::from(format!("hotkey-{id}"))).small().label(crate::hotkeys::label(&keys)).when(custom, |b| b.primary()).on_click(cx.listener(move |this, _, w, cx| this.record_hotkey(id, w, cx))))
                 }))
                 .children(SHORTCUTS.iter().map(|(keys, what)| {
+                let shown = matches_search(&format!("{what} shortcut"), keys);
                 div()
                     .h_flex()
                     .items_center()
                     .py(px(7.))
                     .border_b_1()
                     .border_color(rgb(theme::BORDER))
+                    .when(!shown, |el| el.hidden())
                     .child(div().flex_1().text_size(px(13.)).child(*what))
                     .child(
                         div()

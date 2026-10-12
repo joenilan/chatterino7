@@ -205,6 +205,34 @@ pub const HOTKEYS: &[Hotkey] = {
             ToggleTabStrip
         ),
         hotkey!(
+            "chatter-list",
+            "Chatter list",
+            "",
+            "JawjackChannel",
+            crate::OpenChatterList
+        ),
+        hotkey!(
+            "streamlink",
+            "Watch this channel in Streamlink",
+            "",
+            "JawjackChannel",
+            crate::WatchInStreamlink
+        ),
+        hotkey!(
+            "open-browser",
+            "Open this stream in the browser",
+            "",
+            "JawjackChannel",
+            crate::OpenStreamInBrowser
+        ),
+        hotkey!(
+            "player-popout",
+            "Open the player pop-out",
+            "",
+            "JawjackChannel",
+            crate::OpenPlayerPopout
+        ),
+        hotkey!(
             "live-tabs",
             "Only show live channel tabs",
             "",
