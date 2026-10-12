@@ -1,3 +1,5 @@
+// A windowed app: no console window behind Jawjack in release builds.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 use gpui_kit::prelude::FluentBuilder;
 mod activity_feed;
 mod ads;
@@ -271,6 +273,8 @@ struct ChannelPane {
     pub(crate) sub_status: std::collections::HashMap<String, Option<String>>,
     /// The last message sent here and when, so an identical one can still go through.
     last_sent: Option<(String, Instant)>,
+    /// A once-a-second repaint is queued for the slow-mode countdown.
+    slow_tick: bool,
     /// Extra sources shown in this pane: your own YouTube live chat in your own channel.
     pub(crate) linked: Vec<String>,
     /// A friendlier title than the pane name (YouTube: "Channel · Stream title").
@@ -389,6 +393,7 @@ impl ChannelPane {
             follow_ages: Default::default(),
             sub_status: Default::default(),
             last_sent: None,
+            slow_tick: false,
             linked: Vec::new(),
             display_title: None,
             suspicious_pending: Default::default(),
@@ -444,6 +449,34 @@ impl ChannelPane {
         self.attention
             .reconcile(&self.timeline.borrow(), self.next_id as u64);
         cx.notify();
+    }
+    /// Seconds until slow mode lets you send again (Chatterino's send wait timer).
+    /// Moderators and the broadcaster are exempt. Queues a repaint each second.
+    fn slow_mode_wait(&mut self, cx: &mut Context<Self>) -> Option<u64> {
+        if matches!(
+            self.role,
+            Some(capabilities::Role::Moderator | capabilities::Role::Broadcaster)
+        ) {
+            return None;
+        }
+        let slow = self.room_settings.as_ref()?.slow?;
+        let (_, at) = self.last_sent.as_ref()?;
+        let left = slow.saturating_sub(at.elapsed().as_secs());
+        if left == 0 {
+            return None;
+        }
+        if !self.slow_tick {
+            self.slow_tick = true;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                let _ = this.update(cx, |p, cx| {
+                    p.slow_tick = false;
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+        Some(left)
     }
     fn change_history_limit(&mut self, limit: usize, cx: &mut Context<Self>) {
         self.search.dirty = true;
@@ -1029,7 +1062,7 @@ impl Render for ChannelPane {
                             };
                             let inline = inline_chat::InlineChat::new(message, paint.clone(), row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx);
                             let first_line_height = if inline.is_some() { inline_chat::InlineChat::line_height(window,message) } else { window.line_height() };
-                            let mut badge_images=message.badges.iter().filter_map(|badge|{
+                            let mut badge_images=message.badges.iter().filter(|badge|theme::badge_shown(theme::badge_kind(&badge.set_id))).filter_map(|badge|{
                                 let custom=if message.presentation.source.is_none(){catalog.borrow().community.channels.get(channel_name.as_ref()).filter(|set|set.ffz_room_id==message.channel_id).and_then(|set|set.roles.get(&badge.set_id)).cloned()}else{None};
                                 if let Some(custom)=custom{
                                     let image=media.borrow_mut().get(&custom.key,cx);
@@ -1040,9 +1073,9 @@ impl Render for ChannelPane {
                             {
                                 let catalog=catalog.borrow();
                                 let room=if message.presentation.source.is_none(){catalog.community.channels.get(channel_name.as_ref()).filter(|set|set.ffz_room_id==message.channel_id).map(|set|&set.roles.grants)}else{None};
-                                for definition in catalog.ffz_badges.for_user(&message.user_id,room){let image=media.borrow_mut().get(&definition.badge.key,cx);badge_images.push((definition.badge,image,definition.background));}
+                                for definition in catalog.ffz_badges.for_user(&message.user_id,room).into_iter().filter(|_|theme::badge_shown(theme::FFZ_BADGES)){let image=media.borrow_mut().get(&definition.badge.key,cx);badge_images.push((definition.badge,image,definition.background));}
                             }
-                            if let Some(badge)=catalog.borrow().badges.for_user(&message.user_id).cloned(){let image=media.borrow_mut().get(&badge.key,cx);badge_images.push((badge,image,None));}
+                            if let Some(badge)=catalog.borrow().badges.for_user(&message.user_id).cloned().filter(|_|theme::badge_shown(theme::SEVEN_TV_BADGES)){let image=media.borrow_mut().get(&badge.key,cx);badge_images.push((badge,image,None));}
                             // A definitively failed badge drops its slot instead of leaving a blank gap;
                             // pending art keeps its slot so loading does not reflow the row.
                             badge_images.retain(|(badge,image,_)|image.is_some()||!media.borrow().failed(&badge.key));
@@ -1273,6 +1306,7 @@ impl Render for ChannelPane {
                 .child(div().h_flex().justify_between().gap_2().text_size(px(11.)).text_color(rgb(theme::MUTED))
                     .child(div().h_flex().gap_2().flex_shrink_0()
                         .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500", self.draft.read(cx).value().chars().count())))
+                        .children(self.slow_mode_wait(cx).map(|left| div().text_color(rgb(0xE8C468)).child(format!("Slow mode · {left}s"))))
                         .when(routine_status && !self.send_status.is_empty(), |el|el.child(self.send_status.clone())))
                     .when_some(self.room_settings.as_ref().filter(|r|!r.labels().is_empty()).map(|r|r.summary()),|el,summary|el.child(div().id("room-modes-hint").max_w(px(120.)).min_w_0().flex_shrink(1.).overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(rgb(0xC5B8E6)).tooltip({let summary=summary.clone();move|w,cx|gpui_kit::component::tooltip::Tooltip::new(format!("{summary}. Your role may grant exemptions; Twitch validates sending. Ctrl+I for channel details.")).build(w,cx)}).child(summary)))
                     .child(div().h_flex().gap_2().when_some(self.send_to.clone(), |el, current| {
@@ -1374,9 +1408,15 @@ fn main() {
             Err("Usage: --control-call SESSION JSON".into())
         };
         match result {
-            Ok(value) => println!("{value}"),
+            // A windowed (GUI-subsystem) build has no console: callers must
+            // redirect output to read it, and a closed pipe must not panic.
+            Ok(value) => {
+                use std::io::Write;
+                let _ = writeln!(std::io::stdout(), "{value}");
+            }
             Err(error) => {
-                eprintln!("{error}");
+                use std::io::Write;
+                let _ = writeln!(std::io::stderr(), "{error}");
                 std::process::exit(1);
             }
         }

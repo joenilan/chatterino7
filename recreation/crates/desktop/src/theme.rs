@@ -106,3 +106,40 @@ pub static CHAT_FONT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(N
 pub fn chat_font() -> Option<String> {
     CHAT_FONT.lock().ok().and_then(|f| f.clone())
 }
+
+/// Settings → Appearance → Badges: which kinds show (Chatterino's categories).
+pub const BADGE_KINDS: [&str; 7] = [
+    "Staff & admin",
+    "Broadcaster, mod & VIP",
+    "Predictions",
+    "Subscriber",
+    "Other Twitch",
+    "FFZ",
+    "7TV",
+];
+pub static BADGES: [std::sync::atomic::AtomicBool; 7] = [
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(true),
+    std::sync::atomic::AtomicBool::new(true),
+];
+pub const FFZ_BADGES: usize = 5;
+pub const SEVEN_TV_BADGES: usize = 6;
+/// The kind of a Twitch badge set (index into BADGE_KINDS).
+pub fn badge_kind(set_id: &str) -> usize {
+    match set_id {
+        "staff" | "admin" | "global_mod" => 0,
+        "broadcaster" | "lead_moderator" | "moderator" | "vip" => 1,
+        "predictions" => 2,
+        "subscriber" | "founder" => 3,
+        _ => 4,
+    }
+}
+pub fn badge_shown(kind: usize) -> bool {
+    BADGES
+        .get(kind)
+        .is_none_or(|b| b.load(std::sync::atomic::Ordering::Relaxed))
+}

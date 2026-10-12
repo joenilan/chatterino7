@@ -253,6 +253,19 @@ impl Workbench {
                         .children(["Display name", "Login", "Both"].map(|l| gpui_kit::component::tab::Tab::new().label(l))),
                 ))
                 .child(row(
+                    "Badges",
+                    "Which badges show before names.",
+                    div().h_flex().flex_wrap().justify_end().gap_x_3().gap_y_1().max_w(px(300.)).children(crate::theme::BADGE_KINDS.iter().enumerate().map(|(index, label)| {
+                        gpui_kit::component::checkbox::Checkbox::new(("settings-badge-kind", index))
+                            .label(*label)
+                            .checked(crate::theme::badge_shown(index))
+                            .on_click(cx.listener(move |this, on: &bool, _, cx| {
+                                crate::theme::BADGES[index].store(*on, std::sync::atomic::Ordering::Relaxed);
+                                this.remeasure_all(cx);
+                            }))
+                    })),
+                ))
+                .child(row(
                     "Lines between messages",
                     "A thin separator under every message.",
                     Switch::new("settings-separators").checked(crate::theme::flag(&crate::theme::SEPARATORS)).on_click(cx.listener(|this, on: &bool, _, cx| {

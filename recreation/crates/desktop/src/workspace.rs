@@ -710,6 +710,12 @@ impl Workbench {
                     std::sync::atomic::Ordering::Relaxed,
                 );
                 crate::chat_search::load_saved(&state["saved_filters"]);
+                for (index, flag) in crate::theme::BADGES.iter().enumerate() {
+                    flag.store(
+                        state["badges"][index].as_bool().unwrap_or(true),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
                 crate::shared_chat::STYLE.store(
                     state["shared_chat_look"].as_u64().unwrap_or(0).min(3) as u8,
                     std::sync::atomic::Ordering::Relaxed,
@@ -2561,6 +2567,11 @@ impl Workbench {
         value["spellcheck"] = json!(self.spellcheck);
         value["link_previews"] = json!(crate::link_preview::enabled());
         value["saved_filters"] = crate::chat_search::saved_json();
+        value["badges"] = json!(
+            (0..crate::theme::BADGES.len())
+                .map(crate::theme::badge_shown)
+                .collect::<Vec<_>>()
+        );
         value["shared_chat_look"] = json!(crate::shared_chat::style());
         value["on_top"] = json!(self.on_top);
         value["name_mode"] = json!(chat_core::NAME_MODE.load(std::sync::atomic::Ordering::Relaxed));
