@@ -237,6 +237,8 @@ pub struct Workbench {
     live_sort: crate::follows_live::Sort,
     live_filter: Entity<InputState>,
     live_filter_open: bool,
+    /// Settings window: filter rows across every section.
+    settings_search: Entity<InputState>,
     /// Studio raid finder sort.
     pub(crate) raid_sort: crate::follows_live::Sort,
     stream_presets: crate::studio::Presets,
@@ -740,6 +742,17 @@ impl Workbench {
                 filter
             },
             live_filter_open: false,
+            settings_search: {
+                let search =
+                    cx.new(|cx| InputState::new(window, cx).placeholder("Search settings"));
+                cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        cx.notify();
+                    }
+                })
+                .detach();
+                search
+            },
             raid_sort: crate::follows_live::Sort::from_key(
                 state["raid_sort"].as_str().unwrap_or(""),
                 crate::follows_live::Sort::RAID,

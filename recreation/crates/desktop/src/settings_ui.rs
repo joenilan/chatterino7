@@ -25,6 +25,25 @@ const SHORTCUTS: [(&str, &str); 3] = [
     ("Double-click a divider", "Make the splits equal"),
 ];
 
+thread_local! {
+    /// The settings search, lowercase; rows that don't mention it are hidden.
+    static SEARCH: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    /// Rows shown since the count was last reset (to skip empty sections).
+    static SHOWN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+fn searching() -> bool {
+    SEARCH.with_borrow(|q| !q.is_empty())
+}
+fn matches_search(title: &str, detail: &str) -> bool {
+    let shown = SEARCH.with_borrow(|q| {
+        q.split_whitespace()
+            .all(|word| title.to_lowercase().contains(word) || detail.to_lowercase().contains(word))
+    });
+    if shown {
+        SHOWN.set(SHOWN.get() + 1);
+    }
+    shown
+}
 /// A setting whose controls are too wide to sit beside the text: they wrap
 /// on their own line underneath.
 pub(super) fn stacked_row(
@@ -32,6 +51,10 @@ pub(super) fn stacked_row(
     detail: impl Into<SharedString>,
     control: impl IntoElement,
 ) -> Div {
+    let (title, detail) = (title.into(), detail.into());
+    if !matches_search(&title, &detail) {
+        return div().hidden();
+    }
     div()
         .v_flex()
         .gap_2()
@@ -42,12 +65,12 @@ pub(super) fn stacked_row(
             div()
                 .v_flex()
                 .gap(px(2.))
-                .child(div().text_size(px(13.)).child(title.into()))
+                .child(div().text_size(px(13.)).child(title))
                 .child(
                     div()
                         .text_size(px(11.))
                         .text_color(rgb(theme::MUTED))
-                        .child(detail.into()),
+                        .child(detail),
                 ),
         )
         .child(control)
@@ -57,6 +80,10 @@ pub(super) fn row(
     detail: impl Into<SharedString>,
     control: impl IntoElement,
 ) -> Div {
+    let (title, detail) = (title.into(), detail.into());
+    if !matches_search(&title, &detail) {
+        return div().hidden();
+    }
     div()
         .h_flex()
         .items_center()
@@ -70,17 +97,20 @@ pub(super) fn row(
                 .flex_1()
                 .min_w_0()
                 .gap(px(2.))
-                .child(div().text_size(px(13.)).child(title.into()))
+                .child(div().text_size(px(13.)).child(title))
                 .child(
                     div()
                         .text_size(px(11.))
                         .text_color(rgb(theme::MUTED))
-                        .child(detail.into()),
+                        .child(detail),
                 ),
         )
         .child(div().flex_shrink_0().child(control))
 }
 pub(super) fn heading(text: &'static str) -> Div {
+    if searching() {
+        return div().hidden();
+    }
     div()
         .pt_4()
         .pb_1()
@@ -911,7 +941,8 @@ impl Workbench {
             .border_r_1()
             .border_color(rgb(theme::BORDER))
             .children(SECTIONS.iter().enumerate().map(|(index, (label, icon))| {
-                let active = index == self.settings_section;
+                let active = index == self.settings_section
+                    && self.settings_search.read(cx).value().trim().is_empty();
                 div()
                     .id(("settings-section", index))
                     .h_flex()
@@ -935,13 +966,75 @@ impl Workbench {
                             .when(active, |i| i.text_color(rgb(theme::ACCENT))),
                     )
                     .when(!narrow, |el| el.child(*label))
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    .on_click(cx.listener(move |this, _, window, cx| {
                         this.settings_section = index;
+                        this.settings_search
+                            .update(cx, |s, cx| s.set_value("", window, cx));
                         cx.notify();
                     }))
             }));
-        let title = SECTIONS[self.settings_section.min(SECTIONS.len() - 1)].0;
-        let page = self.settings_page(window, cx);
+        let nav = if narrow {
+            nav
+        } else {
+            div()
+                .v_flex()
+                .h_full()
+                .bg(rgb(theme::PANEL))
+                .child(
+                    div()
+                        .w(px(184.))
+                        .p_2()
+                        .pb_0()
+                        .child(Input::new(&self.settings_search).xsmall().cleanable(true)),
+                )
+                .child(nav)
+        };
+        // Searching shows matching rows from every section, each under its name.
+        let query = self.settings_search.read(cx).value().trim().to_lowercase();
+        SEARCH.with_borrow_mut(|q| *q = query.clone());
+        let title = if query.is_empty() {
+            SECTIONS[self.settings_section.min(SECTIONS.len() - 1)].0
+        } else {
+            "Search results"
+        };
+        let page = if query.is_empty() {
+            self.settings_page(window, cx)
+        } else {
+            let current = self.settings_section;
+            let mut all = div().v_flex();
+            let mut found = 0;
+            for index in 0..SECTIONS.len() {
+                self.settings_section = index;
+                SHOWN.set(0);
+                let section = self.settings_page(window, cx);
+                if SHOWN.get() == 0 {
+                    continue;
+                }
+                found += SHOWN.get();
+                all = all
+                    .child(
+                        div()
+                            .pt_3()
+                            .text_size(px(10.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(theme::ACCENT))
+                            .child(SECTIONS[index].0.to_uppercase()),
+                    )
+                    .child(section);
+            }
+            if found == 0 {
+                all = all.child(
+                    div()
+                        .py_4()
+                        .text_size(px(12.))
+                        .text_color(rgb(theme::MUTED))
+                        .child("No settings match. Try another word."),
+                );
+            }
+            self.settings_section = current;
+            all
+        };
+        SEARCH.with_borrow_mut(String::clear);
         div()
             .id("settings-backdrop")
             .absolute()
