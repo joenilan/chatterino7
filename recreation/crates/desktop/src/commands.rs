@@ -389,7 +389,19 @@ impl ChannelPane {
                         ),
                     }
                 } else if let Some(template) = template {
-                    match crate::custom_commands::expand(&template, &self.name, args) {
+                    let me = self.attention.identity().cloned();
+                    let channel_id = self.catalog.borrow().channel_id(&self.name);
+                    let stream = self.stream.clone();
+                    let context = move |key: &str| match key {
+                        "my.name" => me.as_ref().map(|(_, login)| login.clone()),
+                        "my.id" => me.as_ref().map(|(id, _)| id.clone()),
+                        "channel.id" => channel_id.clone(),
+                        "stream.title" => stream.as_ref().map(|s| s.title.clone()),
+                        "stream.game" => stream.as_ref().map(|s| s.category.clone()),
+                        _ => None,
+                    };
+                    match crate::custom_commands::expand_with(&template, &self.name, args, &context)
+                    {
                         // A template that is a slash command runs it (one level deep:
                         // a custom command can't call another custom command).
                         Ok(value) if is_command(&value) => {

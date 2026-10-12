@@ -167,6 +167,10 @@ impl Attention {
         self.reconcile(timeline, first);
         true
     }
+    /// The signed-in account here: (user ID, login).
+    pub fn identity(&self) -> Option<&(String, String)> {
+        self.identity.as_ref()
+    }
     pub fn configure(
         &mut self,
         identity: Option<(String, String)>,

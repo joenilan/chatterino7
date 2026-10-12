@@ -100,17 +100,37 @@ pub fn validate(name: &str, template: &str) -> Result<String, String> {
         "channel",
         "one two three four five six seven eight nine",
         false,
+        &|_| Some("sample".into()),
     )?;
     Ok(name)
 }
+/// Placeholders filled from where the command runs (Chatterino's names).
+pub const CONTEXT_KEYS: [&str; 5] = [
+    "my.name",
+    "my.id",
+    "channel.id",
+    "stream.title",
+    "stream.game",
+];
 pub fn expand(template: &str, channel: &str, args: &str) -> Result<String, String> {
-    expand_inner(template, channel, args, true)
+    expand_inner(template, channel, args, true, &|_| None)
+}
+/// Like `expand`, with {my.name}, {my.id}, {channel.id}, {stream.title} and
+/// {stream.game} from `context` (an unknown value becomes empty).
+pub fn expand_with(
+    template: &str,
+    channel: &str,
+    args: &str,
+    context: &dyn Fn(&str) -> Option<String>,
+) -> Result<String, String> {
+    expand_inner(template, channel, args, true, context)
 }
 fn expand_inner(
     template: &str,
     channel: &str,
     args: &str,
     enforce_output: bool,
+    context: &dyn Fn(&str) -> Option<String>,
 ) -> Result<String, String> {
     let words = args.split_whitespace().collect::<Vec<_>>();
     let mut result = String::new();
@@ -154,9 +174,18 @@ fn expand_inner(
                     result.push_str(&joined);
                     continue;
                 }
+                key if CONTEXT_KEYS.contains(&key) => {
+                    let value: String = context(key)
+                        .unwrap_or_default()
+                        .chars()
+                        .filter(|c| !c.is_control())
+                        .collect();
+                    result.push_str(&value);
+                    continue;
+                }
                 _ => {
                     return Err(format!(
-                        "Unknown placeholder {{{token}}}. Use {{channel}}, {{args}}, {{1}}–{{9}} or {{2+}}."
+                        "Unknown placeholder {{{token}}}. Use {{channel}}, {{args}}, {{1}}–{{9}}, {{2+}}, {{my.name}}, {{my.id}}, {{channel.id}}, {{stream.title}} or {{stream.game}}."
                     ));
                 }
             };
@@ -343,7 +372,7 @@ impl Render for Editor {
             .child(Input::new(&self.name).small())
             .child(div().text_size(px(11.)).child("Message template"))
             .child(Input::new(&self.template).small())
-            .child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child("{channel} = channel login · {args} = all arguments · {1}–{9} = individual words · {2+} = word 2 onward · {{ and }} = literal braces"))
+            .child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child("{channel} = channel login · {args} = all arguments · {1}–{9} = individual words · {2+} = word 2 onward · {my.name} {my.id} {channel.id} {stream.title} {stream.game} · {{ and }} = literal braces"))
             .child(Input::new(&self.sample).small())
             .child(div().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL)).text_size(px(12.)).child(preview))
             .child(div().h_flex().gap_2().child(Button::new("save-custom-command").small().label("Save command").on_click(cx.listener(|this,_,w,cx|this.save(w,cx))))
@@ -358,6 +387,25 @@ impl Render for Editor {
 #[cfg(test)]
 mod tests {
     use super::{expand, validate};
+    #[test]
+    fn context_placeholders() {
+        let ctx = |key: &str| match key {
+            "my.name" => Some("dreadedzombie".to_owned()),
+            "stream.game" => Some("Marvel Rivals".to_owned()),
+            _ => None,
+        };
+        assert_eq!(
+            super::expand_with(
+                "hi from {my.name} playing {stream.game}{channel.id}",
+                "c",
+                "",
+                &ctx
+            )
+            .unwrap(),
+            "hi from dreadedzombie playing Marvel Rivals"
+        );
+        assert!(super::expand("{nope}", "c", "").is_err());
+    }
     #[test]
     fn templates_can_run_commands_and_take_rest_args() {
         assert!(validate("spam", "/timeout {1} 600 {2+}").is_ok());
