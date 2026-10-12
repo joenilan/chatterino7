@@ -1152,6 +1152,9 @@ impl Render for ChannelPane {
                                 return div().into_any_element();
                             }
                             let row = first_order + index as u64;
+                            // Rows on screen keep their chatter's 7TV paint and badge current
+                            // (looked up at most every 30 minutes per chatter).
+                            catalog.borrow_mut().want_cosmetics(&message.user_id);
                             let paint=if appearance.borrow().get(&message.user_id).is_some_and(|a|a.color.is_some()) || !name_paint::paint_option(0){None}else{
                                 let catalog=catalog.borrow();catalog.paints.for_user(&message.user_id).filter(|p|p.limitation.is_none()).cloned().map(|mut paint|{
                                     if !name_paint::paint_option(1){paint.shadows.clear();}

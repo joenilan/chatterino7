@@ -1108,13 +1108,27 @@ impl ChannelPane {
                             .when(pending,|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Paint grant received; waiting for its definition")))
                             .into_any_element())
                     });
+                    // Their name in the card wears their 7TV paint, as in chat.
+                    let card_paint=owner.upgrade().and_then(|pane|{
+                        let (paint,cache,media)={
+                            let pane=pane.read(cx);
+                            if !crate::name_paint::paint_option(0)||pane.chatter_appearance.borrow().get(&user_id).is_some_and(|a|a.color.is_some()){return None;}
+                            let catalog=pane.catalog.borrow();
+                            let mut paint=catalog.paints.for_user(&user_id).filter(|p|p.limitation.is_none()).cloned()?;
+                            if !crate::name_paint::paint_option(1){paint.shadows.clear();}
+                            (paint,catalog.paint_cache.clone(),pane.media.clone())
+                        };
+                        let image=paint.image().and_then(crate::media::EmoteKey::paint_image).and_then(|key|media.borrow_mut().get(&key,cx));
+                        Some(crate::name_paint::Request{paint,cache,image})
+                    });
+                    let card_focus=owner.upgrade().map(|pane|pane.read(cx).focus.clone());
                     let width=(f32::from(window.viewport_size().width)-24.).clamp(180., 420.);
                     let body_height=(f32::from(window.viewport_size().height)-160.).clamp(60.,480.);
                     let mention_owner=owner.clone();let mention_login=login.clone();let profile_login=login.clone();let id=user_id.clone();let search_id=user_id.clone();let search_owner=owner.clone();let note_owner=owner.clone();let note_target=crate::chatter_appearance::Target{id:user_id.clone(),login:login.clone().unwrap_or_default(),name:name.clone()};
                     dialog.w(px(width)).title(name).child(div().id("chatter-body").v_flex().gap_2().min_w_0().max_h(px(body_height)).overflow_y_scroll()
                         .when_some(profile,|el,profile|el.child(div().h_flex().items_start().gap_2()
                             .child(div().id("chatter-avatar").flex_shrink_0().tooltip(crate::media_hover::image_card(profile.display_name.clone(),"Twitch profile picture".into(),avatar.clone())).child(crate::emote_picker::icon(avatar,String::new(),48.,48.)))
-                            .child(div().v_flex().gap_1().flex_1().min_w_0().child(profile.display_name)
+                            .child(div().v_flex().gap_1().flex_1().min_w_0().child(card_name(&profile.display_name, card_paint.clone(), card_focus.clone()))
                                 .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(match followers{
                                     Some(n)=>format!("Created · {} · {} follower{}",created_label(&profile.created),group_digits(n),if n==1{""}else{"s"}),
                                     None=>format!("Created · {}",created_label(&profile.created)),
@@ -1324,6 +1338,27 @@ fn twitch_channel_link(url: &str) -> Option<String> {
         return None;
     }
     chat_core::twitch_login(login)
+}
+/// A user card's name: painted with their 7TV paint when they have one.
+fn card_name(
+    name: &str,
+    paint: Option<crate::name_paint::Request>,
+    focus: Option<FocusHandle>,
+) -> AnyElement {
+    match (paint, focus) {
+        (Some(paint), Some(focus)) => crate::chat_text::ChatText::new(
+            SharedString::from(format!("card-name-{name}")),
+            u64::MAX,
+            name.to_owned(),
+            Default::default(),
+            focus,
+            Default::default(),
+        )
+        .with_author(name, None)
+        .with_paint(Some(paint))
+        .into_any_element(),
+        _ => div().child(name.to_owned()).into_any_element(),
+    }
 }
 /// 12345 → "12,345".
 fn group_digits(n: u64) -> String {

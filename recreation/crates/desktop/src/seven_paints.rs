@@ -285,7 +285,7 @@ impl Paints {
         self.last_expiry = Some(Instant::now());
         let before = self.users.len();
         self.users
-            .retain(|_, (_, at)| at.elapsed() < Duration::from_secs(1800));
+            .retain(|_, (_, at)| at.elapsed() < Duration::from_secs(EXPIRY));
         before != self.users.len()
     }
     pub fn for_user(&self, user: &str) -> Option<&Paint> {
@@ -312,6 +312,9 @@ impl Paints {
         })
     }
 }
+/// Grants are forgotten after this long without being seen again; chat rows
+/// on screen re-check every 30 minutes (seven_lookup), well before that.
+const EXPIRY: u64 = 3 * 3600;
 
 impl Paint {
     /// The image URL of the first image layer, if any (loaded through the media cache).

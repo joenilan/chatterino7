@@ -5,6 +5,9 @@ use std::{
     collections::HashMap,
     time::{Duration, Instant},
 };
+/// Grants are forgotten after this long without being seen again; chat rows
+/// on screen re-check every 30 minutes (seven_lookup), well before that.
+const EXPIRY: u64 = 3 * 3600;
 
 #[derive(Default)]
 pub struct Badges {
@@ -82,7 +85,7 @@ impl Badges {
         self.last_expiry = Some(Instant::now());
         let before = self.users.len();
         self.users
-            .retain(|_, (_, at)| at.elapsed() < Duration::from_secs(1800));
+            .retain(|_, (_, at)| at.elapsed() < Duration::from_secs(EXPIRY));
         // The server may not resend known definitions for a later sender grant.
         before != self.users.len()
     }
