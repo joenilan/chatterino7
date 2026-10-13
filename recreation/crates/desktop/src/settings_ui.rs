@@ -256,6 +256,14 @@ impl Workbench {
                     )
                 })
                 .child(row(
+                    "Welcome",
+                    "The first-run guide: pick your setup and open your channel, channels you moderate or live follows.",
+                    open_button("settings-welcome", "Show").on_click(cx.listener(|this, _, w, cx| {
+                        this.settings = false;
+                        this.open_welcome(w, cx);
+                    })),
+                ))
+                .child(row(
                     "Data folder",
                     "Where Jawjack keeps your workspace and settings (sign-ins are in Windows Credential Manager).",
                     open_button("settings-data-folder", "Open").on_click(|_, _, cx| {
@@ -1231,6 +1239,12 @@ impl Workbench {
 impl Workbench {
     /// Settings > General: your own moderator buttons.
     fn render_mod_button_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
+        if !matches_search(
+            "Your moderator buttons",
+            "Shown after delete, timeout and ban in moderator mode. Any /command, including your custom commands.",
+        ) {
+            return div().hidden();
+        }
         if self.mod_button_inputs.is_none() {
             let label = cx.new(|cx| InputState::new(window, cx).placeholder("Label, e.g. 1h"));
             let command =

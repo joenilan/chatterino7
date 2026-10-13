@@ -39,11 +39,11 @@ impl Experience {
             Self::Streamer => "Streamer",
         }
     }
-    fn description(self) -> &'static str {
+    pub(crate) fn description(self) -> &'static str {
         match self {
             Self::Viewer => "Clean chat, emotes, replies and mentions. No tool clutter.",
             Self::Moderator => {
-                "A 🛡 moderation button in channels you moderate: chat modes, clear chat, and the right-click mod actions."
+                "A moderation button (the shield) in channels you moderate: chat modes, clear chat, and the right-click mod actions."
             }
             Self::Streamer => {
                 "Your own chat pinned first in every workspace, plus the Studio panel: title, category, chat modes, markers, ads and raids."

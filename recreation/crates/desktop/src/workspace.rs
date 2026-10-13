@@ -35,6 +35,7 @@ mod sound_settings;
 #[path = "streamer_bot_ui.rs"]
 mod streamer_bot_ui;
 mod update_ui;
+mod welcome;
 #[path = "whispers_ui.rs"]
 mod whispers_ui;
 #[path = "workspace_search.rs"]
@@ -1363,13 +1364,10 @@ impl Workbench {
         }
         self.was_live = live;
         self.pump_engagement(window, cx);
-        if !self.setup_offered && identity.is_some() {
+        // First sign-in on this profile: the welcome (setup, then some chat).
+        if !self.setup_offered && identity.is_some() && !self.settings {
             self.setup_offered = true;
-            self.notice = Some((
-                "New: choose a Viewer, Moderator or Streamer setup · gear menu → Choose your setup"
-                    .into(),
-                std::time::Instant::now(),
-            ));
+            self.open_welcome(window, cx);
             self.schedule_save(cx);
         }
         // Keep each composer's "send as" picker in step with the signed-in accounts.
@@ -6085,17 +6083,27 @@ impl Render for Workbench {
                     div()
                         .text_size(px(30.))
                         .font_weight(FontWeight::SEMIBOLD)
-                        .child("Make room for your channels."),
+                        .child("No channels here yet."),
                 )
+                .child(div().text_color(rgb(theme::MUTED)).child(
+                    "Add a channel, or open the welcome guide for your channel, channels you moderate and live follows.",
+                ))
                 .child(
                     div()
-                        .text_color(rgb(theme::MUTED))
-                        .child("Drag a channel to any panel edge to split your workspace."),
-                )
-                .child(
-                    Button::new("empty-add").label("+ Add a channel").on_click(
-                        cx.listener(|this, _, window, cx| this.open_add(false, window, cx)),
-                    ),
+                        .h_flex()
+                        .gap_2()
+                        .child(
+                            Button::new("empty-add")
+                                .primary()
+                                .icon(Icon::new(gpui_kit::assets::IconName::Plus))
+                                .label("Add a channel")
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.open_add(false, window, cx)
+                                })),
+                        )
+                        .child(Button::new("empty-welcome").label("Welcome guide").on_click(
+                            cx.listener(|this, _, window, cx| this.open_welcome(window, cx)),
+                        )),
                 )
                 .into_any_element()
         };

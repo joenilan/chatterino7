@@ -1361,7 +1361,7 @@ fn card_name(
     }
 }
 /// 12345 → "12,345".
-fn group_digits(n: u64) -> String {
+pub(crate) fn group_digits(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (i, ch) in digits.chars().enumerate() {
