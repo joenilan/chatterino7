@@ -941,6 +941,11 @@ impl Workbench {
                     );
                 }
                 crate::nickname_rules::load(&state["nickname_rules"]);
+                crate::emoji::STYLE.store(
+                    (state["emoji_style"].as_u64().unwrap_or(0) as usize)
+                        .min(crate::emoji::STYLES.len() - 1),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 theme::TAB_POSITION.store(
                     (state["tab_position"].as_u64().unwrap_or(0) as usize).min(3),
                     std::sync::atomic::Ordering::Relaxed,
@@ -3259,6 +3264,8 @@ impl Workbench {
             crate::name_paint::paint_option(2)
         ]);
         value["nickname_rules"] = crate::nickname_rules::json();
+        value["emoji_style"] =
+            json!(crate::emoji::STYLE.load(std::sync::atomic::Ordering::Relaxed));
         value["tab_position"] = json!(theme::tab_position());
         value["custom_player"] = json!(
             crate::streamlink::CUSTOM_PLAYER
@@ -3480,10 +3487,9 @@ impl Workbench {
         };
         match result {
             Ok(()) => {
-                // The main window is the app: popouts (already saved for next launch) close with it.
-                if !self.popouts.is_empty() {
-                    cx.defer(|cx| cx.quit());
-                }
+                // The main window is the app: popouts (already saved for next
+                // launch) and pinned user cards close with it.
+                cx.defer(|cx| cx.quit());
                 true
             }
             Err(error) => {

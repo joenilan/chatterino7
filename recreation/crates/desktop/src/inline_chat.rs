@@ -178,6 +178,11 @@ impl InlineChat {
                             .asset
                             .as_ref()
                             .and_then(|a| EmoteKey::cheer(&layer.id, animated, a))
+                    } else if layer.provider == "emoji" {
+                        layer
+                            .asset
+                            .as_ref()
+                            .and_then(|a| EmoteKey::emoji(&layer.id, a))
                     } else if matches!(layer.provider.as_str(), "7tv" | "bttv" | "ffz") {
                         layer.asset.as_ref().and_then(|a| {
                             EmoteKey::community(&layer.provider, &layer.id, animated, a)

@@ -119,3 +119,148 @@ mod tests {
         assert!(tabs.iter().any(|c| c.title == "Smileys & Emotion"));
     }
 }
+
+/// Settings › Appearance › Emoji style (Chatterino's): draw emoji with
+/// Windows' font, or as images from the emoji-datasource sets.
+pub const STYLES: [&str; 5] = ["System", "Twitter", "Google", "Apple", "Facebook"];
+pub static STYLE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+const SETS: [&str; 5] = ["", "twitter", "google", "apple", "facebook"];
+/// The emoji-datasource version the image URLs point at.
+const DATASOURCE: &str = "15.1.2";
+/// Shown at about the height of chat text.
+const SIZE: u16 = 20;
+
+/// emoji-datasource's file name: code points as hex, joined by '-'.
+fn file_stem(text: &str) -> String {
+    text.chars()
+        .map(|c| format!("{:04x}", c as u32))
+        .collect::<Vec<_>>()
+        .join("-")
+}
+fn is_skin_tone(c: char) -> bool {
+    ('\u{1F3FB}'..='\u{1F3FF}').contains(&c)
+}
+/// Every emoji text Jawjack knows, and also each without its U+FE0F
+/// (chat often leaves it out) for symbols from U+2600 up, so (c), (r) and
+/// TM stay text. Values are the file stems; the second is the longest key.
+fn lookup() -> &'static (std::collections::HashMap<String, String>, usize) {
+    static LOOKUP: OnceLock<(std::collections::HashMap<String, String>, usize)> = OnceLock::new();
+    LOOKUP.get_or_init(|| {
+        let mut map = std::collections::HashMap::new();
+        for emoji in all() {
+            let stem = file_stem(emoji.text);
+            let bare: String = emoji.text.chars().filter(|c| *c != '\u{FE0F}').collect();
+            if bare != emoji.text
+                && !bare.is_empty()
+                && bare.chars().next().is_some_and(|c| c as u32 >= 0x2600)
+            {
+                map.entry(bare).or_insert_with(|| stem.clone());
+            }
+            map.insert(emoji.text.to_owned(), stem);
+        }
+        let longest = map.keys().map(String::len).max().unwrap_or(0);
+        (map, longest)
+    })
+}
+/// The image for an emoji file stem in the chosen style.
+fn image(stem: &str, style: usize) -> chat_core::EmoteAsset {
+    let set = SETS[style];
+    let url = format!(
+        "https://cdn.jsdelivr.net/npm/emoji-datasource-{set}@{DATASOURCE}/img/{set}/64/{stem}.png"
+    );
+    chat_core::EmoteAsset {
+        static_url: url.clone(),
+        url,
+        width: SIZE,
+        height: SIZE,
+    }
+}
+/// Split emoji in a message's text into image pieces (when a style other
+/// than System is chosen). Copying still gives the emoji characters.
+pub fn to_images(message: &mut chat_core::Message) {
+    let style = STYLE
+        .load(std::sync::atomic::Ordering::Relaxed)
+        .min(SETS.len() - 1);
+    if style == 0 {
+        return;
+    }
+    let (map, longest) = lookup();
+    let mut fragments = Vec::with_capacity(message.fragments.len());
+    for fragment in std::mem::take(&mut message.fragments) {
+        let chat_core::Fragment::Text(text) = fragment else {
+            fragments.push(fragment);
+            continue;
+        };
+        let mut plain = String::new();
+        let mut at = 0;
+        while at < text.len() {
+            // The longest known emoji starting here.
+            let mut found = None;
+            let mut end = (at + longest).min(text.len());
+            while end > at {
+                if text.is_char_boundary(end)
+                    && let Some(stem) = map.get(&text[at..end])
+                {
+                    found = Some((end, stem.clone()));
+                    break;
+                }
+                end -= 1;
+            }
+            let Some((mut end, mut stem)) = found else {
+                let c = text[at..].chars().next().expect("in bounds");
+                plain.push(c);
+                at += c.len_utf8();
+                continue;
+            };
+            if let Some(tone) = text[end..].chars().next().filter(|c| is_skin_tone(*c)) {
+                stem = format!("{stem}-{:04x}", tone as u32);
+                end += tone.len_utf8();
+            }
+            if !plain.is_empty() {
+                fragments.push(chat_core::Fragment::Text(std::mem::take(&mut plain)));
+            }
+            fragments.push(chat_core::Fragment::Emote {
+                provider: "emoji".into(),
+                id: stem.clone(),
+                label: text[at..end].to_owned(),
+                overlay: false,
+                animated: false,
+                asset: Some(image(&stem, style)),
+            });
+            at = end;
+        }
+        if !plain.is_empty() {
+            fragments.push(chat_core::Fragment::Text(plain));
+        }
+    }
+    message.fragments = fragments;
+}
+
+#[cfg(test)]
+mod image_tests {
+    use super::{STYLE, to_images};
+    #[test]
+    fn emoji_become_images_and_copy_back() {
+        let mut message = chat_core::fixture("c", 0);
+        message.fragments = vec![chat_core::Fragment::Text(
+            "hi \u{2764} and \u{1F44D}\u{1F3FD} (c) \u{00A9} #1".into(),
+        )];
+        let before = message.body();
+        STYLE.store(1, std::sync::atomic::Ordering::Relaxed);
+        to_images(&mut message);
+        STYLE.store(0, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(message.body(), before, "copying gives the same text");
+        let stems: Vec<_> = message
+            .fragments
+            .iter()
+            .filter_map(|f| match f {
+                chat_core::Fragment::Emote { id, .. } => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            stems,
+            vec!["2764-fe0f".to_owned(), "1f44d-1f3fd".to_owned()]
+        );
+    }
+}

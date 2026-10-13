@@ -394,6 +394,18 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "Emoji style",
+                    "Draw emoji with Windows' own font, or as Twitter, Google, Apple or Facebook images (loaded from cdn.jsdelivr.net). Applies to new messages.",
+                    crate::theme::Segmented::new("settings-emoji-style")
+                        .selected_index(crate::emoji::STYLE.load(std::sync::atomic::Ordering::Relaxed))
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            crate::emoji::STYLE.store((*index).min(4), std::sync::atomic::Ordering::Relaxed);
+                            this.schedule_save(cx);
+                            cx.notify();
+                        }))
+                        .children(crate::emoji::STYLES.map(crate::theme::segment)),
+                ))
+                .child(row(
                     "Tab position",
                     "Where each split's channel tabs sit. Left and right show them as a list.",
                     crate::theme::Segmented::new("settings-tab-position")

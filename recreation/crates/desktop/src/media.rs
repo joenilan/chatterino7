@@ -243,6 +243,34 @@ impl EmoteKey {
             }),
         })
     }
+    /// An emoji image (Settings › Emoji style) from emoji-datasource on jsDelivr.
+    pub fn emoji(id: &str, asset: &chat_core::EmoteAsset) -> Option<Self> {
+        let url = reqwest::Url::parse(&asset.url).ok()?;
+        if url.scheme() != "https"
+            || url.host_str() != Some("cdn.jsdelivr.net")
+            || !url.path().starts_with("/npm/emoji-datasource-")
+            || url.path().contains("..")
+            || url.query().is_some()
+            || !url.username().is_empty()
+            || !url
+                .path()
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'.' | b'@'))
+        {
+            return None;
+        }
+        Some(Self {
+            id: format!("emoji:{}", url.path()),
+            animated: false,
+            external: Some(chat_core::EmoteAsset {
+                url: asset.url.clone(),
+                static_url: asset.url.clone(),
+                width: asset.width,
+                height: asset.height,
+            }),
+        })
+        .filter(|_| !id.is_empty())
+    }
     pub fn avatar(value: &str) -> Option<Self> {
         let url = reqwest::Url::parse(value).ok()?;
         if value.len() > 2048
