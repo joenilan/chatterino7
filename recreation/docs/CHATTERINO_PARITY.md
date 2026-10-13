@@ -77,7 +77,7 @@ Chatterino import.
 - [x] Streamer mode: hide avatars, link previews, viewers/uptime, mod actions, restricted users, blocked terms; suppress live alerts (S)
 - [x] Live alerts: followed channels not open as tabs, /live tab, sound and taskbar flash (Notifications → With each live alert; not yet seen on a real go-live) (M)
 - [x] Link previews: thumbnails; Twitch clip/VOD/channel cards (M)
-- [ ] AutoMod: ~~inline caught rows with Allow/Deny (and the outcome after)~~ done; own-held notice (S)
+- [ ] AutoMod: ~~inline caught rows with Allow/Deny (and the outcome after); own-held notice (Twitch's reason shown when a send is held)~~ done; approved/denied follow-up for your own held message (needs channel.chat.user_message_update per channel) (S)
 - [x] Chat logs: channel allow-list (tab menu → Log this channel), timestamp format, a file per stream (S)
 - [x] Recent messages: ~~limit~~ done; ~~reconnect gap fill~~ covered by the IRC fallback, and live chat now waits for history; ~~custom URL~~ done
 - [x] Repeated-message filter options (S) — how alike, window, count, same chatter only, own messages, repeats highlight
