@@ -100,7 +100,13 @@ fn values(
     )
 }
 pub fn apply(preferences: &Preferences, message: &mut chat_core::Message) {
-    let (alias, color) = values(&preferences.borrow(), &message.user_id, message.name_color);
+    let (mut alias, color) = values(&preferences.borrow(), &message.user_id, message.name_color);
+    // A personal nickname wins; otherwise the first matching nickname rule.
+    if alias.is_none()
+        && let Some(login) = &message.login
+    {
+        alias = crate::nickname_rules::nickname(login);
+    }
     message.presentation.local_alias = alias;
     message.presentation.local_color = color;
 }

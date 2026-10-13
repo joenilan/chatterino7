@@ -485,6 +485,7 @@ impl Workbench {
                                 }))
                         })),
                 ))
+                .child(self.render_nickname_rules(window, cx))
                 .child(stacked_row(
                     "Mentions",
                     "Colour @mentions like the chatter's name (once they've chatted). Finding names without @ makes a chatter's bare name work like a mention: coloured, and clicking it opens their card.",
@@ -1238,6 +1239,130 @@ impl Workbench {
 
 impl Workbench {
     /// Settings > General: your own moderator buttons.
+    /// Settings › Nickname rules: show a nickname for a login or a pattern.
+    fn render_nickname_rules(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
+        const DETAIL: &str = "Show a nickname for a login, or for every login matching a regular expression ($1 inserts a captured group). A chatter's own nickname (right-click › Chatter › Personalize) wins. Applies to new messages.";
+        if !matches_search("Nickname rules", DETAIL) {
+            return div().hidden();
+        }
+        if self.nickname_inputs.is_none() {
+            let pattern = cx.new(|cx| InputState::new(window, cx).placeholder("Login or pattern"));
+            let replace = cx.new(|cx| InputState::new(window, cx).placeholder("Nickname"));
+            self.nickname_inputs = Some((pattern, replace));
+        }
+        let (pattern, replace) = self.nickname_inputs.clone().expect("created above");
+        let rules = crate::nickname_rules::get();
+        div()
+            .v_flex()
+            .gap_1()
+            .py(px(10.))
+            .border_b_1()
+            .border_color(rgb(theme::BORDER))
+            .child(div().text_size(px(13.)).child("Nickname rules"))
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(rgb(theme::MUTED))
+                    .child(DETAIL),
+            )
+            .children(rules.iter().enumerate().map(|(index, rule)| {
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .text_size(px(12.))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .child(format!(
+                                "{} \u{2192} {}{}",
+                                rule.pattern,
+                                rule.replace,
+                                match (rule.regex, rule.case_sensitive) {
+                                    (true, true) => " · regex, match case",
+                                    (true, false) => " · regex",
+                                    (false, true) => " · match case",
+                                    _ => "",
+                                }
+                            )),
+                    )
+                    .child(
+                        Button::new(("nickname-rule-remove", index))
+                            .xsmall()
+                            .ghost()
+                            .icon(IconName::Close)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                let mut rules = crate::nickname_rules::get();
+                                if index < rules.len() {
+                                    rules.remove(index);
+                                }
+                                crate::nickname_rules::set(rules);
+                                this.schedule_save(cx);
+                                cx.notify();
+                            })),
+                    )
+            }))
+            .when(rules.len() < crate::nickname_rules::MAX, |el| {
+                el.child(
+                    div()
+                        .h_flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap_1()
+                        .pt_1()
+                        .child(div().w(px(160.)).child(Input::new(&pattern).small()))
+                        .child(div().w(px(130.)).child(Input::new(&replace).small()))
+                        .child(
+                            gpui_kit::component::checkbox::Checkbox::new("nickname-regex")
+                                .label("Regex")
+                                .checked(self.nickname_regex)
+                                .on_click(cx.listener(|this, on: &bool, _, cx| {
+                                    this.nickname_regex = *on;
+                                    cx.notify();
+                                })),
+                        )
+                        .child(
+                            gpui_kit::component::checkbox::Checkbox::new("nickname-case")
+                                .label("Match case")
+                                .checked(self.nickname_case)
+                                .on_click(cx.listener(|this, on: &bool, _, cx| {
+                                    this.nickname_case = *on;
+                                    cx.notify();
+                                })),
+                        )
+                        .child(
+                            Button::new("nickname-rule-add")
+                                .small()
+                                .label("Add")
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    let rule = crate::nickname_rules::Rule {
+                                        pattern: pattern.read(cx).value().to_string(),
+                                        replace: replace.read(cx).value().to_string(),
+                                        regex: this.nickname_regex,
+                                        case_sensitive: this.nickname_case,
+                                    };
+                                    match crate::nickname_rules::validate(rule) {
+                                        Ok(rule) => {
+                                            let mut rules = crate::nickname_rules::get();
+                                            rules.push(rule);
+                                            crate::nickname_rules::set(rules);
+                                            pattern.update(cx, |i, cx| i.set_value("", window, cx));
+                                            replace.update(cx, |i, cx| i.set_value("", window, cx));
+                                            this.schedule_save(cx);
+                                        }
+                                        Err(problem) => window
+                                            .push_notification(Notification::info(problem), cx),
+                                    }
+                                    cx.notify();
+                                })),
+                        ),
+                )
+            })
+    }
     fn render_mod_button_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         if !matches_search(
             "Your moderator buttons",

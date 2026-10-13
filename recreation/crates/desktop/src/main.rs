@@ -58,6 +58,7 @@ mod message_actions;
 mod message_scroller;
 mod mod_buttons;
 mod name_paint;
+mod nickname_rules;
 mod obs;
 mod owned_emotes;
 mod profile;

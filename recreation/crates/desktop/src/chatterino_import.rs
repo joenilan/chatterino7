@@ -22,6 +22,8 @@ pub struct Plan {
     pub highlights: Vec<Rule>,
     /// Twitch login and local display alias.
     pub nicknames: Vec<(String, String)>,
+    /// Chatterino's regex nicknames, as Jawjack nickname rules.
+    pub nickname_rules: Vec<crate::nickname_rules::Rule>,
     pub ignored_phrases: Vec<Phrase>,
     pub commands: Vec<(String, String)>,
     /// Jawjack timestamp mode: 0 off, 1 hours:minutes, 2 with seconds.
@@ -83,6 +85,7 @@ pub fn read(dir: PathBuf) -> Result<Plan, String> {
         workspaces: Vec::new(),
         highlights: Vec::new(),
         nicknames: Vec::new(),
+        nickname_rules: Vec::new(),
         ignored_phrases: Vec::new(),
         commands: Vec::new(),
         timestamps: None,
@@ -318,10 +321,18 @@ fn read_nicknames(settings: &Value, plan: &mut Plan) {
     for item in settings["nicknames"].as_array().into_iter().flatten() {
         let name = item["name"].as_str().unwrap_or("");
         if item["isRegex"].as_bool() == Some(true) {
-            plan.skipped.push(format!(
-                "Nickname rule \u{201c}{}\u{201d}: pattern nicknames are not supported",
-                short(name)
-            ));
+            match crate::nickname_rules::validate(crate::nickname_rules::Rule {
+                pattern: name.into(),
+                replace: item["replace"].as_str().unwrap_or("").into(),
+                regex: true,
+                case_sensitive: item["isCaseSensitive"].as_bool().unwrap_or(false),
+            }) {
+                Ok(rule) => plan.nickname_rules.push(rule),
+                Err(problem) => plan.skipped.push(format!(
+                    "Nickname rule \u{201c}{}\u{201d}: {problem}",
+                    short(name)
+                )),
+            }
             continue;
         }
         let alias = item["replace"].as_str().unwrap_or("");
@@ -512,6 +523,13 @@ impl gpui_kit::Render for Preview {
             "highlight rules",
         ));
         lines.push(count(plan.nicknames.len(), "nickname", "nicknames"));
+        if !plan.nickname_rules.is_empty() {
+            lines.push(count(
+                plan.nickname_rules.len(),
+                "nickname rule",
+                "nickname rules",
+            ));
+        }
         lines.push(count(
             plan.ignored_phrases.len(),
             "ignored phrase",

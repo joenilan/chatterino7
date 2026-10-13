@@ -81,7 +81,7 @@ Chatterino import.
 - [x] Chat logs: channel allow-list (tab menu → Log this channel), timestamp format, a file per stream (S)
 - [ ] Recent messages: ~~limit~~ done; ~~reconnect gap fill~~ covered by the IRC fallback, and live chat now waits for history; custom URL (S)
 - [x] Repeated-message filter options (S) — how alike, window, count, same chatter only, own messages, repeats highlight
-- [ ] Nicknames: regex, case sensitivity (S)
+- [x] Nicknames: ~~regex, case sensitivity~~ done (Settings › Nickname rules; imported from Chatterino)
 - [x] Completion options (S) — names only after @, comma after a leading name, add @, include the streamer; names complete as display names
 - [x] Mentions: bold/coloured in the chatter's colour, detect names without @ (option), colourless names get a stable colour
 - [x] Settings search; restore backups (S) — search across all sections; daily backups (last 7) with restore in General

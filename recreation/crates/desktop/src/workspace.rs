@@ -235,6 +235,11 @@ pub struct Workbench {
     mod_buttons: bool,
     custom_mod_buttons: std::rc::Rc<Vec<crate::mod_buttons::ModButton>>,
     mod_button_inputs: Option<(Entity<InputState>, Entity<InputState>)>,
+    /// Settings › Chat › Nickname rules: the pattern and nickname inputs, and
+    /// whether the next rule is a regex / case-sensitive.
+    nickname_inputs: Option<(Entity<InputState>, Entity<InputState>)>,
+    nickname_regex: bool,
+    nickname_case: bool,
     follows_live: crate::follows_live::FollowsLive,
     follows_open: bool,
     /// LIVE NOW: sort order, and the filter box (shown while `live_filter_open`).
@@ -730,6 +735,9 @@ impl Workbench {
                 &state["custom_mod_buttons"],
             )),
             mod_button_inputs: None,
+            nickname_inputs: None,
+            nickname_regex: false,
+            nickname_case: false,
             follows_live: crate::follows_live::FollowsLive::new(),
             follows_open: state["follows_open"].as_bool().unwrap_or(true),
             live_sort: crate::follows_live::Sort::from_key(
@@ -900,6 +908,7 @@ impl Workbench {
                         std::sync::atomic::Ordering::Relaxed,
                     );
                 }
+                crate::nickname_rules::load(&state["nickname_rules"]);
                 for (index, flag) in crate::name_paint::PAINT_OPTIONS.iter().enumerate() {
                     flag.store(
                         state["paint_options"][index].as_bool().unwrap_or(true),
@@ -2068,7 +2077,7 @@ impl Workbench {
     /// Add an imported Chatterino setup alongside existing workspaces and settings.
     fn apply_chatterino_import(
         &mut self,
-        plan: crate::chatterino_import::Plan,
+        mut plan: crate::chatterino_import::Plan,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -2149,6 +2158,16 @@ impl Workbench {
         }
         if let Some(limit) = plan.history_limit {
             self.change_history_limit(limit, cx);
+        }
+        if !plan.nickname_rules.is_empty() {
+            let mut rules = crate::nickname_rules::get();
+            for rule in std::mem::take(&mut plan.nickname_rules) {
+                if !rules.contains(&rule) {
+                    rules.push(rule);
+                }
+            }
+            crate::nickname_rules::set(rules);
+            self.schedule_save(cx);
         }
         if !plan.nicknames.is_empty() {
             match self.account.read(cx).identity() {
@@ -3120,6 +3139,7 @@ impl Workbench {
             crate::name_paint::paint_option(1),
             crate::name_paint::paint_option(2)
         ]);
+        value["nickname_rules"] = crate::nickname_rules::json();
         value["inline_whispers"] =
             json!(crate::whispers::INLINE.load(std::sync::atomic::Ordering::Relaxed));
         value["names"] = json!({
