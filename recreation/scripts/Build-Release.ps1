@@ -38,6 +38,7 @@ try {
     Write-Host "Exporting committed HEAD $head (recreation/) to $src ..."
     if (Test-Path -LiteralPath $src) { Remove-Item -Recurse -Force -LiteralPath $src }
     New-Item -ItemType Directory -Force $src | Out-Null
+    New-Item -ItemType Directory -Force $target | Out-Null
     $archive = Join-Path $target 'release-src.tar'
     # HEAD:./ is the recreation/ subtree relative to this directory.
     git archive --format=tar -o $archive 'HEAD:./'
