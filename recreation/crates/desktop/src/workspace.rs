@@ -909,6 +909,15 @@ impl Workbench {
                     );
                 }
                 crate::nickname_rules::load(&state["nickname_rules"]);
+                crate::message_actions::LINK_CLICK.store(
+                    (state["link_click"].as_u64().unwrap_or(0) as usize)
+                        .min(crate::message_actions::LINK_CLICKS.len() - 1),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                crate::message_actions::LOWERCASE_DOMAINS.store(
+                    state["lowercase_domains"].as_bool().unwrap_or(false),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 for (index, flag) in crate::name_paint::PAINT_OPTIONS.iter().enumerate() {
                     flag.store(
                         state["paint_options"][index].as_bool().unwrap_or(true),
@@ -3140,6 +3149,11 @@ impl Workbench {
             crate::name_paint::paint_option(2)
         ]);
         value["nickname_rules"] = crate::nickname_rules::json();
+        value["link_click"] =
+            json!(crate::message_actions::LINK_CLICK.load(std::sync::atomic::Ordering::Relaxed));
+        value["lowercase_domains"] = json!(
+            crate::message_actions::LOWERCASE_DOMAINS.load(std::sync::atomic::Ordering::Relaxed)
+        );
         value["inline_whispers"] =
             json!(crate::whispers::INLINE.load(std::sync::atomic::Ordering::Relaxed));
         value["names"] = json!({

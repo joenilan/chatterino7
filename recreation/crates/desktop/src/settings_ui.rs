@@ -726,6 +726,29 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "Links open with",
+                    "How a link in chat opens in your browser. Shift+right-click a link for its menu.",
+                    crate::theme::Segmented::new("settings-link-click")
+                        .selected_index(crate::message_actions::LINK_CLICK.load(std::sync::atomic::Ordering::Relaxed))
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            crate::message_actions::LINK_CLICK.store((*index).min(2), std::sync::atomic::Ordering::Relaxed);
+                            this.schedule_save(cx);
+                            cx.notify();
+                        }))
+                        .children(crate::message_actions::LINK_CLICKS.map(crate::theme::segment)),
+                ))
+                .child(row(
+                    "Lowercase link domains",
+                    "Show website names in lowercase, so a lookalike such as PayPaI.com (capital i) reads as paypai.com. Applies to new messages.",
+                    Switch::new("settings-lowercase-domains")
+                        .checked(crate::message_actions::LOWERCASE_DOMAINS.load(std::sync::atomic::Ordering::Relaxed))
+                        .on_click(cx.listener(|this, on: &bool, _, cx| {
+                            crate::message_actions::LOWERCASE_DOMAINS.store(*on, std::sync::atomic::Ordering::Relaxed);
+                            this.schedule_save(cx);
+                            cx.notify();
+                        })),
+                ))
+                .child(row(
                     "Link previews",
                     "Hovering a link shows its title, where it really goes, and warnings for lookalike sites. Jawjack loads the page from your PC only when you hover.",
                     Switch::new("settings-link-previews").checked(crate::link_preview::enabled()).on_click(cx.listener(|this, on: &bool, _, cx| {

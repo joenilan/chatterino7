@@ -112,6 +112,48 @@ pub fn links(text: &str) -> Vec<Link> {
     }
     result
 }
+/// Settings › Links: how a link opens (an index into LINK_CLICKS), and
+/// whether link domains are shown in lowercase (Chatterino's anti-phishing
+/// option: "PayPaI.com" reads as "paypai.com").
+pub const LINK_CLICKS: [&str; 3] = ["Ctrl+click", "Click", "Double-click"];
+pub static LINK_CLICK: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static LOWERCASE_DOMAINS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+fn link_click() -> usize {
+    LINK_CLICK.load(std::sync::atomic::Ordering::Relaxed)
+}
+/// Lowercase the host of every link in a message's text (ASCII only, so the
+/// text keeps its length and every range stays valid).
+pub fn lowercase_link_hosts(message: &mut chat_core::Message) {
+    if !LOWERCASE_DOMAINS.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    for fragment in &mut message.fragments {
+        let chat_core::Fragment::Text(text) = fragment else {
+            continue;
+        };
+        let ranges: Vec<_> = links(text).into_iter().map(|link| link.range).collect();
+        if ranges.is_empty() {
+            continue;
+        }
+        let mut bytes = std::mem::take(text).into_bytes();
+        for range in ranges {
+            let token = &bytes[range.clone()];
+            let host_start = token
+                .windows(3)
+                .position(|w| w == b"://")
+                .map(|i| i + 3)
+                .unwrap_or(0);
+            let host_end = token[host_start..]
+                .iter()
+                .position(|b| matches!(b, b'/' | b'?' | b'#' | b':'))
+                .map(|i| host_start + i)
+                .unwrap_or(token.len());
+            bytes[range.start + host_start..range.start + host_end].make_ascii_lowercase();
+        }
+        *text = String::from_utf8(bytes).unwrap_or_default();
+    }
+}
 pub fn message_links(message: &chat_core::Message) -> Vec<Link> {
     if message.deleted {
         return Vec::new();
@@ -184,10 +226,16 @@ pub fn name_hint(who: &str) -> String {
         format!("Ctrl+click to inspect {who}")
     }
 }
-/// Whether `action` runs on a plain click (no Ctrl): names, when that's on.
+/// Whether `action` runs on a plain click (no Ctrl): names, when that's on,
+/// and links when they open with a click.
 pub fn plain_click(action: &Action) -> bool {
-    matches!(action, Action::Inspect | Action::InspectMention(_))
-        && PLAIN_NAME_CLICK.load(std::sync::atomic::Ordering::Relaxed)
+    match action {
+        Action::Inspect | Action::InspectMention(_) => {
+            PLAIN_NAME_CLICK.load(std::sync::atomic::Ordering::Relaxed)
+        }
+        Action::OpenLink(_) => link_click() == 1,
+        _ => false,
+    }
 }
 #[derive(Clone)]
 pub struct Interaction {
@@ -219,13 +267,24 @@ impl Interaction {
         selection: &chat_core::selection::Selection,
     ) -> bool {
         self.pressed.borrow_mut().take();
-        if event.click_count != 1 || event.modifiers.shift || selection.anchor != selection.head {
+        let action = byte.and_then(|byte| self.target(byte));
+        // "Double-click" links: the second click opens it (before the
+        // double-click selects the word).
+        let double_link = event.click_count == 2
+            && !event.modifiers.shift
+            && link_click() == 2
+            && matches!(action, Some(Action::OpenLink(_)));
+        if !double_link
+            && (event.click_count != 1
+                || event.modifiers.shift
+                || selection.anchor != selection.head)
+        {
             return false;
         }
-        let Some(action) = byte.and_then(|byte| self.target(byte)) else {
+        let Some(action) = action else {
             return false;
         };
-        if !event.modifiers.control && !plain_click(&action) {
+        if !double_link && !event.modifiers.control && !plain_click(&action) {
             return false;
         }
         *self.pressed.borrow_mut() = Some(Press {
@@ -271,8 +330,9 @@ impl Interaction {
         let Some(press) = self.pressed.borrow_mut().take() else {
             return;
         };
+        let double_link = link_click() == 2 && matches!(press.action, Action::OpenLink(_));
         if event.button != MouseButton::Left
-            || !(event.modifiers.control || plain_click(&press.action))
+            || !(event.modifiers.control || plain_click(&press.action) || double_link)
             || event.modifiers.shift
             || (event.position - press.position).magnitude() > 4.
             || byte.and_then(|b| self.target(b)) != Some(press.action.clone())
@@ -1497,6 +1557,25 @@ mod web_search_tests {
         assert_eq!(
             super::web_search_url("épée & co"),
             "https://www.google.com/search?q=%C3%A9p%C3%A9e+%26+co"
+        );
+    }
+}
+
+#[cfg(test)]
+mod lowercase_tests {
+    use super::{LOWERCASE_DOMAINS, lowercase_link_hosts};
+    #[test]
+    fn link_hosts_are_lowercased_but_paths_kept() {
+        let mut message = chat_core::fixture("c", 0);
+        message.fragments = vec![chat_core::Fragment::Text(
+            "see https://PayPaI.COM/Login?Next=A and Example.ORG/Path ok".into(),
+        )];
+        LOWERCASE_DOMAINS.store(true, std::sync::atomic::Ordering::Relaxed);
+        lowercase_link_hosts(&mut message);
+        LOWERCASE_DOMAINS.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(
+            message.body(),
+            "see https://paypai.com/Login?Next=A and example.org/Path ok"
         );
     }
 }

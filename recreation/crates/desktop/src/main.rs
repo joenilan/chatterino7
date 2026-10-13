@@ -671,6 +671,7 @@ impl ChannelPane {
                 message.presentation.similar = true;
             }
             chatter_appearance::apply(&self.chatter_appearance, message);
+            message_actions::lowercase_link_hosts(message);
             mention_names::note(message);
             mention_names::link_names(message);
             if replies::option(3) {
