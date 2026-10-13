@@ -79,7 +79,7 @@ Chatterino import.
 - [x] Link previews: thumbnails; Twitch clip/VOD/channel cards (M)
 - [ ] AutoMod: ~~inline caught rows with Allow/Deny (and the outcome after)~~ done; own-held notice (S)
 - [x] Chat logs: channel allow-list (tab menu → Log this channel), timestamp format, a file per stream (S)
-- [ ] Recent messages: ~~limit~~ done; ~~reconnect gap fill~~ covered by the IRC fallback, and live chat now waits for history; custom URL (S)
+- [x] Recent messages: ~~limit~~ done; ~~reconnect gap fill~~ covered by the IRC fallback, and live chat now waits for history; ~~custom URL~~ done
 - [x] Repeated-message filter options (S) — how alike, window, count, same chatter only, own messages, repeats highlight
 - [x] Nicknames: ~~regex, case sensitivity~~ done (Settings › Nickname rules; imported from Chatterino)
 - [x] Completion options (S) — names only after @, comma after a leading name, add @, include the streamer; names complete as display names

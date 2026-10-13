@@ -239,6 +239,8 @@ pub struct Workbench {
     /// Settings › Chat › Nickname rules: the pattern and nickname inputs, and
     /// whether the next rule is a regex / case-sensitive.
     nickname_inputs: Option<(Entity<InputState>, Entity<InputState>)>,
+    /// Settings › Recent messages server.
+    recent_url_input: Option<Entity<InputState>>,
     nickname_regex: bool,
     nickname_case: bool,
     follows_live: crate::follows_live::FollowsLive,
@@ -745,6 +747,7 @@ impl Workbench {
             )),
             mod_button_inputs: None,
             nickname_inputs: None,
+            recent_url_input: None,
             nickname_regex: false,
             nickname_case: false,
             follows_live: crate::follows_live::FollowsLive::new(),
@@ -918,6 +921,12 @@ impl Workbench {
                     );
                 }
                 crate::nickname_rules::load(&state["nickname_rules"]);
+                if let Ok(url) = crate::recent_messages::validate_url(
+                    state["recent_messages_url"].as_str().unwrap_or(""),
+                ) && let Ok(mut current) = crate::recent_messages::CUSTOM_URL.write()
+                {
+                    *current = url;
+                }
                 crate::message_actions::LINK_CLICK.store(
                     (state["link_click"].as_u64().unwrap_or(0) as usize)
                         .min(crate::message_actions::LINK_CLICKS.len() - 1),
@@ -3158,6 +3167,12 @@ impl Workbench {
             crate::name_paint::paint_option(2)
         ]);
         value["nickname_rules"] = crate::nickname_rules::json();
+        value["recent_messages_url"] = json!(
+            crate::recent_messages::CUSTOM_URL
+                .read()
+                .map(|u| u.clone())
+                .unwrap_or_default()
+        );
         value["link_click"] =
             json!(crate::message_actions::LINK_CLICK.load(std::sync::atomic::Ordering::Relaxed));
         value["lowercase_domains"] = json!(

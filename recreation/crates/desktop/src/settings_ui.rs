@@ -556,9 +556,41 @@ impl Workbench {
                         .on_click(cx.listener(|this, index: &usize, _, cx| this.change_history_limit([500usize, 1000, 2000, 5000, 10_000][*index], cx)))
                         .children(["500", "1k", "2k", "5k", "10k"].map(|l| crate::theme::segment(l))),
                 ))
+                .child({
+                    if self.recent_url_input.is_none() {
+                        let current = crate::recent_messages::CUSTOM_URL.read().map(|u| u.clone()).unwrap_or_default();
+                        let input = cx.new(|cx| {
+                            let mut state = InputState::new(window, cx).placeholder("https://example.com/api/v2/recent-messages/{channel}");
+                            state.set_value(current, window, cx);
+                            state
+                        });
+                        self.recent_url_input = Some(input);
+                    }
+                    let input = self.recent_url_input.clone().expect("created above");
+                    stacked_row(
+                        "Recent messages server",
+                        "Use your own recent-messages server instead of the default. Put {channel} where the channel name goes; leave empty for the default.",
+                        div().h_flex().gap_1().w_full()
+                            .child(div().flex_1().child(Input::new(&input).small()))
+                            .child(Button::new("settings-recent-url").small().label("Save").on_click(cx.listener(move |this, _, window, cx| {
+                                match crate::recent_messages::validate_url(&input.read(cx).value()) {
+                                    Ok(url) => {
+                                        let note = if url.is_empty() { "Using the default recent-messages server." } else { "Recent messages server saved." };
+                                        if let Ok(mut current) = crate::recent_messages::CUSTOM_URL.write() {
+                                            *current = url;
+                                        }
+                                        window.push_notification(Notification::info(note), cx);
+                                        this.schedule_save(cx);
+                                    }
+                                    Err(problem) => window.push_notification(Notification::info(problem), cx),
+                                }
+                                cx.notify();
+                            }))),
+                    )
+                })
                 .child(row(
                     "Load recent messages",
-                    format!("Recent chat when a channel opens, from {} (as Chatterino does). It sees the channel names you open.", crate::recent_messages::SERVICE),
+                    format!("Recent chat when a channel opens, from {} (as Chatterino does). It sees the channel names you open.", crate::recent_messages::source()),
                     div().h_flex().gap_3().items_center()
                         .when(self.recent_enabled, |el| {
                             el.child(

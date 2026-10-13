@@ -7,6 +7,38 @@ use serde_json::{Value, json};
 use std::{collections::HashMap, sync::mpsc};
 
 pub const SERVICE: &str = "recent-messages.robotty.de";
+/// Your own recent-messages server (Settings): an https URL with
+/// `{channel}` where the channel login goes. Empty uses SERVICE.
+pub static CUSTOM_URL: std::sync::RwLock<String> = std::sync::RwLock::new(String::new());
+/// Check a custom URL template; returns it trimmed.
+pub fn validate_url(template: &str) -> Result<String, String> {
+    let template = template.trim();
+    if template.is_empty() {
+        return Ok(String::new());
+    }
+    let probe = template.replace("{channel}", "channel");
+    let url = reqwest::Url::parse(&probe).map_err(|_| "That isn't a web address.".to_owned())?;
+    if url.scheme() != "https" || !template.contains("{channel}") || template.len() > 300 {
+        return Err("Use an https:// address with {channel} where the channel name goes.".into());
+    }
+    Ok(template.to_owned())
+}
+fn endpoint(login: &str) -> String {
+    let custom = CUSTOM_URL.read().map(|u| u.clone()).unwrap_or_default();
+    if custom.is_empty() {
+        format!("https://{SERVICE}/api/v2/recent-messages/{login}")
+    } else {
+        custom.replace("{channel}", login)
+    }
+}
+/// Where history comes from, for Settings.
+pub fn source() -> String {
+    let custom = CUSTOM_URL.read().map(|u| u.clone()).unwrap_or_default();
+    reqwest::Url::parse(&custom.replace("{channel}", "c"))
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .unwrap_or_else(|| SERVICE.to_owned())
+}
 /// Settings → Chat → Load recent messages: how many (an index into `LIMITS`).
 pub const LIMITS: [usize; 4] = [100, 250, 500, 800];
 pub static LIMIT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(2);
@@ -50,7 +82,7 @@ fn fetch(client: &reqwest::blocking::Client, channel: &str) -> Result<Vec<Messag
     use std::io::Read;
     let login = chat_core::twitch_login(channel).ok_or("Invalid channel")?;
     let response = client
-        .get(format!("https://{SERVICE}/api/v2/recent-messages/{login}"))
+        .get(endpoint(&login))
         .query(&[("limit", limit().to_string())])
         .header("User-Agent", concat!("Jawjack/", env!("CARGO_PKG_VERSION")))
         .send()
@@ -465,5 +497,24 @@ mod tests {
     #[test]
     fn escaped_tags() {
         assert_eq!(unescape(r"a\sb\:c\\d"), r"a b;c\d");
+    }
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::{CUSTOM_URL, endpoint, validate_url};
+    #[test]
+    fn custom_server_urls_are_checked_and_used() {
+        assert_eq!(validate_url("  ").unwrap(), "");
+        assert!(validate_url("http://x.example/{channel}").is_err());
+        assert!(validate_url("https://x.example/recent").is_err());
+        let url = validate_url("https://x.example/api/v2/recent-messages/{channel}").unwrap();
+        *CUSTOM_URL.write().unwrap() = url;
+        assert_eq!(
+            endpoint("chan"),
+            "https://x.example/api/v2/recent-messages/chan"
+        );
+        CUSTOM_URL.write().unwrap().clear();
+        assert!(endpoint("chan").contains("robotty"));
     }
 }
