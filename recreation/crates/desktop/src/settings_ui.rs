@@ -394,9 +394,9 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
-                    "7TV name paints",
-                    "Gradient and image name colours from 7TV, and the glow around them.",
-                    div().h_flex().gap_3().children([(0usize, "Paints"), (1, "Shadows")].map(|(index, label)| {
+                    "7TV",
+                    "Gradient and image name colours from 7TV and the glow around them, and 7TV profile pictures (often animated) on user cards.",
+                    div().h_flex().gap_3().children([(0usize, "Paints"), (1, "Shadows"), (2, "Profile pictures")].map(|(index, label)| {
                         gpui_kit::component::checkbox::Checkbox::new(("settings-paint-option", index))
                             .label(label)
                             .checked(crate::name_paint::paint_option(index))

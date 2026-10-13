@@ -1165,7 +1165,13 @@ impl ChannelPane {
                     if let Some(pane)=owner.upgrade(){pane.read(cx).catalog.borrow_mut().profiles.request(&user_id);}
                     let profile=owner.upgrade().and_then(|pane|pane.read(cx).catalog.borrow().profiles.get(&user_id).cloned());
                     let followers=owner.upgrade().and_then(|pane|pane.read(cx).catalog.borrow_mut().profiles.followers(&user_id));
-                    let avatar=profile.as_ref().and_then(|p|p.avatar.as_ref()).filter(|_|!crate::streamer_mode::hides(crate::streamer_mode::CARD_AVATARS)).and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(key,cx)}));
+                    // Their 7TV account: a 7TV profile link, and its (often animated) picture.
+                    let seven=owner.upgrade().and_then(|pane|pane.read(cx).catalog.borrow_mut().profiles.seven(&user_id));
+                    let seven_avatar=seven.as_ref().and_then(|s|s.avatar.clone()).filter(|_|crate::name_paint::paint_option(crate::name_paint::SEVEN_AVATARS));
+                    let avatar_key=seven_avatar.clone().or_else(||profile.as_ref().and_then(|p|p.avatar.clone()));
+                    let avatar=avatar_key.as_ref().filter(|_|!crate::streamer_mode::hides(crate::streamer_mode::CARD_AVATARS)).and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(key,cx)}));
+                    let avatar_source=if seven_avatar.is_some(){"7TV profile picture"}else{"Twitch profile picture"};
+                    let seven_id=seven.map(|s|s.id);
                     let cosmetics=owner.upgrade().map(|pane|{
                         let pane=pane.read(cx);let catalog=pane.catalog.borrow();
                         (catalog.paints.for_user(&user_id).cloned(),catalog.paints.preview_for_user(&user_id),catalog.paints.pending_for_user(&user_id),catalog.badges.for_user(&user_id).cloned())
@@ -1205,7 +1211,7 @@ impl ChannelPane {
                     let mention_owner=owner.clone();let mention_login=login.clone();let profile_login=login.clone();let id=user_id.clone();let search_id=user_id.clone();let search_owner=owner.clone();let note_owner=owner.clone();let note_target=crate::chatter_appearance::Target{id:user_id.clone(),login:login.clone().unwrap_or_default(),name:name.clone()};
                     dialog.w(px(width)).title(name).child(div().id("chatter-body").v_flex().gap_2().min_w_0().max_h(px(body_height)).overflow_y_scroll()
                         .when_some(profile,|el,profile|el.child(div().h_flex().items_start().gap_2()
-                            .child(div().id("chatter-avatar").flex_shrink_0().tooltip(crate::media_hover::image_card(profile.display_name.clone(),"Twitch profile picture".into(),avatar.clone())).child(crate::emote_picker::icon(avatar,String::new(),48.,48.)))
+                            .child(div().id("chatter-avatar").flex_shrink_0().tooltip(crate::media_hover::image_card(profile.display_name.clone(),avatar_source.into(),avatar.clone())).child(crate::emote_picker::icon(avatar,String::new(),48.,48.)))
                             .child(div().v_flex().gap_1().flex_1().min_w_0().child(card_name(&profile.display_name, card_paint.clone(), card_focus.clone()))
                                 .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(match followers{
                                     Some(n)=>format!("Created · {} · {} follower{}",created_label(&profile.created),group_digits(n),if n==1{""}else{"s"}),
@@ -1224,7 +1230,7 @@ impl ChannelPane {
                         }))))
                         .children(cosmetic_panel)
                         .children(mod_row)
-                        .child(div().id("chatter-recent").v_flex().gap_2()
+                        .child(div().id("chatter-recent").v_flex().gap_2().max_h(px(210.)).overflow_y_scroll()
                             .children(recent.into_iter().map(|message|{
                                 let body=owner.upgrade().map(|pane|{let media=pane.read(cx).media.clone();let mut media=media.borrow_mut();card_body(&message,&mut media,cx)}).unwrap_or_else(||message.body().into_any_element());
                                 div().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL)).min_w_0().child(body)
@@ -1232,7 +1238,8 @@ impl ChannelPane {
                         .child(div().h_flex().flex_wrap().gap_1()
                             .when(login.is_some(),|el|el
                                 .child(Button::new("chatter-mention").small().label("Mention").on_click(move|_,w,cx|{if let Some(login)=&mention_login{w.close_dialog(cx);let _=mention_owner.update(cx,|p,cx|p.insert_mention(login,w,cx));}}))
-                                .child(Button::new("chatter-profile").small().label("Twitch profile").on_click(move|_,_,cx|{if let Some(login)=&profile_login{cx.open_url(&format!("https://www.twitch.tv/{login}"));}})))
+                                .child(Button::new("chatter-profile").small().label("Twitch profile").on_click(move|_,_,cx|{if let Some(login)=&profile_login{cx.open_url(&format!("https://www.twitch.tv/{login}"));}}))
+                                .when_some(seven_id,|el,id|el.child(Button::new("chatter-7tv").small().label("7TV profile").on_click(move|_,_,cx|cx.open_url(&format!("https://7tv.app/users/{id}"))))))
                             .child(Button::new("chatter-search").small().label("Search messages").tooltip("Find this chatter in retained channel history").on_click(move|_,w,cx|{w.close_dialog(cx);let _=search_owner.update(cx,|p,cx|p.search_for_author(&search_id,w,cx));}))
                             .child(Button::new("chatter-private-note").small().label("Private note…").on_click(move|_,w,cx|{w.close_dialog(cx);let _=note_owner.update(cx,|_,cx|cx.emit(PaneEvent::EditChatterNote(note_target.clone())));}))
                             .child(Button::new("chatter-copy-id").small().label("Copy ID").on_click(move|_,w,cx|copy(id.clone(),w,cx)))

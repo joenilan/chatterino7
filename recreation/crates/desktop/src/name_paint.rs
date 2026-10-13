@@ -1,9 +1,13 @@
 //! Bounded compositing of the existing shaped author run; text geometry stays authoritative.
-/// Settings → Appearance → 7TV name paints: [show paints, their shadows].
-pub static PAINT_OPTIONS: [std::sync::atomic::AtomicBool; 2] = [
+/// Settings → Appearance → 7TV: [show paints, their shadows, 7TV profile
+/// pictures on user cards].
+pub static PAINT_OPTIONS: [std::sync::atomic::AtomicBool; 3] = [
+    std::sync::atomic::AtomicBool::new(true),
     std::sync::atomic::AtomicBool::new(true),
     std::sync::atomic::AtomicBool::new(true),
 ];
+/// PAINT_OPTIONS index: 7TV profile pictures on user cards.
+pub const SEVEN_AVATARS: usize = 2;
 pub fn paint_option(index: usize) -> bool {
     PAINT_OPTIONS[index].load(std::sync::atomic::Ordering::Relaxed)
 }

@@ -14,6 +14,13 @@ pub struct Profile {
     pub role: String,
     pub avatar: Option<crate::media::EmoteKey>,
 }
+/// A chatter's 7TV account, for the user card.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Seven {
+    /// The 7TV user ID (for 7tv.app/users/<id>).
+    pub id: String,
+    pub avatar: Option<crate::media::EmoteKey>,
+}
 /// Helix accepts up to 100 `id` parameters per users request.
 const BATCH: usize = 100;
 /// Pending lookups are bounded; the oldest interest is dropped first.
@@ -43,6 +50,12 @@ pub struct Profiles {
     followers: HashMap<String, Option<u64>>,
     follower_tx: mpsc::Sender<(u64, Identity, String)>,
     follower_rx: mpsc::Receiver<(u64, String, Option<u64>)>,
+    /// 7TV accounts for user cards: Some(None) means no 7TV account (or the
+    /// lookup failed); absent means not asked yet; a pending entry is in `seven_asked`.
+    seven: HashMap<String, Option<Seven>>,
+    seven_asked: std::collections::HashSet<String>,
+    seven_tx: mpsc::Sender<String>,
+    seven_rx: mpsc::Receiver<(String, Option<Seven>)>,
 }
 impl Profiles {
     pub fn new() -> Self {
@@ -80,7 +93,28 @@ impl Profiles {
                 }
             }
         });
+        let (seven_tx, seven_jobs) = mpsc::channel::<String>();
+        let (seven_results, seven_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let Ok(client) = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+            else {
+                return;
+            };
+            while let Ok(id) = seven_jobs.recv() {
+                let account = seven_account(&client, &id);
+                if seven_results.send((id, account)).is_err() {
+                    break;
+                }
+            }
+        });
         Self {
+            seven: HashMap::new(),
+            seven_asked: Default::default(),
+            seven_tx,
+            seven_rx,
             followers: HashMap::new(),
             follower_tx,
             follower_rx,
@@ -108,6 +142,24 @@ impl Profiles {
         }
         self.followers.insert(id.to_owned(), None);
         let _ = self.follower_tx.send((self.epoch, identity, id.to_owned()));
+        None
+    }
+    /// A user's 7TV account, looked up once per session when first asked.
+    pub fn seven(&mut self, id: &str) -> Option<Seven> {
+        if let Some(known) = self.seven.get(id) {
+            return known.clone();
+        }
+        if id.is_empty()
+            || !id.bytes().all(|b| b.is_ascii_digit())
+            || !self.seven_asked.insert(id.to_owned())
+        {
+            return None;
+        }
+        if self.seven.len() > 1024 {
+            self.seven.clear();
+            self.seven_asked.clear();
+        }
+        let _ = self.seven_tx.send(id.to_owned());
         None
     }
     /// Record interest; `pump` sends queued IDs in batches.
@@ -138,6 +190,11 @@ impl Profiles {
             self.pending.clear();
             self.values.clear();
             self.followers.clear();
+            changed = true;
+        }
+        while let Ok((id, account)) = self.seven_rx.try_recv() {
+            self.seven_asked.remove(&id);
+            self.seven.insert(id, account);
             changed = true;
         }
         while let Ok((epoch, id, total)) = self.follower_rx.try_recv() {
@@ -295,5 +352,56 @@ fn parse(user: &serde_json::Value) -> Profile {
         avatar: user["profile_image_url"]
             .as_str()
             .and_then(crate::media::EmoteKey::avatar),
+    }
+}
+
+/// 7TV's account for a Twitch user ID (public, no sign-in); None when they
+/// have none or 7TV doesn't answer.
+fn seven_account(client: &reqwest::blocking::Client, twitch_id: &str) -> Option<Seven> {
+    let response = client
+        .get(format!("https://7tv.io/v3/users/twitch/{twitch_id}"))
+        .send()
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let mut body = Vec::new();
+    response.take(256 * 1024).read_to_end(&mut body).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&body).ok()?;
+    parse_seven(&value)
+}
+fn parse_seven(value: &serde_json::Value) -> Option<Seven> {
+    let user = &value["user"];
+    let id = user["id"].as_str()?;
+    if id.is_empty() || id.len() > 64 || !id.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return None;
+    }
+    let avatar = user["avatar_url"].as_str().and_then(|url| {
+        // 7TV sometimes sends protocol-relative URLs.
+        let url = if let Some(rest) = url.strip_prefix("//") {
+            format!("https://{rest}")
+        } else {
+            url.to_owned()
+        };
+        crate::media::EmoteKey::seven_avatar(&url)
+    });
+    Some(Seven {
+        id: id.to_owned(),
+        avatar,
+    })
+}
+
+#[cfg(test)]
+mod seven_tests {
+    use super::parse_seven;
+    #[test]
+    fn reads_the_7tv_account_and_avatar() {
+        let value = serde_json::json!({"id":"123","user":{"id":"01ABC","avatar_url":"//cdn.7tv.app/user/01ABC/av_01X/3x.webp"}});
+        let seven = parse_seven(&value).unwrap();
+        assert_eq!(seven.id, "01ABC");
+        assert!(seven.avatar.is_some());
+        let none = serde_json::json!({"id":"123","user":{"id":"01ABC","avatar_url":"https://evil.example/x.webp"}});
+        assert!(parse_seven(&none).unwrap().avatar.is_none());
+        assert!(parse_seven(&serde_json::json!({"error":"not found"})).is_none());
     }
 }

@@ -3117,7 +3117,8 @@ impl Workbench {
         value["live_alert_flash"] = json!(self.live_alert_flash);
         value["paint_options"] = json!([
             crate::name_paint::paint_option(0),
-            crate::name_paint::paint_option(1)
+            crate::name_paint::paint_option(1),
+            crate::name_paint::paint_option(2)
         ]);
         value["inline_whispers"] =
             json!(crate::whispers::INLINE.load(std::sync::atomic::Ordering::Relaxed));

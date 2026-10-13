@@ -216,6 +216,33 @@ impl EmoteKey {
             external: Some(asset.clone()),
         })
     }
+    /// A 7TV profile picture (often animated), from cdn.7tv.app/user/.
+    pub fn seven_avatar(value: &str) -> Option<Self> {
+        let url = reqwest::Url::parse(value).ok()?;
+        if value.len() > 512
+            || url.scheme() != "https"
+            || url.host_str() != Some("cdn.7tv.app")
+            || !url.path().starts_with("/user/")
+            || url.path().contains("..")
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.port().is_some_and(|p| p != 443)
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return None;
+        }
+        Some(Self {
+            id: format!("7tv-avatar:{}", url.path()),
+            animated: true,
+            external: Some(chat_core::EmoteAsset {
+                url: value.into(),
+                static_url: value.into(),
+                width: 48,
+                height: 48,
+            }),
+        })
+    }
     pub fn avatar(value: &str) -> Option<Self> {
         let url = reqwest::Url::parse(value).ok()?;
         if value.len() > 2048
