@@ -394,6 +394,7 @@ pub fn menu(
     owner: WeakEntity<ChannelPane>,
     id: String,
     mut menu: PopupMenu,
+    window: &mut Window,
     cx: &mut Context<PopupMenu>,
 ) -> PopupMenu {
     let current = owner.upgrade().and_then(|pane| {
@@ -466,88 +467,117 @@ pub fn menu(
         }
         menu = menu.separator();
     }
-    for (label, action) in [
+    // A short top level: the everyday actions, then grouped submenus (Chatter, Copy,
+    // Commands, Timeout, Emotes, Links). It used to be one flat list of ~25 rows.
+    let wanted = |action: &Action| -> bool {
+        match action {
+            Action::Notes | Action::SearchAuthor => !message.user_id.is_empty(),
+            Action::Customize => crate::chatter_appearance::valid_id(&message.user_id),
+            Action::Reply => !message.deleted && message.replyable,
+            Action::Mention | Action::Profile | Action::CopyName => message.login.is_some(),
+            _ => true,
+        }
+    };
+    let pick = |list: Vec<(&'static str, Action)>| -> Vec<(&'static str, Action)> {
+        list.into_iter().filter(|(_, a)| wanted(a)).collect()
+    };
+    let following = owner.upgrade().is_some_and(|p| {
+        p.read(cx)
+            .attention
+            .followed
+            .contains(&crate::attention::Attention::thread_of(&message))
+    });
+    // Rows that run a message action; usable inside a submenu builder (called each open).
+    fn actions(
+        mut menu: PopupMenu,
+        owner: &WeakEntity<ChannelPane>,
+        id: &str,
+        list: &[(&'static str, Action)],
+    ) -> PopupMenu {
+        for (label, action) in list {
+            let owner = owner.clone();
+            let id = id.to_owned();
+            let action = action.clone();
+            menu = menu.item(PopupMenuItem::new(*label).on_click(move |_, w, cx| {
+                let _ = owner.update(cx, |p, cx| p.message_action(&id, action.clone(), w, cx));
+            }));
+        }
+        menu
+    }
+    let top = pick(vec![
         ("Reply to message", Action::Reply),
         ("View conversation", Action::Thread),
-        ("Follow thread replies", Action::FollowThread),
         ("Inspect chatter", Action::Inspect),
+        ("Mention in composer", Action::Mention),
+    ]);
+    menu = actions(menu, &owner, &id, &top);
+
+    let chatter = pick(vec![
+        (
+            if following {
+                "Unfollow thread"
+            } else {
+                "Follow thread replies"
+            },
+            Action::FollowThread,
+        ),
         ("Personalize chatter…", Action::Customize),
         ("Private chatter note…", Action::Notes),
         ("Search this chatter’s messages", Action::SearchAuthor),
-        ("Mention in composer", Action::Mention),
         ("Open Twitch profile", Action::Profile),
-        ("Copy message", Action::CopyLine),
-        ("Copy message text", Action::CopyBody),
-        ("Copy username", Action::CopyName),
-        ("Copy user ID", Action::CopyId),
-        ("Copy message details", Action::CopyDetails),
-    ] {
-        if action == Action::Notes && message.user_id.is_empty() {
-            continue;
-        }
-        if action == Action::Customize && !crate::chatter_appearance::valid_id(&message.user_id) {
-            continue;
-        }
-        if action == Action::SearchAuthor && message.user_id.is_empty() {
-            continue;
-        }
-        if action == Action::Reply && (message.deleted || !message.replyable) {
-            continue;
-        }
-        if matches!(action, Action::Mention | Action::Profile | Action::CopyName)
-            && message.login.is_none()
-        {
-            continue;
-        }
-        let label = if action == Action::FollowThread
-            && owner.upgrade().is_some_and(|p| {
-                p.read(cx)
-                    .attention
-                    .followed
-                    .contains(&crate::attention::Attention::thread_of(&message))
-            }) {
-            "Unfollow thread"
-        } else {
-            label
-        };
-        let owner = owner.clone();
-        let id = id.clone();
-        menu = menu.item(PopupMenuItem::new(label).on_click(move |_, w, cx| {
-            let _ = owner.update(cx, |p, cx| p.message_action(&id, action.clone(), w, cx));
-        }));
-    }
+    ]);
+    let mut mentioned: Vec<(String, String)> = Vec::new();
     if !message.deleted {
-        let mut seen = std::collections::HashSet::new();
-        for fragment in message
-            .fragments
-            .iter()
-            .filter(|f| matches!(f, chat_core::Fragment::Mention { .. }))
-            .take(8)
-        {
-            if let chat_core::Fragment::Mention { user_id, login, .. } = fragment {
-                if !seen.insert(user_id) {
-                    continue;
-                }
-                let owner = owner.clone();
-                let id = id.clone();
-                let user_id = user_id.clone();
-                menu = menu.item(
-                    PopupMenuItem::new(format!("Inspect mentioned @{login}")).on_click(
-                        move |_, w, cx| {
-                            let _ = owner.update(cx, |p, cx| {
-                                p.message_action(
-                                    &id,
-                                    Action::InspectMention(user_id.clone()),
-                                    w,
-                                    cx,
-                                )
-                            });
-                        },
-                    ),
-                );
+        for fragment in &message.fragments {
+            if let chat_core::Fragment::Mention { user_id, login, .. } = fragment
+                && !mentioned.iter().any(|(id, _)| id == user_id)
+                && mentioned.len() < 8
+            {
+                mentioned.push((user_id.clone(), login.clone()));
             }
         }
     }
+    let copy = pick(vec![
+        ("Message", Action::CopyLine),
+        ("Message text", Action::CopyBody),
+        ("Username", Action::CopyName),
+        ("User ID", Action::CopyId),
+        ("Message details", Action::CopyDetails),
+    ]);
+    menu = menu
+        .separator()
+        .submenu("Chatter", window, cx, {
+            let (owner, id) = (owner.clone(), id.clone());
+            move |menu, _, _| {
+                let mut menu = actions(menu, &owner, &id, &chatter);
+                if !mentioned.is_empty() {
+                    menu = menu.separator();
+                }
+                for (user_id, login) in &mentioned {
+                    let (owner, id, user_id) = (owner.clone(), id.clone(), user_id.clone());
+                    menu = menu.item(
+                        PopupMenuItem::new(format!("Inspect mentioned @{login}")).on_click(
+                            move |_, w, cx| {
+                                let _ = owner.update(cx, |p, cx| {
+                                    p.message_action(
+                                        &id,
+                                        Action::InspectMention(user_id.clone()),
+                                        w,
+                                        cx,
+                                    )
+                                });
+                            },
+                        ),
+                    );
+                }
+                menu
+            }
+        })
+        .submenu("Copy", window, cx, {
+            let (owner, id) = (owner.clone(), id.clone());
+            move |menu, _, _| actions(menu, &owner, &id, &copy)
+        });
+
     // Custom commands using {user.name}, {msg.text}… run on this message.
     let custom: Vec<String> = owner
         .upgrade()
@@ -562,25 +592,28 @@ pub fn menu(
         })
         .unwrap_or_default();
     if !custom.is_empty() && !message.deleted && message.login.is_some() {
-        menu = menu.separator();
-        for name in custom {
-            let owner = owner.clone();
-            let target = (
-                message.login.clone().unwrap_or_default(),
-                message.user_id.clone(),
-                message.id.clone(),
-                message.body(),
-            );
-            menu = menu.item(
-                PopupMenuItem::new(format!("/{name}")).on_click(move |_, w, cx| {
-                    let _ = owner.update(cx, |pane, cx| {
-                        pane.command_message = Some(target.clone());
-                        pane.route_command(&format!("/{name}"), w, cx);
-                        pane.command_message = None;
-                    });
-                }),
-            );
-        }
+        let target = (
+            message.login.clone().unwrap_or_default(),
+            message.user_id.clone(),
+            message.id.clone(),
+            message.body(),
+        );
+        let owner = owner.clone();
+        menu = menu.submenu("Commands", window, cx, move |mut menu, _, _| {
+            for name in &custom {
+                let (owner, target, name) = (owner.clone(), target.clone(), name.clone());
+                menu = menu.item(PopupMenuItem::new(format!("/{name}")).on_click(
+                    move |_, w, cx| {
+                        let _ = owner.update(cx, |pane, cx| {
+                            pane.command_message = Some(target.clone());
+                            pane.route_command(&format!("/{name}"), w, cx);
+                            pane.command_message = None;
+                        });
+                    },
+                ));
+            }
+            menu
+        });
     }
     // Pinned Streamer.bot actions run with this message's user and text as arguments.
     let bot_actions = owner
@@ -588,88 +621,177 @@ pub fn menu(
         .map(|pane| pane.read(cx).bot_actions.clone())
         .unwrap_or_default();
     if !bot_actions.is_empty() && !message.deleted {
-        menu = menu.separator();
-        for action in bot_actions.iter() {
-            let owner = owner.clone();
-            let action = action.clone();
-            let args = serde_json::json!({
-                "source": "jawjack",
-                "user": message.login.clone().unwrap_or_default(),
-                "userId": message.user_id,
-                "userName": message.display_name,
-                "message": message.body(),
-                "messageId": message.id,
-                "channel": message.channel_id,
-            });
-            menu = menu.item(
-                PopupMenuItem::new(format!("Streamer.bot · {}", action.name)).on_click(
+        let args = serde_json::json!({
+            "source": "jawjack",
+            "user": message.login.clone().unwrap_or_default(),
+            "userId": message.user_id,
+            "userName": message.display_name,
+            "message": message.body(),
+            "messageId": message.id,
+            "channel": message.channel_id,
+        });
+        let owner = owner.clone();
+        menu = menu.submenu("Streamer.bot", window, cx, move |mut menu, _, _| {
+            for action in bot_actions.iter() {
+                let (owner, action, args) = (owner.clone(), action.clone(), args.clone());
+                menu = menu.item(PopupMenuItem::new(action.name.clone()).on_click(
                     move |_, _, cx| {
                         let (action, args) = (action.clone(), args.clone());
                         let _ = owner.update(cx, |_, cx| {
                             cx.emit(PaneEvent::RunBotAction { action, args })
                         });
                     },
-                ),
-            );
-        }
+                ));
+            }
+            menu
+        });
     }
-    // Moderator actions appear only where the account moderates or owns the channel.
+    // Moderator actions appear only where the account moderates or owns the channel;
+    // on YouTube while signed in with Google (YouTube checks you moderate there).
     let moderates = owner.upgrade().is_some_and(|pane| {
         matches!(
             pane.read(cx).role,
             Some(crate::capabilities::Role::Moderator | crate::capabilities::Role::Broadcaster)
         )
-    });
-    if moderates && message.login.is_some() && !message.user_id.is_empty() {
-        menu = menu.separator();
-        // The broadcaster can't be timed out or banned in their own channel.
-        let broadcaster = owner
-            .upgrade()
-            .is_some_and(|pane| message.login.as_deref() == Some(pane.read(cx).name.as_ref()));
-        let mut actions = vec![
-            ("Timeout 1 minute", Action::ModTimeout(60)),
-            ("Timeout 10 minutes", Action::ModTimeout(600)),
-            ("Timeout 1 hour", Action::ModTimeout(3600)),
-            ("Timeout 1 day", Action::ModTimeout(86_400)),
-            ("Ban…", Action::ModBan),
-        ];
-        if broadcaster {
-            actions.clear();
-        }
-        if !message.deleted {
-            actions.insert(0, ("Delete message", Action::ModDelete));
-        }
-        for (label, action) in actions {
-            let owner = owner.clone();
-            let id = id.clone();
-            menu = menu.item(PopupMenuItem::new(label).on_click(move |_, w, cx| {
-                let _ = owner.update(cx, |p, cx| p.message_action(&id, action.clone(), w, cx));
-            }));
-        }
-    }
-    // YouTube: shown while signed in with Google; YouTube checks you moderate there.
-    if crate::youtube::is_youtube(&message.channel_id)
+    }) && message.login.is_some()
+        && !message.user_id.is_empty();
+    let youtube = crate::youtube::is_youtube(&message.channel_id)
         && crate::google_auth::SIGNED_IN.load(std::sync::atomic::Ordering::Relaxed)
         && message.user_id.starts_with("yt:")
-        && !message.badges.iter().any(|b| b.set_id == "broadcaster")
-    {
+        && !message.badges.iter().any(|b| b.set_id == "broadcaster");
+    if moderates || youtube {
+        // The broadcaster can't be timed out or banned in their own channel.
+        let broadcaster = !youtube
+            && owner
+                .upgrade()
+                .is_some_and(|pane| message.login.as_deref() == Some(pane.read(cx).name.as_ref()));
         menu = menu.separator();
-        let mut actions = vec![
-            ("Time out 1 minute (YouTube)", Action::ModTimeout(60)),
-            ("Time out 10 minutes (YouTube)", Action::ModTimeout(600)),
-            ("Time out 1 hour (YouTube)", Action::ModTimeout(3600)),
-            ("Ban from this YouTube chat…", Action::ModBan),
-        ];
         if !message.deleted {
-            actions.insert(0, ("Delete on YouTube", Action::ModDelete));
+            menu = actions(
+                menu,
+                &owner,
+                &id,
+                &[(
+                    if youtube {
+                        "Delete on YouTube"
+                    } else {
+                        "Delete message"
+                    },
+                    Action::ModDelete,
+                )],
+            );
         }
-        for (label, action) in actions {
-            let owner = owner.clone();
-            let id = id.clone();
-            menu = menu.item(PopupMenuItem::new(label).on_click(move |_, w, cx| {
-                let _ = owner.update(cx, |p, cx| p.message_action(&id, action.clone(), w, cx));
-            }));
+        if !broadcaster {
+            let mut timeouts = vec![
+                ("1 minute", Action::ModTimeout(60)),
+                ("10 minutes", Action::ModTimeout(600)),
+                ("1 hour", Action::ModTimeout(3600)),
+            ];
+            if !youtube {
+                timeouts.push(("1 day", Action::ModTimeout(86_400)));
+            }
+            menu = menu.submenu(
+                if youtube {
+                    "Time out on YouTube"
+                } else {
+                    "Timeout"
+                },
+                window,
+                cx,
+                {
+                    let (owner, id) = (owner.clone(), id.clone());
+                    move |menu, _, _| actions(menu, &owner, &id, &timeouts)
+                },
+            );
+            menu = actions(
+                menu,
+                &owner,
+                &id,
+                &[(
+                    if youtube {
+                        "Ban from this YouTube chat…"
+                    } else {
+                        "Ban…"
+                    },
+                    Action::ModBan,
+                )],
+            );
         }
+    }
+    // Links: open the first right here; everything else under Links.
+    let links: Vec<_> = message_links(&message).into_iter().take(3).collect();
+    if let Some(first) = links.first() {
+        let host = |url: &str| {
+            reqwest::Url::parse(url)
+                .ok()
+                .and_then(|u| u.host_str().map(str::to_owned))
+                .unwrap_or_default()
+        };
+        let (open, open_id, url) = (owner.clone(), id.clone(), first.url.clone());
+        menu = menu.separator().item(
+            PopupMenuItem::new(format!("Open link · {}", host(&first.url))).on_click(
+                move |_, w, cx| {
+                    let _ = open.update(cx, |p, cx| {
+                        p.message_action(&open_id, Action::OpenLink(url.clone()), w, cx)
+                    });
+                },
+            ),
+        );
+        let urls: Vec<String> = links.iter().map(|l| l.url.clone()).collect();
+        let (owner, id) = (owner.clone(), id.clone());
+        menu = menu.submenu("Links", window, cx, move |mut menu, _, _| {
+            for (index, url) in urls.iter().enumerate() {
+                let host = host(url);
+                if index > 0 {
+                    menu = menu.separator();
+                    let (owner, id, url) = (owner.clone(), id.clone(), url.clone());
+                    menu = menu.item(PopupMenuItem::new(format!("Open link · {host}")).on_click(
+                        move |_, w, cx| {
+                            let _ = owner.update(cx, |p, cx| {
+                                p.message_action(&id, Action::OpenLink(url.clone()), w, cx)
+                            });
+                        },
+                    ));
+                }
+                {
+                    let (owner, id, url) = (owner.clone(), id.clone(), url.clone());
+                    menu = menu.item(PopupMenuItem::new(format!("Copy link · {host}")).on_click(
+                        move |_, w, cx| {
+                            let _ = owner.update(cx, |p, cx| {
+                                p.message_action(&id, Action::CopyLink(url.clone()), w, cx)
+                            });
+                        },
+                    ));
+                }
+                // A Twitch channel link: open it here, or watch it in Streamlink.
+                if let Some(channel) = twitch_channel_link(url) {
+                    let (owner, open_channel) = (owner.clone(), channel.clone());
+                    menu = menu
+                        .item(
+                            PopupMenuItem::new(format!("Open #{channel} as a tab")).on_click(
+                                move |_, _, cx| {
+                                    let target = open_channel.clone();
+                                    let _ = owner.update(cx, |_, cx| {
+                                        cx.emit(PaneEvent::OpenChannel(target))
+                                    });
+                                },
+                            ),
+                        )
+                        .item(
+                            PopupMenuItem::new(format!("Watch #{channel} in Streamlink")).on_click(
+                                move |_, window, cx| {
+                                    let note = match crate::streamlink::open(&channel) {
+                                        Ok(()) => format!("Starting #{channel} in Streamlink…"),
+                                        Err(problem) => problem,
+                                    };
+                                    window.push_notification(Notification::info(note), cx);
+                                },
+                            ),
+                        );
+                }
+            }
+            menu
+        });
     }
     // Emotes in the message (up to three): copy the name, open the image or its page.
     let mut emotes: Vec<(String, String, String)> = Vec::new();
@@ -686,83 +808,38 @@ pub fn menu(
             emotes.push((provider.clone(), id.clone(), label.clone()));
         }
     }
-    for (provider, id, label) in emotes {
-        let (image, page, site) = emote_links(&provider, &id);
-        menu = menu.separator().item(
-            PopupMenuItem::new(format!("Copy emote name · {label}")).on_click({
-                let label = label.clone();
-                move |_, w, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(label.clone()));
-                    w.push_notification(Notification::info(format!("Copied {label}")), cx);
+    if !emotes.is_empty() {
+        if links.is_empty() {
+            menu = menu.separator();
+        }
+        menu = menu.submenu("Emotes", window, cx, move |mut menu, _, _| {
+            for (index, (provider, id, label)) in emotes.iter().enumerate() {
+                if index > 0 {
+                    menu = menu.separator();
                 }
-            }),
-        );
-        if let Some(image) = image {
-            menu = menu.item(
-                PopupMenuItem::new(format!("Open {label} image"))
-                    .on_click(move |_, _, cx| cx.open_url(&image)),
-            );
-        }
-        if let Some(page) = page {
-            menu = menu.item(
-                PopupMenuItem::new(format!("Open {label} on {site}"))
-                    .on_click(move |_, _, cx| cx.open_url(&page)),
-            );
-        }
-    }
-    for link in message_links(&message).into_iter().take(3) {
-        let host = reqwest::Url::parse(&link.url)
-            .ok()
-            .and_then(|u| u.host_str().map(str::to_owned))
-            .unwrap_or_default();
-        let open = owner.clone();
-        let open_id = id.clone();
-        let url = link.url.clone();
-        let copy = owner.clone();
-        let twitch_channel = twitch_channel_link(&link.url);
-        let copy_id = id.clone();
-        menu = menu
-            .separator()
-            .item(
-                PopupMenuItem::new(format!("Open link · {host}")).on_click(move |_, w, cx| {
-                    let _ = open.update(cx, |p, cx| {
-                        p.message_action(&open_id, Action::OpenLink(url.clone()), w, cx)
-                    });
-                }),
-            )
-            .item(
-                PopupMenuItem::new(format!("Copy link · {host}")).on_click(move |_, w, cx| {
-                    let _ = copy.update(cx, |p, cx| {
-                        p.message_action(&copy_id, Action::CopyLink(link.url.clone()), w, cx)
-                    });
-                }),
-            );
-        // A Twitch channel link: open it here, or watch it in Streamlink.
-        if let Some(channel) = twitch_channel {
-            let owner = owner.clone();
-            let open_channel = channel.clone();
-            menu = menu
-                .item(
-                    PopupMenuItem::new(format!("Open #{channel} as a tab")).on_click(
-                        move |_, _, cx| {
-                            let target = open_channel.clone();
-                            let _ =
-                                owner.update(cx, |_, cx| cx.emit(PaneEvent::OpenChannel(target)));
-                        },
-                    ),
-                )
-                .item(
-                    PopupMenuItem::new(format!("Watch #{channel} in Streamlink")).on_click(
-                        move |_, window, cx| {
-                            let note = match crate::streamlink::open(&channel) {
-                                Ok(()) => format!("Starting #{channel} in Streamlink…"),
-                                Err(problem) => problem,
-                            };
-                            window.push_notification(Notification::info(note), cx);
-                        },
-                    ),
-                );
-        }
+                let (image, page, site) = emote_links(provider, id);
+                let copied = label.clone();
+                menu = menu.item(PopupMenuItem::new(format!("Copy {label}")).on_click(
+                    move |_, w, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
+                        w.push_notification(Notification::info(format!("Copied {copied}")), cx);
+                    },
+                ));
+                if let Some(image) = image {
+                    menu = menu.item(
+                        PopupMenuItem::new(format!("Open {label} image"))
+                            .on_click(move |_, _, cx| cx.open_url(&image)),
+                    );
+                }
+                if let Some(page) = page {
+                    menu = menu.item(
+                        PopupMenuItem::new(format!("Open {label} on {site}"))
+                            .on_click(move |_, _, cx| cx.open_url(&page)),
+                    );
+                }
+            }
+            menu
+        });
     }
     menu
 }

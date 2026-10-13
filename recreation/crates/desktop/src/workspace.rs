@@ -4597,36 +4597,10 @@ impl Workbench {
                                 let live_only = owner
                                     .upgrade()
                                     .is_some_and(|owner| owner.read(cx).live_channels);
-                                let add = owner.clone();
-                                let add_channel = menu_channel.clone();
-                                let close = owner.clone();
-                                let close_channel = menu_channel.clone();
-                                let filter = owner.clone();
-                                let left = owner.clone();
-                                let left_channel = menu_channel.clone();
-                                let right = owner.clone();
-                                let right_channel = menu_channel.clone();
-                                let open_url = format!("https://www.twitch.tv/{menu_channel}");
-                                let copy_url = open_url.clone();
-                                let read = owner.clone();
-                                let read_channel = menu_channel.clone();
-                                let details = owner.clone();
-                                let details_channel = menu_channel.clone();
-                                let equal = owner.clone();
-                                let equal_channel = menu_channel.clone();
-                                let equal_all = owner.clone();
-                                let next_pane = owner.clone();
-                                let next_origin = menu_pane.clone();
-                                let nav_owner = owner.clone();
-                                let nav_channel = menu_channel.clone();
-                                let pin_owner = owner.clone();
-                                let pin_channel = menu_channel.clone();
+                                let menu_special = crate::combined::is_special(&menu_channel);
                                 let pinned_now = owner
                                     .upgrade()
                                     .is_some_and(|o| o.read(cx).is_pinned(&menu_channel, cx));
-                                let menu_special = crate::combined::is_special(&menu_channel);
-                                let notify_owner = owner.clone();
-                                let notify_channel = menu_channel.clone();
                                 let notify_now = owner.upgrade().is_some_and(|o| {
                                     o.read(cx).live_notify.contains(&menu_channel)
                                 });
@@ -4644,71 +4618,76 @@ impl Workbench {
                                                 )
                                         })
                                     });
-                                let quiet_owner = owner.clone();
-                                let quiet_channel = menu_channel.clone();
                                 let quiet_now = owner.upgrade().is_some_and(|o| {
                                     o.read(cx).quiet_unread.contains(&menu_channel)
                                 });
-                                let mute_owner = owner.clone();
-                                let mute_channel = menu_channel.clone();
                                 let muted_now = owner.upgrade().is_some_and(|o| {
                                     o.read(cx).muted_pings.contains(&menu_channel)
                                 });
+                                // The pane for this tab in the active workspace.
+                                fn pane_of(
+                                    owner: &WeakEntity<Workbench>,
+                                    channel: &str,
+                                    cx: &App,
+                                ) -> Option<Entity<ChannelPane>> {
+                                    let o = owner.upgrade()?;
+                                    let o = o.read(cx);
+                                    o.tabs[o.active]
+                                        .panes
+                                        .iter()
+                                        .find(|p| p.read(cx).name.as_ref() == channel)
+                                        .cloned()
+                                }
+                                // A short top level: the everyday toggles, then grouped
+                                // submenus, then Close. (It used to be ~40 flat rows.)
                                 menu.item(
-                                    PopupMenuItem::new(if pinned_now {
-                                        "Unpin tab"
-                                    } else {
-                                        "Pin tab"
-                                    })
-                                    .on_click(
-                                        move |_, _, cx| {
-                                            let _ = pin_owner.update(cx, |this, cx| {
-                                                this.toggle_pin(&pin_channel, cx)
-                                            });
-                                        },
-                                    ),
+                                    PopupMenuItem::new(if pinned_now { "Unpin tab" } else { "Pin tab" })
+                                        .on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, _, cx| {
+                                                let _ = owner.update(cx, |this, cx| this.toggle_pin(&channel, cx));
+                                            }
+                                        }),
                                 )
                                 .item_if(!menu_special,
                                     PopupMenuItem::new("Notify when live")
                                         .checked(notify_now)
-                                        .on_click(move |_, _, cx| {
-                                            let _ = notify_owner.update(cx, |this, cx| {
-                                                this.toggle_live_notify(&notify_channel, cx)
-                                            });
+                                        .on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, _, cx| {
+                                                let _ = owner.update(cx, |this, cx| this.toggle_live_notify(&channel, cx));
+                                            }
                                         }),
                                 )
-                                .item_if(!menu_special,
-                                    // Chatterino's "highlight on new message": off, only
-                                    // highlights and mentions mark the tab.
-                                    PopupMenuItem::new("Count new messages")
-                                        .checked(!quiet_now)
-                                        .on_click(move |_, _, cx| {
-                                            let _ = quiet_owner.update(cx, |this, cx| {
-                                                if let Some(at) = this.quiet_unread.iter().position(|c| *c == quiet_channel) {
-                                                    this.quiet_unread.remove(at);
-                                                } else {
-                                                    this.quiet_unread.push(quiet_channel.clone());
-                                                }
-                                                this.schedule_save(cx);
+                                .item(
+                                    PopupMenuItem::new("Only show live channel tabs")
+                                        .checked(live_only)
+                                        .on_click({
+                                            let owner = owner.clone();
+                                            move |_, _, cx| {
+                                                let _ = owner.update(cx, |this, cx| {
+                                                    this.live_channels = !this.live_channels;
+                                                    this.schedule_save(cx);
+                                                    cx.notify();
+                                                });
+                                            }
+                                        }),
+                                )
+                                .item(PopupMenuItem::new("Mark channel read").on_click({
+                                    let owner = owner.clone();
+                                    let channel = menu_channel.clone();
+                                    move |_, _, cx| {
+                                        if let Some(pane) = pane_of(&owner, &channel, cx) {
+                                            pane.update(cx, |p, cx| {
+                                                p.attention.mark_all();
+                                                p.scroller.update(cx, |s, cx| s.remeasure(cx));
                                                 cx.notify();
                                             });
-                                        }),
-                                )
-                                .item_if(!menu_special,
-                                    PopupMenuItem::new("Mute ping sounds here")
-                                        .checked(muted_now)
-                                        .on_click(move |_, _, cx| {
-                                            let _ = mute_owner.update(cx, |this, cx| {
-                                                if let Some(at) = this.muted_pings.iter().position(|c| *c == mute_channel) {
-                                                    this.muted_pings.remove(at);
-                                                } else {
-                                                    this.muted_pings.push(mute_channel.clone());
-                                                }
-                                                this.schedule_save(cx);
-                                                cx.notify();
-                                            });
-                                        }),
-                                )
+                                        }
+                                    }
+                                }))
                                 .separator()
                                 // Channels you moderate: switch chat modes from here.
                                 .submenu_if(menu_mod, "Room modes", window, cx, {
@@ -4740,376 +4719,354 @@ impl Workbench {
                                         menu
                                     }
                                 })
-                                .submenu(
-                                    "Reading & highlights",
-                                    window,
-                                    cx,
+                                .submenu("Channel", window, cx, {
+                                    let owner = owner.clone();
+                                    let menu_channel = menu_channel.clone();
+                                    move |menu, _, _| {
+                                        menu.item_if(!menu_special, PopupMenuItem::new("Channel details · Ctrl+I").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, w, cx| {
+                                                let _ = owner.update(cx, |this, cx| this.open_channel_details(channel.clone(), w, cx));
+                                            }
+                                        }))
+                                        .item_if(!menu_special,
+                                            // Chatterino's "highlight on new message": off, only
+                                            // highlights and mentions mark the tab.
+                                            PopupMenuItem::new("Count new messages")
+                                                .checked(!quiet_now)
+                                                .on_click({
+                                                    let owner = owner.clone();
+                                                    let channel = menu_channel.clone();
+                                                    move |_, _, cx| {
+                                                        let _ = owner.update(cx, |this, cx| {
+                                                            if let Some(at) = this.quiet_unread.iter().position(|c| *c == channel) {
+                                                                this.quiet_unread.remove(at);
+                                                            } else {
+                                                                this.quiet_unread.push(channel.clone());
+                                                            }
+                                                            this.schedule_save(cx);
+                                                            cx.notify();
+                                                        });
+                                                    }
+                                                }),
+                                        )
+                                        .item_if(!menu_special,
+                                            PopupMenuItem::new("Mute ping sounds here")
+                                                .checked(muted_now)
+                                                .on_click({
+                                                    let owner = owner.clone();
+                                                    let channel = menu_channel.clone();
+                                                    move |_, _, cx| {
+                                                        let _ = owner.update(cx, |this, cx| {
+                                                            if let Some(at) = this.muted_pings.iter().position(|c| *c == channel) {
+                                                                this.muted_pings.remove(at);
+                                                            } else {
+                                                                this.muted_pings.push(channel.clone());
+                                                            }
+                                                            this.schedule_save(cx);
+                                                            cx.notify();
+                                                        });
+                                                    }
+                                                }),
+                                        )
+                                        .item_if(
+                                            !menu_special
+                                                && logs_on
+                                                && crate::chat_logs::ONLY_CHOSEN
+                                                    .load(std::sync::atomic::Ordering::Relaxed),
+                                            PopupMenuItem::new("Log this channel")
+                                                .checked(crate::chat_logs::chosen(&menu_channel))
+                                                .on_click({
+                                                    let owner = owner.clone();
+                                                    let channel = menu_channel.clone();
+                                                    move |_, _, cx| {
+                                                        crate::chat_logs::toggle_chosen(&channel);
+                                                        let _ = owner.update(cx, |this, cx| {
+                                                            this.schedule_save(cx);
+                                                            cx.notify();
+                                                        });
+                                                    }
+                                                }),
+                                        )
+                                        .separator()
+                                        .item_if(!menu_special, PopupMenuItem::new("Reconnect").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, window, cx| {
+                                                let _ = owner.update(cx, |this, cx| {
+                                                    for source in crate::combined::sources(&channel) {
+                                                        if !crate::youtube::is_youtube(&source) {
+                                                            this.live.reconnect(&source);
+                                                        }
+                                                    }
+                                                    cx.notify();
+                                                });
+                                                window.push_notification(
+                                                    Notification::info(format!("Reconnecting #{channel}…")),
+                                                    cx,
+                                                );
+                                            }
+                                        }))
+                                        .item_if(!menu_special, PopupMenuItem::new("Reload emotes").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, window, cx| {
+                                                let _ = owner.update(cx, |this, cx| {
+                                                    let mut catalog = this.catalog.borrow_mut();
+                                                    for source in crate::combined::sources(&channel) {
+                                                        catalog.reload_channel(&source);
+                                                    }
+                                                    drop(catalog);
+                                                    cx.notify();
+                                                });
+                                                window.push_notification(Notification::info("Reloading emotes…"), cx);
+                                            }
+                                        }))
+                                        .item(PopupMenuItem::new("Clear messages locally").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, _, cx| {
+                                                if let Some(pane) = pane_of(&owner, &channel, cx) {
+                                                    pane.update(cx, |p, cx| p.clear_locally(cx));
+                                                }
+                                            }
+                                        }))
+                                        .item(PopupMenuItem::new("Filter view…").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, window, cx| {
+                                                if let Some(pane) = pane_of(&owner, &channel, cx) {
+                                                    pane.update(cx, |p, cx| p.open_view_filter(window, cx));
+                                                }
+                                            }
+                                        }))
+                                        .item(PopupMenuItem::new("Change channel…").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, window, cx| {
+                                                let _ = owner.update(cx, |this, cx| {
+                                                    if this.tabs[this.active].locked {
+                                                        window.push_notification(
+                                                            Notification::info("This workspace's layout is locked. Right-click it in the sidebar → Unlock layout."),
+                                                            cx,
+                                                        );
+                                                        return;
+                                                    }
+                                                    this.open_add(false, window, cx);
+                                                    this.replacing = Some(channel.clone());
+                                                    this.add_target = Some(channel.clone());
+                                                    cx.notify();
+                                                });
+                                            }
+                                        }))
+                                    }
+                                })
+                                .submenu("Jump to", window, cx, {
+                                    let owner = owner.clone();
+                                    let channel = menu_channel.clone();
                                     move |mut menu, _, _| {
                                         for (label, direction) in [
                                             ("First unread / last read · Ctrl+Home", 0i8),
                                             ("Previous highlight · Alt+PageUp", -1),
                                             ("Next highlight · Alt+PageDown", 1),
                                         ] {
-                                            let owner = nav_owner.clone();
-                                            let channel = nav_channel.clone();
-                                            menu = menu.item(PopupMenuItem::new(label).on_click(
-                                                move |_, w, cx| {
-                                                    let _ = owner.update(cx, |this, cx| {
-                                                        let Some(tab) = this
-                                                            .tabs
-                                                            .iter()
-                                                            .position(|tab| tab.id == tab_id)
-                                                        else {
-                                                            return;
-                                                        };
-                                                        let Some(pane) = this.tabs[tab]
-                                                            .panes
-                                                            .iter()
-                                                            .find(|p| {
-                                                                p.read(cx).name.as_ref() == channel
-                                                            })
-                                                            .cloned()
-                                                        else {
-                                                            return;
-                                                        };
-                                                        this.select_tab(tab, cx);
-                                                        if let Some(dock) = &mut this.tabs[tab].dock
-                                                        {
-                                                            dock.select(&channel);
-                                                        }
-                                                        this.selected_channel =
-                                                            Some(channel.clone());
-                                                        this.schedule_save(cx);
-                                                        pane.update(cx, |p, cx| {
-                                                            p.navigate_attention(direction, w, cx)
-                                                        });
-                                                        cx.notify();
-                                                    });
-                                                },
-                                            ));
+                                            let owner = owner.clone();
+                                            let channel = channel.clone();
+                                            menu = menu.item(PopupMenuItem::new(label).on_click(move |_, w, cx| {
+                                                let _ = owner.update(cx, |this, cx| {
+                                                    let Some(tab) = this.tabs.iter().position(|tab| tab.id == tab_id) else {
+                                                        return;
+                                                    };
+                                                    let Some(pane) = this.tabs[tab]
+                                                        .panes
+                                                        .iter()
+                                                        .find(|p| p.read(cx).name.as_ref() == channel)
+                                                        .cloned()
+                                                    else {
+                                                        return;
+                                                    };
+                                                    this.select_tab(tab, cx);
+                                                    if let Some(dock) = &mut this.tabs[tab].dock {
+                                                        dock.select(&channel);
+                                                    }
+                                                    this.selected_channel = Some(channel.clone());
+                                                    this.schedule_save(cx);
+                                                    pane.update(cx, |p, cx| p.navigate_attention(direction, w, cx));
+                                                    cx.notify();
+                                                });
+                                            }));
                                         }
                                         menu
-                                    },
-                                )
-                                .item_if(!menu_special, PopupMenuItem::new("Channel details · Ctrl+I").on_click(
-                                    move |_, w, cx| {
-                                        let _ = details.update(cx, |this, cx| {
-                                            this.open_channel_details(
-                                                details_channel.clone(),
-                                                w,
-                                                cx,
-                                            )
-                                        });
-                                    },
-                                ))
-                                .item(PopupMenuItem::new("Mark channel read").on_click(
-                                    move |_, _, cx| {
-                                        let _ = read.update(cx, |this, cx| {
-                                            if let Some(pane) = this.tabs[this.active]
-                                                .panes
-                                                .iter()
-                                                .find(|p| p.read(cx).name.as_ref() == read_channel)
-                                            {
-                                                pane.update(cx, |p, cx| {
-                                                    p.attention.mark_all();
-                                                    p.scroller.update(cx, |s, cx| s.remeasure(cx));
+                                    }
+                                })
+                                .submenu_if(!menu_special, "Open", window, cx, {
+                                    let menu_channel = menu_channel.clone();
+                                    move |menu, _, _| {
+                                        let page = format!("https://www.twitch.tv/{menu_channel}");
+                                        menu.item(PopupMenuItem::new("Stream in browser").on_click({
+                                            let url = page.clone();
+                                            move |_, _, cx| cx.open_url(&url)
+                                        }))
+                                        .item(PopupMenuItem::new("Player pop-out").on_click({
+                                            let url = crate::streamlink::player_url(&menu_channel);
+                                            move |_, _, cx| cx.open_url(&url)
+                                        }))
+                                        .item(PopupMenuItem::new("In Streamlink").on_click({
+                                            let channel = menu_channel.clone();
+                                            move |_, window, cx| {
+                                                let note = match crate::streamlink::open(&channel) {
+                                                    Ok(()) => format!("Starting #{channel} in Streamlink…"),
+                                                    Err(problem) => problem,
+                                                };
+                                                window.push_notification(Notification::info(note), cx);
+                                            }
+                                        }))
+                                        // Twitch's mod view and subscribe pages (Chatterino's split menu).
+                                        .item_if(menu_mod, PopupMenuItem::new("Mod view").on_click({
+                                            let url = format!("https://www.twitch.tv/moderator/{menu_channel}");
+                                            move |_, _, cx| cx.open_url(&url)
+                                        }))
+                                        .item_if(!crate::youtube::is_youtube(&menu_channel), PopupMenuItem::new("Subscribe…").on_click({
+                                            let url = format!("https://www.twitch.tv/subs/{menu_channel}");
+                                            move |_, _, cx| cx.open_url(&url)
+                                        }))
+                                        .separator()
+                                        .item(PopupMenuItem::new("Copy channel URL").on_click({
+                                            let url = page.clone();
+                                            move |_, window, cx| {
+                                                cx.write_to_clipboard(ClipboardItem::new_string(url.clone()));
+                                                window.push_notification(Notification::info("Channel URL copied"), cx);
+                                            }
+                                        }))
+                                    }
+                                })
+                                .submenu("Tabs", window, cx, {
+                                    let owner = owner.clone();
+                                    let menu_channel = menu_channel.clone();
+                                    move |menu, _, _| {
+                                        menu.item(PopupMenuItem::new("Add channel tab").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, window, cx| {
+                                                let _ = owner.update(cx, |this, cx| {
+                                                    this.open_add(false, window, cx);
+                                                    this.add_target = Some(channel.clone());
+                                                });
+                                            }
+                                        }))
+                                        .item(PopupMenuItem::new("Sort tabs A–Z").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, _, cx| {
+                                                let _ = owner.update(cx, |this, cx| {
+                                                    if let Some(d) = &mut this.tabs[this.active].dock {
+                                                        d.sort_group(&channel);
+                                                    }
+                                                    let pinned = this.tabs[this.active].pinned.clone();
+                                                    if let Some(d) = &mut this.tabs[this.active].dock {
+                                                        d.pin_front(&pinned);
+                                                    }
+                                                    this.schedule_save(cx);
                                                     cx.notify();
                                                 });
                                             }
-                                            cx.notify();
-                                        });
-                                    },
-                                ))
-                                .item_if(!menu_special, PopupMenuItem::new("Reconnect").on_click({
-                                    let owner = owner.clone();
-                                    let channel = menu_channel.clone();
-                                    move |_, window, cx| {
-                                        let _ = owner.update(cx, |this, cx| {
-                                            for source in crate::combined::sources(&channel) {
-                                                if !crate::youtube::is_youtube(&source) {
-                                                    this.live.reconnect(&source);
-                                                }
+                                        }))
+                                        .item(PopupMenuItem::new("Move tab left").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, _, cx| {
+                                                let _ = owner.update(cx, |this, cx| {
+                                                    if let Some(d) = &mut this.tabs[this.active].dock {
+                                                        d.shift_tab(&channel, false);
+                                                    }
+                                                    this.schedule_save(cx);
+                                                    cx.notify();
+                                                });
                                             }
-                                            cx.notify();
-                                        });
-                                        window.push_notification(
-                                            Notification::info(format!("Reconnecting #{channel}…")),
-                                            cx,
-                                        );
-                                    }
-                                }))
-                                .item_if(
-                                    !menu_special
-                                        && logs_on
-                                        && crate::chat_logs::ONLY_CHOSEN
-                                            .load(std::sync::atomic::Ordering::Relaxed),
-                                    PopupMenuItem::new("Log this channel")
-                                        .checked(crate::chat_logs::chosen(&menu_channel))
-                                    .on_click({
-                                        let owner = owner.clone();
-                                        let channel = menu_channel.clone();
-                                        move |_, _, cx| {
-                                            crate::chat_logs::toggle_chosen(&channel);
-                                            let _ = owner.update(cx, |this, cx| {
-                                                this.schedule_save(cx);
-                                                cx.notify();
-                                            });
-                                        }
-                                    }),
-                                )
-                                .item(PopupMenuItem::new("Change channel…").on_click({
-                                    let owner = owner.clone();
-                                    let channel = menu_channel.clone();
-                                    move |_, window, cx| {
-                                        let _ = owner.update(cx, |this, cx| {
-                                            if this.tabs[this.active].locked {
-                                                window.push_notification(
-                                                    Notification::info("This workspace's layout is locked. Right-click it in the sidebar → Unlock layout."),
-                                                    cx,
-                                                );
-                                                return;
+                                        }))
+                                        .item(PopupMenuItem::new("Move tab right").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, _, cx| {
+                                                let _ = owner.update(cx, |this, cx| {
+                                                    if let Some(d) = &mut this.tabs[this.active].dock {
+                                                        d.shift_tab(&channel, true);
+                                                    }
+                                                    this.schedule_save(cx);
+                                                    cx.notify();
+                                                });
                                             }
-                                            this.open_add(false, window, cx);
-                                            this.replacing = Some(channel.clone());
-                                            this.add_target = Some(channel.clone());
-                                            cx.notify();
-                                        });
-                                    }
-                                }))
-                                .item_if(!menu_special, PopupMenuItem::new("Reload emotes").on_click({
-                                    let owner = owner.clone();
-                                    let channel = menu_channel.clone();
-                                    move |_, window, cx| {
-                                        let _ = owner.update(cx, |this, cx| {
-                                            let mut catalog = this.catalog.borrow_mut();
-                                            for source in crate::combined::sources(&channel) {
-                                                catalog.reload_channel(&source);
+                                        }))
+                                        .item(PopupMenuItem::new("Hide tabs · Ctrl+U").on_click({
+                                            let owner = owner.clone();
+                                            move |_, _, cx| {
+                                                let _ = owner.update(cx, |this, cx| {
+                                                    this.tabs_hidden = true;
+                                                    this.schedule_save(cx);
+                                                    cx.notify();
+                                                });
                                             }
-                                            drop(catalog);
-                                            cx.notify();
-                                        });
-                                        window.push_notification(
-                                            Notification::info("Reloading emotes…"),
-                                            cx,
-                                        );
+                                        }))
+                                        .separator()
+                                        .item(PopupMenuItem::new("Close other tabs…").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, w, cx| {
+                                                let _ = owner.update(cx, |this, cx| this.confirm_close_group(channel.clone(), false, w, cx));
+                                            }
+                                        }))
+                                        .item(PopupMenuItem::new("Close tabs to the right…").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, w, cx| {
+                                                let _ = owner.update(cx, |this, cx| this.confirm_close_group(channel.clone(), true, w, cx));
+                                            }
+                                        }))
                                     }
-                                }))
-                                .item(PopupMenuItem::new("Clear messages locally").on_click({
+                                })
+                                .submenu("Layout", window, cx, {
                                     let owner = owner.clone();
-                                    let channel = menu_channel.clone();
-                                    move |_, _, cx| {
-                                        let pane = owner.upgrade().and_then(|o| {
-                                            let o = o.read(cx);
-                                            o.tabs[o.active]
-                                                .panes
-                                                .iter()
-                                                .find(|p| p.read(cx).name.as_ref() == channel)
-                                                .cloned()
-                                        });
-                                        if let Some(pane) = pane {
-                                            pane.update(cx, |p, cx| p.clear_locally(cx));
-                                        }
+                                    let menu_channel = menu_channel.clone();
+                                    let menu_pane = menu_pane.clone();
+                                    move |menu, _, _| {
+                                        menu.item(PopupMenuItem::new("Pop out to its own window").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, _, cx| {
+                                                let _ = owner.update(cx, |this, cx| this.open_popout(channel.clone(), cx));
+                                            }
+                                        }))
+                                        .item(PopupMenuItem::new("Focus next pane · F6").on_click({
+                                            let owner = owner.clone();
+                                            let origin = menu_pane.clone();
+                                            move |_, w, cx| {
+                                                let _ = owner.update(cx, |this, cx| this.cycle_pane_from(true, Some(origin.clone()), w, cx));
+                                            }
+                                        }))
+                                        .item(PopupMenuItem::new("Equalize this split").on_click({
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            move |_, w, cx| {
+                                                let _ = owner.update(cx, |this, cx| this.equalize_panes(Some(channel.clone()), false, w, cx));
+                                            }
+                                        }))
+                                        .item(PopupMenuItem::new("Equalize all splits").on_click({
+                                            let owner = owner.clone();
+                                            move |_, w, cx| {
+                                                let _ = owner.update(cx, |this, cx| this.equalize_panes(None, true, w, cx));
+                                            }
+                                        }))
                                     }
-                                }))
+                                })
                                 .separator()
-                                .item_if(!menu_special,
-                                    PopupMenuItem::new("Open stream in browser")
-                                        .on_click(move |_, _, cx| cx.open_url(&open_url)),
-                                )
-                                // Twitch's mod view and subscribe pages (Chatterino's split menu).
-                                .item_if(menu_mod, PopupMenuItem::new("Open mod view").on_click({
-                                    let url = format!("https://www.twitch.tv/moderator/{menu_channel}");
-                                    move |_, _, cx| cx.open_url(&url)
-                                }))
-                                .item_if(!menu_special && !crate::youtube::is_youtube(&menu_channel), PopupMenuItem::new("Subscribe…").on_click({
-                                    let url = format!("https://www.twitch.tv/subs/{menu_channel}");
-                                    move |_, _, cx| cx.open_url(&url)
-                                }))
-                                .item_if(!menu_special, PopupMenuItem::new("Open player pop-out").on_click({
-                                    let url = crate::streamlink::player_url(&menu_channel);
-                                    move |_, _, cx| cx.open_url(&url)
-                                }))
-                                .item_if(!menu_special, PopupMenuItem::new("Open in Streamlink").on_click({
-                                    let channel = menu_channel.clone();
-                                    move |_, window, cx| {
-                                        let note = match crate::streamlink::open(&channel) {
-                                            Ok(()) => format!("Starting #{channel} in Streamlink…"),
-                                            Err(problem) => problem,
-                                        };
-                                        window.push_notification(Notification::info(note), cx);
-                                    }
-                                }))
-                                .item_if(!menu_special, PopupMenuItem::new("Copy channel URL").on_click(
-                                    move |_, window, cx| {
-                                        cx.write_to_clipboard(ClipboardItem::new_string(
-                                            copy_url.clone(),
-                                        ));
-                                        window.push_notification(
-                                            Notification::info("Channel URL copied"),
-                                            cx,
-                                        );
-                                    },
-                                ))
-                                .separator()
-                                .item(PopupMenuItem::new("Add channel tab").on_click(
-                                    move |_, window, cx| {
-                                        let _ = add.update(cx, |this, cx| {
-                                            this.open_add(false, window, cx);
-                                            this.add_target = Some(add_channel.clone());
-                                        });
-                                    },
-                                ))
-                                .item(
-                                    PopupMenuItem::new("Only show live channel tabs")
-                                        .checked(live_only)
-                                        .on_click(move |_, _, cx| {
-                                            let _ = filter.update(cx, |this, cx| {
-                                                this.live_channels = !this.live_channels;
-                                                this.schedule_save(cx);
-                                                cx.notify();
-                                            });
-                                        }),
-                                )
-                                .item(PopupMenuItem::new("Hide tabs · Ctrl+U").on_click({
-                                    let owner = owner.clone();
-                                    move |_, _, cx| {
-                                        let _ = owner.update(cx, |this, cx| {
-                                            this.tabs_hidden = true;
-                                            this.schedule_save(cx);
-                                            cx.notify();
-                                        });
-                                    }
-                                }))
-                                .separator()
-                                .item(PopupMenuItem::new("Sort tabs A–Z").on_click({
-                                    let owner = owner.clone();
-                                    let channel = menu_channel.clone();
-                                    move |_, _, cx| {
-                                        let _ = owner.update(cx, |this, cx| {
-                                            if let Some(d) = &mut this.tabs[this.active].dock {
-                                                d.sort_group(&channel);
-                                            }
-                                            let pinned = this.tabs[this.active].pinned.clone();
-                                            if let Some(d) = &mut this.tabs[this.active].dock {
-                                                d.pin_front(&pinned);
-                                            }
-                                            this.schedule_save(cx);
-                                            cx.notify();
-                                        });
-                                    }
-                                }))
-                                .item(PopupMenuItem::new("Move tab left").on_click(
-                                    move |_, _, cx| {
-                                        let _ = left.update(cx, |this, cx| {
-                                            if let Some(d) = &mut this.tabs[this.active].dock {
-                                                d.shift_tab(&left_channel, false);
-                                            }
-                                            this.schedule_save(cx);
-                                            cx.notify();
-                                        });
-                                    },
-                                ))
-                                .item(PopupMenuItem::new("Move tab right").on_click(
-                                    move |_, _, cx| {
-                                        let _ = right.update(cx, |this, cx| {
-                                            if let Some(d) = &mut this.tabs[this.active].dock {
-                                                d.shift_tab(&right_channel, true);
-                                            }
-                                            this.schedule_save(cx);
-                                            cx.notify();
-                                        });
-                                    },
-                                ))
-                                .separator()
-                                .item(PopupMenuItem::new("Filter view…").on_click({
+                                .item(PopupMenuItem::new("Close channel…").on_click({
                                     let owner = owner.clone();
                                     let channel = menu_channel.clone();
                                     move |_, window, cx| {
-                                        let pane = owner.upgrade().and_then(|o| {
-                                            let o = o.read(cx);
-                                            o.tabs[o.active]
-                                                .panes
-                                                .iter()
-                                                .find(|p| p.read(cx).name.as_ref() == channel)
-                                                .cloned()
-                                        });
-                                        if let Some(pane) = pane {
-                                            pane.update(cx, |p, cx| p.open_view_filter(window, cx));
-                                        }
+                                        let _ = owner.update(cx, |this, cx| this.confirm_close_channel(channel.clone(), window, cx));
                                     }
                                 }))
-                                .item(PopupMenuItem::new("Pop out to its own window").on_click({
-                                    let owner = owner.clone();
-                                    let channel = menu_channel.clone();
-                                    move |_, _, cx| {
-                                        let _ = owner.update(cx, |this, cx| {
-                                            this.open_popout(channel.clone(), cx)
-                                        });
-                                    }
-                                }))
-                                .item(PopupMenuItem::new("Focus next pane · F6").on_click(
-                                    move |_, w, cx| {
-                                        let _ = next_pane.update(cx, |this, cx| {
-                                            this.cycle_pane_from(
-                                                true,
-                                                Some(next_origin.clone()),
-                                                w,
-                                                cx,
-                                            )
-                                        });
-                                    },
-                                ))
-                                .item(PopupMenuItem::new("Equalize this split").on_click(
-                                    move |_, w, cx| {
-                                        let _ = equal.update(cx, |this, cx| {
-                                            this.equalize_panes(
-                                                Some(equal_channel.clone()),
-                                                false,
-                                                w,
-                                                cx,
-                                            )
-                                        });
-                                    },
-                                ))
-                                .item(PopupMenuItem::new("Equalize all splits").on_click(
-                                    move |_, w, cx| {
-                                        let _ = equal_all.update(cx, |this, cx| {
-                                            this.equalize_panes(None, true, w, cx)
-                                        });
-                                    },
-                                ))
-                                .separator()
-                                .item(PopupMenuItem::new("Close other tabs…").on_click({
-                                    let owner = owner.clone();
-                                    let channel = menu_channel.clone();
-                                    move |_, w, cx| {
-                                        let _ = owner.update(cx, |this, cx| {
-                                            this.confirm_close_group(channel.clone(), false, w, cx)
-                                        });
-                                    }
-                                }))
-                                .item(PopupMenuItem::new("Close tabs to the right…").on_click({
-                                    let owner = owner.clone();
-                                    let channel = menu_channel.clone();
-                                    move |_, w, cx| {
-                                        let _ = owner.update(cx, |this, cx| {
-                                            this.confirm_close_group(channel.clone(), true, w, cx)
-                                        });
-                                    }
-                                }))
-                                .item(
-                                    PopupMenuItem::new("Close channel…").on_click(
-                                        move |_, window, cx| {
-                                            let _ = close.update(cx, |this, cx| {
-                                                this.confirm_close_channel(
-                                                    close_channel.clone(),
-                                                    window,
-                                                    cx,
-                                                )
-                                            });
-                                        },
-                                    ),
-                                )
                             };
                         if let Some(pane) = drag_pane.filter(|_| !locked) {
                             item.on_drag(

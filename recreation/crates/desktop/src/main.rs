@@ -103,7 +103,6 @@ use gpui_kit::component::{
     Disableable, Icon, IconName, Sizable, StyledExt, WindowExt,
     button::{Button, ButtonVariants},
     input::{InputEvent, Textarea, TextareaState},
-    menu::ContextMenuExt,
     notification::{Notification, NotificationDelivery},
 };
 use gpui_kit::*;
@@ -348,8 +347,38 @@ struct ChannelPane {
     viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
     /// Long messages the reader expanded (Settings → Appearance → Collapse).
     expanded: Rc<RefCell<std::collections::HashSet<String>>>,
+    /// The open right-click menu on a message. Held here, not on the row, so new
+    /// chat re-rendering the rows doesn't close it.
+    row_menu: Option<(
+        Entity<gpui_kit::component::menu::PopupMenu>,
+        Point<Pixels>,
+        Subscription,
+    )>,
 }
 impl ChannelPane {
+    /// Shows a message's right-click menu at `at` until it's dismissed.
+    fn open_row_menu(
+        &mut self,
+        menu: Entity<gpui_kit::component::menu::PopupMenu>,
+        at: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let dismissed = cx.subscribe_in(&menu, window, |this, menu, _: &DismissEvent, _, cx| {
+            if this
+                .row_menu
+                .as_ref()
+                .is_some_and(|(open, _, _)| open == menu)
+            {
+                this.row_menu = None;
+                cx.notify();
+            }
+        });
+        menu.read(cx).focus_handle(cx).focus(window, cx);
+        self.row_menu = Some((menu, at, dismissed));
+        cx.notify();
+    }
+
     fn new(
         name: &str,
         media: Rc<RefCell<media::MediaCache>>,
@@ -466,6 +495,7 @@ impl ChannelPane {
             entrances: Vec::new(),
             viewport: Rc::new(RefCell::new(None)),
             expanded: Default::default(),
+            row_menu: None,
         }
     }
     /// Tab menu → "Clear messages locally": empties this view; nobody else is affected.
@@ -1133,6 +1163,9 @@ impl Render for ChannelPane {
                     })
                     .relative()
                     .when_some(theme::chat_font(), |el, font| el.font_family(font))
+                    .when_some(self.row_menu.as_ref().map(|(menu, at, _)| (menu.clone(), *at)), |el, (menu, at)| {
+                        el.child(deferred(anchored().position(at).snap_to_window_with_margin(px(8.)).child(menu)).with_priority(1))
+                    })
                     .when(retained == 0, |el| el.child(div().v_flex().p_6().gap_2().text_color(rgb(theme::MUTED))
                         .child(div().text_color(rgb(theme::TEXT)).text_size(px(16.)).child(if let Some(title) = combined::special_title(&self.name) { title.to_owned() } else if youtube::is_youtube(&self.name) { format!("{} is ready", combined::title(&self.name)) } else { format!("#{} is ready", combined::title(&self.name)) }))
                         .child(if self.connected && !combined::is_special(&self.name) { "Connected. Waiting for messages…".to_string() } else { self.connection.clone() })
@@ -1270,7 +1303,7 @@ impl Render for ChannelPane {
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()
-                                .context_menu(move|menu,_,cx|message_actions::menu(row_owner.clone(),row_id.clone(),menu,cx))
+                                .on_mouse_down(MouseButton::Right,move|event,window,cx|{let at=event.position;let owner=row_owner.clone();let id=row_id.clone();window.defer(cx,move|window,cx|{let build=owner.clone();let menu=gpui_kit::component::menu::PopupMenu::build(window,cx,move|menu,window,cx|message_actions::menu(build,id,menu,window,cx));let _=owner.update(cx,|pane,cx|pane.open_row_menu(menu,at,window,cx));});})
                                 .when(read_boundary==Some(row)&&index>0,|el|el.child(div().h_flex().items_center().gap_2().h(px(18.)).text_size(px(10.)).text_color(rgb(0x9DBFCE)).child(div().h(px(1.)).flex_1().bg(rgb(0x40535E))).child("Last read position").child(div().h(px(1.)).flex_1().bg(rgb(0x40535E)))))
                                 .children(rich_heading)
                                 .children(reply_line)
