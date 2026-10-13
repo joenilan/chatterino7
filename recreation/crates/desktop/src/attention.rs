@@ -11,6 +11,9 @@ pub struct Attention {
     pub unread: BTreeSet<u64>,
     pub read_boundary: Option<u64>,
     pub highlights: Rc<BTreeSet<u64>>,
+    /// Rows that mention you or match your highlights (what the "@" counts and
+    /// Mentions collects). Event colours such as subs and raids aren't in it.
+    pinged: BTreeSet<u64>,
     pub colors: Rc<BTreeMap<u64, usize>>,
     pub arrivals: BTreeMap<u64, Instant>,
     identity: Option<(String, String)>,
@@ -199,6 +202,7 @@ impl Attention {
             self.unread.clear();
             Rc::make_mut(&mut self.highlights).clear();
             Rc::make_mut(&mut self.colors).clear();
+            self.pinged.clear();
         }
         if changed {
             self.terms = terms.to_vec();
@@ -311,6 +315,9 @@ impl Attention {
             Rc::make_mut(&mut self.colors).insert(row, color);
             if !message.presentation.historical {
                 ping = self.ping(message);
+                if ping.is_some() {
+                    self.pinged.insert(row);
+                }
             }
         }
         self.prune(first);
@@ -341,6 +348,9 @@ impl Attention {
         while h.first().is_some_and(|row| *row < first) {
             h.pop_first();
         }
+        while self.pinged.first().is_some_and(|row| *row < first) {
+            self.pinged.pop_first();
+        }
     }
     pub fn reconcile(&mut self, timeline: &Timeline, first: u64) {
         self.prune(first);
@@ -350,11 +360,17 @@ impl Attention {
             let row = first + index as u64;
             if message.deleted {
                 self.unread.remove(&row);
+                self.pinged.remove(&row);
             } else if row >= self.since
                 && let Some(color) = self.color(message)
             {
                 highlights.insert(row);
                 colors.insert(row, color);
+                if self.ping(message).is_none() {
+                    self.pinged.remove(&row);
+                }
+            } else {
+                self.pinged.remove(&row);
             }
         }
         self.highlights = Rc::new(highlights);
@@ -385,7 +401,7 @@ impl Attention {
     pub fn counts(&self) -> (usize, usize) {
         (
             self.unread.len(),
-            self.unread.intersection(&self.highlights).count(),
+            self.unread.intersection(&self.pinged).count(),
         )
     }
 }
@@ -423,6 +439,22 @@ mod follow_tests {
             presentation: Default::default(),
             deleted: false,
         }
+    }
+    #[test]
+    fn event_colours_are_not_mentions() {
+        let mut a = Attention {
+            identity: Some(("me".into(), "me".into())),
+            ..Attention::default()
+        };
+        let mut sub = message("s", None);
+        sub.presentation.notice_type = Some("resub".into());
+        assert_eq!(a.appended(&sub, 0, 0), None);
+        let mut mention = message("m", None);
+        mention.mentions = vec!["me".into()];
+        assert_eq!(a.appended(&mention, 1, 0), Some(super::Ping::Mention));
+        // Both are coloured, but only the mention counts toward "@".
+        assert_eq!(a.highlights.len(), 2);
+        assert_eq!(a.counts(), (2, 1));
     }
     #[test]
     fn following_threads() {

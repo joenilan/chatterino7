@@ -98,7 +98,10 @@ impl Workbench {
                 .filter(|c| all.contains(c) && !open.contains(c))
                 .collect();
             let count = picked.len();
-            let rows = channels.iter().enumerate().map(|(index, channel)| {
+            // Live channels first (as the dialog says), then the rest A–Z.
+            let mut ordered: Vec<&String> = channels.iter().collect();
+            ordered.sort_by_key(|c| !live.as_ref().is_some_and(|l| l.contains(*c)));
+            let rows = ordered.into_iter().enumerate().map(|(index, channel)| {
                 let on = picked.contains(channel);
                 let is_open = open.contains(channel);
                 let is_live = live.as_ref().is_some_and(|l| l.contains(channel));
