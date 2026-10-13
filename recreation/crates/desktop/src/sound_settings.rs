@@ -36,7 +36,11 @@ impl Workbench {
             Ping::Rule { .. } => None,
             Ping::Event(kind) => self.event_highlights.borrow().tone(kind, &self.sound_tone),
         };
-        let flash = !matches!(ping, Ping::Rule { flash: false, .. } | Ping::Event(_));
+        let flash = match ping {
+            Ping::Rule { flash, .. } => flash,
+            Ping::Event(kind) => self.event_highlights.borrow().flash(kind),
+            _ => true,
+        };
         let muted = self.streamer_live && self.streamer_mute;
         if let Some(tone) = tone
             && !muted

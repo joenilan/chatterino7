@@ -294,7 +294,7 @@ impl Attention {
     /// An event kind with a sound (whispers play theirs when they arrive).
     fn event_ping(&self, message: &Message) -> Option<Ping> {
         let kind = crate::event_highlights::EventHighlights::kind(message)?;
-        (kind != Kind::Whisper && kind != Kind::OwnMessage && self.events.sound(kind) != 1)
+        (kind != Kind::Whisper && kind != Kind::OwnMessage && self.events.pings(kind))
             .then_some(Ping::Event(kind))
     }
     /// Records a new row; returns a ping for a fresh (not history) mention or highlight.

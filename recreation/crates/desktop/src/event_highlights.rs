@@ -95,6 +95,8 @@ const RAID_WINDOW: std::time::Duration = std::time::Duration::from_secs(30 * 60)
 pub struct EventHighlights {
     colors: [Option<usize>; 10],
     sounds: [u8; 10],
+    /// Flash the taskbar (when that's on in Notifications) for this kind.
+    flashes: [bool; 10],
 }
 impl Default for EventHighlights {
     fn default() -> Self {
@@ -113,6 +115,7 @@ impl Default for EventHighlights {
                 Some(4),
             ],
             sounds: [SILENT; 10],
+            flashes: [false; 10],
         }
     }
 }
@@ -130,6 +133,16 @@ impl EventHighlights {
     }
     pub fn set_sound(&mut self, kind: Kind, sound: u8) {
         self.sounds[kind as usize] = sound.min(SOUNDS.len() as u8 - 1);
+    }
+    pub fn flash(&self, kind: Kind) -> bool {
+        self.flashes[kind as usize]
+    }
+    pub fn set_flash(&mut self, kind: Kind, on: bool) {
+        self.flashes[kind as usize] = on;
+    }
+    /// Whether a new message of this kind pings (a sound or a flash).
+    pub fn pings(&self, kind: Kind) -> bool {
+        self.sound(kind) != SILENT || self.flash(kind)
     }
     /// The tone a kind plays, if any (`default` is the Highlights sound).
     pub fn tone(&self, kind: Kind, default: &crate::sound::Tone) -> Option<crate::sound::Tone> {
@@ -217,6 +230,9 @@ pub fn load(value: &serde_json::Value) -> Shared {
             if let Some(sound) = value[format!("{key}_sound")].as_u64() {
                 events.set_sound(kind, sound as u8);
             }
+            if let Some(on) = value[format!("{key}_flash")].as_bool() {
+                events.set_flash(kind, on);
+            }
         }
     }
     // Version 1 saved the old green mention default; follow Twitch's red instead.
@@ -238,6 +254,10 @@ pub fn json(events: &Shared) -> serde_json::Value {
         map.insert(
             format!("{key}_sound"),
             serde_json::json!(events.sound(kind)),
+        );
+        map.insert(
+            format!("{key}_flash"),
+            serde_json::json!(events.flash(kind)),
         );
     }
     map.insert("version".into(), serde_json::json!(2));
@@ -317,6 +337,7 @@ impl Render for Editor {
                     // Notifications › Sounds.
                     .when(kind != Kind::OwnMessage && kind != Kind::Mention, |el| {
                         let sound = events.sound(kind);
+                        let flash = events.flash(kind);
                         el.child(
                             div()
                                 .h_flex()
@@ -341,7 +362,17 @@ impl Render for Editor {
                                             cx.emit(Changed);
                                             cx.notify();
                                         }))
-                                })),
+                                }))
+                                .child(
+                                    gpui_kit::component::checkbox::Checkbox::new(SharedString::from(format!("event-{key}-flash")))
+                                        .label("Flash taskbar")
+                                        .checked(flash)
+                                        .on_click(cx.listener(move |this, on: &bool, _, cx| {
+                                            this.events.borrow_mut().set_flash(kind, *on);
+                                            cx.emit(Changed);
+                                            cx.notify();
+                                        })),
+                                ),
                         )
                     })
             }))
