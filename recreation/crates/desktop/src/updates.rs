@@ -1775,8 +1775,12 @@ fn download_directory() -> Result<PathBuf, String> {
     let nanos = SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_nanos());
+    // A counter as well as the time: two folders made in the same clock tick
+    // (parallel tests, Windows' coarse clock) must not collide.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let directory = std::env::temp_dir().join(format!(
-        "{DOWNLOAD_FOLDER_PREFIX}{}-{:x}",
+        "{DOWNLOAD_FOLDER_PREFIX}{}-{:x}-{serial}",
         std::process::id(),
         nanos & 0xffff_ffff_ffff
     ));
