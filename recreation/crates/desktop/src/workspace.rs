@@ -89,6 +89,10 @@ gpui_kit::actions!(
         Quit,
         CreateClip,
         LastChannel,
+        RunCommand1,
+        RunCommand2,
+        RunCommand3,
+        RunCommand4,
         OpenActivity,
         MarkAllRead,
         FontLarger,
@@ -245,6 +249,8 @@ pub struct Workbench {
     /// Settings › Chat › Nickname rules: the pattern and nickname inputs, and
     /// whether the next rule is a regex / case-sensitive.
     nickname_inputs: Option<(Entity<InputState>, Entity<InputState>)>,
+    /// Settings › Shortcuts: the text boxes for "Run command 1–4".
+    command_inputs: Option<Vec<Entity<InputState>>>,
     /// The selected channel and the one before it, for "Last channel".
     channel_history: (Option<String>, Option<String>),
     /// Settings › Recent messages server.
@@ -756,6 +762,7 @@ impl Workbench {
             mod_button_inputs: None,
             nickname_inputs: None,
             channel_history: (None, None),
+            command_inputs: None,
             recent_url_input: None,
             nickname_regex: false,
             nickname_case: false,
@@ -930,6 +937,7 @@ impl Workbench {
                     );
                 }
                 crate::nickname_rules::load(&state["nickname_rules"]);
+                crate::hotkeys::load_commands(&state["hotkey_commands"]);
                 if let Ok(url) = crate::recent_messages::validate_url(
                     state["recent_messages_url"].as_str().unwrap_or(""),
                 ) && let Ok(mut current) = crate::recent_messages::CUSTOM_URL.write()
@@ -2779,6 +2787,24 @@ impl Workbench {
             })
             .cloned()
     }
+    /// "Run command N": its text in the channel you're in, as if typed there.
+    fn run_command_hotkey(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let text = crate::hotkeys::command(index);
+        if text.is_empty() {
+            window.push_notification(
+                Notification::info(format!(
+                    "Run command {} has no command yet (Settings › Shortcuts).",
+                    index + 1
+                )),
+                cx,
+            );
+            return;
+        }
+        let Some(pane) = self.focused_pane(window, cx) else {
+            return;
+        };
+        pane.update(cx, |p, cx| p.run_text(&text, window, cx));
+    }
     /// Remember the previously selected channel (checked every frame).
     fn note_channel_history(&mut self) {
         if self.selected_channel != self.channel_history.0 {
@@ -3204,6 +3230,7 @@ impl Workbench {
             crate::name_paint::paint_option(2)
         ]);
         value["nickname_rules"] = crate::nickname_rules::json();
+        value["hotkey_commands"] = crate::hotkeys::commands_json();
         value["recent_messages_url"] = json!(
             crate::recent_messages::CUSTOM_URL
                 .read()
@@ -6437,6 +6464,10 @@ impl Render for Workbench {
                     });
                 }
             }))
+            .on_action(cx.listener(|this, _: &RunCommand1, w, cx| this.run_command_hotkey(0, w, cx)))
+            .on_action(cx.listener(|this, _: &RunCommand2, w, cx| this.run_command_hotkey(1, w, cx)))
+            .on_action(cx.listener(|this, _: &RunCommand3, w, cx| this.run_command_hotkey(2, w, cx)))
+            .on_action(cx.listener(|this, _: &RunCommand4, w, cx| this.run_command_hotkey(3, w, cx)))
             .on_action(cx.listener(|this, _: &LastChannel, _, cx| {
                 if let Some(channel) = this.channel_history.1.clone() {
                     this.reveal_channel(&channel, cx);

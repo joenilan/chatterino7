@@ -51,6 +51,34 @@ pub const HOTKEYS: &[Hotkey] = {
         ),
         hotkey!("quit", "Save and quit", "ctrl-q", "ChatWorkspace", Quit),
         hotkey!(
+            "run-command-1",
+            "Run command 1",
+            "",
+            "ChatWorkspace",
+            RunCommand1
+        ),
+        hotkey!(
+            "run-command-2",
+            "Run command 2",
+            "",
+            "ChatWorkspace",
+            RunCommand2
+        ),
+        hotkey!(
+            "run-command-3",
+            "Run command 3",
+            "",
+            "ChatWorkspace",
+            RunCommand3
+        ),
+        hotkey!(
+            "run-command-4",
+            "Run command 4",
+            "",
+            "ChatWorkspace",
+            RunCommand4
+        ),
+        hotkey!(
             "add-channel",
             "Add a channel",
             "ctrl-k",
@@ -383,6 +411,32 @@ pub fn set(id: &str, keys: Option<String>, cx: &mut App) {
     }
 }
 
+/// What "Run command N" sends in the channel you're in (a /command or a message).
+pub static COMMANDS: std::sync::RwLock<[String; 4]> =
+    std::sync::RwLock::new([String::new(), String::new(), String::new(), String::new()]);
+pub fn command(index: usize) -> String {
+    COMMANDS
+        .read()
+        .ok()
+        .and_then(|c| c.get(index).cloned())
+        .unwrap_or_default()
+}
+pub fn set_command(index: usize, text: &str) {
+    let text: String = text.chars().filter(|c| !c.is_control()).take(500).collect();
+    if let Ok(mut commands) = COMMANDS.write()
+        && let Some(slot) = commands.get_mut(index)
+    {
+        *slot = text.trim().to_owned();
+    }
+}
+pub fn commands_json() -> serde_json::Value {
+    serde_json::json!((0..4).map(command).collect::<Vec<_>>())
+}
+pub fn load_commands(value: &serde_json::Value) {
+    for index in 0..4 {
+        set_command(index, value[index].as_str().unwrap_or(""));
+    }
+}
 pub fn load(value: &serde_json::Value, cx: &mut App) {
     for hotkey in HOTKEYS {
         if let Some(keys) = value[hotkey.id].as_str()

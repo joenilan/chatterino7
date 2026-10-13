@@ -1038,6 +1038,45 @@ impl Workbench {
                         })
                         .child(Button::new(SharedString::from(format!("hotkey-{id}"))).small().label(crate::hotkeys::label(&keys)).when(custom, |b| b.primary()).on_click(cx.listener(move |this, _, w, cx| this.record_hotkey(id, w, cx))))
                 }))
+                .child({
+                    if self.command_inputs.is_none() {
+                        let inputs: Vec<_> = (0..4)
+                            .map(|index| {
+                                let current = crate::hotkeys::command(index);
+                                let input = cx.new(|cx| {
+                                    let mut state = InputState::new(window, cx).placeholder("/clear, or a message to send");
+                                    state.set_value(current, window, cx);
+                                    state
+                                });
+                                cx.subscribe_in(&input, window, move |this, input, event, _, cx| {
+                                    if matches!(event, gpui_kit::component::input::InputEvent::Change) {
+                                        crate::hotkeys::set_command(index, &input.read(cx).value());
+                                        this.schedule_save(cx);
+                                    }
+                                })
+                                .detach();
+                                input
+                            })
+                            .collect();
+                        self.command_inputs = Some(inputs);
+                    }
+                    let inputs = self.command_inputs.clone().expect("created above");
+                    let shown = matches_search("Run command shortcut hotkey", "send a command or message");
+                    div()
+                        .v_flex()
+                        .gap_1()
+                        .py(px(8.))
+                        .border_b_1()
+                        .border_color(rgb(theme::BORDER))
+                        .when(!shown, |el| el.hidden())
+                        .child(div().text_size(px(13.)).child("What Run command 1–4 do"))
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Each runs in the channel you're in, as if you typed it: a /command (including your custom commands), or a message. Give them keys above."))
+                        .children(inputs.into_iter().enumerate().map(|(index, input)| {
+                            div().h_flex().items_center().gap_2()
+                                .child(div().w(px(20.)).text_size(px(12.)).text_color(rgb(theme::MUTED)).child(format!("{}", index + 1)))
+                                .child(div().flex_1().child(Input::new(&input).small()))
+                        }))
+                })
                 .children(SHORTCUTS.iter().map(|(keys, what)| {
                 let shown = matches_search(&format!("{what} shortcut"), keys);
                 div()

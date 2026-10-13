@@ -566,6 +566,24 @@ impl ChannelPane {
         );
         cx.notify();
     }
+    /// Run `text` here as if typed: a /command runs; anything else is sent,
+    /// unless you have a draft (it's never overwritten).
+    pub fn run_text(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.route_command(text, window, cx) {
+            return;
+        }
+        if !self.draft.read(cx).value().is_empty() {
+            self.command_feedback(
+                "Clear your message box first: the shortcut won't replace your draft.",
+                window,
+                cx,
+            );
+            return;
+        }
+        let text = text.to_owned();
+        self.draft.update(cx, |d, cx| d.set_value(text, window, cx));
+        self.submit(window, cx);
+    }
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.pending.is_some() {
             return;
