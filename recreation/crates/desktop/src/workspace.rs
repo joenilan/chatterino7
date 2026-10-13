@@ -940,6 +940,10 @@ impl Workbench {
                     );
                 }
                 crate::nickname_rules::load(&state["nickname_rules"]);
+                theme::TAB_POSITION.store(
+                    (state["tab_position"].as_u64().unwrap_or(0) as usize).min(3),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 if let Ok(url) = crate::streamlink::validate_player(
                     state["custom_player"].as_str().unwrap_or(""),
                 ) && let Ok(mut current) = crate::streamlink::CUSTOM_PLAYER.write()
@@ -3239,6 +3243,7 @@ impl Workbench {
             crate::name_paint::paint_option(2)
         ]);
         value["nickname_rules"] = crate::nickname_rules::json();
+        value["tab_position"] = json!(theme::tab_position());
         value["custom_player"] = json!(
             crate::streamlink::CUSTOM_PLAYER
                 .read()
@@ -4084,9 +4089,13 @@ impl Workbench {
                     .total_cmp(&f32::from(b.origin.y))
                     .then(f32::from(a.origin.x).total_cmp(&f32::from(b.origin.x)))
             });
+            let side_tabs = theme::tab_position() >= 2;
             let before = tabs
                 .iter()
                 .find(|(_, b)| {
+                    if side_tabs {
+                        return position.y < b.origin.y + b.size.height / 2.;
+                    }
                     position.y < b.origin.y
                         || (position.y < b.origin.y + b.size.height
                             && position.x < b.origin.x + b.size.width / 2.)
@@ -4608,7 +4617,13 @@ impl Workbench {
                             } else {
                                 theme::PANEL
                             }))
-                            .border_b_2()
+                            // The selected marker faces the chat; side tabs fill the list.
+                            .map(|el| match theme::tab_position() {
+                                1 => el.border_t_2(),
+                                2 => el.border_r_2().w_full(),
+                                3 => el.border_l_2().w_full(),
+                                _ => el.border_b_2(),
+                            })
                             .border_color(rgb(if selected { 0xA99CF4 } else { theme::PANEL }))
                             .on_prepaint(move |bounds, _, _| {
                                 tab_bounds.borrow_mut().insert(tab_name.clone(), bounds);
@@ -5254,6 +5269,52 @@ impl Workbench {
                 } else {
                     None
                 };
+                // Tabs on top (default), bottom, left or right of the chat.
+                let position = theme::tab_position();
+                let vertical_tabs = position >= 2;
+                let strip_first = position == 0 || position == 2;
+                let strip = (!self.tabs_hidden).then(|| {
+                    div()
+                        .id(SharedString::from(format!("channel-strip-{tab_id}-{name}")))
+                        .map(|el| {
+                            if vertical_tabs {
+                                el.v_flex()
+                                    .w(px(150.))
+                                    .h_full()
+                                    .overflow_y_scroll()
+                                    .when(position == 2, |el| el.border_r_1())
+                                    .when(position == 3, |el| el.border_l_1())
+                                    .border_color(rgb(theme::BORDER))
+                            } else {
+                                el.h_flex().flex_wrap().min_h(px(28.))
+                            }
+                        })
+                        .flex_shrink_0()
+                        .bg(rgb(theme::PANEL))
+                        .on_prepaint(move |bounds, _, _| {
+                            strip_bounds.borrow_mut().insert(strip_name.clone(), bounds);
+                        })
+                        .children(tabs)
+                        .child(
+                            Button::new(SharedString::from(format!("add-tab-{tab_id}-{name}")))
+                                .ghost()
+                                .xsmall()
+                                .icon(Icon::new(gpui_kit::assets::IconName::Plus))
+                                .tooltip("Add channel tab · Ctrl+K")
+                                .on_click(cx.listener({
+                                    let target = name.clone();
+                                    move |this, _, window, cx| {
+                                        this.open_add(false, window, cx);
+                                        this.add_target = Some(target.clone());
+                                    }
+                                })),
+                        )
+                });
+                let (strip_before, strip_after) = if strip_first {
+                    (strip, None)
+                } else {
+                    (None, strip)
+                };
                 div()
                     .id(SharedString::from(format!("dock-{tab_id}-{name}")))
                     .relative()
@@ -5272,39 +5333,23 @@ impl Workbench {
                         cx.stop_propagation();
                         this.drop_at_pointer(drag, tab_id, w, cx);
                     }))
-                    .v_flex()
-                    .when(!self.tabs_hidden, |el| {
-                        el.child(
-                            div()
-                                .id(SharedString::from(format!("channel-strip-{tab_id}-{name}")))
-                                .h_flex()
-                                .flex_wrap()
-                                .min_h(px(28.))
-                                .flex_shrink_0()
-                                .bg(rgb(theme::PANEL))
-                                .on_prepaint(move |bounds, _, _| {
-                                    strip_bounds.borrow_mut().insert(strip_name.clone(), bounds);
-                                })
-                                .children(tabs)
-                                .child(
-                                    Button::new(SharedString::from(format!(
-                                        "add-tab-{tab_id}-{name}"
-                                    )))
-                                    .ghost()
-                                    .xsmall()
-                                    .icon(Icon::new(gpui_kit::assets::IconName::Plus))
-                                    .tooltip("Add channel tab · Ctrl+K")
-                                    .on_click(cx.listener({
-                                        let target = name.clone();
-                                        move |this, _, window, cx| {
-                                            this.open_add(false, window, cx);
-                                            this.add_target = Some(target.clone());
-                                        }
-                                    })),
-                                ),
-                        )
+                    .map(|el| {
+                        if vertical_tabs {
+                            el.h_flex()
+                        } else {
+                            el.v_flex()
+                        }
                     })
-                    .child(div().flex_1().min_h_0().children(pane))
+                    .children(strip_before)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h_0()
+                            .min_w_0()
+                            .size_full()
+                            .children(pane),
+                    )
+                    .children(strip_after)
                     .when(cx.has_active_drag(), |el| {
                         el.children(preview.map(Self::drop_preview))
                     })

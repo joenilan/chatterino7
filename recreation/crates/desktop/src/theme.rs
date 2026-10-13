@@ -103,6 +103,15 @@ pub fn flag(flag: &std::sync::atomic::AtomicBool) -> bool {
 }
 /// Settings → Appearance → Chat font (None: the app font).
 pub static CHAT_FONT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+/// Settings › Appearance › Tab position (Chatterino's): where each split's
+/// channel tabs sit. 0 top, 1 bottom, 2 left, 3 right.
+pub const TAB_POSITIONS: [&str; 4] = ["Top", "Bottom", "Left", "Right"];
+pub static TAB_POSITION: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub fn tab_position() -> usize {
+    TAB_POSITION
+        .load(std::sync::atomic::Ordering::Relaxed)
+        .min(3)
+}
 pub fn chat_font() -> Option<String> {
     CHAT_FONT.lock().ok().and_then(|f| f.clone())
 }

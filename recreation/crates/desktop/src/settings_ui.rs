@@ -394,6 +394,18 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "Tab position",
+                    "Where each split's channel tabs sit. Left and right show them as a list.",
+                    crate::theme::Segmented::new("settings-tab-position")
+                        .selected_index(crate::theme::tab_position())
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            crate::theme::TAB_POSITION.store((*index).min(3), std::sync::atomic::Ordering::Relaxed);
+                            this.schedule_save(cx);
+                            cx.notify();
+                        }))
+                        .children(crate::theme::TAB_POSITIONS.map(crate::theme::segment)),
+                ))
+                .child(row(
                     "7TV",
                     "Gradient and image name colours from 7TV and the glow around them, and 7TV profile pictures (often animated) on user cards.",
                     div().h_flex().gap_3().children([(0usize, "Paints"), (1, "Shadows"), (2, "Profile pictures")].map(|(index, label)| {

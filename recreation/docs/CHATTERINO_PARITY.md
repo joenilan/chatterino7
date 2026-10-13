@@ -41,7 +41,7 @@ Chatterino import.
 - [x] Start with Windows; beta update channel; open cache folder (S)
 - [ ] Overlay window: transparent, click-through, opacity (L)
 - [x] Tab menu: Close others / to the right, Sort A–Z, Duplicate (workspace), Lock layout, highlight on new messages (Count new messages), Hide all tabs (Ctrl+U)
-- [ ] Tab position and style (M) [partly design]
+- [ ] Tab position and style: ~~position (top, bottom, left, right)~~ done; tab style (S) [design]
 - [x] Change channel of an existing split (tab menu → Change channel…)
 - [x] Input options: ~~send button, reply on hover, hide reply context, strip leading mention, hide when empty~~ done
 - [x] Header: ~~Subscribe, Mod view, room modes menu, changelog (Settings › Updates › Release history), custom player~~ done
