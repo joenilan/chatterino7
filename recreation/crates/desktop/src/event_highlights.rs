@@ -25,8 +25,9 @@ pub enum Kind {
     OwnMessage,
     Whisper,
     AutoMod,
+    WatchStreak,
 }
-pub const KINDS: [(Kind, &str, &str, &str); 10] = [
+pub const KINDS: [(Kind, &str, &str, &str); 11] = [
     (
         Kind::Mention,
         "mention",
@@ -82,6 +83,12 @@ pub const KINDS: [(Kind, &str, &str, &str); 10] = [
         "AutoMod",
         "Messages AutoMod held in channels you moderate, shown in chat with Allow and Deny",
     ),
+    (
+        Kind::WatchStreak,
+        "watch_streak",
+        "Watch streaks",
+        "When a viewer shares a watch streak",
+    ),
 ];
 /// Per-kind sound: the Highlights sound setting, nothing, or a fixed tone
 /// (the first four of highlight_rules::SOUNDS).
@@ -93,10 +100,10 @@ const RAID_WINDOW: std::time::Duration = std::time::Duration::from_secs(30 * 60)
 /// SOUNDS index per kind.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct EventHighlights {
-    colors: [Option<usize>; 10],
-    sounds: [u8; 10],
+    colors: [Option<usize>; 11],
+    sounds: [u8; 11],
     /// Flash the taskbar (when that's on in Notifications) for this kind.
-    flashes: [bool; 10],
+    flashes: [bool; 11],
 }
 impl Default for EventHighlights {
     fn default() -> Self {
@@ -113,9 +120,10 @@ impl Default for EventHighlights {
                 None,
                 Some(0),
                 Some(4),
+                Some(2),
             ],
-            sounds: [SILENT; 10],
-            flashes: [false; 10],
+            sounds: [SILENT; 11],
+            flashes: [false; 11],
         }
     }
 }
@@ -177,6 +185,9 @@ impl EventHighlights {
             Some("announcement" | "shared_chat_announcement") => return Some(Kind::Announcement),
             Some("bits_badge_tier") => return Some(Kind::Bits),
             Some("whisper") => return Some(Kind::Whisper),
+            Some("watch_streak" | "shared_chat_watch_streak" | "shared_chat_viewermilestone") => {
+                return Some(Kind::WatchStreak);
+            }
             _ => {}
         }
         match p.kind.as_str() {

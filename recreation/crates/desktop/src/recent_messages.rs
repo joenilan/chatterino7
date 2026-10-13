@@ -370,6 +370,8 @@ fn message(irc: &Irc, channel: &str) -> Option<Message> {
         "primepaidupgrade" => "prime_paid_upgrade".into(),
         "paybackgift" => "pay_it_forward".into(),
         "bitsbadgetier" => "bits_badge_tier".into(),
+        // Watch streaks (as EventSub names them).
+        "viewermilestone" => "watch_streak".into(),
         // Shared Chat: the original notice type is in source-msg-id.
         "sharedchatnotice" => format!("shared_chat_{}", tag("source-msg-id")),
         other => other.to_owned(),

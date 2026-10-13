@@ -32,9 +32,9 @@ Chatterino import.
 - [x] Slow-mode / timeout send countdown (S)
 - [x] Header: stream title, game, viewers, uptime toggles (S)
 - [x] Emote options: animations off/when focused, images off, zero-width stacking, unlisted 7TV, remove spaces between emotes, combine bits (S each)
-- [ ] 7TV paint options (paints, shadows); animated 7TV avatar (S) — ~~paints, shadows~~ done (Appearance → 7TV name paints)
+- [x] 7TV paint options (paints, shadows); animated 7TV avatar — done (Appearance → 7TV; avatars on user cards)
 - [x] Emoji image styles: ~~System, Twitter, Google, Apple, Facebook~~ done
-- [ ] Watch-streak header/highlight (S) [research]
+- [x] Watch-streak highlight — done (Event highlights › Watch streaks)
 
 ### Windows, tabs, splits
 - [x] Always on top for the main window (S)
