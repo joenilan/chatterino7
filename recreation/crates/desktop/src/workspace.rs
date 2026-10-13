@@ -86,6 +86,9 @@ gpui_kit::actions!(
         ToggleLiveChannels,
         ToggleTabStrip,
         QuitWithoutSaving,
+        Quit,
+        CreateClip,
+        LastChannel,
         OpenActivity,
         MarkAllRead,
         FontLarger,
@@ -139,6 +142,9 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-f", crate::FindChat, Some("ChatWorkspace")),
         KeyBinding::new("cmd-f", crate::FindChat, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-k", AddChannel, Some("ChatWorkspace")),
+        KeyBinding::new("alt-`", LastChannel, Some("ChatWorkspace")),
+        KeyBinding::new("alt-x", CreateClip, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-q", Quit, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-u", ToggleTabStrip, Some("ChatWorkspace")),
     ]);
 }
@@ -239,6 +245,8 @@ pub struct Workbench {
     /// Settings › Chat › Nickname rules: the pattern and nickname inputs, and
     /// whether the next rule is a regex / case-sensitive.
     nickname_inputs: Option<(Entity<InputState>, Entity<InputState>)>,
+    /// The selected channel and the one before it, for "Last channel".
+    channel_history: (Option<String>, Option<String>),
     /// Settings › Recent messages server.
     recent_url_input: Option<Entity<InputState>>,
     nickname_regex: bool,
@@ -747,6 +755,7 @@ impl Workbench {
             )),
             mod_button_inputs: None,
             nickname_inputs: None,
+            channel_history: (None, None),
             recent_url_input: None,
             nickname_regex: false,
             nickname_case: false,
@@ -2752,6 +2761,34 @@ impl Workbench {
         pane
     }
     /// Show the channel: switch to a workspace that has it and select its tab.
+    /// The pane you're in (keyboard focus), else the selected channel's pane.
+    pub(super) fn focused_pane(&self, window: &Window, cx: &App) -> Option<Entity<ChannelPane>> {
+        let visible = self.visible_panes(cx);
+        visible
+            .iter()
+            .find(|p| {
+                let p = p.read(cx);
+                p.focus.contains_focused(window, cx)
+                    || p.draft.read(cx).focus_handle(cx).is_focused(window)
+            })
+            .or_else(|| {
+                let selected = self.selected_channel.as_deref()?;
+                visible
+                    .iter()
+                    .find(|p| p.read(cx).name.as_ref() == selected)
+            })
+            .cloned()
+    }
+    /// Remember the previously selected channel (checked every frame).
+    fn note_channel_history(&mut self) {
+        if self.selected_channel != self.channel_history.0 {
+            let previous = self.channel_history.0.take();
+            self.channel_history = (
+                self.selected_channel.clone(),
+                previous.or(self.channel_history.1.take()),
+            );
+        }
+    }
     pub(super) fn reveal_channel(&mut self, channel: &str, cx: &mut Context<Self>) {
         let has = |t: &WorkspaceTab| t.panes.iter().any(|p| p.read(cx).name.as_ref() == channel);
         let index = if has(&self.tabs[self.active]) {
@@ -6045,6 +6082,7 @@ impl Workbench {
 }
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.note_channel_history();
         self.streamer_live = match self.streamer_mode {
             crate::streamer_mode::Mode::On => true,
             crate::streamer_mode::Mode::Off => false,
@@ -6385,6 +6423,24 @@ impl Render for Workbench {
                 this.live_channels = !this.live_channels;
                 this.schedule_save(cx);
                 cx.notify();
+            }))
+            // Save and quit, like closing the window.
+            .on_action(cx.listener(|this, _: &Quit, w, cx| {
+                if this.request_close(w, cx) {
+                    cx.quit();
+                }
+            }))
+            .on_action(cx.listener(|this, _: &CreateClip, w, cx| {
+                if let Some(pane) = this.focused_pane(w, cx) {
+                    pane.update(cx, |p, cx| {
+                        p.route_command("/clip", w, cx);
+                    });
+                }
+            }))
+            .on_action(cx.listener(|this, _: &LastChannel, _, cx| {
+                if let Some(channel) = this.channel_history.1.clone() {
+                    this.reveal_channel(&channel, cx);
+                }
             }))
             .on_action(cx.listener(|this, _: &QuitWithoutSaving, _, cx| {
                 if this.close_failed {

@@ -36,6 +36,21 @@ pub const HOTKEYS: &[Hotkey] = {
             SwitchChannel
         ),
         hotkey!(
+            "last-channel",
+            "Back to the last channel",
+            "alt-`",
+            "ChatWorkspace",
+            LastChannel
+        ),
+        hotkey!(
+            "create-clip",
+            "Create a clip of the channel you're in",
+            "alt-x",
+            "ChatWorkspace",
+            CreateClip
+        ),
+        hotkey!("quit", "Save and quit", "ctrl-q", "ChatWorkspace", Quit),
+        hotkey!(
             "add-channel",
             "Add a channel",
             "ctrl-k",

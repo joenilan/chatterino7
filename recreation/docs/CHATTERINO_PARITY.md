@@ -67,7 +67,7 @@ Chatterino import.
 - [ ] Browser extension / native messaging (M)
 
 ## B. Partial
-- [ ] Hotkeys: ~~streamer mode, emote picker, settings, sidebar, whispers, move tab, highlights, hide tabs, chatter list, Streamlink, open in browser, player pop-out~~ done (36 rebindable); run command, clip, tab history, quit (M)
+- [ ] Hotkeys: ~~streamer mode, emote picker, settings, sidebar, whispers, move tab, highlights, hide tabs, chatter list, Streamlink, open in browser, player pop-out~~ done (39 rebindable); ~~clip (Alt+X), last channel (Alt+`), save and quit (Ctrl+Q)~~ done; run a command (S)
 - [x] Highlight rules: ~~per-rule flash, show in mentions, custom sound file, free colour (#RRGGBB)~~ done
 - [ ] Event highlights: ~~own messages, thread replies (as mentions), whispers, AutoMod, per-kind sound, per-kind flash~~ done; elevated/hype chat (not parsed yet) (S)
 - [ ] User card: ~~block, ignore, open channel, warn, avatar card, follower count, custom timeout, emotes in recent messages~~ done; 7TV profile, pin card (M)
