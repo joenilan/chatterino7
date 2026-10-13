@@ -92,5 +92,5 @@ Chatterino import.
 - [x] Shared chat: ~~source avatar on messages from other channels; deletes routed to the source channel~~ done
 - [x] Twitch GIF messages toggle (S) — Appearance → Twitch GIF messages (not yet seen with a real GIF message)
 - [x] Blocked users: ~~hide already-shown messages, display modes (hide / placeholder / show)~~ done
-- [ ] Multiple windows with workspaces; drag between windows (M)
+- [x] Multiple windows: ~~a workspace in its own window (full layout, reopened at launch); tab menu › Move to workspace moves channels between windows~~ done (no cross-window drag: GPUI drags stay in one window)
 - [x] Exclude own messages from filters (S) — Filter view → Always show my own messages

@@ -9,6 +9,7 @@ mod card_window;
 mod channel_details;
 #[path = "channel_switcher.rs"]
 mod channel_switcher;
+mod detached;
 #[path = "engagement_ui.rs"]
 mod engagement_ui;
 #[path = "guides.rs"]
@@ -405,6 +406,11 @@ pub struct Workbench {
     control_enabled: bool,
     tabs: Vec<WorkspaceTab>,
     closed_tabs: Vec<WorkspaceTab>,
+    /// Workspaces in their own windows (tab id, window), those being opened,
+    /// and those to reopen at launch.
+    detached: Vec<(u64, AnyWindowHandle)>,
+    opening_detached: Vec<u64>,
+    restore_detached: Vec<u64>,
     active: usize,
     next_id: u64,
     focus: FocusHandle,
@@ -1210,6 +1216,9 @@ impl Workbench {
             add_target: None,
             selected_channel: None,
             recent_workspaces: Vec::new(),
+            detached: Vec::new(),
+            opening_detached: Vec::new(),
+            restore_detached: Vec::new(),
             add_error: None,
             sidebar: state["sidebar"].as_bool().unwrap_or(false),
             settings: false,
@@ -1336,6 +1345,13 @@ impl Workbench {
             this.next_id += 1;
         }
         this.active = (state["active"].as_u64().unwrap_or(0) as usize).min(this.tabs.len() - 1);
+        this.restore_detached = state["detached_workspaces"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_u64)
+            .take(8)
+            .collect();
         cx.spawn_in(window, async move |view, cx| {
             loop {
                 cx.background_executor()
@@ -2489,7 +2505,12 @@ impl Workbench {
             pane.update(cx, |p, _| p.reply_target = Some(target));
         }
         let channel = name.to_owned();
-        cx.subscribe_in(&pane, window, move |this, pane, event, window, cx| {
+        // Events from a pane in a workspace's own window act on that workspace.
+        let handler = move |this: &mut Self,
+                            pane: &Entity<ChannelPane>,
+                            event: &PaneEvent,
+                            window: &mut Window,
+                            cx: &mut Context<Self>| {
             if let PaneEvent::Send {
                 request,
                 text,
@@ -2827,6 +2848,17 @@ impl Workbench {
             }
             this.schedule_save(cx);
             cx.notify();
+        };
+        cx.subscribe_in(&pane, window, move |this, pane, event, window, cx| {
+            let saved = this.active;
+            let own = this.tabs.iter().position(|t| t.panes.contains(pane));
+            if let Some(ix) = own {
+                this.active = ix;
+            }
+            handler(this, pane, event, window, cx);
+            if own.is_some_and(|ix| this.active == ix && ix != saved) && saved < this.tabs.len() {
+                this.active = saved;
+            }
         })
         .detach();
         pane
@@ -3293,6 +3325,13 @@ impl Workbench {
             crate::name_paint::paint_option(2)
         ]);
         value["nickname_rules"] = crate::nickname_rules::json();
+        value["detached_workspaces"] = json!(
+            self.detached
+                .iter()
+                .map(|(id, _)| *id)
+                .chain(self.opening_detached.iter().copied())
+                .collect::<Vec<_>>()
+        );
         value["theme"] = json!(theme::THEME.load(std::sync::atomic::Ordering::Relaxed));
         value["spell_language"] =
             json!(crate::spell::LANGUAGE.load(std::sync::atomic::Ordering::Relaxed));
@@ -3568,6 +3607,11 @@ impl Workbench {
         }
     }
     fn select_tab(&mut self, ix: usize, cx: &mut Context<Self>) {
+        if let Some(id) = self.tabs.get(ix).map(|t| t.id)
+            && self.show_detached(id, cx)
+        {
+            return;
+        }
         if ix < self.tabs.len() {
             self.active = ix;
             let id = self.tabs[ix].id;
@@ -4847,6 +4891,14 @@ impl Workbench {
                             }));
                         let owner = cx.entity().downgrade();
                         let menu_channel = channel.clone();
+                        // Tab menu › Move to workspace (also how a channel moves between windows).
+                        let workspaces: Vec<(u64, String, bool)> = self
+                            .tabs
+                            .iter()
+                            .enumerate()
+                            .filter(|(i, _)| *i != self.active)
+                            .map(|(_, t)| (t.id, t.name.clone(), self.is_detached(t.id)))
+                            .collect();
                         let menu_pane = name.clone();
                         let menu = move |menu: gpui_kit::component::menu::PopupMenu,
                                              window: &mut Window,
@@ -5201,6 +5253,31 @@ impl Workbench {
                                                 window.push_notification(Notification::info("Channel URL copied"), cx);
                                             }
                                         }))
+                                    }
+                                })
+                                .submenu("Move to workspace", window, cx, {
+                                    let owner = owner.clone();
+                                    let menu_channel = menu_channel.clone();
+                                    let workspaces = workspaces.clone();
+                                    move |mut menu, _, _| {
+                                        if workspaces.is_empty() {
+                                            return menu.item(PopupMenuItem::new("No other workspaces").disabled(true));
+                                        }
+                                        for (id, name, detached) in workspaces.iter().cloned() {
+                                            let owner = owner.clone();
+                                            let channel = menu_channel.clone();
+                                            let label = if detached { format!("{name} · own window") } else { name };
+                                            menu = menu.item(PopupMenuItem::new(label).on_click(move |_, window, cx| {
+                                                let _ = owner.update(cx, |this, cx| {
+                                                    let Some(pane) = this.tabs[this.active].panes.iter().find(|p| p.read(cx).name.as_ref() == channel).cloned() else {
+                                                        return;
+                                                    };
+                                                    this.move_pane(&DraggedChannel { pane, name: channel.clone() }, id, None, window, cx);
+                                                    this.show_detached(id, cx);
+                                                });
+                                            }));
+                                        }
+                                        menu
                                     }
                                 })
                                 .submenu("Tabs", window, cx, {
@@ -5713,6 +5790,9 @@ impl Workbench {
                             }))
                             .hover(|s| s.bg(rgb(theme::hover())))
                             .on_click(cx.listener(move |this, _, window, cx| {
+                                if this.tabs.get(ix).is_some_and(|t| this.show_detached(t.id, cx)) {
+                                    return;
+                                }
                                 this.select_tab(ix, cx);
                                 this.focus.focus(window, cx);
                             }))
@@ -5804,11 +5884,23 @@ impl Workbench {
                                         }
                                     )),
                             )
+                            .when(self.is_detached(tab.id), |el| {
+                                el.child(
+                                    div()
+                                        .h_flex()
+                                        .gap_1()
+                                        .text_size(px(11.))
+                                        .text_color(rgb(theme::accent()))
+                                        .child(Icon::new(IconName::ExternalLink).xsmall())
+                                        .child("In its own window"),
+                                )
+                            })
                             .context_menu({
                                 let owner = cx.entity().downgrade();
                                 let (id, last) = (tab.id, self.tabs.len() - 1);
                                 let can_reopen = !self.closed_tabs.is_empty();
                                 let locked = tab.locked;
+                                let detached = self.is_detached(tab.id);
                                 let live_only = self.live_workspaces;
                                 move |menu, _, _| {
                                     // Each action applies to the workspace that was right-clicked.
@@ -5829,6 +5921,20 @@ impl Workbench {
                                             this.open_add(true, w, cx);
                                         },
                                     )))
+                                    .item(
+                                        PopupMenuItem::new(if detached {
+                                            "Move back to main window"
+                                        } else {
+                                            "Open in new window"
+                                        })
+                                        .on_click(act(|this, id, w, cx| {
+                                            if this.is_detached(id) {
+                                                this.attach_workspace(id, cx);
+                                            } else {
+                                                this.detach_workspace(id, w, cx);
+                                            }
+                                        })),
+                                    )
                                     .item(PopupMenuItem::new("Combine into one chat").on_click(
                                         act(|this, id, w, cx| this.combine_workspace(id, w, cx)),
                                     ))
@@ -6295,6 +6401,17 @@ impl Render for Workbench {
         for channel in std::mem::take(&mut self.restore_popouts) {
             self.open_popout(channel, cx);
         }
+        for id in std::mem::take(&mut self.restore_detached) {
+            if self.tabs.iter().any(|t| t.id == id)
+                && self
+                    .tabs
+                    .iter()
+                    .any(|t| t.id != id && !self.is_detached(t.id))
+            {
+                self.open_detached(id, cx);
+            }
+        }
+        self.keep_main_attached();
         let reading_available = window.is_window_active() && !window.has_active_dialog(cx);
         // Retarget from the current sampled width so rapid reversals stay smooth.
         // GPUI's motion primitive honors the OS reduced-motion preference.
