@@ -103,6 +103,8 @@ pub struct TwitchAccount {
     /// A new sign-in that keeps the current account active until it succeeds.
     upgrading: bool,
     vault_unavailable: bool,
+    /// The vault has nothing saved for this account (so nothing to remove).
+    nothing_saved: bool,
     code: Option<(String, String)>,
     copied_at: Option<Instant>,
     /// The sign-in code stays masked until revealed (screen sharing, streams).
@@ -224,7 +226,7 @@ impl TwitchAccount {
                         Ok(tokens) => this.start(Some(tokens), cx),
                         Err(_) => { this.busy = false; this.status = "Saved Twitch credentials could not be read. Sign in again to replace them.".into(); cx.notify(); }
                     },
-                    Ok(None) => { this.busy = false; this.status = "Sign in with Twitch for chat and all emotes available to your account.".into(); cx.notify(); }
+                    Ok(None) => { this.busy = false; this.nothing_saved = true; this.status = "Sign in with Twitch for chat and all emotes available to your account.".into(); cx.notify(); }
                     Err(_) => { this.busy = false; this.vault_unavailable = true; this.status = "OS credential vault unavailable. Sign-in requires secure token storage.".into(); cx.notify(); }
                 }
             });
@@ -237,6 +239,7 @@ impl TwitchAccount {
             renewing: false,
             upgrading: false,
             vault_unavailable: false,
+            nothing_saved: false,
             code: None,
             copied_at: None,
             code_revealed: false,
@@ -508,6 +511,7 @@ impl TwitchAccount {
             let _ = view.update(cx, |this, cx| {
                 this.busy = false;
                 this.saving = false;
+                this.nothing_saved = result.is_ok();
                 this.status = if result.is_ok() {
                     "Signed out on this device."
                 } else {
@@ -567,7 +571,7 @@ impl Render for TwitchAccount {
                             .label("Retry secure storage")
                             .on_click(cx.listener(|this, _, _, cx| this.retry_vault(cx))))
                     })
-                    .when(!self.busy && !self.saving && !self.vault_unavailable, |el| {
+                    .when(!self.busy && !self.saving && !self.vault_unavailable && (self.account.is_some() || !self.nothing_saved), |el| {
                         el.child(
                             Button::new("twitch-sign-out")
                                 .small()
