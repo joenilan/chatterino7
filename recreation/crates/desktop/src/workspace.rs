@@ -6414,6 +6414,7 @@ impl Render for Workbench {
                             .h_full()
                             .window_control_area(WindowControlArea::Drag),
                     )
+                    .children(self.render_update_chip(cx))
                     .when(self.streamer_live, |el| {
                         el.child(
                             Button::new("streamer-mode-pill")

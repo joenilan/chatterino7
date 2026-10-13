@@ -257,6 +257,50 @@ impl Workbench {
         cx.notify();
     }
 
+    /// A title-bar chip while an update is known, so it's visible even with the
+    /// workspaces sidebar hidden. Clicking does what the sidebar button does.
+    pub(super) fn render_update_chip(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let updates = &self.updates;
+        let version = updates
+            .available_version()
+            .or(updates.downloaded_version())?
+            .to_owned();
+        let (icon, label) = match updates.phase() {
+            Phase::Available if updates.error_context() == Some(ErrorContext::Download) => (
+                Icon::new(IconName::CircleAlert),
+                "Download failed · Retry".to_owned(),
+            ),
+            Phase::Available => (
+                Icon::new(gpui_kit::assets::IconName::Download),
+                format!("Update {version}"),
+            ),
+            Phase::Downloading => (
+                Icon::new(IconName::LoaderCircle),
+                format!("Downloading {}%", updates.percent().unwrap_or(0)),
+            ),
+            Phase::Downloaded => (
+                Icon::new(gpui_kit::assets::IconName::RotateCcw),
+                "Restart to update".to_owned(),
+            ),
+            Phase::Installing => (Icon::new(IconName::LoaderCircle), "Installing…".to_owned()),
+            _ => return None,
+        };
+        Some(
+            Button::new("update-chip")
+                .ghost()
+                .xsmall()
+                .icon(icon.text_color(rgb(theme::ACCENT)))
+                .label(label)
+                .tooltip(format!("Jawjack {version}"))
+                .disabled(matches!(
+                    updates.phase(),
+                    Phase::Downloading | Phase::Installing
+                ))
+                .on_click(cx.listener(|this, _, w, cx| this.update_click(w, cx)))
+                .into_any_element(),
+        )
+    }
+
     /// The version and one update button at the bottom of the workspaces sidebar.
     pub(super) fn render_updates(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let updates = &self.updates;
