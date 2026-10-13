@@ -842,13 +842,42 @@ impl Workbench {
                 ))
                 .child(row(
                     "Spellcheck",
-                    "English. Misspellings show above the message box with fixes; emotes, names and chat words like lol or pog are skipped.",
+                    "Misspellings show above the message box with fixes; emotes, names and chat words like lol or pog are skipped.",
                     Switch::new("settings-spellcheck").checked(self.spellcheck).on_click(cx.listener(|this, on: &bool, _, cx| {
                         this.spellcheck = *on;
                         this.schedule_save(cx);
                         cx.notify();
                     })),
                 ))
+                .when(self.spellcheck, |el| {
+                    use gpui_kit::component::menu::DropdownMenu as _;
+                    let owner = cx.entity().downgrade();
+                    let language = crate::spell::LANGUAGE.load(std::sync::atomic::Ordering::Relaxed);
+                    el.child(row(
+                        "Spellcheck language",
+                        "English is built in. Others download once (about 1 MB, from cdn.jsdelivr.net) and are kept with your settings.",
+                        Button::new("settings-spell-language")
+                            .small()
+                            .label(crate::spell::LANGUAGES[language.min(crate::spell::LANGUAGES.len() - 1)].0)
+                            .dropdown_menu(move |mut menu: gpui_kit::component::menu::PopupMenu, _, _| {
+                                for (index, (name, _, _)) in crate::spell::LANGUAGES.iter().enumerate() {
+                                    let owner = owner.clone();
+                                    let mut item = gpui_kit::component::menu::PopupMenuItem::new(*name);
+                                    if index == language {
+                                        item = item.icon(Icon::new(gpui_kit::assets::IconName::Check));
+                                    }
+                                    menu = menu.item(item.on_click(move |_, _, cx| {
+                                        crate::spell::LANGUAGE.store(index, std::sync::atomic::Ordering::Relaxed);
+                                        let _ = owner.update(cx, |this, cx| {
+                                            this.schedule_save(cx);
+                                            cx.notify();
+                                        });
+                                    }));
+                                }
+                                menu
+                            }),
+                    ))
+                })
                 .child(row(
                     "Links open with",
                     "How a link in chat opens in your browser. Shift+right-click a link for its menu.",

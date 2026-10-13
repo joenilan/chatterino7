@@ -941,6 +941,11 @@ impl Workbench {
                     );
                 }
                 crate::nickname_rules::load(&state["nickname_rules"]);
+                crate::spell::LANGUAGE.store(
+                    (state["spell_language"].as_u64().unwrap_or(0) as usize)
+                        .min(crate::spell::LANGUAGES.len() - 1),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 theme::TAB_STYLE.store(
                     (state["tab_style"].as_u64().unwrap_or(0) as usize).min(1),
                     std::sync::atomic::Ordering::Relaxed,
@@ -3280,6 +3285,8 @@ impl Workbench {
             crate::name_paint::paint_option(2)
         ]);
         value["nickname_rules"] = crate::nickname_rules::json();
+        value["spell_language"] =
+            json!(crate::spell::LANGUAGE.load(std::sync::atomic::Ordering::Relaxed));
         value["tab_style"] = json!(theme::TAB_STYLE.load(std::sync::atomic::Ordering::Relaxed));
         value["overlay_opacity"] =
             json!(popout::OVERLAY_OPACITY.load(std::sync::atomic::Ordering::Relaxed));

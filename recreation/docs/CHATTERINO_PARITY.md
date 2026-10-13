@@ -85,7 +85,7 @@ Chatterino import.
 - [x] Completion options (S) — names only after @, comma after a leading name, add @, include the streamer; names complete as display names
 - [x] Mentions: bold/coloured in the chatter's colour, detect names without @ (option), colourless names get a stable colour
 - [x] Settings search; restore backups (S) — search across all sections; daily backups (last 7) with restore in General
-- [ ] Spellcheck: ~~personal dictionary~~ done (+ beside a flagged word); more languages (S)
+- [x] Spellcheck: ~~personal dictionary (+ beside a flagged word); 10 languages (downloaded on first use)~~ done
 - [ ] Theme: light / system / custom (M) [design]
 - [x] /mentions /whispers /live as dockable tabs (Add channel or type the command)
 - [x] Scroll speed, smooth scrolling (S) — mouse wheel; touchpads keep native scrolling
