@@ -983,6 +983,15 @@ impl Render for ChannelPane {
         let finish = self.selection.clone();
         let copy_owner = cx.weak_entity();
         let menu_owner = cx.weak_entity();
+        // Chatterino's "hide input when empty": back as soon as this chat is
+        // focused, you start typing, reply, or something is sending.
+        let hide_input = crate::replies::option(crate::replies::HIDE_EMPTY_INPUT)
+            && self.draft.read(cx).value().is_empty()
+            && self.reply_target.is_none()
+            && self.pending.is_none()
+            && !self.picker.open
+            && !self.focus.is_focused(window)
+            && !self.draft.read(cx).focus_handle(cx).is_focused(window);
         let automod_held = self.automod.clone();
         let automod_outcomes = self.automod_outcomes.clone();
         let link_press = self.link_press.clone();
@@ -1133,6 +1142,24 @@ impl Render for ChannelPane {
                     .overflow_hidden()
             .track_focus(&self.focus)
             .key_context("ChatTranscript")
+                    // With the message box hidden while empty, typing in the chat opens it.
+                    .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        let keys = &event.keystroke;
+                        if !crate::replies::option(crate::replies::HIDE_EMPTY_INPUT)
+                            || keys.modifiers.control || keys.modifiers.alt || keys.modifiers.platform
+                            || !this.draft.read(cx).value().is_empty()
+                        {
+                            return;
+                        }
+                        let Some(text) = keys.key_char.clone().filter(|t| !t.is_empty() && !t.chars().any(char::is_control)) else {
+                            return;
+                        };
+                        let handle = this.draft.read(cx).focus_handle(cx);
+                        handle.focus(window, cx);
+                        this.draft.update(cx, |input, cx| input.replace(text, window, cx));
+                        cx.stop_propagation();
+                        cx.notify();
+                    }))
                     .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
                         this.focus.focus(window, cx);
                         this.selection.borrow_mut().clear();
@@ -1444,7 +1471,7 @@ impl Render for ChannelPane {
                     )
                     .children(self.render_shared_avatars(window, cx)),
             )
-            .child(div().key_context("JawjackComposer").relative().v_flex().p_1().gap_1().bg(rgb(theme::PANEL)).border_t_1().border_color(rgb(theme::BORDER))
+            .child(div().key_context("JawjackComposer").relative().v_flex().when(hide_input,|el|el.hidden()).p_1().gap_1().bg(rgb(theme::PANEL)).border_t_1().border_color(rgb(theme::BORDER))
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                     if this.picker.open {
                         if event.keystroke.modifiers.alt && matches!(event.keystroke.key.as_str(),"left"|"right"){this.picker_action(&event.keystroke.key,window,cx);}

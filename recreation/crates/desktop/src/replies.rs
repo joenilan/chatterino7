@@ -68,19 +68,24 @@ fn root(message: &chat_core::Message) -> String {
 }
 
 /// Settings → Chat → Input & replies (Chatterino's): [Send button, reply
-/// context line, reply button on hover, strip the leading @mention in replies].
-pub const OPTION_NAMES: [&str; 4] = [
+/// context line, reply button on hover, strip the leading @mention in replies,
+/// hide the message box while it's empty and the chat isn't focused].
+pub const OPTION_NAMES: [&str; 5] = [
     "send_button",
     "reply_context",
     "hover_reply",
     "strip_mention",
+    "hide_empty_input",
 ];
-pub static OPTIONS: [std::sync::atomic::AtomicBool; 4] = [
+pub static OPTIONS: [std::sync::atomic::AtomicBool; 5] = [
     std::sync::atomic::AtomicBool::new(true),
     std::sync::atomic::AtomicBool::new(true),
     std::sync::atomic::AtomicBool::new(true),
     std::sync::atomic::AtomicBool::new(false),
+    std::sync::atomic::AtomicBool::new(false),
 ];
+/// OPTIONS index: hide the message box while it's empty and unfocused.
+pub const HIDE_EMPTY_INPUT: usize = 4;
 pub fn option(index: usize) -> bool {
     OPTIONS[index].load(std::sync::atomic::Ordering::Relaxed)
 }
