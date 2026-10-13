@@ -26,6 +26,9 @@ pub enum Request {
     },
     Delete {
         message_id: String,
+        /// Shared Chat: the channel the message came from (its broadcaster ID),
+        /// when that isn't the channel you're in.
+        room_id: Option<String>,
     },
     Clear,
     /// A partial Helix chat-settings patch.
@@ -463,6 +466,7 @@ pub fn parse(name: &str, args: &str) -> Option<Result<Request, String>> {
             } else {
                 Ok(Request::Delete {
                     message_id: first.chars().take(64).collect(),
+                    room_id: None,
                 })
             }
         }
@@ -802,12 +806,15 @@ pub fn run(identity: &Identity, channel: &str, request: &Request) -> Result<Stri
             )?;
             Ok(format!("@{login} warned"))
         }
-        Request::Delete { message_id } => {
+        Request::Delete {
+            message_id,
+            room_id,
+        } => {
             helix.ok(
                 M::DELETE,
                 "moderation/chat",
                 &[
-                    ("broadcaster_id", room),
+                    ("broadcaster_id", room_id.as_deref().unwrap_or(room)),
                     ("moderator_id", me),
                     ("message_id", message_id),
                 ],

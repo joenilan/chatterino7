@@ -941,6 +941,10 @@ impl Workbench {
                     );
                 }
                 crate::nickname_rules::load(&state["nickname_rules"]);
+                theme::TAB_STYLE.store(
+                    (state["tab_style"].as_u64().unwrap_or(0) as usize).min(1),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 if let Some(opacity) = state["overlay_opacity"].as_u64() {
                     popout::OVERLAY_OPACITY.store(
                         opacity.min(100) as u32,
@@ -3276,6 +3280,7 @@ impl Workbench {
             crate::name_paint::paint_option(2)
         ]);
         value["nickname_rules"] = crate::nickname_rules::json();
+        value["tab_style"] = json!(theme::TAB_STYLE.load(std::sync::atomic::Ordering::Relaxed));
         value["overlay_opacity"] =
             json!(popout::OVERLAY_OPACITY.load(std::sync::atomic::Ordering::Relaxed));
         value["ui_scale"] = json!(theme::UI_SCALE.load(std::sync::atomic::Ordering::Relaxed));
@@ -4644,8 +4649,13 @@ impl Workbench {
                             .id(SharedString::from(format!(
                                 "channel-tab-{tab_id}-{channel}"
                             )))
-                            .h(px(28.))
-                            .px_2()
+                            .map(|el| {
+                                if theme::compact_tabs() {
+                                    el.h(px(22.)).px(px(6.)).text_size(px(12.))
+                                } else {
+                                    el.h(px(28.)).px_2()
+                                }
+                            })
                             .flex()
                             .items_center()
                             .cursor_pointer()
@@ -5348,7 +5358,11 @@ impl Workbench {
                                     .when(position == 3, |el| el.border_l_1())
                                     .border_color(rgb(theme::BORDER))
                             } else {
-                                el.h_flex().flex_wrap().min_h(px(28.))
+                                el.h_flex().flex_wrap().min_h(px(if theme::compact_tabs() {
+                                    22.
+                                } else {
+                                    28.
+                                }))
                             }
                         })
                         .flex_shrink_0()

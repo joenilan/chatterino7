@@ -41,7 +41,7 @@ Chatterino import.
 - [x] Start with Windows; beta update channel; open cache folder (S)
 - [x] Overlay window: ~~transparent, click-through (lock), opacity~~ done (tab menu › Layout › Open as overlay)
 - [x] Tab menu: Close others / to the right, Sort A–Z, Duplicate (workspace), Lock layout, highlight on new messages (Count new messages), Hide all tabs (Ctrl+U)
-- [ ] Tab position and style: ~~position (top, bottom, left, right)~~ done; tab style (S) [design]
+- [x] Tab position and style: ~~position (top, bottom, left, right), style (normal / compact)~~ done
 - [x] Change channel of an existing split (tab menu → Change channel…)
 - [x] Input options: ~~send button, reply on hover, hide reply context, strip leading mention, hide when empty~~ done
 - [x] Header: ~~Subscribe, Mod view, room modes menu, changelog (Settings › Updates › Release history), custom player~~ done
@@ -89,7 +89,7 @@ Chatterino import.
 - [ ] Theme: light / system / custom (M) [design]
 - [x] /mentions /whispers /live as dockable tabs (Add channel or type the command)
 - [x] Scroll speed, smooth scrolling (S) — mouse wheel; touchpads keep native scrolling
-- [ ] Shared chat: badge on all messages; source routing (M)
+- [x] Shared chat: ~~source avatar on messages from other channels; deletes routed to the source channel~~ done
 - [x] Twitch GIF messages toggle (S) — Appearance → Twitch GIF messages (not yet seen with a real GIF message)
 - [x] Blocked users: ~~hide already-shown messages, display modes (hide / placeholder / show)~~ done
 - [ ] Multiple windows with workspaces; drag between windows (M)

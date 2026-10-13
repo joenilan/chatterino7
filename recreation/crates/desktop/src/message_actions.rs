@@ -987,8 +987,15 @@ impl ChannelPane {
             draft: String::new(),
         };
         match action {
+            // Shared Chat: a message from another channel is deleted there (where
+            // Twitch keeps it), which needs you to moderate that channel too.
             Action::ModDelete => cx.emit(moderate(crate::twitch_actions::Request::Delete {
                 message_id: message.id.clone(),
+                room_id: message
+                    .presentation
+                    .source_id
+                    .clone()
+                    .filter(|source| *source != message.channel_id),
             })),
             Action::ModCustom(template) => {
                 let (name, args) =

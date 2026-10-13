@@ -113,6 +113,13 @@ pub fn ui_zoom() -> f32 {
         .clamp(50, 300) as f32
         / 100.
 }
+/// Settings › Appearance › Tab style: Normal, or Compact (shorter tabs with
+/// smaller text, Chatterino's compact tabs).
+pub const TAB_STYLES: [&str; 2] = ["Normal", "Compact"];
+pub static TAB_STYLE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub fn compact_tabs() -> bool {
+    TAB_STYLE.load(std::sync::atomic::Ordering::Relaxed) == 1
+}
 /// Settings › Appearance › Tab position (Chatterino's): where each split's
 /// channel tabs sit. 0 top, 1 bottom, 2 left, 3 right.
 pub const TAB_POSITIONS: [&str; 4] = ["Top", "Bottom", "Left", "Right"];

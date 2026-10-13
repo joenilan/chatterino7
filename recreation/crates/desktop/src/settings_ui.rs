@@ -430,6 +430,18 @@ impl Workbench {
                         .children(crate::emoji::STYLES.map(crate::theme::segment)),
                 ))
                 .child(row(
+                    "Tab style",
+                    "Compact makes channel tabs shorter with smaller text, so more fit.",
+                    crate::theme::Segmented::new("settings-tab-style")
+                        .selected_index(crate::theme::TAB_STYLE.load(std::sync::atomic::Ordering::Relaxed))
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            crate::theme::TAB_STYLE.store((*index).min(1), std::sync::atomic::Ordering::Relaxed);
+                            this.schedule_save(cx);
+                            cx.notify();
+                        }))
+                        .children(crate::theme::TAB_STYLES.map(crate::theme::segment)),
+                ))
+                .child(row(
                     "Tab position",
                     "Where each split's channel tabs sit. Left and right show them as a list.",
                     crate::theme::Segmented::new("settings-tab-position")
