@@ -824,6 +824,19 @@ pub fn menu(
                         },
                     ));
                 }
+                // Chatterino's incognito links: your default browser's private window.
+                if crate::private_link::available() {
+                    let url = url.clone();
+                    menu = menu.item(
+                        PopupMenuItem::new(format!("Open in a private window · {host}")).on_click(
+                            move |_, w, cx| {
+                                if let Err(problem) = crate::private_link::open(&url) {
+                                    w.push_notification(Notification::info(problem), cx);
+                                }
+                            },
+                        ),
+                    );
+                }
                 // A Twitch channel link: open it here, or watch it in Streamlink.
                 if let Some(channel) = twitch_channel_link(url) {
                     let (owner, open_channel) = (owner.clone(), channel.clone());

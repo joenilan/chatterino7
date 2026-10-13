@@ -61,6 +61,7 @@ mod name_paint;
 mod nickname_rules;
 mod obs;
 mod owned_emotes;
+mod private_link;
 mod profile;
 mod profiles;
 mod pronouns;
