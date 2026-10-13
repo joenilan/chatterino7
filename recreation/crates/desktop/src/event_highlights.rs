@@ -1,6 +1,7 @@
-//! Highlight colours for kinds of chat events: mentions of you, raids, subs,
-//! Bits, rewards, announcements and first-time chatters. Each kind is off or one
-//! of the highlight colours. Custom highlight rules still take priority.
+//! Highlight colours and sounds for kinds of chat events: mentions of you,
+//! raids, subs, Bits, rewards, announcements, first-time chatters and whispers.
+//! Each kind is off or one of the highlight colours, and can play a sound.
+//! Custom highlight rules still take priority.
 use crate::highlight_rules::COLORS;
 use crate::theme;
 use chat_core::Message;
@@ -22,8 +23,9 @@ pub enum Kind {
     Announcement,
     FirstChatter,
     OwnMessage,
+    Whisper,
 }
-pub const KINDS: [(Kind, &str, &str, &str); 8] = [
+pub const KINDS: [(Kind, &str, &str, &str); 9] = [
     (
         Kind::Mention,
         "mention",
@@ -67,13 +69,25 @@ pub const KINDS: [(Kind, &str, &str, &str); 8] = [
         "Your own messages",
         "What you send, so it's easy to find (never pings)",
     ),
+    (
+        Kind::Whisper,
+        "whisper",
+        "Whispers",
+        "The colour of whisper lines in chat (Settings › Chat › show whispers in chat); the sound plays for every whisper",
+    ),
 ];
+/// Per-kind sound: the Highlights sound setting, nothing, or a fixed tone
+/// (the first four of highlight_rules::SOUNDS).
+pub const SOUNDS: [&str; 4] = ["Default sound", "No sound", "Chime", "Soft"];
+const SILENT: u8 = 1;
 const RAID_WINDOW: std::time::Duration = std::time::Duration::from_secs(30 * 60);
 
-/// Colour index into `COLORS` per kind; `None` turns that kind off.
+/// Colour index into `COLORS` per kind (`None` turns the colour off), and a
+/// SOUNDS index per kind.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct EventHighlights {
-    colors: [Option<usize>; 8],
+    colors: [Option<usize>; 9],
+    sounds: [u8; 9],
 }
 impl Default for EventHighlights {
     fn default() -> Self {
@@ -88,7 +102,9 @@ impl Default for EventHighlights {
                 Some(2),
                 Some(3),
                 None,
+                Some(0),
             ],
+            sounds: [SILENT; 9],
         }
     }
 }
@@ -99,6 +115,22 @@ impl EventHighlights {
     }
     pub fn set(&mut self, kind: Kind, color: Option<usize>) {
         self.colors[kind as usize] = color.filter(|c| *c < COLORS.len());
+    }
+    /// The SOUNDS index for a kind.
+    pub fn sound(&self, kind: Kind) -> u8 {
+        self.sounds[kind as usize]
+    }
+    pub fn set_sound(&mut self, kind: Kind, sound: u8) {
+        self.sounds[kind as usize] = sound.min(SOUNDS.len() as u8 - 1);
+    }
+    /// The tone a kind plays, if any (`default` is the Highlights sound).
+    pub fn tone(&self, kind: Kind, default: &crate::sound::Tone) -> Option<crate::sound::Tone> {
+        match self.sound(kind) {
+            0 => Some(default.clone()),
+            2 => Some(crate::sound::Tone::Chime),
+            3 => Some(crate::sound::Tone::Soft),
+            _ => None,
+        }
     }
     /// The event kind a message represents, ignoring mentions (handled by attention).
     pub fn kind(message: &Message) -> Option<Kind> {
@@ -123,6 +155,7 @@ impl EventHighlights {
             ) => return Some(Kind::Subscription),
             Some("announcement" | "shared_chat_announcement") => return Some(Kind::Announcement),
             Some("bits_badge_tier") => return Some(Kind::Bits),
+            Some("whisper") => return Some(Kind::Whisper),
             _ => {}
         }
         match p.kind.as_str() {
@@ -172,6 +205,9 @@ pub fn load(value: &serde_json::Value) -> Shared {
                     }
                 }
             }
+            if let Some(sound) = value[format!("{key}_sound")].as_u64() {
+                events.set_sound(kind, sound as u8);
+            }
         }
     }
     // Version 1 saved the old green mention default; follow Twitch's red instead.
@@ -189,6 +225,12 @@ pub fn json(events: &Shared) -> serde_json::Value {
         .iter()
         .map(|(kind, key, ..)| ((*key).to_owned(), serde_json::json!(events.get(*kind))))
         .collect();
+    for (kind, key, ..) in KINDS {
+        map.insert(
+            format!("{key}_sound"),
+            serde_json::json!(events.sound(kind)),
+        );
+    }
     map.insert("version".into(), serde_json::json!(2));
     serde_json::Value::Object(map)
 }
@@ -217,7 +259,7 @@ impl Render for Editor {
                 div()
                     .text_size(px(11.))
                     .text_color(rgb(theme::MUTED))
-                    .child("Colours for kinds of chat events. Your highlight rules win when both match. Applies to new messages."),
+                    .child("Colours and sounds for kinds of chat events. Your highlight rules win when both match. Applies to new messages."),
             )
             .children(KINDS.iter().map(|(kind, key, label, detail)| {
                 let current = events.get(*kind);
@@ -262,6 +304,37 @@ impl Render for Editor {
                                     }))
                             })),
                     )
+                    // Your own messages never ping; mention sounds are in
+                    // Notifications › Sounds.
+                    .when(kind != Kind::OwnMessage && kind != Kind::Mention, |el| {
+                        let sound = events.sound(kind);
+                        el.child(
+                            div()
+                                .h_flex()
+                                .flex_wrap()
+                                .items_center()
+                                .gap_1()
+                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).pr_1().child("Sound"))
+                                .children(SOUNDS.iter().enumerate().map(|(index, label)| {
+                                    let index = index as u8;
+                                    Button::new(SharedString::from(format!("event-{key}-sound-{index}")))
+                                        .xsmall()
+                                        .label(*label)
+                                        .selected(sound == index)
+                                        .when(sound == index, |b| b.primary())
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.events.borrow_mut().set_sound(kind, index);
+                                            match index {
+                                                2 => crate::sound::play(&crate::sound::Tone::Chime, 0.6),
+                                                3 => crate::sound::play(&crate::sound::Tone::Soft, 0.6),
+                                                _ => {}
+                                            }
+                                            cx.emit(Changed);
+                                            cx.notify();
+                                        }))
+                                })),
+                        )
+                    })
             }))
     }
 }

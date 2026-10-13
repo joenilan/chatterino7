@@ -2542,13 +2542,14 @@ impl Workbench {
                 }
                 // Mentions tabs get a copy, tagged with the channel it came from
                 // (unless a highlight rule says to keep it out of Mentions).
+                // Event sounds (subs, raids…) aren't mentions either.
                 let quiet = matches!(
                     event,
                     PaneEvent::Ping(
                         crate::attention::Ping::Rule {
                             mentions: false,
                             ..
-                        },
+                        } | crate::attention::Ping::Event(_),
                         _
                     )
                 );

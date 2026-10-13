@@ -78,18 +78,31 @@ impl Workbench {
                 let id = format!("system:whisper:{id}:{}", self.next_notice);
                 self.next_notice += 1;
                 let channel = pane.read(cx).name.to_string();
-                let notice = chat_core::system_notice(
+                let mut notice = chat_core::system_notice(
                     &channel,
                     id,
                     Some(chrono::Utc::now().timestamp()),
                     text.clone(),
                 );
+                // Coloured by Event highlights › Whispers.
+                notice.presentation.notice_type = Some("whisper".into());
                 pane.update(cx, |p, cx| {
                     p.received(chat_core::Event::Message(notice), cx)
                 });
             }
         }
         let looking = reading && self.whispers.selected.as_deref() == Some(from_login.as_str());
+        // Event highlights › Whispers › Sound, unless you're reading that conversation.
+        if !looking
+            && !(self.streamer_live && self.streamer_mute)
+            && (self.sound_focused || !window.is_window_active())
+            && let Some(tone) = self
+                .event_highlights
+                .borrow()
+                .tone(crate::event_highlights::Kind::Whisper, &self.sound_tone)
+        {
+            crate::sound::play(&tone, self.sound_volume);
+        }
         if !looking && self.streamer_live {
             // Streamer mode: say that one arrived, never who or what.
             let owner = cx.entity().downgrade();

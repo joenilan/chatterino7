@@ -34,8 +34,9 @@ impl Workbench {
                 .filter(|rule| !rule.sound_file.is_empty())
                 .map(|rule| crate::sound::Tone::Custom(rule.sound_file.clone().into())),
             Ping::Rule { .. } => None,
+            Ping::Event(kind) => self.event_highlights.borrow().tone(kind, &self.sound_tone),
         };
-        let flash = !matches!(ping, Ping::Rule { flash: false, .. });
+        let flash = !matches!(ping, Ping::Rule { flash: false, .. } | Ping::Event(_));
         let muted = self.streamer_live && self.streamer_mute;
         if let Some(tone) = tone
             && !muted

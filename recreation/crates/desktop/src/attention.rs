@@ -40,6 +40,8 @@ pub enum Ping {
         /// Which rule (its place in the list), for its own sound file.
         index: u8,
     },
+    /// A kind of event with a sound chosen in Event highlights.
+    Event(crate::event_highlights::Kind),
 }
 pub fn terms(text: &str) -> Vec<String> {
     let mut result = Vec::new();
@@ -93,9 +95,10 @@ impl Attention {
             .any(|x| x == login || x == name)
     }
     fn color(&self, message: &Message) -> Option<usize> {
+        let whisper = message.presentation.notice_type.as_deref() == Some("whisper");
         if message.deleted
             || message.presentation.kind == chat_core::MODERATION
-            || message.presentation.kind == chat_core::SYSTEM
+            || (message.presentation.kind == chat_core::SYSTEM && !whisper)
             || self.excluded(message)
             || (message.presentation.similar && !crate::similarity::flag(2))
         {
@@ -278,11 +281,21 @@ impl Attention {
                 flash: rule.flash,
             });
         }
-        self.terms
+        if self
+            .terms
             .iter()
             .filter(|term| !term.starts_with('!'))
             .any(|term| crate::highlight_rules::normalized_match(&text, term, true))
-            .then_some(Ping::Highlight)
+        {
+            return Some(Ping::Highlight);
+        }
+        self.event_ping(message)
+    }
+    /// An event kind with a sound (whispers play theirs when they arrive).
+    fn event_ping(&self, message: &Message) -> Option<Ping> {
+        let kind = crate::event_highlights::EventHighlights::kind(message)?;
+        (kind != Kind::Whisper && kind != Kind::OwnMessage && self.events.sound(kind) != 1)
+            .then_some(Ping::Event(kind))
     }
     /// Records a new row; returns a ping for a fresh (not history) mention or highlight.
     pub fn appended(&mut self, message: &Message, row: u64, first: u64) -> Option<Ping> {
@@ -322,10 +335,21 @@ impl Attention {
             Rc::make_mut(&mut self.colors).insert(row, color);
             if !message.presentation.historical {
                 ping = self.ping(message);
-                if ping.is_some() {
+                if matches!(ping, Some(p) if !matches!(p, Ping::Event(_))) {
                     self.pinged.insert(row);
                 }
             }
+        } else if row >= self.since
+            && !message.presentation.historical
+            && !message.deleted
+            && !self.excluded(message)
+            && self
+                .identity
+                .as_ref()
+                .is_some_and(|(user, _)| &message.user_id != user)
+        {
+            // A sound for an event kind whose colour is off.
+            ping = self.event_ping(message);
         }
         self.prune(first);
         ping
@@ -462,6 +486,33 @@ mod follow_tests {
         // Both are coloured, but only the mention counts toward "@".
         assert_eq!(a.highlights.len(), 2);
         assert_eq!(a.counts(), (2, 1));
+    }
+    #[test]
+    fn event_sounds_ping_without_counting_as_mentions() {
+        use crate::event_highlights::Kind;
+        let mut a = Attention {
+            identity: Some(("me".into(), "me".into())),
+            ..Attention::default()
+        };
+        let mut sub = message("s1", None);
+        sub.presentation.notice_type = Some("resub".into());
+        assert_eq!(a.appended(&sub, 0, 0), None, "no sound chosen");
+        a.events.set_sound(Kind::Subscription, 2);
+        let mut sub = message("s2", None);
+        sub.presentation.notice_type = Some("resub".into());
+        assert_eq!(
+            a.appended(&sub, 1, 0),
+            Some(super::Ping::Event(Kind::Subscription))
+        );
+        // Still a sound even with the colour off; never part of "@".
+        a.events.set(Kind::Subscription, None);
+        let mut sub = message("s3", None);
+        sub.presentation.notice_type = Some("resub".into());
+        assert_eq!(
+            a.appended(&sub, 2, 0),
+            Some(super::Ping::Event(Kind::Subscription))
+        );
+        assert_eq!(a.counts().1, 0);
     }
     #[test]
     fn following_threads() {
