@@ -1044,7 +1044,7 @@ impl Workbench {
                             .map(|index| {
                                 let current = crate::hotkeys::command(index);
                                 let input = cx.new(|cx| {
-                                    let mut state = InputState::new(window, cx).placeholder("/clear, or a message to send");
+                                    let mut state = InputState::new(window, cx).placeholder("/uptime, or a message to send");
                                     state.set_value(current, window, cx);
                                     state
                                 });
