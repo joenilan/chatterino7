@@ -45,7 +45,11 @@ gpui_kit::assets::icon_assets!(
         Mic,
         MicOff,
         ListFilter,
-        ArrowDownWideNarrow
+        ArrowDownWideNarrow,
+        Gavel,
+        Timer,
+        UserX,
+        EyeOff
     ]
 );
 

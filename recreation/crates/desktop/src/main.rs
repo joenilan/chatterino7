@@ -1415,7 +1415,10 @@ impl Render for ChannelPane {
                                                     let action = message_actions::Action::ModCustom(command.clone());
                                                     let _ = owner.update(cx, |p, cx| p.message_action(&message_id, action, window, cx));
                                                 })
-                                                .child(button.label.clone())
+                                                .child(match mod_buttons::icon(&button.label) {
+                                                    Some(icon) => Icon::new(icon).xsmall().into_any_element(),
+                                                    None => button.label.clone().into_any_element(),
+                                                })
                                         })))
                                 })
                                 // Combined feed: which channel this came from, colour-keyed per channel.

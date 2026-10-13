@@ -72,7 +72,7 @@ Chatterino import.
 - [ ] Event highlights: ~~own messages, thread replies (as mentions), whispers, AutoMod, per-kind sound, per-kind flash~~ done; elevated/hype chat (not parsed yet) (S)
 - [x] User card: ~~block, ignore, open channel, warn, avatar card, follower count, custom timeout, emotes in recent messages, 7TV profile, pin card (own window)~~ done
 - [x] Custom command placeholders (S–M) — {my.*} {channel.id} {stream.*}, and {user.name} {user.id} {msg.id} {msg.text}: commands using them appear in the message menu
-- [ ] Mod buttons: ~~any command~~ done (any /command, incl. custom commands); image icons (S)
+- [x] Mod buttons: ~~any command, icons (:ban, :timer, :gavel…)~~ done
 - [x] Timestamps: 12-hour, custom format, hide while live (S)
 - [x] Streamer mode: hide avatars, link previews, viewers/uptime, mod actions, restricted users, blocked terms; suppress live alerts (S)
 - [x] Live alerts: followed channels not open as tabs, /live tab, sound and taskbar flash (Notifications → With each live alert; not yet seen on a real go-live) (M)
