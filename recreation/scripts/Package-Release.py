@@ -30,7 +30,8 @@ import zipfile
 import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # recreation/
-RELEASE = ROOT / "target/release"
+# Build-Release.ps1 -TargetDir builds elsewhere so a running dev build is untouched.
+RELEASE = pathlib.Path(os.environ.get("JAWJACK_TARGET_DIR") or ROOT / "target") / "release"
 OUTPUT_ROOT = ROOT / "release-out"
 TOOLCHAIN = os.environ.get("JAWJACK_TOOLCHAIN", "1.99.0")
 TRAILER_MAGIC = b"JJSETUP1"

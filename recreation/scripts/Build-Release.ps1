@@ -20,7 +20,9 @@ JAWJACK_SIGN_THUMBPRINT, signing is skipped.
 param(
     [Parameter(Mandatory = $true)][string]$NotesFile,
     [string]$SignThumbprint = $env:JAWJACK_SIGN_THUMBPRINT,
-    [string]$Toolchain = $(if ($env:JAWJACK_TOOLCHAIN) { $env:JAWJACK_TOOLCHAIN } else { '1.99.0' })
+    [string]$Toolchain = $(if ($env:JAWJACK_TOOLCHAIN) { $env:JAWJACK_TOOLCHAIN } else { '1.99.0' }),
+    # A separate build folder (relative to recreation/) leaves a running dev build alone.
+    [string]$TargetDir = 'target'
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -28,7 +30,7 @@ $rustup = Join-Path $env:USERPROFILE '.cargo\bin\rustup.exe'
 if (-not (Test-Path -LiteralPath $rustup)) { throw 'Install rustup (MSVC toolchain) first.' }
 $notes = (Resolve-Path -LiteralPath $NotesFile).Path
 $src = Join-Path $repo 'target\release-src'
-$target = Join-Path $repo 'target'
+$target = Join-Path $repo $TargetDir
 
 Push-Location $repo
 try {
@@ -54,6 +56,7 @@ try {
 Push-Location $repo
 try {
     $env:JAWJACK_TOOLCHAIN = $Toolchain
+    $env:JAWJACK_TARGET_DIR = $target
     $arguments = @('scripts/Package-Release.py', '--notes-file', $notes, '--no-build', '--source-commit', $head)
     if ($SignThumbprint) { $arguments += @('--sign-thumbprint', $SignThumbprint) }
     python @arguments
