@@ -16,6 +16,7 @@ pub fn accent(message: &Message) -> Option<u32> {
     match message.presentation.kind.as_str() {
         "channel_points_highlighted" | "channel_points_sub_only" => Some(0xA99CF4),
         "user_intro" => Some(0x91D7BA),
+        crate::automod::KIND => Some(0xE8C468),
         "power_ups_message_effect" | "power_ups_gigantified_emote" => Some(0xE8C68A),
         _ if message.presentation.bits > 0 => Some(0xCAB3ED),
         _ => None,
@@ -34,6 +35,7 @@ pub fn heading(message: &Message) -> Option<AnyElement> {
         "channel_points_highlighted" => labels.push("Highlighted reward".to_owned()),
         "channel_points_sub_only" => labels.push("Subscriber reward".to_owned()),
         "user_intro" => labels.push("Introduction".to_owned()),
+        crate::automod::KIND => labels.push("AutoMod held this message".to_owned()),
         "power_ups_message_effect" => labels.push("Bits · Message effect".to_owned()),
         "power_ups_gigantified_emote" => labels.push("Bits · Gigantified emote".to_owned()),
         "" | "text" | "action" => {}

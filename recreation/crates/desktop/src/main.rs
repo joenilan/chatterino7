@@ -265,6 +265,8 @@ struct ChannelPane {
     send_as_options: std::rc::Rc<Vec<(SharedString, String)>>,
     /// Messages AutoMod is holding in this channel for you to review.
     automod: std::rc::Rc<Vec<automod::Held>>,
+    /// What happened to held messages shown inline: id -> "allowed by Mod".
+    automod_outcomes: std::rc::Rc<std::collections::HashMap<String, String>>,
     /// While copying existing chat into a new popout: no pings for old messages.
     quiet_pings: bool,
     /// Streamer mode is active: no stream thumbnails in the header card.
@@ -435,6 +437,7 @@ impl ChannelPane {
             bot_actions: Default::default(),
             send_as_options: Default::default(),
             automod: Default::default(),
+            automod_outcomes: Default::default(),
             quiet_pings: false,
             streamer_mode: false,
             similar_mode: Default::default(),
@@ -980,6 +983,8 @@ impl Render for ChannelPane {
         let finish = self.selection.clone();
         let copy_owner = cx.weak_entity();
         let menu_owner = cx.weak_entity();
+        let automod_held = self.automod.clone();
+        let automod_outcomes = self.automod_outcomes.clone();
         let link_press = self.link_press.clone();
         let finish_link = self.link_press.clone();
         let copy_viewport = self.viewport.clone();
@@ -1241,6 +1246,7 @@ impl Render for ChannelPane {
                             let pulse=jump_pulse.filter(|(target,at)|*target==row&&at.elapsed()<Duration::from_millis(1200));
                             if pulse.is_some()&&!cx.reduce_motion(){window.request_animation_frame();}
                             let rich_heading=rich_messages::heading(message);
+                            let automod_controls=message.id.strip_prefix(automod::LINE_PREFIX).map(|held_id|automod_row(held_id,&automod_held,&automod_outcomes,menu_owner.clone()));
                             let rich_attachments=rich_messages::attachments(message,&mut media.borrow_mut(),cx);
                             let reply_line=if replies::option(1){replies::row_context(message,&messages,menu_owner.clone())}else{None};
                             let interaction=message_actions::Interaction{owner:menu_owner.clone(),message:message.id.clone(),author_len:message.author_label().len(),links:message_actions::message_links(message),mentions:message_actions::message_mentions(message),pressed:link_press.clone()};
@@ -1306,10 +1312,11 @@ impl Render for ChannelPane {
                                 .on_mouse_down(MouseButton::Right,move|event,window,cx|{let at=event.position;let owner=row_owner.clone();let id=row_id.clone();window.defer(cx,move|window,cx|{let build=owner.clone();let menu=gpui_kit::component::menu::PopupMenu::build(window,cx,move|menu,window,cx|message_actions::menu(build,id,menu,window,cx));let _=owner.update(cx,|pane,cx|pane.open_row_menu(menu,at,window,cx));});})
                                 .when(read_boundary==Some(row)&&index>0,|el|el.child(div().h_flex().items_center().gap_2().h(px(18.)).text_size(px(10.)).text_color(rgb(0x9DBFCE)).child(div().h(px(1.)).flex_1().bg(rgb(0x40535E))).child("Last read position").child(div().h(px(1.)).flex_1().bg(rgb(0x40535E)))))
                                 .children(rich_heading)
+                                .children(automod_controls)
                                 .children(reply_line)
                                 .child(div().h_flex().items_start().min_w_0().gap_1()
                                 .when_some(timestamp,|el,(label,full)|el.child(div().id(SharedString::from(format!("timestamp-{}",message.id))).w(px(match timestamps{2=>55.,3=>58.,4=>76.,_=>37.})).h(first_line_height).flex_shrink_0().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(w,cx)).child(label)))
-                                .when(mod_buttons && !message.deleted && message.login.is_some() && own_user.as_deref() != Some(message.user_id.as_str()), |el| {
+                                .when(mod_buttons && !message.deleted && !message.id.starts_with(automod::LINE_PREFIX) && message.login.is_some() && own_user.as_deref() != Some(message.user_id.as_str()), |el| {
                                     let tool = |id: &'static str, icon: gpui_kit::assets::IconName, tip: &'static str, hover: u32, action: message_actions::Action| {
                                         let (owner, message_id) = (menu_owner.clone(), message.id.clone());
                                         div().id(SharedString::from(format!("{id}-{}", message.id))).size(px(16.)).h(first_line_height).flex_shrink_0().flex().items_center().justify_center()
@@ -1714,4 +1721,54 @@ fn main() {
             })
             .expect("Could not open the Jawjack window");
         });
+}
+
+/// Allow / Deny under an inline AutoMod line while it's held; afterwards, what
+/// happened to it.
+fn automod_row(
+    held_id: &str,
+    held: &[automod::Held],
+    outcomes: &std::collections::HashMap<String, String>,
+    owner: WeakEntity<ChannelPane>,
+) -> AnyElement {
+    let row = div().h_flex().items_center().gap_1().pb_1();
+    if let Some(entry) = held.iter().find(|h| h.id == held_id) {
+        let (allow, deny) = (held_id.to_owned(), held_id.to_owned());
+        let (allow_owner, deny_owner) = (owner.clone(), owner);
+        return row
+            .child(
+                Button::new(SharedString::from(format!("inline-allow-{held_id}")))
+                    .xsmall()
+                    .primary()
+                    .label("Allow")
+                    .disabled(entry.pending)
+                    .on_click(move |_, _, cx| {
+                        let _ = allow_owner
+                            .update(cx, |_, cx| cx.emit(PaneEvent::AutoMod(allow.clone(), true)));
+                    }),
+            )
+            .child(
+                Button::new(SharedString::from(format!("inline-deny-{held_id}")))
+                    .xsmall()
+                    .ghost()
+                    .label("Deny")
+                    .disabled(entry.pending)
+                    .on_click(move |_, _, cx| {
+                        let _ = deny_owner
+                            .update(cx, |_, cx| cx.emit(PaneEvent::AutoMod(deny.clone(), false)));
+                    }),
+            )
+            .into_any_element();
+    }
+    let outcome = outcomes
+        .get(held_id)
+        .cloned()
+        .unwrap_or_else(|| "No longer held".into());
+    row.child(
+        div()
+            .text_size(px(10.))
+            .text_color(rgb(theme::MUTED))
+            .child(outcome),
+    )
+    .into_any_element()
 }

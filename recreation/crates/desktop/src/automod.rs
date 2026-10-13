@@ -77,6 +77,40 @@ pub fn parse(kind: &str, e: &Value) -> Option<Update> {
     }
 }
 
+/// The chat line for a held message (Chatterino's inline AutoMod): the
+/// chatter's own name and text, kind "automod", the reason as its notice.
+/// Its ID is "automod:<message id>", so Allow/Deny can find the held entry.
+pub fn line(channel: &str, held: &Held) -> chat_core::Message {
+    let presentation = chat_core::MessagePresentation {
+        kind: KIND.into(),
+        notice: Some(held.reason.clone()),
+        ..Default::default()
+    };
+    chat_core::Message {
+        sent_at: Some(held.at.timestamp()),
+        id: format!("{LINE_PREFIX}{}", held.id),
+        channel_id: channel.into(),
+        user_id: held.user_id.clone(),
+        display_name: if held.name.is_empty() {
+            held.login.clone()
+        } else {
+            held.name.clone()
+        },
+        login: (!held.login.is_empty()).then(|| held.login.clone()),
+        reply: None,
+        mentions: vec![],
+        replyable: false,
+        name_color: None,
+        badges: vec![],
+        fragments: vec![chat_core::Fragment::Text(held.text.clone())],
+        presentation,
+        deleted: false,
+    }
+}
+/// `presentation.kind` of an inline AutoMod line.
+pub const KIND: &str = "automod";
+pub const LINE_PREFIX: &str = "automod:";
+
 /// Apply an update to a channel's queue. Returns a short notice for a
 /// resolution, e.g. "Allowed by Mod", or None.
 pub fn apply(queue: &mut Vec<Held>, update: Update) -> Option<String> {
@@ -132,6 +166,33 @@ pub fn resolve(
         404 => Err("The held message expired.".into()),
         429 => Err("Rate limited. Try again in a moment.".into()),
         code => Err(format!("Twitch refused ({code}).")),
+    }
+}
+
+#[cfg(test)]
+mod line_tests {
+    use super::{Held, KIND, LINE_PREFIX, line};
+    #[test]
+    fn held_messages_become_automod_lines() {
+        let held = Held {
+            id: "m1".into(),
+            user_id: "9".into(),
+            login: "bob".into(),
+            name: "Bob".into(),
+            text: "bad words".into(),
+            reason: "AutoMod: swearing (level 2)".into(),
+            at: chrono::Local::now(),
+            pending: false,
+        };
+        let message = line("chan", &held);
+        assert_eq!(message.id, format!("{LINE_PREFIX}m1"));
+        assert_eq!(message.presentation.kind, KIND);
+        assert_eq!(message.login.as_deref(), Some("bob"));
+        assert_eq!(message.body(), "bad words");
+        assert_eq!(
+            crate::event_highlights::EventHighlights::kind(&message),
+            Some(crate::event_highlights::Kind::AutoMod)
+        );
     }
 }
 

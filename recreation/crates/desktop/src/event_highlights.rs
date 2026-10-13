@@ -24,8 +24,9 @@ pub enum Kind {
     FirstChatter,
     OwnMessage,
     Whisper,
+    AutoMod,
 }
-pub const KINDS: [(Kind, &str, &str, &str); 9] = [
+pub const KINDS: [(Kind, &str, &str, &str); 10] = [
     (
         Kind::Mention,
         "mention",
@@ -75,6 +76,12 @@ pub const KINDS: [(Kind, &str, &str, &str); 9] = [
         "Whispers",
         "The colour of whisper lines in chat (Settings › Chat › show whispers in chat); the sound plays for every whisper",
     ),
+    (
+        Kind::AutoMod,
+        "automod",
+        "AutoMod",
+        "Messages AutoMod held in channels you moderate, shown in chat with Allow and Deny",
+    ),
 ];
 /// Per-kind sound: the Highlights sound setting, nothing, or a fixed tone
 /// (the first four of highlight_rules::SOUNDS).
@@ -86,8 +93,8 @@ const RAID_WINDOW: std::time::Duration = std::time::Duration::from_secs(30 * 60)
 /// SOUNDS index per kind.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct EventHighlights {
-    colors: [Option<usize>; 9],
-    sounds: [u8; 9],
+    colors: [Option<usize>; 10],
+    sounds: [u8; 10],
 }
 impl Default for EventHighlights {
     fn default() -> Self {
@@ -103,8 +110,9 @@ impl Default for EventHighlights {
                 Some(3),
                 None,
                 Some(0),
+                Some(4),
             ],
-            sounds: [SILENT; 9],
+            sounds: [SILENT; 10],
         }
     }
 }
@@ -160,6 +168,7 @@ impl EventHighlights {
         }
         match p.kind.as_str() {
             "user_intro" => Some(Kind::FirstChatter),
+            crate::automod::KIND => Some(Kind::AutoMod),
             "power_ups_message_effect" | "power_ups_gigantified_emote" => Some(Kind::Bits),
             "channel_points_highlighted" | "channel_points_sub_only" => Some(Kind::Reward),
             _ if p.bits > 0 => Some(Kind::Bits),

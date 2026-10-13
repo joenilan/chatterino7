@@ -18,6 +18,24 @@ impl Workbench {
             }
         }
     }
+    /// Remember what happened to a held message, for its inline chat line.
+    pub(super) fn automod_outcome(
+        &mut self,
+        channel: &str,
+        id: String,
+        outcome: String,
+        cx: &mut Context<Self>,
+    ) {
+        for pane in self.panes() {
+            if pane.read(cx).name.as_ref() == channel {
+                let (id, outcome) = (id.clone(), outcome.clone());
+                pane.update(cx, |p, cx| {
+                    std::rc::Rc::make_mut(&mut p.automod_outcomes).insert(id, outcome);
+                    cx.notify();
+                });
+            }
+        }
+    }
     fn set_automod_pending(
         &mut self,
         channel: &str,

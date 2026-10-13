@@ -1739,10 +1739,34 @@ impl Workbench {
                 crate::live::Event::AutoMod(channel, _)
                     if self.automod_hidden.contains(channel.as_str()) => {}
                 crate::live::Event::AutoMod(channel, update) => {
+                    // Chatterino's inline AutoMod: the held message as a chat line.
+                    if let crate::automod::Update::Held(held) = &update
+                        && !self
+                            .automod
+                            .get(&channel)
+                            .is_some_and(|q| q.iter().any(|h| h.id == held.id))
+                    {
+                        let line = crate::automod::line(&channel, held);
+                        for pane in &panes {
+                            if pane.read(cx).name.as_ref() == channel {
+                                let line = line.clone();
+                                pane.update(cx, |p, cx| {
+                                    p.received(chat_core::Event::Message(line), cx)
+                                });
+                            }
+                        }
+                    }
+                    let resolved = match &update {
+                        crate::automod::Update::Resolved { id, .. } => Some(id.clone()),
+                        _ => None,
+                    };
                     let queue = self.automod.entry(channel.clone()).or_default();
                     let notice = crate::automod::apply(std::rc::Rc::make_mut(queue), update);
                     let queue = queue.clone();
                     self.share_automod(&channel, queue, cx);
+                    if let (Some(id), Some(notice)) = (resolved, &notice) {
+                        self.automod_outcome(&channel, id, notice.clone(), cx);
+                    }
                     if let Some(notice) = notice {
                         self.notice = Some((notice, std::time::Instant::now()));
                     }

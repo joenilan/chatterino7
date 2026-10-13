@@ -666,7 +666,8 @@ pub fn menu(
                 .upgrade()
                 .is_some_and(|pane| message.login.as_deref() == Some(pane.read(cx).name.as_ref()));
         menu = menu.separator();
-        if !message.deleted {
+        // An inline AutoMod line isn't a Twitch message; Allow/Deny handle it.
+        if !message.deleted && !id.starts_with(crate::automod::LINE_PREFIX) {
             menu = actions(
                 menu,
                 &owner,
