@@ -588,6 +588,38 @@ impl Workbench {
                             }))),
                     )
                 })
+                .child({
+                    if self.player_input.is_none() {
+                        let current = crate::streamlink::CUSTOM_PLAYER.read().map(|u| u.clone()).unwrap_or_default();
+                        let input = cx.new(|cx| {
+                            let mut state = InputState::new(window, cx).placeholder("mpv://twitch.tv/{channel}");
+                            state.set_value(current, window, cx);
+                            state
+                        });
+                        self.player_input = Some(input);
+                    }
+                    let input = self.player_input.clone().expect("created above");
+                    stacked_row(
+                        "Your player",
+                        "A link that opens a stream in your own player, with {channel} where the channel name goes. Adds \"In your player\" to a tab's Open menu; leave empty to hide it.",
+                        div().h_flex().gap_1().w_full()
+                            .child(div().flex_1().child(Input::new(&input).small()))
+                            .child(Button::new("settings-player").small().label("Save").on_click(cx.listener(move |this, _, window, cx| {
+                                match crate::streamlink::validate_player(&input.read(cx).value()) {
+                                    Ok(url) => {
+                                        let note = if url.is_empty() { "Your player removed." } else { "Your player saved." };
+                                        if let Ok(mut current) = crate::streamlink::CUSTOM_PLAYER.write() {
+                                            *current = url;
+                                        }
+                                        window.push_notification(Notification::info(note), cx);
+                                        this.schedule_save(cx);
+                                    }
+                                    Err(problem) => window.push_notification(Notification::info(problem), cx),
+                                }
+                                cx.notify();
+                            }))),
+                    )
+                })
                 .child(row(
                     "Load recent messages",
                     format!("Recent chat when a channel opens, from {} (as Chatterino does). It sees the channel names you open.", crate::recent_messages::source()),
@@ -1114,6 +1146,13 @@ impl Workbench {
                             this.updates.check_now();
                             cx.notify();
                         }))),
+                ))
+                .child(row(
+                    "What's new",
+                    "Every Jawjack release and what changed in it.",
+                    open_button("settings-release-history", "Release history").on_click(cx.listener(|_, _, _, cx| {
+                        cx.open_url("https://zombie.digital/apps/jawjack/releases");
+                    })),
                 ))
                 .child(row(
                     "Updates",

@@ -255,6 +255,8 @@ pub struct Workbench {
     channel_history: (Option<String>, Option<String>),
     /// Settings › Recent messages server.
     recent_url_input: Option<Entity<InputState>>,
+    /// Settings › Your player.
+    player_input: Option<Entity<InputState>>,
     nickname_regex: bool,
     nickname_case: bool,
     follows_live: crate::follows_live::FollowsLive,
@@ -764,6 +766,7 @@ impl Workbench {
             channel_history: (None, None),
             command_inputs: None,
             recent_url_input: None,
+            player_input: None,
             nickname_regex: false,
             nickname_case: false,
             follows_live: crate::follows_live::FollowsLive::new(),
@@ -937,6 +940,12 @@ impl Workbench {
                     );
                 }
                 crate::nickname_rules::load(&state["nickname_rules"]);
+                if let Ok(url) = crate::streamlink::validate_player(
+                    state["custom_player"].as_str().unwrap_or(""),
+                ) && let Ok(mut current) = crate::streamlink::CUSTOM_PLAYER.write()
+                {
+                    *current = url;
+                }
                 crate::hotkeys::load_commands(&state["hotkey_commands"]);
                 if let Ok(url) = crate::recent_messages::validate_url(
                     state["recent_messages_url"].as_str().unwrap_or(""),
@@ -3230,6 +3239,12 @@ impl Workbench {
             crate::name_paint::paint_option(2)
         ]);
         value["nickname_rules"] = crate::nickname_rules::json();
+        value["custom_player"] = json!(
+            crate::streamlink::CUSTOM_PLAYER
+                .read()
+                .map(|u| u.clone())
+                .unwrap_or_default()
+        );
         value["hotkey_commands"] = crate::hotkeys::commands_json();
         value["recent_messages_url"] = json!(
             crate::recent_messages::CUSTOM_URL
@@ -5060,6 +5075,9 @@ impl Workbench {
                                             let url = crate::streamlink::player_url(&menu_channel);
                                             move |_, _, cx| cx.open_url(&url)
                                         }))
+                                        .when_some(crate::streamlink::custom_player(&menu_channel), |menu, url| {
+                                            menu.item(PopupMenuItem::new("In your player").on_click(move |_, _, cx| cx.open_url(&url)))
+                                        })
                                         .item(PopupMenuItem::new("In Streamlink").on_click({
                                             let channel = menu_channel.clone();
                                             move |_, window, cx| {

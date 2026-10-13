@@ -59,3 +59,51 @@ pub fn open(channel: &str) -> Result<(), String> {
 pub fn player_url(login: &str) -> String {
     format!("https://player.twitch.tv/?channel={login}&parent=twitch.tv&enableExtensions=true")
 }
+
+/// Your own stream player (Chatterino's custom player URI): a link with
+/// {channel} where the channel login goes, e.g. mpv://twitch.tv/{channel}.
+/// Empty: no "In your player" item.
+pub static CUSTOM_PLAYER: std::sync::RwLock<String> = std::sync::RwLock::new(String::new());
+pub fn validate_player(template: &str) -> Result<String, String> {
+    let template = template.trim();
+    if template.is_empty() {
+        return Ok(String::new());
+    }
+    let scheme = template
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if template.len() > 300
+        || !template.contains("{channel}")
+        || template.chars().any(char::is_whitespace)
+        || scheme.is_empty()
+        || !scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        || matches!(scheme.as_str(), "file" | "javascript" | "data" | "vbscript")
+        || !template.contains("://")
+    {
+        return Err("Use a player link with {channel} where the channel name goes, e.g. mpv://twitch.tv/{channel}.".into());
+    }
+    Ok(template.to_owned())
+}
+/// The player link for a channel, if one is set.
+pub fn custom_player(channel: &str) -> Option<String> {
+    let template = CUSTOM_PLAYER.read().ok()?.clone();
+    (!template.is_empty()).then(|| template.replace("{channel}", channel))
+}
+
+#[cfg(test)]
+mod player_tests {
+    use super::validate_player;
+    #[test]
+    fn player_links_are_checked() {
+        assert_eq!(validate_player(" ").unwrap(), "");
+        assert!(validate_player("mpv://twitch.tv/{channel}").is_ok());
+        assert!(validate_player("potplayer://https://twitch.tv/{channel}").is_ok());
+        assert!(validate_player("file://C:/x/{channel}").is_err());
+        assert!(validate_player("mpv://twitch.tv/").is_err());
+        assert!(validate_player("javascript://{channel}").is_err());
+    }
+}
