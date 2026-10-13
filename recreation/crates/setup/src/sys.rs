@@ -1,5 +1,5 @@
 //! Small Win32 helpers: registry, shell shortcuts and known folders, process
-//! discovery, graceful window close and task dialogs.
+//! discovery, graceful window close, the one-setup lock and task dialogs.
 
 use std::{
     ffi::OsString,
@@ -8,7 +8,10 @@ use std::{
     time::{Duration, Instant},
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, HWND, LPARAM, WAIT_OBJECT_0},
+    Foundation::{
+        CloseHandle, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, GetLastError,
+        HANDLE, HWND, LPARAM, WAIT_OBJECT_0,
+    },
     System::{
         Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
@@ -21,7 +24,7 @@ use windows_sys::Win32::{
             RegGetValueW, RegSetValueExW,
         },
         Threading::{
-            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+            CreateMutexW, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
             QueryFullProcessImageNameW, WaitForSingleObject,
         },
     },
@@ -43,6 +46,35 @@ pub fn wide(text: &str) -> Vec<u16> {
 
 fn wide_path(path: &Path) -> Vec<u16> {
     path.as_os_str().encode_wide().chain(Some(0)).collect()
+}
+
+// ----------------------------------------------------------- one setup
+
+/// A named mutex held while setup changes the installation; dropped on exit.
+pub struct SetupLock(HANDLE);
+
+impl Drop for SetupLock {
+    fn drop(&mut self) {
+        // SAFETY: the handle came from CreateMutexW and is closed once.
+        unsafe { CloseHandle(self.0) };
+    }
+}
+
+/// `None` when another setup already holds `name` (or it cannot be created).
+pub fn setup_lock(name: &str) -> Option<SetupLock> {
+    let name = wide(name);
+    // SAFETY: NUL-terminated name; the handle is owned by the returned lock.
+    let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+    if handle.is_null() {
+        return None;
+    }
+    // SAFETY: read immediately after CreateMutexW on this thread.
+    if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+        // SAFETY: our handle to the existing mutex is closed once.
+        unsafe { CloseHandle(handle) };
+        return None;
+    }
+    Some(SetupLock(handle))
 }
 
 // ---------------------------------------------------------------- registry

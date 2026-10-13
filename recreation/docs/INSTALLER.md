@@ -33,10 +33,31 @@ administrator rights and uses no external tools.
   `--app-pid`, it also finds that process (`Jawjack.exe` or a portable
   `chat-workbench.exe`). It asks the app to close with WM_CLOSE and waits up to
   90 s. It never force-closes the app; if Jawjack stays open, nothing is changed
-  (exit 3). Quiet mode refuses straight away.
+  (exit 3). Quiet mode without `--app-pid` refuses straight away. Quiet mode
+  with `--app-pid` does not ask: it waits up to 90 s for that process (and
+  anything else running from the install folder) to exit by itself.
 - **In-app updater:** `crates/desktop/src/updates.rs` starts
-  `Jawjack-<v>-setup.exe --app-pid <pid>`, then saves and closes Jawjack. The
-  final dialog offers "Launch Jawjack".
+  `Jawjack-<v>-setup.exe --app-pid <pid> --quiet --relaunch --result-file <file>`,
+  then saves and closes Jawjack. Setup waits for Jawjack to exit, installs
+  with no dialogs, keeps user data, writes its outcome to the result file and
+  starts the installed Jawjack again. It does that after a failure too, so the
+  kept version comes back. It does not start Jawjack when Jawjack never closed
+  (exit 3) or another setup was running (exit 5).
+- **Result file:** one line of UTF-8 JSON,
+  `{"version":"<version being installed>","ok":true|false,"message":"<reason>"}`.
+  `message` is empty on success and at most 1000 characters otherwise.
+  `version` is empty when the payload could not be read. The path must be
+  absolute and its folder must exist; it must not be a folder or a link.
+  Setup writes a temp file next to it and renames it into place, so a reader
+  never sees half a file; nothing else is written in that folder. An unusable path
+  stops the install (exit 1, nothing changed); with `--relaunch`, Jawjack is
+  still started again.
+- **Relaunch:** setup starts `%LOCALAPPDATA%\Programs\Jawjack\Jawjack.exe`
+  (the sandbox copy under `--test-root`) with no arguments, as a detached
+  normal process, after the `--app-pid` process has exited.
+- **One setup at a time:** install and uninstall hold the named mutex
+  `Local\JawjackSetup` (under `--test-root`: `Local\JawjackSetup-<test key>`).
+  A second setup changes nothing and exits with 5.
 - **User data:** `%LOCALAPPDATA%\ChatWorkbench` (settings, workspace) is never
   touched by install or upgrade. Twitch sign-ins live in Windows Credential
   Manager, and setup never touches them.
@@ -67,12 +88,18 @@ deletes itself afterwards.
 | `--quiet` / `/S` | No dialogs; print status to stdout |
 | `--desktop-shortcut` / `--no-desktop-shortcut` | Override the desktop-shortcut default |
 | `--launch` | Quiet install: start Jawjack afterwards |
+| `--relaunch` | Start the installed Jawjack after the install, also after a failure (used by the updater) |
+| `--result-file <file>` | Write the outcome as JSON to this absolute path (used by the updater) |
 | `--uninstall [--remove-data]` | Uninstall (optionally delete settings) |
-| `--app-pid <pid>` | Also wait for this Jawjack process to close (used by the updater) |
+| `--app-pid <pid>` | Also wait for this Jawjack process to close; with `--quiet`, wait for it to exit (used by the updater) |
 | `--payload-info` | Print the payload's version and file hashes as JSON; changes nothing |
 | `--test-root <dir>` | Test only: every path and registry key goes into a sandbox (see below) |
 
-Exit codes: 0 OK, 1 failed, 2 cancelled, 3 Jawjack still running, 4 payload missing/damaged.
+Exit codes: 0 OK, 1 failed, 2 cancelled, 3 Jawjack still running, 4 payload
+missing/damaged, 5 another setup is running.
+
+A command-line error prints to stdout and exits with 1. It shows a message box
+only without `--quiet`.
 
 ## Packaging
 
@@ -114,6 +141,8 @@ and checks that the version, file names, sizes and hashes match.
 
 ```powershell
 python scripts/Test-InstallerSandbox.py            # add --with-app to also launch the app
+# Test the current setup code with an already packaged app folder:
+python scripts/Test-InstallerSandbox.py --fresh-setup --app-folder release-out\0.1.0\app\Jawjack
 ```
 
 The test installs into a temp folder through `--test-root`. That folder must
@@ -128,6 +157,22 @@ covers:
 - upgrade, keeping user data
 - uninstall through the registered uninstaller, keeping data
 - uninstall with `--remove-data`
+
+A second sandbox checks the in-app updater contract. It uses setups built
+from `target/release/jawjack-setup.exe` with a small stub `Jawjack.exe`
+(compiled by the test with rustc), so a relaunch never opens the real app. The
+stub sleeps when started with `--sleep N` and stands in for Jawjack closing
+itself. Started with no arguments, as a relaunch, it logs the installed
+version and exits. The checks:
+
+- a quiet upgrade with `--app-pid` waits for the dummy app to exit by itself,
+  writes `{"version":"0.0.2","ok":true,"message":""}`, keeps data and
+  relaunches the new version
+- a damaged setup (exit 4) and an install folder held in use (exit 1) write
+  `ok: false` with the reason, and relaunch the kept version
+- while one setup waits, a second setup and an uninstall exit with 5, and
+  nothing is relaunched
+- an unusable `--result-file` changes nothing and still relaunches
 
 It snapshots the real install, the shortcuts, the Apps & Features key and the
 data-folder presence, and fails if any of them changed.
@@ -181,6 +226,11 @@ SmartScreen ("More info → Run anyway") and Smart App Control; see
   - the registered uninstaller ran from `%TEMP%` and kept data
   - `--remove-data` removed data
   - the real profile was unchanged, and the test registry key and temp folders were removed
+
+- **Updater contract (2026-10-12):** 11 unit tests (adds the result JSON shape,
+  escaping and size bound, the path checks, the atomic write and the lock).
+  `Test-InstallerSandbox.py --fresh-setup` passed both sandboxes, including
+  the stub-app checks for waiting, the result file, relaunch and the lock.
 
 ### Not verified
 

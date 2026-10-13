@@ -5,7 +5,10 @@
 //!   (and optional Desktop) shortcut and an HKCU Apps & Features entry.
 //! * Never ends a process: a running Jawjack is asked to close (WM_CLOSE) and
 //!   setup stops if it stays open. The in-app updater starts setup with
-//!   `--app-pid <pid>` so a portable `chat-workbench.exe` is also waited for.
+//!   `--app-pid <pid> --quiet --relaunch --result-file <file>`: setup waits
+//!   for that process (also a portable `chat-workbench.exe`) to exit, writes
+//!   its outcome as JSON and starts the installed Jawjack again.
+//! * One setup runs at a time (named mutex `Local\JawjackSetup`).
 //! * Upgrades keep the user's settings in `%LOCALAPPDATA%\ChatWorkbench`.
 //! * Uninstall removes the app, shortcuts and Apps & Features entry and keeps
 //!   user data unless asked to remove it.

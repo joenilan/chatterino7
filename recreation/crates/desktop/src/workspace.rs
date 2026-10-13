@@ -34,6 +34,7 @@ mod settings_ui;
 mod sound_settings;
 #[path = "streamer_bot_ui.rs"]
 mod streamer_bot_ui;
+mod update_ui;
 #[path = "whispers_ui.rs"]
 mod whispers_ui;
 #[path = "workspace_search.rs"]
@@ -361,7 +362,6 @@ pub struct Workbench {
     presence: crate::seven_presence::Presence,
     recent_requested: std::collections::HashSet<String>,
     updates: crate::updates::Updates,
-    announced_update: Option<String>,
     live_workspaces: bool,
     live_channels: bool,
     catalog: std::rc::Rc<std::cell::RefCell<crate::catalog::Catalog>>,
@@ -489,7 +489,7 @@ impl Workbench {
         json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()})
     }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"own_extras_refused":self.own_extras_refused,"automod_channels":self.mod_automod_channels,"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"capabilities":self.capabilities.inspection(),"seventv_presence":self.presence.last.lock().map(|s|s.clone()).unwrap_or_default(),"roles":self.panes().iter().map(|p|{let p=p.read(cx);(p.name.to_string(),p.role.map(|r|r.label()))}).collect::<BTreeMap<_,_>>(),"shared_sessions":self.panes().iter().filter_map(|p|{let p=p.read(cx);p.shared_session.clone().map(|s|(p.name.to_string(),json!({"participants":s,"hidden":p.hidden_sources})))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
+        json!({"own_extras_refused":self.own_extras_refused,"automod_channels":self.mod_automod_channels,"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"capabilities":self.capabilities.inspection(),"updates":self.updates.inspection(),"profile":crate::profile::name(),"seventv_presence":self.presence.last.lock().map(|s|s.clone()).unwrap_or_default(),"roles":self.panes().iter().map(|p|{let p=p.read(cx);(p.name.to_string(),p.role.map(|r|r.label()))}).collect::<BTreeMap<_,_>>(),"shared_sessions":self.panes().iter().filter_map(|p|{let p=p.read(cx);p.shared_session.clone().map(|s|(p.name.to_string(),json!({"participants":s,"hidden":p.hidden_sources})))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
     }
     /// Channels to connect, highest priority first: visible panes, the rest of the
     /// active workspace, then other workspaces by most recent use. Beyond the
@@ -690,12 +690,7 @@ impl Workbench {
                 state["seventv_activity"].as_bool().unwrap_or(true),
             ),
             recent_requested: Default::default(),
-            updates: {
-                let mut updates = crate::updates::Updates::new();
-                updates.enabled = state["update_checks"].as_bool().unwrap_or(true);
-                updates
-            },
-            announced_update: None,
+            updates: crate::updates::Updates::load(crate::updates::UpdateMode::load(&state)),
             live_workspaces: state["live_workspaces"].as_bool().unwrap_or(false),
             live_channels: state["live_channels"].as_bool().unwrap_or(false),
             catalog: std::rc::Rc::new(std::cell::RefCell::new(crate::catalog::Catalog::new())),
@@ -1444,21 +1439,10 @@ impl Workbench {
                 });
             }
         }
-        if self.updates.auto_check_due() {
-            self.updates.check();
-        }
         if self.updates.poll() {
-            if let Some(version) = self.updates.available()
-                && self.announced_update.as_ref() != Some(&version)
-            {
-                self.notice = Some((
-                    format!("Jawjack {version} is available. Workspaces sidebar → update."),
-                    std::time::Instant::now(),
-                ));
-                self.announced_update = Some(version);
-            }
             cx.notify();
         }
+        self.announce_updates(window, cx);
         // A newer Jawjack may need permissions an older saved grant lacks.
         let missing = self.account.read(cx).missing_scopes().len();
         if identity.is_some() && missing > self.announced_missing_scopes {
@@ -2989,90 +2973,6 @@ impl Workbench {
         }
     }
     /// Download the published installer, or start it once verified.
-    fn update_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.updates.ready() {
-            match self.updates.install() {
-                // The installer waits for Jawjack to close; save first.
-                Ok(_) => {
-                    let _ = storage::save(&self.snapshot(cx));
-                    cx.quit();
-                }
-                Err(e) => window.push_notification(Notification::info(e), cx),
-            }
-        } else {
-            self.updates.start_download();
-        }
-        cx.notify();
-    }
-    fn render_updates(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let available = self.updates.available();
-        div()
-            .v_flex()
-            .gap_1()
-            .child(
-                div()
-                    .h_flex()
-                    .gap_1()
-                    .items_center()
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .text_color(rgb(if available.is_some() {
-                                theme::STREAM_LIVE
-                            } else {
-                                theme::MUTED
-                            }))
-                            .child(format!("v{}", self.updates.current_version())),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_ellipsis()
-                            .child(self.updates.status_label()),
-                    )
-                    .child(
-                        Button::new("update-check")
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::RefreshCw)
-                            .tooltip(if self.updates.checking() {
-                                "Checking for updates…"
-                            } else {
-                                "Check for updates"
-                            })
-                            .disabled(self.updates.busy())
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.updates.check();
-                                cx.notify();
-                            })),
-                    ),
-            )
-            .when_some(
-                self.updates.install_label().filter(|_| available.is_some()),
-                |el, label| {
-                    el.child(
-                        Button::new("update-install")
-                            .small()
-                            .when(self.updates.ready(), |b| b.primary())
-                            .disabled(self.updates.busy())
-                            .label(label)
-                            .on_click(cx.listener(|this, _, w, cx| this.update_action(w, cx))),
-                    )
-                },
-            )
-            .when(available.is_some(), |el| {
-                el.child(
-                    Button::new("update-notes")
-                        .ghost()
-                        .xsmall()
-                        .label("Release notes")
-                        .on_click(|_, _, cx| cx.open_url(crate::updates::RELEASE_PAGE)),
-                )
-            })
-    }
     /// Run a Twitch command after checking role and permission again.
     fn run_twitch_command(
         &mut self,
@@ -3165,7 +3065,7 @@ impl Workbench {
                 );
             }
         }
-        let mut value = json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_checks":self.updates.enabled,"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"studio_page":self.studio_tab,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"live_notify":self.live_notify,"live_notify_all":self.live_notify_all,"live_notify_follows":self.live_notify_follows,"muted_pings":self.muted_pings,"seventv_activity":self.presence.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
+        let mut value = json!({"version":1,"chatter_notes":crate::chatter_notes::json(&self.chatter_notes),"chatter_appearance":crate::chatter_appearance::json(&self.chatter_appearance),"highlight_rules":crate::highlight_rules::json(&self.highlight_rules),"ignores":crate::ignores::json(&self.ignores),"event_highlights":crate::event_highlights::json(&self.event_highlights),"custom_commands":&*self.custom_commands.borrow(),"emote_favorites":self.catalog.borrow().favorites_json(),"next_id":self.next_id,"active":self.active,"sidebar":self.sidebar,"update_mode":self.updates.mode().key(),"experience":self.experience.key(),"streamer_bot":self.streamer_bot_json(),"studio_open":self.studio_open,"studio_page":self.studio_tab,"setup_offered":self.setup_offered,"recent_messages":self.recent_enabled,"live_notify":self.live_notify,"live_notify_all":self.live_notify_all,"live_notify_follows":self.live_notify_follows,"muted_pings":self.muted_pings,"seventv_activity":self.presence.enabled,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"live_workspaces":self.live_workspaces,"live_channels":self.live_channels,"drafts":drafts,"reply_drafts":reply_drafts,"highlight_words":self.highlight_terms.join(", "),
             "tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"sizes":t.sizes,"dock":t.dock.as_ref().map(Dock::json),"pinned":t.pinned,"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>()});
         // Kept outside the macro above, which is at its recursion limit.
         let accounts = self.accounts_json(cx);

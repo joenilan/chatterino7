@@ -994,18 +994,31 @@ impl Workbench {
             })),
             _ => page
                 .child(row(
-                    format!("Jawjack {}", env!("CARGO_PKG_VERSION")),
+                    format!("Jawjack {}", self.updates.current_version()),
                     self.updates.detail(),
-                    div().text_size(px(12.)).child(self.render_updates(cx)),
+                    div().h_flex().gap_1()
+                        .when(self.updates.update_known(), |el| {
+                            el.child(Button::new("settings-update-notes").small().ghost().label("Release notes").on_click(cx.listener(|this, _, w, cx| this.open_release_notes(w, cx))))
+                        })
+                        .when_some(self.updates.install_action_label().filter(|_| self.updates.update_known() && self.updates.can_download()), |el, label| {
+                            el.child(Button::new("settings-update-action").small().primary().label(label).disabled(self.updates.busy()).on_click(cx.listener(|this, _, w, cx| this.update_click(w, cx))))
+                        })
+                        .child(Button::new("settings-update-check").small().label("Check for updates").disabled(self.updates.busy()).on_click(cx.listener(|this, _, _, cx| {
+                            this.updates.check_now();
+                            cx.notify();
+                        }))),
                 ))
                 .child(row(
-                    "Check automatically",
-                    "From apps.zombie.digital. Nothing installs until you click.",
-                    Switch::new("settings-updates").checked(self.updates.enabled).on_click(cx.listener(|this, on: &bool, _, cx| {
-                        this.updates.enabled = *on;
-                        this.schedule_save(cx);
-                        cx.notify();
-                    })),
+                    "Updates",
+                    "Notify me checks apps.zombie.digital in the background and tells you when an update is out; nothing downloads or installs until you click. Off checks only when you ask.",
+                    crate::theme::Segmented::new("settings-update-mode")
+                        .selected_index(crate::updates::UpdateMode::ALL.iter().position(|m| *m == self.updates.mode()).unwrap_or(0))
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            this.updates.set_mode(crate::updates::UpdateMode::ALL[*index]);
+                            this.schedule_save(cx);
+                            cx.notify();
+                        }))
+                        .children(crate::updates::UpdateMode::ALL.map(|m| crate::theme::segment(m.label()))),
                 )),
         }
     }

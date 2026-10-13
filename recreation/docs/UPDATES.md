@@ -1,41 +1,56 @@
-# Updates and versioning
+# Updates, previews and the dev profile
 
-Ported from Haiwire's app-side updater (`crates/desktop/src/updates.rs`).
+Jawjack follows Haiwire's update flow (itself adapted from T3 Code's desktop
+updater): **notify → click to download → confirm to install**. The spec is
+`E:\git\xhw_haiwire\docs\design\2026-10-12-update-flow.md`; the logic is
+`crates/desktop/src/updates.rs`, the UI `crates/desktop/src/workspace/update_ui.rs`.
 
-- **Version:** `env!("CARGO_PKG_VERSION")` of the workspace (`recreation/Cargo.toml`,
-  currently 0.1.0). Use Haiwire's scheme for releases: `0.1.0-preview.N`, then a
-  higher base for beta; never reuse a published version.
-- **Feed:** `https://apps.zombie.digital/downloads/jawjack/latest.json`, the same
-  schema as Haiwire's (`version`, `channel`, `publishedAt`, `notes`, `setup {file, size, sha256}`).
-  The download URL is derived, not taken from the feed:
-  `/downloads/jawjack/archive/<v>/Jawjack-<v>-setup.exe`. A 404 shows "No releases
-  published yet".
-- **Checks:** 30 s after launch and every 6 hours while "Check automatically" is
-  on (Appearance & memory → Updates; saved in the workspace file), plus the ⟳
-  button. Nothing downloads or installs without a click.
-- **Install:** download is size-capped and SHA-256 verified, then held
-  deny-write. Install launches `Jawjack-<v>-setup.exe --app-pid <pid>`, saves the
-  workspace and closes Jawjack. The installer must wait for that process to exit,
-  replace files without touching `%LOCALAPPDATA%\ChatWorkbench`, and relaunch.
-- **Release channels:** see [RELEASING.md](RELEASING.md).
-- **UI:** version, status and ⟳ at the bottom of the workspaces sidebar (as in
-  Haiwire); full controls in Appearance & memory. A status-bar notice announces a
-  new version once.
+## Versions
 
-Permissions follow the same idea: when a newer build requests Twitch scopes the
-saved login lacks, the account button shows `•` and the status bar says so once
-per launch; see [STREAMER_TOOLS.md](STREAMER_TOOLS.md).
+`[workspace.package] version` in `recreation/Cargo.toml` is the product version:
+`0.1.0-preview.N` for rolling previews, then a higher base for beta
+(`0.2.0-beta.1`; SemVer sorts `beta` before `preview`). Never republish a
+version with different bytes.
 
-## Not done yet
+## Feed
 
-- A Jawjack installer: port `xhw_haiwire/apps/haiwire-setup` (payload format,
-  WM_CLOSE wait, per-user install, Apps & Features entry, rollback).
-- Release build/package/publish scripts (Haiwire keeps them in its ignored `.local-release/`).
-- Code signing. The SHA-256 detects corruption but not a compromised server.
+`https://apps.zombie.digital/downloads/jawjack/latest.json` (`version`,
+`channel` preview|beta|stable, `notes`, `setup {file, size, sha256}`), with
+`notes.md` beside it. Feed URLs are ignored: the installer is always
+`/downloads/jawjack/archive/<v>/Jawjack-<v>-setup.exe`. Release history:
+`https://apps.zombie.digital/apps/jawjack/releases`.
 
-## Evidence (Windows, 2026-10-11)
+## Behaviour
 
-The sidebar footer showed `v0.1.0 · No releases published yet` after the startup
-check, because the feed doesn't exist yet. The installer and `latest.json` are now produced by
-`scripts/Package-Release.py` ([INSTALLER.md](INSTALLER.md)), but nothing is published, so the download → setup
-hand-off is still untested end to end.
+- **Settings › General › Updates:** Notify me (default) or Off. Notify me checks
+  15 s after launch and then every 4 minutes, with conditional requests
+  (ETag / Last-Modified); Off checks only when asked.
+- **Only the installed copy** (`%LOCALAPPDATA%\Programs\Jawjack\Jawjack.exe` on
+  the default profile) checks by itself, downloads or installs. Dev builds,
+  portable copies and other profiles can check when asked but never download.
+- A found update shows "Jawjack {v} is available" on the sidebar update button
+  and a notification (also a Windows one while Jawjack is in the background),
+  once per version per session. Clicking opens the release notes with
+  **Download**. The download is size-capped and SHA-256 checked while
+  streaming and again after reopening it deny-write.
+- **Restart and install** always asks first. Jawjack saves, starts
+  `Jawjack-<v>-setup.exe --app-pid <pid> --quiet --relaunch --result-file <data>\update-result.json`
+  and closes. Setup waits for it to exit, installs, keeps settings and
+  sign-ins, writes its result and starts Jawjack again (also after a failure).
+  The next launch reports a failed install once. **Quitting never installs.**
+- `inspect` on the control channel includes `updates` (phase, versions,
+  eligibility, mode) and `profile`.
+
+## Dev profile
+
+`--profile dev` (or `JAWJACK_PROFILE=dev`) runs a development copy with its own
+settings (`%LOCALAPPDATA%\Jawjack-Dev`) and its own Credential Manager entries
+(`https://jawjack.zombie.digital/dev/...`), shown as a "Dev" chip and "Jawjack
+Dev" title. It never shares a sign-in with the installed app (two copies racing
+for one-use Twitch refresh tokens sign each other out). One window runs per
+profile; a second launch brings the first forward.
+
+## Releasing
+
+See [RELEASING.md](RELEASING.md) and [INSTALLER.md](INSTALLER.md). Building and
+publishing tooling lives in the git-ignored `recreation/.local-release/`.

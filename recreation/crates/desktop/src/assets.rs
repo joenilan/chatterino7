@@ -9,6 +9,7 @@ gpui_kit::assets::icon_assets!(
     ExtraIcons,
     [
         Check,
+        RotateCcw,
         Plus,
         Reply,
         Pencil,

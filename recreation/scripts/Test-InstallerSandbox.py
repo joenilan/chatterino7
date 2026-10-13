@@ -10,11 +10,21 @@ also launches the installed Jawjack.exe (with LOCALAPPDATA pointed at the
 sandbox) and checks that setup refuses to touch a running app; that step opens
 a real Jawjack window and ends it afterwards (only the test's own process).
 
+Then, in a second sandbox, it checks the in-app updater contract
+(--app-pid <pid> --quiet --relaunch --result-file <file>) with setups built
+from the fresh target/release/jawjack-setup.exe and a tiny stub "Jawjack.exe"
+(compiled here with rustc) instead of the real app, so relaunching never opens
+Jawjack: waiting for a dummy app process that exits by itself, the result file
+on success and on forced failures, the relaunch after both, and the one-setup
+lock. --fresh-setup also runs the first part with the fresh setup program and
+the packaged app folder instead of the prepared release-out setup.
+
 The owner's real install, shortcuts, Apps & Features entry and data folder are
 snapshotted and must be unchanged. Python 3.11+, Windows.
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import pathlib
@@ -28,8 +38,42 @@ import winreg
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 VERSION = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"]
 SETUP = ROOT / "release-out" / VERSION / f"Jawjack-{VERSION}-setup.exe"
+FRESH_BASE = ROOT / "target/release/jawjack-setup.exe"
+APP_FOLDER = ROOT / "release-out" / VERSION / "app/Jawjack"
 UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Jawjack"
 TEST_ROOT_KEY = r"Software\JawjackTest"
+TOOLCHAIN = os.environ.get("JAWJACK_TOOLCHAIN", "1.99.0")
+RUSTUP = pathlib.Path(os.environ.get("USERPROFILE", pathlib.Path.home())) / ".cargo/bin/rustup.exe"
+
+# Stands in for Jawjack.exe in the update-flow sandbox. "--sleep N" plays the
+# app that closes itself after starting setup; started without arguments (a
+# relaunch) it logs the version file installed beside it and exits.
+STUB_SOURCE = r'''
+#![windows_subsystem = "windows"]
+use std::io::Write;
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.len() == 2 && args[0] == "--sleep" {
+        let seconds = args[1].parse().unwrap_or(1);
+        std::thread::sleep(std::time::Duration::from_secs(seconds));
+        return;
+    }
+    let exe = std::env::current_exe().unwrap();
+    let folder = exe.parent().unwrap();
+    let version = std::fs::read_to_string(folder.join("stub-version.txt")).unwrap_or_default();
+    let log = folder.parent().unwrap().join("relaunch-log.txt");
+    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(log).unwrap();
+    writeln!(file, "{} args={}", version.trim(), args.len()).unwrap();
+}
+'''
+
+
+def packager():
+    """scripts/Package-Release.py, for its build_setup (its main() does not run)."""
+    spec = importlib.util.spec_from_file_location("package_release", ROOT / "scripts/Package-Release.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def reg_value(key, name):
@@ -72,7 +116,8 @@ def real_state():
     }
 
 
-def setup(*args, exe=SETUP, expect=None):
+def setup(*args, exe=None, expect=None):
+    exe = SETUP if exe is None else exe
     result = subprocess.run([str(exe), *map(str, args)], capture_output=True, text=True, timeout=300)
     print(f"  setup {' '.join(map(str, args))} -> {result.returncode} {result.stdout.strip()[:300]}")
     if expect is not None:
@@ -95,14 +140,49 @@ def test_keys():
 
 
 def main():
+    global SETUP
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--with-app", action="store_true",
                         help="also launch the sandbox-installed Jawjack.exe to test the running-app refusal")
+    parser.add_argument("--fresh-setup", action="store_true",
+                        help="run the release checks with target/release/jawjack-setup.exe and the packaged "
+                             "app folder instead of the prepared release-out setup")
+    parser.add_argument("--app-folder", type=pathlib.Path, default=APP_FOLDER,
+                        help="with --fresh-setup: the app folder to pack (default: the packaged one for "
+                             "this version)")
+    parser.add_argument("--skip-update-flow", action="store_true",
+                        help="skip the in-app updater checks (wait, result file, relaunch, lock)")
     args = parser.parse_args()
-    assert SETUP.is_file(), SETUP
     keys_before = set(test_keys())
     before = real_state()
     print("Real-profile snapshot:", before)
+    work = pathlib.Path(tempfile.mkdtemp(prefix="jawjack-setup-work-")).resolve()
+    try:
+        if args.fresh_setup:
+            folder = args.app_folder.resolve()
+            assert FRESH_BASE.is_file() and (folder / "Jawjack.exe").is_file(), (FRESH_BASE, folder)
+            entries = [(path.name, path.read_bytes()) for path in sorted(folder.iterdir()) if path.is_file()]
+            SETUP = work / f"Jawjack-{VERSION}-setup.exe"
+            SETUP.write_bytes(packager().build_setup(FRESH_BASE.read_bytes(), VERSION, entries))
+            print("Using a fresh setup:", SETUP)
+        assert SETUP.is_file(), SETUP
+        release_flow(args, keys_before)
+        if args.skip_update_flow:
+            print("(skipped: in-app updater checks)")
+        else:
+            update_flow(work)
+        after = real_state()
+        assert after == before, ("Real profile changed!", before, after)
+        print("PASS all sandboxed installer checks; real profile unchanged")
+    finally:
+        for name in set(test_keys()) - keys_before:
+            subprocess.run(["reg", "delete", rf"HKCU\{TEST_ROOT_KEY}\{name}", "/f"], capture_output=True)
+        if not test_keys() and reg_exists(TEST_ROOT_KEY):
+            subprocess.run(["reg", "delete", rf"HKCU\{TEST_ROOT_KEY}", "/f"], capture_output=True)
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def release_flow(args, keys_before):
     root = pathlib.Path(tempfile.mkdtemp(prefix="jawjack-setup-smoke-")).resolve()
     (root / ".jawjack-setup-test-root").write_text("disposable\n", encoding="utf-8")
     local = root / "LocalAppData"
@@ -181,16 +261,176 @@ def main():
         assert not install.exists() and not data.exists()
         assert not reg_exists(test_key)
 
-        after = real_state()
-        assert after == before, ("Real profile changed!", before, after)
-        print("PASS sandboxed install/upgrade/uninstall; real profile unchanged")
+        print("PASS sandboxed install/upgrade/uninstall")
     finally:
         if app is not None and app.poll() is None:
             app.terminate()
-        for name in set(test_keys()) - keys_before:
-            subprocess.run(["reg", "delete", rf"HKCU\{TEST_ROOT_KEY}\{name}", "/f"], capture_output=True)
-        if not test_keys() and reg_exists(TEST_ROOT_KEY):
-            subprocess.run(["reg", "delete", rf"HKCU\{TEST_ROOT_KEY}", "/f"], capture_output=True)
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def build_stub(work):
+    source = work / "stub.rs"
+    source.write_text(STUB_SOURCE, encoding="utf-8")
+    exe = work / "stub.exe"
+    built = subprocess.run([str(RUSTUP), "run", TOOLCHAIN, "rustc", "-O", "--edition", "2021",
+                            "-o", str(exe), str(source)], capture_output=True, text=True, cwd=work, timeout=600)
+    assert built.returncode == 0, built.stderr[-2000:]
+    return exe.read_bytes()
+
+
+def read_result(path):
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert set(data) == {"version", "ok", "message"}, data
+    return data
+
+
+def log_lines(log):
+    return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+
+
+def wait_relaunch(log, count, timeout=30):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        lines = log_lines(log)
+        if len(lines) >= count:
+            assert len(lines) == count, lines
+            return lines
+        time.sleep(.25)
+    raise AssertionError(f"no relaunch seen in {log}: {log_lines(log)}")
+
+
+def update_flow(work):
+    """The in-app updater contract, with a stub app (never the real Jawjack)."""
+    assert FRESH_BASE.is_file(), FRESH_BASE
+    base = FRESH_BASE.read_bytes()
+    package = packager()
+    stub = build_stub(work)
+
+    def stub_setup(version):
+        path = work / f"stub-{version}-setup.exe"
+        path.write_bytes(package.build_setup(base, version, [("Jawjack.exe", stub),
+                                                             ("stub-version.txt", version.encode())]))
+        return path
+    first, second, third = stub_setup("0.0.1"), stub_setup("0.0.2"), stub_setup("0.0.3")
+
+    root = pathlib.Path(tempfile.mkdtemp(prefix="jawjack-setup-update-")).resolve()
+    (root / ".jawjack-setup-test-root").write_text("disposable\n", encoding="utf-8")
+    install = root / "LocalAppData/Programs/Jawjack"
+    data = root / "LocalAppData/ChatWorkbench"
+    log = install.parent / "relaunch-log.txt"  # appended to by a relaunched stub
+    results = root / "results"
+    results.mkdir()
+    portable = root / "portable"
+    portable.mkdir()
+    (portable / "chat-workbench.exe").write_bytes(stub)
+    dummies = []
+
+    def installed():
+        return (install / "stub-version.txt").read_text(encoding="utf-8")
+
+    def dummy(exe, seconds):
+        """A stand-in for Jawjack closing itself after starting setup."""
+        process = subprocess.Popen([str(exe), "--sleep", str(seconds)], cwd=str(root))
+        dummies.append(process)
+        time.sleep(.5)
+        assert process.poll() is None, "the dummy app exited early"
+        return process
+
+    try:
+        print("U1. Quiet install of stub 0.0.1 (starts nothing)")
+        setup("--quiet", "--test-root", root, exe=first, expect=0)
+        assert installed() == "0.0.1"
+        data.mkdir(parents=True, exist_ok=True)
+        (data / "sentinel.txt").write_text("user data", encoding="utf-8")
+        time.sleep(1)
+        assert not log.exists()
+
+        print("U2. Updater handoff: waits for the app to exit by itself, upgrades, writes the result, relaunches")
+        app = dummy(install / "Jawjack.exe", 4)
+        result = results / "update-result.json"
+        started = time.time()
+        setup("--app-pid", app.pid, "--quiet", "--relaunch", "--result-file", result,
+              "--test-root", root, exe=second, expect=0)
+        waited = time.time() - started
+        assert app.poll() == 0, "the app must exit by itself, never be ended"
+        assert waited >= 3, f"setup did not wait for the app ({waited:.1f} s)"
+        assert read_result(result) == {"version": "0.0.2", "ok": True, "message": ""}
+        assert sorted(p.name for p in results.iterdir()) == [result.name], "temp result left behind"
+        assert installed() == "0.0.2"
+        assert (data / "sentinel.txt").read_text(encoding="utf-8") == "user data"
+        assert not any(p.name.startswith((".Jawjack-setup-", ".Jawjack-old-")) for p in install.parent.iterdir())
+        assert wait_relaunch(log, 1)[-1] == "0.0.2 args=0"
+        print(f"  waited {waited:.1f} s; result {result.read_text(encoding='utf-8')}")
+
+        print("U3. Forced failure (damaged setup, portable app pid): result says why, kept version relaunched")
+        app = dummy(portable / "chat-workbench.exe", 3)
+        info = json.loads(setup("--payload-info", exe=third, expect=0).stdout)
+        damaged = work / "damaged-setup.exe"
+        blob = bytearray(third.read_bytes())
+        blob[info["image_len"] + 64] ^= 0xFF
+        damaged.write_bytes(blob)
+        result = results / "damaged-result.json"
+        setup("--app-pid", app.pid, "--quiet", "--relaunch", "--result-file", result,
+              "--test-root", root, exe=damaged, expect=4)
+        assert app.poll() == 0, "relaunch must wait for the app to exit"
+        outcome = read_result(result)
+        assert outcome["ok"] is False and outcome["version"] == "" and "damaged" in outcome["message"], outcome
+        assert installed() == "0.0.2"
+        assert wait_relaunch(log, 2)[-1] == "0.0.2 args=0"
+        print(f"  result {result.read_text(encoding='utf-8')}")
+
+        print("U4. Forced failure (install folder in use): result names the version, kept version relaunched")
+        app = dummy(portable / "chat-workbench.exe", 2)
+        result = results / "in-use-result.json"
+        # Opened without FILE_SHARE_DELETE, so the install folder cannot be renamed.
+        with open(install / "stub-version.txt", "rb"):
+            setup("--app-pid", app.pid, "--quiet", "--relaunch", "--result-file", result,
+                  "--test-root", root, exe=third, expect=1)
+        outcome = read_result(result)
+        assert outcome["ok"] is False and outcome["version"] == "0.0.3", outcome
+        assert "previous installation was kept" in outcome["message"], outcome
+        assert installed() == "0.0.2"
+        assert not any(p.name.startswith((".Jawjack-setup-", ".Jawjack-old-")) for p in install.parent.iterdir())
+        assert wait_relaunch(log, 3)[-1] == "0.0.2 args=0"
+        print(f"  result {result.read_text(encoding='utf-8')}")
+
+        print("U5. One setup at a time: a second setup and an uninstall are refused (exit 5)")
+        app = dummy(install / "Jawjack.exe", 6)
+        holder = subprocess.Popen([str(third), "--app-pid", str(app.pid), "--quiet", "--test-root", str(root)],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        time.sleep(1.5)
+        assert holder.poll() is None, "the first setup should still be waiting for the app"
+        result = results / "busy-result.json"
+        setup("--app-pid", app.pid, "--quiet", "--relaunch", "--result-file", result,
+              "--test-root", root, exe=second, expect=5)
+        outcome = read_result(result)
+        assert outcome["ok"] is False and "Another Jawjack setup is running" in outcome["message"], outcome
+        setup("--uninstall", "--quiet", "--test-root", root, exe=second, expect=5)
+        assert holder.wait(timeout=180) == 0, holder.communicate()
+        assert app.poll() == 0
+        assert installed() == "0.0.3"
+        time.sleep(1)
+        assert len(log_lines(log)) == 3, "a refused setup (or one without --relaunch) must start nothing"
+        print(f"  result {result.read_text(encoding='utf-8')}")
+
+        print("U6. An invalid --result-file stops the install (nothing changed, nothing written), still relaunches")
+        app = dummy(install / "Jawjack.exe", 2)
+        setup("--app-pid", app.pid, "--quiet", "--relaunch", "--result-file", "relative.json",
+              "--test-root", root, exe=second, expect=1)
+        assert app.poll() == 0
+        assert wait_relaunch(log, 4)[-1] == "0.0.3 args=0"
+        setup("--quiet", "--result-file", root / "missing" / "result.json", "--test-root", root,
+              exe=second, expect=1)
+        assert installed() == "0.0.3" and not (root / "missing").exists()
+        assert not (root / "relative.json").exists() and not (pathlib.Path.cwd() / "relative.json").exists()
+
+        print("U7. Uninstall with data removal")
+        setup("--uninstall", "--quiet", "--remove-data", "--test-root", root, exe=second, expect=0)
+        assert not install.exists() and not data.exists()
+        print("PASS in-app updater contract (wait, result file, relaunch, lock)")
+    finally:
+        for process in dummies:  # They exit by themselves within seconds; never ended here.
+            process.wait(timeout=60)
         shutil.rmtree(root, ignore_errors=True)
 
 

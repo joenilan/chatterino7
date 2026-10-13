@@ -14,6 +14,7 @@ const EXIT_FAILED: i32 = 1;
 const EXIT_CANCELLED: i32 = 2;
 const EXIT_APP_RUNNING: i32 = 3;
 const EXIT_DAMAGED: i32 = 4;
+const EXIT_BUSY: i32 = 5;
 
 const APP_EXE: &str = "Jawjack.exe";
 /// The release binary's own name, as run from a portable copy.
@@ -28,6 +29,10 @@ const RELEASE_PAGE: &str = "https://apps.zombie.digital/jawjack/releases";
 const DATA_DIR_NAME: &str = "ChatWorkbench";
 const DESCRIPTION: &str = "Jawjack chat client for Twitch";
 const CLOSE_WAIT: Duration = Duration::from_secs(90);
+/// Named mutex: one setup (install or uninstall) at a time per user session.
+const LOCK_NAME: &str = r"Local\JawjackSetup";
+/// Upper bound for the result file's `message` (characters).
+const RESULT_MESSAGE_MAX: usize = 1000;
 
 const BUTTON_PRIMARY: i32 = 100;
 const BUTTON_SECONDARY: i32 = 101;
@@ -44,6 +49,12 @@ struct Options {
     payload_info: bool,
     test_root: Option<PathBuf>,
     app_pid: Option<u32>,
+    /// Start the installed Jawjack after an update started by the in-app
+    /// updater (also after a failed install, so the kept version returns;
+    /// not when Jawjack never closed or another setup is running).
+    relaunch: bool,
+    /// Write the outcome here for the in-app updater to read.
+    result_file: Option<PathBuf>,
 }
 
 fn parse_options() -> Result<Options, String> {
@@ -58,6 +69,11 @@ fn parse_options() -> Result<Options, String> {
             "--no-desktop-shortcut" => options.desktop_shortcut = Some(false),
             "--remove-data" => options.remove_data = true,
             "--launch" => options.launch = true,
+            "--relaunch" => options.relaunch = true,
+            "--result-file" => {
+                let value = PathBuf::from(args.next().ok_or("--result-file needs a file path")?);
+                options.result_file = Some(value);
+            }
             "--from-temp" => options.from_temp = true,
             "--payload-info" => options.payload_info = true,
             "--test-root" => {
@@ -153,9 +169,21 @@ impl Layout {
 
 struct Ui {
     quiet: bool,
+    /// The payload version being installed, once known.
+    version: std::cell::RefCell<String>,
+    /// The last error shown, for `--result-file`.
+    last_error: std::cell::RefCell<Option<String>>,
 }
 
 impl Ui {
+    fn new(quiet: bool) -> Self {
+        Self {
+            quiet,
+            version: std::cell::RefCell::default(),
+            last_error: std::cell::RefCell::default(),
+        }
+    }
+
     fn info(&self, main: &str, content: &str) {
         println!("jawjack-setup: {main} {content}");
         if !self.quiet {
@@ -165,6 +193,7 @@ impl Ui {
 
     fn error(&self, main: &str, content: &str) {
         println!("jawjack-setup: ERROR {main} {content}");
+        *self.last_error.borrow_mut() = Some(format!("{main} {content}"));
         if !self.quiet {
             sys::message(main, content, true);
         }
@@ -176,25 +205,159 @@ pub fn run() -> i32 {
         Ok(options) => options,
         Err(error) => {
             println!("jawjack-setup: ERROR {error}");
-            sys::message("Jawjack Setup", &error, true);
+            let quiet = std::env::args_os().skip(1).any(|arg| {
+                matches!(
+                    arg.to_string_lossy().to_ascii_lowercase().as_str(),
+                    "--quiet" | "/quiet" | "/s"
+                )
+            });
+            if !quiet {
+                sys::message("Jawjack Setup", &error, true);
+            }
             return EXIT_FAILED;
         }
     };
-    let ui = Ui {
-        quiet: options.quiet || options.payload_info,
+    let ui = Ui::new(options.quiet || options.payload_info);
+    // Only a checked path is ever written. An unusable one stops the install
+    // (nothing is changed) but Jawjack is still started again below.
+    let (result_file, result_error) = match options.result_file.clone().map(checked_result_path) {
+        Some(Ok(path)) => (Some(path), None),
+        Some(Err(error)) => (None, Some(error)),
+        None => (None, None),
     };
     let layout = match Layout::resolve(options.test_root.as_deref()) {
         Ok(layout) => layout,
         Err(error) => {
             ui.error("Setup could not start.", &error);
+            if let Some(path) = &result_file {
+                write_result(path, EXIT_FAILED, &ui);
+            }
             return EXIT_FAILED;
         }
     };
     if options.uninstall {
-        uninstall(&options, &layout, &ui)
-    } else {
-        install(&options, &layout, &ui)
+        return uninstall(&options, &layout, &ui);
     }
+    let code = match result_error.filter(|_| !options.payload_info) {
+        Some(error) => {
+            ui.error(
+                "Setup could not start.",
+                &format!("{error}. Nothing was changed."),
+            );
+            EXIT_FAILED
+        }
+        None => install(&options, &layout, &ui),
+    };
+    if options.payload_info {
+        return code;
+    }
+    if let Some(path) = &result_file {
+        write_result(path, code, &ui);
+    }
+    // Jawjack closed itself for this update: give it back, updated or not.
+    // When it never closed, or another setup is running, there is nothing to
+    // start. A failure before the close wait (a damaged payload) must not
+    // start a second Jawjack beside the one still exiting.
+    if options.relaunch
+        && !matches!(code, EXIT_APP_RUNNING | EXIT_BUSY)
+        && layout.app_exe().is_file()
+        && options
+            .app_pid
+            .is_none_or(|pid| sys::wait_for_exit(&[pid], CLOSE_WAIT))
+    {
+        launch_app(&layout);
+    }
+    code
+}
+
+/// `--result-file` must be an absolute path whose folder exists, and must not
+/// name a folder or a link.
+fn checked_result_path(path: PathBuf) -> Result<PathBuf, String> {
+    let parent_ok = path.parent().is_some_and(|parent| {
+        !parent.as_os_str().is_empty() && parent.is_dir() && !is_reparse_point(parent)
+    });
+    if !path.is_absolute() || path.file_name().is_none() || !parent_ok {
+        return Err("--result-file needs an absolute file path in an existing folder".into());
+    }
+    if path.is_dir() || is_reparse_point(&path) {
+        return Err("--result-file must name a plain file".into());
+    }
+    Ok(path)
+}
+
+/// The outcome the in-app updater reads:
+/// `{"version":"<v>","ok":true|false,"message":"<reason, empty on success>"}`.
+fn result_json(version: &str, ok: bool, message: &str) -> String {
+    let message: String = message.chars().take(RESULT_MESSAGE_MAX).collect();
+    format!(
+        "{{\"version\":{},\"ok\":{ok},\"message\":{}}}",
+        json_string(version),
+        json_string(if ok { "" } else { &message })
+    )
+}
+
+/// Write the result beside its final name, then rename it over that name, so
+/// a reader never sees a half-written file.
+fn write_result(path: &Path, code: i32, ui: &Ui) {
+    let ok = code == EXIT_OK;
+    let message = ui
+        .last_error
+        .borrow()
+        .clone()
+        .unwrap_or_else(|| format!("Setup stopped (exit code {code})."));
+    let text = result_json(&ui.version.borrow(), ok, &message);
+    let Some(name) = path.file_name() else {
+        return;
+    };
+    let mut temp_name = name.to_os_string();
+    temp_name.push(format!(".{}.tmp", nonce()));
+    let temp = path.with_file_name(temp_name);
+    let write = || -> std::io::Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        file.write_all(text.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temp, path)
+    };
+    if let Err(error) = write() {
+        let _ = fs::remove_file(&temp);
+        println!("jawjack-setup: the result file could not be written ({error})");
+    }
+}
+
+fn json_string(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for character in text.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            character if (character as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", character as u32));
+            }
+            character => out.push(character),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Hold the one-setup lock, or report that another setup is running.
+fn acquire_lock(layout: &Layout, ui: &Ui) -> Result<sys::SetupLock, i32> {
+    let name = match &layout.test {
+        Some((_, key)) => format!("{LOCK_NAME}-{}", key.replace('\\', "-")),
+        None => LOCK_NAME.to_owned(),
+    };
+    sys::setup_lock(&name).ok_or_else(|| {
+        ui.error(
+            "Another Jawjack setup is running.",
+            "Let it finish; this one changed nothing.",
+        );
+        EXIT_BUSY
+    })
 }
 
 fn nonce() -> String {
@@ -240,6 +403,20 @@ fn ensure_closed(options: &Options, layout: &Layout, ui: &Ui, action: &str) -> R
     let running = running_app(layout, options.app_pid);
     if running.is_empty() {
         return Ok(());
+    }
+    // Started by the in-app updater: Jawjack already saved and is closing
+    // itself, so wait for it (and anything else running from the install
+    // folder) to exit. Never ask it to close, never end it.
+    if options.quiet && options.app_pid.is_some() {
+        let pids: Vec<u32> = running.iter().map(|process| process.pid).collect();
+        if sys::wait_for_exit(&pids, CLOSE_WAIT) && running_app(layout, None).is_empty() {
+            return Ok(());
+        }
+        ui.error(
+            "Jawjack is still running.",
+            &format!("Close Jawjack, then {action} again. Nothing was changed."),
+        );
+        return Err(EXIT_APP_RUNNING);
     }
     if options.quiet {
         ui.error(
@@ -299,6 +476,7 @@ fn install(options: &Options, layout: &Layout, ui: &Ui) -> i32 {
             return EXIT_DAMAGED;
         }
     };
+    *ui.version.borrow_mut() = payload.version.clone();
     if options.payload_info {
         let files: Vec<String> = payload
             .files
@@ -320,6 +498,13 @@ fn install(options: &Options, layout: &Layout, ui: &Ui) -> i32 {
         );
         return EXIT_OK;
     }
+
+    // One setup at a time: a quiet update started by the in-app updater never
+    // races a setup the user started.
+    let _lock = match acquire_lock(layout, ui) {
+        Ok(lock) => lock,
+        Err(code) => return code,
+    };
 
     if layout.install_dir.exists() && !owned_install_dir(&layout.install_dir) {
         ui.error(
@@ -425,7 +610,7 @@ fn install(options: &Options, layout: &Layout, ui: &Ui) -> i32 {
                 format!(" {}", notes.trim())
             }
         );
-        if options.launch {
+        if options.launch && !options.relaunch {
             launch_app(layout);
         }
         return EXIT_OK;
@@ -642,6 +827,10 @@ fn uninstall(options: &Options, layout: &Layout, ui: &Ui) -> i32 {
     {
         return relaunch_from_temp(&executable, ui);
     }
+    let _lock = match acquire_lock(layout, ui) {
+        Ok(lock) => lock,
+        Err(code) => return code,
+    };
 
     let version = sys::reg_get_string(&layout.uninstall_key, "DisplayVersion");
     let remove_data = if options.quiet {
@@ -844,6 +1033,62 @@ mod tests {
             Path::new(r"C:\Users\A\AppData\Local\Programs\Jawjack2\x.exe"),
             base
         ));
+    }
+
+    #[test]
+    fn result_strings_are_valid_json() {
+        let text = json_string("a \"b\" c\\d\ne");
+        assert_eq!(text, r#""a \"b\" c\\d\u000ae""#);
+    }
+
+    #[test]
+    fn result_json_has_the_agreed_shape() {
+        assert_eq!(
+            result_json("0.1.0", true, "ignored"),
+            r#"{"version":"0.1.0","ok":true,"message":""}"#
+        );
+        assert_eq!(
+            result_json("0.1.0", false, "Jawjack is still running."),
+            r#"{"version":"0.1.0","ok":false,"message":"Jawjack is still running."}"#
+        );
+        let long = "x".repeat(5000);
+        assert!(result_json("", false, &long).len() < RESULT_MESSAGE_MAX + 64);
+    }
+
+    #[test]
+    fn result_path_must_be_absolute_in_an_existing_folder() {
+        assert!(checked_result_path(PathBuf::from("result.json")).is_err());
+        let missing = std::env::temp_dir().join(format!("jawjack-no-such-{}", nonce()));
+        assert!(checked_result_path(missing.join("result.json")).is_err());
+        assert!(checked_result_path(std::env::temp_dir()).is_err());
+        assert!(checked_result_path(std::env::temp_dir().join("jawjack-result.json")).is_ok());
+    }
+
+    #[test]
+    fn result_file_is_written_atomically() {
+        let directory = std::env::temp_dir().join(format!("jawjack-result-unit-{}", nonce()));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("result.json");
+        fs::write(&path, b"old").unwrap();
+        let ui = Ui::new(true);
+        *ui.version.borrow_mut() = "0.2.0".into();
+        ui.error("Jawjack could not be installed.", "disk \"full\"");
+        write_result(&path, EXIT_FAILED, &ui);
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            r#"{"version":"0.2.0","ok":false,"message":"Jawjack could not be installed. disk \"full\""}"#
+        );
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn second_lock_is_refused() {
+        let name = format!(r"Local\JawjackSetupUnit-{}", nonce());
+        let first = sys::setup_lock(&name).expect("first lock");
+        assert!(sys::setup_lock(&name).is_none());
+        drop(first);
+        assert!(sys::setup_lock(&name).is_some());
     }
 
     #[test]
