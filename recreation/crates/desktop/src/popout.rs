@@ -20,6 +20,7 @@ pub(super) struct PopoutView {
 }
 impl Render for PopoutView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        window.set_ui_zoom(theme::ui_zoom());
         div()
             .v_flex()
             .size_full()

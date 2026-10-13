@@ -394,6 +394,18 @@ impl Workbench {
                     })),
                 ))
                 .child(row(
+                    "UI scale",
+                    "Make everything in Jawjack's windows bigger or smaller. Chat text has its own size above.",
+                    crate::theme::Segmented::new("settings-ui-scale")
+                        .selected_index(crate::theme::UI_SCALES.iter().position(|s| *s == crate::theme::UI_SCALE.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(2))
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            crate::theme::UI_SCALE.store(crate::theme::UI_SCALES[(*index).min(5)], std::sync::atomic::Ordering::Relaxed);
+                            this.schedule_save(cx);
+                            cx.notify();
+                        }))
+                        .children(crate::theme::UI_SCALES.map(|s| crate::theme::segment(format!("{s}%")))),
+                ))
+                .child(row(
                     "Emoji style",
                     "Draw emoji with Windows' own font, or as Twitter, Google, Apple or Facebook images (loaded from cdn.jsdelivr.net). Applies to new messages.",
                     crate::theme::Segmented::new("settings-emoji-style")

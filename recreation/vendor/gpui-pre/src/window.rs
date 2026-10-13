@@ -1212,6 +1212,10 @@ pub struct Window {
     modifiers: Modifiers,
     capslock: Capslock,
     scale_factor: f32,
+    /// App-chosen UI zoom (Jawjack: Settings › UI scale). Layout runs in
+    /// logical pixels divided by this, and the display scale is multiplied by
+    /// it, so the whole window scales like a zoomed web page.
+    ui_zoom: f32,
     pub(crate) bounds_observers: SubscriberSet<(), AnyObserver>,
     appearance: WindowAppearance,
     pub(crate) appearance_observers: SubscriberSet<(), AnyObserver>,
@@ -2103,6 +2107,7 @@ impl Window {
             modifiers,
             capslock,
             scale_factor,
+            ui_zoom: 1.,
             bounds_observers: SubscriberSet::new(),
             appearance,
             appearance_observers: SubscriberSet::new(),
@@ -2729,10 +2734,8 @@ impl Window {
     /// the platform window, then notifies observers. Normally called automatically
     /// by the platform's resize callback, but exposed publicly for test infrastructure.
     pub fn bounds_changed(&mut self, cx: &mut App) {
-        self.scale_factor = self.platform_window.scale_factor();
-        self.viewport_size = self.platform_window.content_size();
+        self.apply_ui_zoom();
         self.display_id = self.platform_window.display().map(|display| display.id());
-        self.mouse_position = self.platform_window.mouse_position();
 
         self.refresh();
 
@@ -2817,7 +2820,8 @@ impl Window {
     /// During drawing this is a consistent frame snapshot. Outside drawing it
     /// reflects the latest platform sample, not a synchronous geometry query.
     pub fn visual_viewport_bounds(&self) -> Bounds<Pixels> {
-        self.platform_window.visual_viewport_bounds()
+        let zoom = self.ui_zoom;
+        self.platform_window.visual_viewport_bounds().map(|v| v / zoom)
     }
 
     /// Returns a conservative rectangle avoiding platform-known obscured content.
@@ -2979,6 +2983,82 @@ impl Window {
     pub fn set_scale_factor(&mut self, scale_factor: f32) {
         self.scale_factor = scale_factor;
         self.refresh();
+    }
+
+    /// Scale the whole window's UI (1.0 = the system's own scale). Layout,
+    /// text and images render larger or smaller; mouse input follows.
+    pub fn set_ui_zoom(&mut self, zoom: f32) {
+        let zoom = zoom.clamp(0.5, 3.0);
+        if (zoom - self.ui_zoom).abs() < f32::EPSILON {
+            return;
+        }
+        self.ui_zoom = zoom;
+        self.apply_ui_zoom();
+        self.refresh();
+    }
+    /// The UI zoom set with `set_ui_zoom`.
+    pub fn ui_zoom(&self) -> f32 {
+        self.ui_zoom
+    }
+    fn apply_ui_zoom(&mut self) {
+        let zoom = self.ui_zoom;
+        self.scale_factor = self.platform_window.scale_factor() * zoom;
+        self.viewport_size = self.platform_window.content_size().map(|v| v / zoom);
+        self.mouse_position = self.platform_window.mouse_position().map(|v| v / zoom);
+    }
+    /// Platform input arrives in the system's logical pixels; layout uses
+    /// those divided by the UI zoom.
+    fn unzoom_input(&self, event: PlatformInput) -> PlatformInput {
+        let zoom = self.ui_zoom;
+        if (zoom - 1.).abs() < f32::EPSILON {
+            return event;
+        }
+        let at = |p: Point<Pixels>| p.map(|v| v / zoom);
+        match event {
+            PlatformInput::MouseDown(mut e) => {
+                e.position = at(e.position);
+                PlatformInput::MouseDown(e)
+            }
+            PlatformInput::MouseUp(mut e) => {
+                e.position = at(e.position);
+                PlatformInput::MouseUp(e)
+            }
+            PlatformInput::MouseMove(mut e) => {
+                e.position = at(e.position);
+                PlatformInput::MouseMove(e)
+            }
+            PlatformInput::MouseExited(mut e) => {
+                e.position = at(e.position);
+                PlatformInput::MouseExited(e)
+            }
+            PlatformInput::MousePressure(mut e) => {
+                e.position = at(e.position);
+                PlatformInput::MousePressure(e)
+            }
+            PlatformInput::ScrollWheel(mut e) => {
+                e.position = at(e.position);
+                PlatformInput::ScrollWheel(e)
+            }
+            PlatformInput::Pinch(mut e) => {
+                e.position = at(e.position);
+                PlatformInput::Pinch(e)
+            }
+            PlatformInput::Touch(mut e) => {
+                e.position = at(e.position);
+                e.predicted_position = e.predicted_position.map(at);
+                PlatformInput::Touch(e)
+            }
+            PlatformInput::FileDrop(drop) => PlatformInput::FileDrop(match drop {
+                FileDropEvent::Entered { position, paths } => FileDropEvent::Entered {
+                    position: at(position),
+                    paths,
+                },
+                FileDropEvent::Pending { position } => FileDropEvent::Pending { position: at(position) },
+                FileDropEvent::Submit { position } => FileDropEvent::Submit { position: at(position) },
+                other => other,
+            }),
+            other => other,
+        }
     }
 
     /// The size of an em for the base font of the application. Adjusting this value allows the
@@ -5453,6 +5533,7 @@ impl Window {
     /// Dispatch a mouse, keyboard, or touch event on the window.
     #[profiling::function]
     pub fn dispatch_event(&mut self, event: PlatformInput, cx: &mut App) -> DispatchEventResult {
+        let event = self.unzoom_input(event);
         #[cfg(feature = "profiler")]
         self.window_profiler.begin_input(event.kind_name());
         let update_count_before = self.invalidator.update_count();

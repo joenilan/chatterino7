@@ -17,7 +17,7 @@ Chatterino import.
 
 ### Chat display
 - [x] Font family / weight choice (S)
-- [ ] UI scale separate from chat text (M)
+- [x] UI scale separate from chat text — done (Appearance › UI scale, 75–150%; a zoom in the vendored gpui window)
 - [x] Username display: Username / Localized / Both (S)
 - [x] Message separator lines (S)
 - [x] Collapse long messages after N lines (M) — Appearance → Collapse long messages (Off, 2, 3, 5, 10) with Show more

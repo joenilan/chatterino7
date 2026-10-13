@@ -103,6 +103,16 @@ pub fn flag(flag: &std::sync::atomic::AtomicBool) -> bool {
 }
 /// Settings → Appearance → Chat font (None: the app font).
 pub static CHAT_FONT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+/// Settings › Appearance › UI scale: the whole window, separate from the
+/// chat text size. Percentages.
+pub const UI_SCALES: [u32; 6] = [75, 90, 100, 110, 125, 150];
+pub static UI_SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(100);
+pub fn ui_zoom() -> f32 {
+    UI_SCALE
+        .load(std::sync::atomic::Ordering::Relaxed)
+        .clamp(50, 300) as f32
+        / 100.
+}
 /// Settings › Appearance › Tab position (Chatterino's): where each split's
 /// channel tabs sit. 0 top, 1 bottom, 2 left, 3 right.
 pub const TAB_POSITIONS: [&str; 4] = ["Top", "Bottom", "Left", "Right"];

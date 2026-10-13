@@ -941,6 +941,12 @@ impl Workbench {
                     );
                 }
                 crate::nickname_rules::load(&state["nickname_rules"]);
+                if let Some(scale) = state["ui_scale"]
+                    .as_u64()
+                    .filter(|s| theme::UI_SCALES.contains(&(*s as u32)))
+                {
+                    theme::UI_SCALE.store(scale as u32, std::sync::atomic::Ordering::Relaxed);
+                }
                 crate::emoji::STYLE.store(
                     (state["emoji_style"].as_u64().unwrap_or(0) as usize)
                         .min(crate::emoji::STYLES.len() - 1),
@@ -3264,6 +3270,7 @@ impl Workbench {
             crate::name_paint::paint_option(2)
         ]);
         value["nickname_rules"] = crate::nickname_rules::json();
+        value["ui_scale"] = json!(theme::UI_SCALE.load(std::sync::atomic::Ordering::Relaxed));
         value["emoji_style"] =
             json!(crate::emoji::STYLE.load(std::sync::atomic::Ordering::Relaxed));
         value["tab_position"] = json!(theme::tab_position());
@@ -6195,6 +6202,7 @@ impl Workbench {
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.note_channel_history();
+        window.set_ui_zoom(theme::ui_zoom());
         self.streamer_live = match self.streamer_mode {
             crate::streamer_mode::Mode::On => true,
             crate::streamer_mode::Mode::Off => false,

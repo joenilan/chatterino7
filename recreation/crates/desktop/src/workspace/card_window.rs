@@ -14,6 +14,7 @@ pub(super) struct PinnedCard {
 }
 impl Render for PinnedCard {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        window.set_ui_zoom(theme::ui_zoom());
         let frame = crate::message_actions::chatter_card(
             crate::message_actions::CardFrame::default(),
             self.owner.clone(),
