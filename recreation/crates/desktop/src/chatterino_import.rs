@@ -485,7 +485,7 @@ impl gpui_kit::Render for Preview {
         let muted = |text: String| {
             div()
                 .text_size(px(11.))
-                .text_color(rgb(theme::MUTED))
+                .text_color(rgb(theme::muted()))
                 .child(text)
         };
         let mut body = div()
@@ -497,7 +497,7 @@ impl gpui_kit::Render for Preview {
         let Some(plan) = &self.plan else {
             return body.child(
                 div()
-                    .text_color(rgb(0xE9C99C))
+                    .text_color(rgb(crate::theme::tone(0xE9C99C)))
                     .child(self.error.clone().unwrap_or_default()),
             );
         };

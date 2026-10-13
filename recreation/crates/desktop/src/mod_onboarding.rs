@@ -115,24 +115,24 @@ impl Workbench {
                     .h(px(26.))
                     .rounded(px(5.))
                     .cursor_pointer()
-                    .hover(|s| s.bg(rgb(theme::HOVER)))
+                    .hover(|s| s.bg(rgb(theme::hover())))
                     .child(
                         div()
                             .size(px(14.))
                             .flex_shrink_0()
                             .rounded(px(3.))
                             .border_1()
-                            .border_color(rgb(if on { theme::ACCENT } else { theme::MUTED }))
-                            .when(on, |el| el.bg(rgb(theme::ACCENT)))
+                            .border_color(rgb(if on { theme::accent() } else { theme::muted() }))
+                            .when(on, |el| el.bg(rgb(theme::accent())))
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_color(rgb(0x16121F))
+                            .text_color(rgb(crate::theme::tone(0x16121F)))
                             .when(on, |el| el.child(Icon::new(IconName::Check).xsmall())),
                     )
                     .child(div().flex_1().min_w_0().text_size(px(13.)).child(channel.clone()))
-                    .when(is_live, |el| el.child(div().size(px(7.)).rounded_full().bg(rgb(theme::STREAM_LIVE))))
-                    .when(is_open, |el| el.child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child("open")))
+                    .when(is_live, |el| el.child(div().size(px(7.)).rounded_full().bg(rgb(theme::stream_live()))))
+                    .when(is_open, |el| el.child(div().text_size(px(10.)).text_color(rgb(theme::muted())).child("open")))
                     .on_click(move |_, _, cx| {
                         let toggle = toggle.clone();
                         let _ = owner.update(cx, |this, cx| {
@@ -151,7 +151,7 @@ impl Workbench {
                     div()
                         .v_flex()
                         .gap_2()
-                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!(
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(format!(
                             "You moderate {} channels. Each one you pick opens as a tab in one “Moderating” workspace (made once, then reused). You can close or add channels anytime. Live ones have a green dot{}.",
                             channels.len(),
                             if live.is_none() { " (checking…)" } else { "" }

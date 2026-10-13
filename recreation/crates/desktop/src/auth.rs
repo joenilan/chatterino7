@@ -534,9 +534,9 @@ impl Render for TwitchAccount {
             .px_3()
             .py_2()
             .gap_2()
-            .bg(rgb(theme::PANEL))
+            .bg(rgb(theme::panel()))
             .border_b_1()
-            .border_color(rgb(theme::BORDER))
+            .border_color(rgb(theme::border()))
             .child(
                 div()
                     .v_flex().w_full().min_w_0()
@@ -549,13 +549,13 @@ impl Render for TwitchAccount {
                             .child(self.status.clone()),
                     )
                     .when(!self.busy && !self.saving && self.account.is_some() && !self.missing_scopes().is_empty(), |el|
-                        el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED))
+                        el.child(div().text_size(px(11.)).text_color(rgb(theme::muted()))
                             .child(format!("Your login is missing {} Twitch permissions Jawjack uses for subscription emotes, whispers, blocks, moderation and streamer tools (title, category, polls, raids). Updating keeps you signed in; Twitch only allows moderator and streamer actions where you hold that role.", self.missing_scopes().len())))
                         .child(Button::new("twitch-update-scopes").small().primary()
                             .label("Update Twitch permissions")
                             .on_click(cx.listener(|this, _, _, cx| this.start(None, cx)))))
                     .when(self.vault_unavailable, |el| el.child(div().text_size(px(11.))
-                        .text_color(rgb(theme::MUTED))
+                        .text_color(rgb(theme::muted()))
                         .child("Jawjack needs your operating system's secure credential storage to remember Twitch safely. Unlock it, then retry here.")))
                     .child(div().h_flex().w_full().flex_wrap().gap_2()
                     .when(!self.busy && !self.saving && self.account.is_none() && !self.vault_unavailable, |el| {

@@ -133,7 +133,7 @@ fn loading_icon(index: usize, reduced: bool) -> AnyElement {
         .flex()
         .items_center()
         .justify_center()
-        .child(div().size(px(20.)).rounded(px(5.)).bg(rgb(theme::HOVER)));
+        .child(div().size(px(20.)).rounded(px(5.)).bg(rgb(theme::hover())));
     if reduced {
         placeholder.into_any_element()
     } else {
@@ -213,7 +213,7 @@ fn smooth_icon(
                         .flex()
                         .items_center()
                         .justify_center()
-                        .child(div().size(px(20.)).rounded(px(5.)).bg(rgb(theme::HOVER)))
+                        .child(div().size(px(20.)).rounded(px(5.)).bg(rgb(theme::hover())))
                         .with_animation(
                             ("emote-placeholder-out", image_id),
                             Animation::new(Duration::from_millis(280)),
@@ -255,7 +255,7 @@ fn smooth_icon(
             .items_center()
             .justify_center()
             .text_size(px(10.))
-            .text_color(rgb(theme::MUTED))
+            .text_color(rgb(theme::muted()))
             .child(label.chars().take(3).collect::<String>())
             .into_any_element()
     }
@@ -828,13 +828,13 @@ impl ChannelPane {
             .gap_1()
             .p_2()
             .rounded(px(6.))
-            .bg(rgb(theme::CANVAS))
+            .bg(rgb(theme::canvas()))
             .border_1()
-            .border_color(rgb(theme::BORDER))
+            .border_color(rgb(theme::border()))
             .child(
                 div()
                     .text_size(px(11.))
-                    .text_color(rgb(theme::MUTED))
+                    .text_color(rgb(theme::muted()))
                     .child("Suggestions · ↑ ↓ choose · Enter / Tab inserts · Esc dismisses"),
             )
             .children(
@@ -855,8 +855,8 @@ impl ChannelPane {
                             .px_2()
                             .rounded(px(4.))
                             .cursor_pointer()
-                            .when(i == self.picker.selected, |el| el.bg(rgb(theme::HOVER)))
-                            .hover(|s| s.bg(rgb(theme::HOVER)))
+                            .when(i == self.picker.selected, |el| el.bg(rgb(theme::hover())))
+                            .hover(|s| s.bg(rgb(theme::hover())))
                             .when(crate::emoji::is_emoji(&choice), |el| {
                                 el.child(
                                     div()
@@ -888,7 +888,7 @@ impl ChannelPane {
                                         el.child(
                                             div()
                                                 .text_size(px(10.))
-                                                .text_color(rgb(theme::MUTED))
+                                                .text_color(rgb(theme::muted()))
                                                 .child(choice.provider),
                                         )
                                     }),
@@ -897,7 +897,7 @@ impl ChannelPane {
                                 el.child(
                                     div()
                                         .text_size(px(10.))
-                                        .text_color(rgb(theme::MUTED))
+                                        .text_color(rgb(theme::muted()))
                                         .child(choice.provider),
                                 )
                             })
@@ -1027,17 +1027,17 @@ impl ChannelPane {
                     .overflow_hidden()
                     .border_1()
                     .border_color(if selected {
-                        rgb(0xB9A1FF)
+                        rgb(crate::theme::tone(0xB9A1FF))
                     } else {
                         rgba(0x00000000)
                     })
                     .bg(if selected {
-                        rgb(theme::HOVER)
+                        rgb(theme::hover())
                     } else {
-                        rgb(theme::PANEL)
+                        rgb(theme::panel())
                     })
                     .cursor_pointer()
-                    .hover(|s| s.bg(rgb(theme::HOVER)))
+                    .hover(|s| s.bg(rgb(theme::hover())))
                     .tooltip(move |w, cx| {
                         gpui_kit::component::tooltip::Tooltip::new(title.clone()).build(w, cx)
                     })
@@ -1074,7 +1074,7 @@ impl ChannelPane {
         }
         let mut services = Vec::new();
         for (id, label, mark, color) in [
-            ("", "All services", "≡", theme::MUTED),
+            ("", "All services", "≡", theme::muted()),
             ("Twitch", "Twitch", "T", 0xB9A1FF),
             ("7TV", "7TV", "7TV", 0xA7DBCE),
             ("BTTV", "BetterTTV", "BTTV", 0xF1B4BA),
@@ -1095,9 +1095,9 @@ impl ChannelPane {
                     .font_weight(FontWeight::BOLD)
                     .text_color(rgb(color))
                     .bg(if selected {
-                        rgb(theme::HOVER)
+                        rgb(theme::hover())
                     } else {
-                        rgb(theme::CANVAS)
+                        rgb(theme::canvas())
                     })
                     .border_b_2()
                     .border_color(if selected {
@@ -1106,7 +1106,7 @@ impl ChannelPane {
                         rgba(0x00000000)
                     })
                     .cursor_pointer()
-                    .hover(|s| s.bg(rgb(theme::HOVER)))
+                    .hover(|s| s.bg(rgb(theme::hover())))
                     .tooltip(move |w, cx| {
                         gpui_kit::component::tooltip::Tooltip::new(label).build(w, cx)
                     })
@@ -1153,7 +1153,7 @@ impl ChannelPane {
                 })
                 .unwrap_or_else(|| "Scroll to browse · Esc closes".into())
         };
-        div().id("emote-browser").occlude().v_flex().h(px(height)).w(px(width)).min_w_0().overflow_hidden().p_2().gap_1().bg(rgb(theme::CANVAS)).border_1().border_color(rgb(theme::BORDER)).rounded(px(6.))
+        div().id("emote-browser").occlude().v_flex().h(px(height)).w(px(width)).min_w_0().overflow_hidden().p_2().gap_1().bg(rgb(theme::canvas())).border_1().border_color(rgb(theme::border())).rounded(px(6.))
             .on_prepaint(move|bounds,window,cx|{
                 let mut entries=cx.try_global::<BrowserOverlays>().map(|v|v.0.clone()).unwrap_or_default();
                 entries.retain(|(owner,_,_)|owner!=&popup_owner && owner.upgrade().is_some_and(|p|p.read(cx).picker.open));
@@ -1174,7 +1174,7 @@ impl ChannelPane {
                 })))
                 .child(Button::new("emotes-close").ghost().xsmall().icon(IconName::Close).tooltip("Close emotes · Esc").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
             .when(!self.emote_search.read(cx).value().trim().is_empty() || !self.picker.service.is_empty(),|el|el.child(
-                div().h_flex().gap_1().flex_shrink_0().child(div().flex_1().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(format!("Filtered · {} · {} matches",if self.picker.service.is_empty(){"All services"}else{&self.picker.service},self.picker.items.len())))
+                div().h_flex().gap_1().flex_shrink_0().child(div().flex_1().text_size(px(10.)).text_color(rgb(theme::muted())).child(format!("Filtered · {} · {} matches",if self.picker.service.is_empty(){"All services"}else{&self.picker.service},self.picker.items.len())))
                 .child(Button::new("emotes-clear-filters").xsmall().label("Clear filters").on_click(cx.listener(|this,_,window,cx|{
                     this.picker.service.clear();
                     this.emote_search.update(cx,|input,cx|input.set_value("",window,cx));
@@ -1183,7 +1183,7 @@ impl ChannelPane {
             ))
             .child(div().id("emote-origin-tabs").h_flex().h(px(34.)).flex_shrink_0().gap_1().overflow_x_scroll().track_scroll(&self.picker.tabs_scroll).children(compact_services).children(tabs))
             .when(self.picker.service.is_empty()||self.picker.service=="Twitch",|el|el.child(div().h_flex().min_w_0().gap_1().flex_shrink_0()
-                .child(div().flex_1().min_w_0().overflow_hidden().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(owned_status))
+                .child(div().flex_1().min_w_0().overflow_hidden().text_size(px(10.)).text_color(rgb(theme::muted())).child(owned_status))
                 .child(Button::new("emote-account-settings").xsmall().label("Account").tooltip("Manage Twitch account and subscription emote permission")
                     .on_click(cx.listener(|this,_,_,cx|{this.picker.open=false;cx.emit(PaneEvent::OpenAccount);cx.notify();})))))
             .child(div().flex_1().min_h_0().w_full().overflow_hidden().on_prepaint(move|bounds,_,cx|{
@@ -1202,12 +1202,12 @@ impl ChannelPane {
                 });});
                 let next=((f32::from(bounds.size.width)+4.)/44.).floor().max(1.)as usize;
                 if next!=columns{let owner=owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|this,cx|{if this.picker.columns!=next{this.picker.columns=next;this.rebuild_browser(false,cx);if let Some(row)=this.picker.rows.iter().position(|r|matches!(r,GridRow::Cells(range)if range.contains(&this.picker.current))){this.picker.scroll.scroll_to_item(row,ScrollStrategy::Nearest);}cx.notify();}});});}
-            }).when(self.picker.items.is_empty(),|el|el.child(div().p_2().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(empty_message).when(can_retry,|el|el.child(Button::new("retry-public-emotes").xsmall().label("Retry public emotes").on_click(cx.listener(|this,_,_,cx|{if this.catalog.borrow_mut().retry_public(){this.refresh_picker(cx);cx.notify();}}))))))
+            }).when(self.picker.items.is_empty(),|el|el.child(div().p_2().text_size(px(11.)).text_color(rgb(theme::muted())).child(empty_message).when(can_retry,|el|el.child(Button::new("retry-public-emotes").xsmall().label("Retry public emotes").on_click(cx.listener(|this,_,_,cx|{if this.catalog.borrow_mut().retry_public(){this.refresh_picker(cx);cx.notify();}}))))))
             .when(!self.picker.items.is_empty(),|el|el.child(uniform_list("emote-browser-grid",self.picker.rows.len(),cx.processor(|this,range:Range<usize>,window,cx|{
 
                 let elements: Vec<_> = range.map(|row|{
                     match this.picker.rows[row].clone(){
-                        GridRow::Heading(title)=>div().h(px(44.)).w_full().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(title).into_any_element(),
+                        GridRow::Heading(title)=>div().h(px(44.)).w_full().flex().items_center().text_size(px(10.)).text_color(rgb(theme::muted())).child(title).into_any_element(),
                         GridRow::Cells(range)=>{
                             let row_items=range.clone().map(|index| {
                                 let item=this.picker.items[index].clone();
@@ -1234,9 +1234,9 @@ impl ChannelPane {
                                 });let clicked=item.clone();let favorited=item.saved_key.is_some() || this.catalog.borrow().is_favorite(&item.choice);let favorite_item=item.clone();
                                 let tooltip=format!("{} · {} · {}{}",item.choice.label,item.choice.provider,item.origin,if item.available{""}else{" · Not available with this alias in the current channel"});let tooltip=if unavailable {format!("{tooltip} · Image unavailable{}",if item.available{"; emote text can still be inserted"}else{""})} else {tooltip};let tooltip=format!("{tooltip} · {}",if favorited{"Favorite · right-click to remove"}else{"Right-click to favorite"});let hover=tooltip.clone();
                                 let preview=crate::media_hover::Content::Emote{label:item.choice.label.clone(),source:format!("{} · {}{}",item.choice.provider,item.origin,if unavailable{" · Image unavailable"}else{""}),images:image.iter().cloned().collect()};
-                                cells.push(div().id(("emote-browser-cell",index)).size(px(40.)).flex_shrink_0().flex().items_center().justify_center().rounded(px(4.)).border_1().border_color(if index==this.picker.current{rgb(0xB9A1FF)}else{rgba(0x00000000)}).opacity(if item.available{1.}else{0.4}).cursor_pointer().hover(|s|s.bg(rgb(theme::HOVER))).tooltip(move|_,cx|cx.new(|_|crate::media_hover::Card(preview.clone())).into()).relative().child(if emoji { div().size(px(34.)).flex().items_center().justify_center().text_size(px(24.)).child(item.choice.label.clone()).into_any_element() } else if loading { loading_icon(index,cx.reduce_motion()) } else if unavailable {
-                                    div().size(px(34.)).flex().items_center().justify_center().child(div().size(px(20.)).flex().items_center().justify_center().rounded(px(5.)).border_1().border_color(rgb(theme::BORDER)).text_color(rgb(theme::MUTED)).text_size(px(12.)).child("×")).into_any_element()
-                                } else { smooth_icon(image,item.choice.label,34.,34.,cx.reduce_motion(),shown) }).when(favorited,|el|el.child(div().absolute().top_0().right_0().text_size(px(9.)).text_color(rgb(0xE9C99C)).child("★"))).on_hover(cx.listener(move|this,over,_,cx|{if *over{this.picker.hover_text=hover.clone();this.picker.current=index;cx.notify();}})).on_mouse_down(MouseButton::Left,|_,w,cx|{w.prevent_default();cx.stop_propagation();}).on_mouse_down(MouseButton::Right,cx.listener(move|this,_,w,cx|{w.prevent_default();cx.stop_propagation();this.toggle_browser_favorite(&favorite_item,w,cx);})).on_click(cx.listener(move|this,_,w,cx|{this.insert_browser_item(&clicked,w,cx);})));
+                                cells.push(div().id(("emote-browser-cell",index)).size(px(40.)).flex_shrink_0().flex().items_center().justify_center().rounded(px(4.)).border_1().border_color(if index==this.picker.current{rgb(crate::theme::tone(0xB9A1FF))}else{rgba(0x00000000)}).opacity(if item.available{1.}else{0.4}).cursor_pointer().hover(|s|s.bg(rgb(theme::hover()))).tooltip(move|_,cx|cx.new(|_|crate::media_hover::Card(preview.clone())).into()).relative().child(if emoji { div().size(px(34.)).flex().items_center().justify_center().text_size(px(24.)).child(item.choice.label.clone()).into_any_element() } else if loading { loading_icon(index,cx.reduce_motion()) } else if unavailable {
+                                    div().size(px(34.)).flex().items_center().justify_center().child(div().size(px(20.)).flex().items_center().justify_center().rounded(px(5.)).border_1().border_color(rgb(theme::border())).text_color(rgb(theme::muted())).text_size(px(12.)).child("×")).into_any_element()
+                                } else { smooth_icon(image,item.choice.label,34.,34.,cx.reduce_motion(),shown) }).when(favorited,|el|el.child(div().absolute().top_0().right_0().text_size(px(9.)).text_color(rgb(crate::theme::tone(0xE9C99C))).child("★"))).on_hover(cx.listener(move|this,over,_,cx|{if *over{this.picker.hover_text=hover.clone();this.picker.current=index;cx.notify();}})).on_mouse_down(MouseButton::Left,|_,w,cx|{w.prevent_default();cx.stop_propagation();}).on_mouse_down(MouseButton::Right,cx.listener(move|this,_,w,cx|{w.prevent_default();cx.stop_propagation();this.toggle_browser_favorite(&favorite_item,w,cx);})).on_click(cx.listener(move|this,_,w,cx|{this.insert_browser_item(&clicked,w,cx);})));
                             }
                             div().h(px(44.)).h_flex().gap_1().children(cells).into_any_element()
                         }
@@ -1245,7 +1245,7 @@ impl ChannelPane {
                 elements
             })).track_scroll(&self.picker.scroll).h_full().w_full())))
             .when(!compact,|el|el.child(div().id("emote-services").h_flex().h(px(28.)).flex_shrink_0().gap_1().overflow_x_scroll().children(bottom_services)))
-            .when(!compact,|el|el.child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).overflow_hidden().h(px(14.)).flex_shrink_0().child(details)))
+            .when(!compact,|el|el.child(div().text_size(px(10.)).text_color(rgb(theme::muted())).overflow_hidden().h(px(14.)).flex_shrink_0().child(details)))
             .relative().with_animation(("picker-reveal",self.picker.generation),Animation::new(std::time::Duration::from_millis(if reduced{1}else{140})),move|el,p|if reduced{el}else{el.opacity(p).top(px(5.*(1.-p)))})
             .into_any_element()
     }

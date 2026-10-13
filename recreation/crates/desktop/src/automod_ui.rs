@@ -23,8 +23,8 @@ impl ChannelPane {
                 .mb_1()
                 .rounded(px(6.))
                 .border_1()
-                .border_color(rgb(0x5A4A1E))
-                .bg(rgb(0x1E1A10))
+                .border_color(rgb(crate::theme::tone(0x5A4A1E)))
+                .bg(rgb(crate::theme::tone(0x1E1A10)))
                 .overflow_hidden()
                 .child(
                     div()
@@ -35,13 +35,13 @@ impl ChannelPane {
                         .pt_1()
                         .text_size(px(10.))
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(0xE8C468))
+                        .text_color(rgb(crate::theme::tone(0xE8C468)))
                         .child(Icon::new(gpui_kit::assets::IconName::Shield).xsmall())
                         .child(format!("AUTOMOD · {} HELD", self.automod.len()))
                         .when(hidden > 0, |el| {
                             el.child(
                                 div()
-                                    .text_color(rgb(theme::MUTED))
+                                    .text_color(rgb(theme::muted()))
                                     .child(format!("· {hidden} older not shown")),
                             )
                         })
@@ -86,7 +86,7 @@ impl ChannelPane {
                                         .child(
                                             div()
                                                 .text_size(px(10.))
-                                                .text_color(rgb(theme::MUTED))
+                                                .text_color(rgb(theme::muted()))
                                                 .child(format!(
                                                     "{} · {}",
                                                     held.reason,
@@ -203,13 +203,13 @@ impl ChannelPane {
                 .gap_1()
                 .mb_1()
                 .text_size(px(11.))
-                .text_color(rgb(theme::MUTED))
+                .text_color(rgb(theme::muted()))
                 .child("Spelling:")
                 .children(self.spelling.iter().enumerate().flat_map(
                     |(index, (word, suggestions))| {
                         let mut items: Vec<AnyElement> = vec![
                             div()
-                                .text_color(rgb(0xF29D9D))
+                                .text_color(rgb(crate::theme::tone(0xF29D9D)))
                                 .child(word.clone())
                                 .into_any_element(),
                         ];
@@ -323,7 +323,7 @@ impl ChannelPane {
                     div()
                         .v_flex()
                         .gap_2()
-                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(
                             "Show only messages matching a search: is:mod, is:sub, is:vip, is:first, from:name, has:link, badge:…, subtier:2, regex:…, -is:notice to exclude. Nothing is removed; clear the filter to see everything.",
                         ))
                         .child(gpui_kit::component::input::Input::new(&input).small())
@@ -351,7 +351,7 @@ impl ChannelPane {
                                 .child(Button::new("filter-save").small().label("Save").on_click(save)),
                         )
                         .when(!saved.is_empty(), |el| {
-                            el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Saved filters · click to apply here"))
+                            el.child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("Saved filters · click to apply here"))
                                 .child(div().h_flex().flex_wrap().gap_1().children(saved.iter().enumerate().map(|(index, (name, query))| {
                                     let (apply, remove) = (owner.clone(), owner.clone());
                                     let (query, removed) = (query.clone(), name.clone());
@@ -463,13 +463,19 @@ impl ChannelPane {
                         .rounded(px(5.))
                         .border_1()
                         .cursor_pointer()
-                        .when(shown, |el| el.bg(rgb(0x241D33)).border_color(rgb(0x4A3D73)))
-                        .when(!shown, |el| el.border_color(rgb(0x2B3038)).opacity(0.45))
-                        .hover(|el| el.bg(rgb(0x2E2640)))
+                        .when(shown, |el| {
+                            el.bg(rgb(crate::theme::tone(0x241D33)))
+                                .border_color(rgb(crate::theme::tone(0x4A3D73)))
+                        })
+                        .when(!shown, |el| {
+                            el.border_color(rgb(crate::theme::tone(0x2B3038)))
+                                .opacity(0.45)
+                        })
+                        .hover(|el| el.bg(rgb(crate::theme::tone(0x2E2640))))
                         .child(if shown {
                             icon
                         } else {
-                            icon.text_color(rgb(theme::MUTED))
+                            icon.text_color(rgb(theme::muted()))
                         })
                         .tooltip(move |w, cx| {
                             gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(w, cx)
@@ -493,9 +499,9 @@ impl ChannelPane {
                 .h(px(20.))
                 .max_w(px(180.))
                 .rounded(px(10.))
-                .bg(rgb(0x272237))
+                .bg(rgb(crate::theme::tone(0x272237)))
                 .text_size(px(10.))
-                .text_color(rgb(theme::ACCENT))
+                .text_color(rgb(theme::accent()))
                 .cursor_pointer()
                 .child(
                     div()

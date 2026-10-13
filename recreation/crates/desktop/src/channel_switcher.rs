@@ -126,7 +126,7 @@ impl Render for Switcher {
                 el.child(
                     div()
                         .p_2()
-                        .text_color(rgb(theme::MUTED))
+                        .text_color(rgb(theme::muted()))
                         .child("No matching open channels"),
                 )
             })
@@ -147,11 +147,11 @@ impl Render for Switcher {
                             .rounded(px(4.))
                             .cursor_pointer()
                             .bg(rgb(if index == self.selected {
-                                theme::HOVER
+                                theme::hover()
                             } else {
-                                theme::PANEL
+                                theme::panel()
                             }))
-                            .hover(|s| s.bg(rgb(theme::HOVER)))
+                            .hover(|s| s.bg(rgb(theme::hover())))
                             .child(stream_marker(&target.channel, target.live))
                             .child(
                                 div()
@@ -162,7 +162,7 @@ impl Render for Switcher {
                                     .child(
                                         div()
                                             .text_size(px(10.))
-                                            .text_color(rgb(theme::MUTED))
+                                            .text_color(rgb(theme::muted()))
                                             .truncate()
                                             .child(target.workspace_name.clone()),
                                     ),
@@ -171,7 +171,7 @@ impl Render for Switcher {
                                 el.child(
                                     div()
                                         .text_size(px(11.))
-                                        .text_color(rgb(0xC5B8E6))
+                                        .text_color(rgb(crate::theme::tone(0xC5B8E6)))
                                         .child(crate::attention::count(target.unread)),
                                 )
                             })
@@ -185,7 +185,7 @@ impl Render for Switcher {
             .child(
                 div()
                     .text_size(px(10.))
-                    .text_color(rgb(theme::MUTED))
+                    .text_color(rgb(theme::muted()))
                     .child(format!(
                         "{total} channels · ↑ ↓ select · Enter opens · Esc closes"
                     )),

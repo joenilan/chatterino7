@@ -235,7 +235,7 @@ impl Workbench {
             "The notes editor won't open.",
             div()
                 .text_size(px(11.))
-                .text_color(rgb(theme::MUTED))
+                .text_color(rgb(theme::muted()))
                 .child("Hidden"),
         ))
         .child(row(
@@ -243,7 +243,7 @@ impl Workbench {
             "Say a whisper arrived, not who sent it or what it says.",
             div()
                 .text_size(px(11.))
-                .text_color(rgb(theme::MUTED))
+                .text_color(rgb(theme::muted()))
                 .child("Hidden"),
         ))
         .child(row(
@@ -251,7 +251,7 @@ impl Workbench {
             "Hovering a channel name shows its info without the preview image.",
             div()
                 .text_size(px(11.))
-                .text_color(rgb(theme::MUTED))
+                .text_color(rgb(theme::muted()))
                 .child("Hidden"),
         ))
         .children(crate::streamer_mode::OPTIONS.iter().enumerate().map(

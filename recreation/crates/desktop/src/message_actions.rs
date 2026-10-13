@@ -965,7 +965,7 @@ impl ChannelPane {
                         let (owner, source, channel_id) = (owner.clone(), source.clone(), channel_id.clone());
                         dialog
                             .title(format!("Ban {label} from this YouTube chat?"))
-                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("They can't chat on this channel's streams until a moderator unbans them in YouTube Studio."))
+                            .child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child("They can't chat on this channel's streams until a moderator unbans them in YouTube Studio."))
                             .footer(div().h_flex().justify_end().gap_2()
                                 .child(Button::new("yt-ban-cancel").small().label("Cancel").on_click(|_, w, cx| w.close_dialog(cx)))
                                 .child(Button::new("yt-ban-confirm").small().danger().label("Ban").on_click(move |_, w, cx| {
@@ -1027,7 +1027,7 @@ impl ChannelPane {
                     let login = login.clone();
                     dialog
                         .title(format!("Ban {label} from #{channel}?"))
-                        .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(format!("@{login} will be banned until a moderator unbans them (/unban {login}).")))
+                        .child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child(format!("@{login} will be banned until a moderator unbans them (/unban {login}).")))
                         .footer(div().h_flex().justify_end().gap_2()
                             .child(Button::new("ban-cancel").small().label("Cancel").on_click(|_, w, cx| w.close_dialog(cx)))
                             .child(Button::new("ban-confirm").small().danger().label("Ban").on_click(move |_, w, cx| {
@@ -1592,8 +1592,8 @@ pub(crate) fn chatter_card(
                             Button::new(id).small().label(label).on_click(move|_,w,cx|{w.close_dialog(cx);let request=request.clone();let _=owner.update(cx,|_,cx|cx.emit(PaneEvent::TwitchCommand{request,draft:String::new()}));})
                         };
                         let timeout=|s:u32|crate::twitch_actions::Request::Timeout{login:target.clone(),seconds:s,reason:String::new()};
-                        div().v_flex().gap_1().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL))
-                            .child(div().text_size(px(11.)).text_color(rgb(0xB6A9E6)).child("Moderate"))
+                        div().v_flex().gap_1().p_2().rounded(px(4.)).bg(rgb(theme::control()))
+                            .child(div().text_size(px(11.)).text_color(rgb(crate::theme::tone(0xB6A9E6))).child("Moderate"))
                             .child(div().h_flex().flex_wrap().gap_1()
                                 .child(act("1m","card-timeout-1m",timeout(60)))
                                 .child(act("10m","card-timeout-10m",timeout(600)))
@@ -1679,17 +1679,17 @@ pub(crate) fn chatter_card(
     let cosmetic_panel=cosmetics.and_then(|(paint,preview,pending,badge)|{
                         if paint.is_none()&&!pending&&badge.is_none(){return None;}
                         let badge_image=badge.as_ref().and_then(|b|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(&b.key,cx)}));
-                        Some(div().v_flex().gap_1().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL))
-                            .child(div().text_size(px(11.)).text_color(rgb(0xB6A9E6)).child("7TV cosmetics · observed active grants"))
+                        Some(div().v_flex().gap_1().p_2().rounded(px(4.)).bg(rgb(theme::control()))
+                            .child(div().text_size(px(11.)).text_color(rgb(crate::theme::tone(0xB6A9E6))).child("7TV cosmetics · observed active grants"))
                             .when_some(badge,|el,b|el.child(div().h_flex().gap_2()
                                 .child(crate::emote_picker::icon(badge_image,String::new(),28.,28.))
                                 .child(div().text_size(px(12.)).child(b.title))))
                             .when_some(paint,|el,p|el
                                 .child(div().text_size(px(12.)).child(p.name))
                                 .when_some(preview,|el,image|el.child(img(image).w_full().h(px(32.)).object_fit(ObjectFit::Fill)))
-                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                                .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(
                                     p.limitation.map(|reason|format!("{reason} · preview unavailable")).or(p.approximation).unwrap_or_else(||"Static username paint · local color overrides take priority".into()))))
-                            .when(pending,|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Paint grant received; waiting for its definition")))
+                            .when(pending,|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("Paint grant received; waiting for its definition")))
                             .into_any_element())
                     });
     // Their name in the card wears their 7TV paint, as in chat.
@@ -1745,17 +1745,17 @@ pub(crate) fn chatter_card(
                         .when_some(profile,|el,profile|el.child(div().h_flex().items_start().gap_2()
                             .child(div().id("chatter-avatar").flex_shrink_0().tooltip(crate::media_hover::image_card(profile.display_name.clone(),avatar_source.into(),avatar.clone())).child(crate::emote_picker::icon(avatar,String::new(),48.,48.)))
                             .child(div().v_flex().gap_1().flex_1().min_w_0().child(card_name(&profile.display_name, card_paint.clone(), card_focus.clone()))
-                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(match followers{
+                                .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(match followers{
                                     Some(n)=>format!("Created · {} · {} follower{}",created_label(&profile.created),group_digits(n),if n==1{""}else{"s"}),
                                     None=>format!("Created · {}",created_label(&profile.created)),
                                 }))
-                                .when(!profile.role.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(profile.role)))))
-                            .when(!profile.description.is_empty(),|el|el.child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(profile.description))))
+                                .when(!profile.role.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(crate::theme::tone(0xC5B8E6))).child(profile.role)))))
+                            .when(!profile.description.is_empty(),|el|el.child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child(profile.description))))
                         .child(login.clone().map(|login|format!("@{login}" )).unwrap_or_else(||"Login unavailable".into()))
-                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("{count} retained messages in #{channel}")))
-                        .when_some(follow,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(text)))
-                        .when_some(sub,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(text)))
-                        .when_some(pronouns,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(text)))
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(format!("{count} retained messages in #{channel}")))
+                        .when_some(follow,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(crate::theme::tone(0xC5B8E6))).child(text)))
+                        .when_some(sub,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(crate::theme::tone(0xC5B8E6))).child(text)))
+                        .when_some(pronouns,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(text)))
                         .when(!badges.is_empty(),|el|el.child(div().h_flex().flex_wrap().gap_x_3().gap_y_1().text_size(px(11.)).children(badges.into_iter().map(|(title,key)|{
                             let image=key.and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(&key,cx)}));
                             div().h_flex().gap_1().items_center().when_some(image,|el,image|el.child(crate::emote_picker::icon(Some(image),String::new(),18.,18.))).child(title)
@@ -1765,7 +1765,7 @@ pub(crate) fn chatter_card(
                         .child(div().id("chatter-recent").v_flex().gap_2().max_h(px(210.)).overflow_y_scroll()
                             .children(recent.into_iter().map(|message|{
                                 let body=owner.upgrade().map(|pane|{let media=pane.read(cx).media.clone();let mut media=media.borrow_mut();card_body(&message,&mut media,cx)}).unwrap_or_else(||message.body().into_any_element());
-                                div().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL)).min_w_0().child(body)
+                                div().p_2().rounded(px(4.)).bg(rgb(theme::control())).min_w_0().child(body)
                             })))
                         .child(div().h_flex().flex_wrap().gap_1()
                             .when(login.is_some(),|el|el
@@ -1792,7 +1792,7 @@ pub(crate) fn chatter_card(
                                 .child(Button::new("chatter-block").small().label("Block…").tooltip("Block on Twitch: no whispers from them, and they're hidden from your chat").on_click(move|_,w,cx|{
                                     w.close_dialog(cx);let (owner,login)=(block_owner.clone(),block_login.clone());
                                     w.open_dialog(cx,move|dialog,_,_|{let (owner,login)=(owner.clone(),login.clone());dialog.title(format!("Block @{login} on Twitch?"))
-                                        .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(format!("They can't whisper you, and their messages are hidden while \"Hide blocked users\" is on. Undo with /unblock {login}.")))
+                                        .child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child(format!("They can't whisper you, and their messages are hidden while \"Hide blocked users\" is on. Undo with /unblock {login}.")))
                                         .footer(div().h_flex().justify_end().gap_2()
                                             .child(Button::new("card-block-cancel").small().label("Cancel").on_click(|_,w,cx|w.close_dialog(cx)))
                                             .child(Button::new("card-block-confirm").small().danger().label("Block").on_click(move|_,w,cx|{w.close_dialog(cx);let login=login.clone();let _=owner.update(cx,|_,cx|cx.emit(PaneEvent::TwitchCommand{request:crate::twitch_actions::Request::Block{login,add:true},draft:String::new()}));})))})

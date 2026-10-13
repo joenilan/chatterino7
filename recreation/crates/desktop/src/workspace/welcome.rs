@@ -43,7 +43,7 @@ impl Workbench {
                     .gap_3()
                     .py(px(8.))
                     .border_b_1()
-                    .border_color(rgb(theme::BORDER))
+                    .border_color(rgb(theme::border()))
                     .child(
                         div()
                             .v_flex()
@@ -54,7 +54,7 @@ impl Workbench {
                             .child(
                                 div()
                                     .text_size(px(11.))
-                                    .text_color(rgb(theme::MUTED))
+                                    .text_color(rgb(theme::muted()))
                                     .overflow_hidden()
                                     .whitespace_nowrap()
                                     .text_ellipsis()
@@ -83,7 +83,7 @@ impl Workbench {
                     .pb_1()
                     .text_size(px(10.))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(theme::ACCENT))
+                    .text_color(rgb(theme::accent()))
                     .child(text)
             };
 
@@ -173,7 +173,7 @@ impl Workbench {
                         .max_h(px(height))
                         .overflow_y_scroll()
                         .child(heading("HOW WILL YOU USE JAWJACK?"))
-                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).pb_1().child(
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).pb_1().child(
                             "Changes what's in reach, not what you're allowed to do. Change it anytime in Settings › General › Layout.",
                         ))
                         .child(div().h_flex().items_stretch().gap_2().children(Experience::ALL.into_iter().map(|experience| {
@@ -188,10 +188,10 @@ impl Workbench {
                                 .p_2()
                                 .rounded(px(6.))
                                 .border_1()
-                                .border_color(rgb(if selected { theme::ACCENT } else { theme::BORDER }))
-                                .bg(rgb(if selected { 0x272237 } else { theme::CONTROL }))
+                                .border_color(rgb(if selected { theme::accent() } else { theme::border() }))
+                                .bg(rgb(if selected { 0x272237 } else { theme::control() }))
                                 .cursor_pointer()
-                                .hover(|s| s.bg(rgb(theme::HOVER)))
+                                .hover(|s| s.bg(rgb(theme::hover())))
                                 .child(
                                     div()
                                         .h_flex()
@@ -199,11 +199,11 @@ impl Workbench {
                                         .items_center()
                                         .font_weight(FontWeight::SEMIBOLD)
                                         .when(selected, |el| {
-                                            el.child(Icon::new(IconName::Check).small().text_color(rgb(theme::ACCENT)))
+                                            el.child(Icon::new(IconName::Check).small().text_color(rgb(theme::accent())))
                                         })
                                         .child(experience.label()),
                                 )
-                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(experience.description()))
+                                .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(experience.description()))
                                 .on_click(move |_, _, cx| {
                                     let _ = owner.update(cx, |this, cx| this.set_experience(experience, cx));
                                 })
@@ -224,7 +224,7 @@ impl Workbench {
                             div()
                                 .flex_1()
                                 .text_size(px(11.))
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .child("Add any channel later with + or Ctrl+K."),
                         )
                         .child(

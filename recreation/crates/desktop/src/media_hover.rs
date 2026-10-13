@@ -44,10 +44,10 @@ impl Render for Card {
                 .p_2()
                 .max_w(px(320.))
                 .font_family("Segoe UI")
-                .text_color(rgb(theme::TEXT))
-                .bg(rgb(theme::ELEVATED))
+                .text_color(rgb(theme::text()))
+                .bg(rgb(theme::elevated()))
                 .border_1()
-                .border_color(rgb(theme::BORDER))
+                .border_color(rgb(theme::border()))
                 .rounded(px(6.))
                 .when_some(avatar.clone(), |el, avatar| {
                     el.child(crate::emote_picker::avatar(avatar, 40.))
@@ -69,7 +69,7 @@ impl Render for Card {
                         .child(
                             div()
                                 .text_size(px(11.))
-                                .text_color(rgb(0xC5B8E6))
+                                .text_color(rgb(crate::theme::tone(0xC5B8E6)))
                                 .child(detail.clone()),
                         ),
                 )
@@ -78,11 +78,11 @@ impl Render for Card {
                 .p_2()
                 .max_w(px(300.))
                 .font_family("Segoe UI")
-                .text_color(rgb(theme::TEXT))
+                .text_color(rgb(theme::text()))
                 .text_size(px(11.))
-                .bg(rgb(theme::ELEVATED))
+                .bg(rgb(theme::elevated()))
                 .border_1()
-                .border_color(rgb(theme::BORDER))
+                .border_color(rgb(theme::border()))
                 .rounded(px(5.))
                 .child(text.clone())
                 .into_any_element(),
@@ -133,10 +133,10 @@ impl Render for Card {
                     .p_2()
                     .w(px(width))
                     .font_family("Segoe UI")
-                    .text_color(rgb(theme::TEXT))
-                    .bg(rgb(theme::ELEVATED))
+                    .text_color(rgb(theme::text()))
+                    .bg(rgb(theme::elevated()))
                     .border_1()
-                    .border_color(rgb(theme::BORDER))
+                    .border_color(rgb(theme::border()))
                     .rounded(px(5.))
                     .child(
                         div()
@@ -154,7 +154,7 @@ impl Render for Card {
                                         .items_center()
                                         .justify_center()
                                         .text_size(px(11.))
-                                        .text_color(rgb(theme::MUTED))
+                                        .text_color(rgb(theme::muted()))
                                         .child("Preview not loaded"),
                                 )
                             }),
@@ -168,7 +168,7 @@ impl Render for Card {
                     .child(
                         div()
                             .text_size(px(10.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child(source.clone()),
                     )
                     .into_any_element()
@@ -287,11 +287,11 @@ fn link_card(url: &str, _window: &mut Window, cx: &mut Context<Card>) -> AnyElem
         .v_flex()
         .gap_1()
         .font_family("Segoe UI")
-        .text_color(rgb(theme::TEXT))
+        .text_color(rgb(theme::text()))
         .text_size(px(12.))
-        .bg(rgb(theme::ELEVATED))
+        .bg(rgb(theme::elevated()))
         .border_1()
-        .border_color(rgb(theme::BORDER))
+        .border_color(rgb(theme::border()))
         .rounded(px(5.))
         .when_some(thumb, |el, image| {
             let size = image.image.size(0);
@@ -323,7 +323,7 @@ fn link_card(url: &str, _window: &mut Window, cx: &mut Context<Card>) -> AnyElem
         .map(|el| match state {
             Some(State::Ready(p)) => el
                 .when(!p.site.is_empty(), |el| {
-                    el.child(small(p.site.clone(), theme::MUTED))
+                    el.child(small(p.site.clone(), theme::muted()))
                 })
                 .when(!p.title.is_empty(), |el| {
                     el.child(
@@ -346,14 +346,16 @@ fn link_card(url: &str, _window: &mut Window, cx: &mut Context<Card>) -> AnyElem
                         .iter()
                         .map(|w| small(format!("Warning: {w}"), 0xF29D9D)),
                 ),
-            Some(State::Loading) => el.child(small("Loading preview…".into(), theme::MUTED)),
-            Some(State::Failed(why)) => el.child(small(format!("No preview: {why}"), theme::MUTED)),
+            Some(State::Loading) => el.child(small("Loading preview…".into(), theme::muted())),
+            Some(State::Failed(why)) => {
+                el.child(small(format!("No preview: {why}"), theme::muted()))
+            }
             None => el,
         })
         .child(small(shown, 0x91C7E8))
         .child(small(
             "Ctrl+click to open · Right-click for actions".into(),
-            theme::MUTED,
+            theme::muted(),
         ))
         .into_any_element()
 }

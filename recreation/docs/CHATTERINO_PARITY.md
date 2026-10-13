@@ -86,7 +86,7 @@ Chatterino import.
 - [x] Mentions: bold/coloured in the chatter's colour, detect names without @ (option), colourless names get a stable colour
 - [x] Settings search; restore backups (S) — search across all sections; daily backups (last 7) with restore in General
 - [x] Spellcheck: ~~personal dictionary (+ beside a flagged word); 10 languages (downloaded on first use)~~ done
-- [ ] Theme: light / system / custom (M) [design]
+- [x] Theme: ~~dark / light / follow Windows~~ done; custom colour themes not planned
 - [x] /mentions /whispers /live as dockable tabs (Add channel or type the command)
 - [x] Scroll speed, smooth scrolling (S) — mouse wheel; touchpads keep native scrolling
 - [x] Shared chat: ~~source avatar on messages from other channels; deletes routed to the source channel~~ done

@@ -238,7 +238,7 @@ impl InlineChat {
             search: Vec::new(),
             text,
             spans,
-            name_color: message.author_color().unwrap_or(crate::theme::MUTED),
+            name_color: message.author_color().unwrap_or(crate::theme::muted()),
             paint,
             emote_size: base_emote_size(message) * emote_scale(),
             interaction: None,
@@ -627,7 +627,7 @@ impl Element for InlineChat {
                 // Fixed placeholder geometry keeps loading from shifting wrapped rows.
                 let label: String = self.text[piece.range.clone()].chars().take(3).collect();
                 let mut style = window.text_style();
-                style.color = rgb(crate::theme::MUTED).into();
+                style.color = rgb(crate::theme::muted()).into();
                 let line = window.text_system().shape_line(
                     label.clone().into(),
                     px(9.),

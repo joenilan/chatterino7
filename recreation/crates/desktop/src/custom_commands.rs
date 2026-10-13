@@ -370,9 +370,9 @@ impl Render for Editor {
         };
         let height = (f32::from(window.viewport_size().height) - 160.).clamp(100., 580.);
         div().id("custom-command-editor").v_flex().gap_2().max_h(px(height)).overflow_y_scroll()
-            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Personal shortcuts for every workspace. Text templates expand into your draft to review, then Send. A template starting with a command (e.g. /timeout {1} 600 spam) runs that command right away."))
+            .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("Personal shortcuts for every workspace. Text templates expand into your draft to review, then Send. A template starting with a command (e.g. /timeout {1} 600 spam) runs that command right away."))
             .child(div().h_flex().gap_2().child(Button::new("new-custom-command").small().label("New command").on_click(cx.listener(|this,_,w,cx|this.select(None,w,cx))))
-                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("{}/32 saved",entries.len()))))
+                .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(format!("{}/32 saved",entries.len()))))
             .child(div().id("saved-custom-commands").v_flex().gap_1().max_h(px(140.)).overflow_y_scroll().children(entries.into_iter().map(|name|{
                 let chosen=self.selected.as_ref()==Some(&name);let label=format!("/{}{}",name,if chosen{" · editing"}else{""});
                 Button::new(SharedString::from(format!("edit-custom-{name}"))).small().label(label).on_click(cx.listener(move|this,_,w,cx|this.select(Some(name.clone()),w,cx)))
@@ -381,15 +381,15 @@ impl Render for Editor {
             .child(Input::new(&self.name).small())
             .child(div().text_size(px(11.)).child("Message template"))
             .child(Input::new(&self.template).small())
-            .child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child("{channel} = channel login · {args} = all arguments · {1}–{9} = individual words · {2+} = word 2 onward · {my.name} {my.id} {channel.id} {stream.title} {stream.game} · {user.name} {user.id} {msg.id} {msg.text} = the message you right-click (such commands appear in its menu) · {{ and }} = literal braces"))
+            .child(div().text_size(px(10.)).text_color(rgb(theme::muted())).child("{channel} = channel login · {args} = all arguments · {1}–{9} = individual words · {2+} = word 2 onward · {my.name} {my.id} {channel.id} {stream.title} {stream.game} · {user.name} {user.id} {msg.id} {msg.text} = the message you right-click (such commands appear in its menu) · {{ and }} = literal braces"))
             .child(Input::new(&self.sample).small())
-            .child(div().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL)).text_size(px(12.)).child(preview))
+            .child(div().p_2().rounded(px(4.)).bg(rgb(theme::control())).text_size(px(12.)).child(preview))
             .child(div().h_flex().gap_2().child(Button::new("save-custom-command").small().label("Save command").on_click(cx.listener(|this,_,w,cx|this.save(w,cx))))
                 .when(self.selected.is_some(),|el|el.child(Button::new("delete-custom-command").small().label(if self.delete_armed{"Confirm delete"}else{"Delete…"}).on_click(cx.listener(|this,_,w,cx|{
                     if !this.delete_armed{this.delete_armed=true;this.status="Click Confirm delete to remove this shortcut.".into();cx.notify();return;}
                     if let Some(name)=this.selected.take(){this.definitions.borrow_mut().remove(&name);cx.emit(Changed);this.switch_pending=Some(String::new());this.select(None,w,cx);this.status="Command removed.".into();}
                 })))))
-            .when(!self.status.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xE9C99C)).child(self.status.clone())))
+            .when(!self.status.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(crate::theme::tone(0xE9C99C))).child(self.status.clone())))
     }
 }
 

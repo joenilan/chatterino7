@@ -63,7 +63,7 @@ pub(super) fn mode_buttons(
     let Some(settings) = settings else {
         return div()
             .text_size(px(11.))
-            .text_color(rgb(theme::MUTED))
+            .text_color(rgb(theme::muted()))
             .child("Chat modes appear once the channel is connected.");
     };
     let modes: [(&str, bool, Request); 5] = [
@@ -298,7 +298,7 @@ impl Workbench {
                     div()
                         .v_flex()
                         .gap_2()
-                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(
                             "Changes what's in reach, not what you're allowed to do. Channels, drafts and layouts are kept. Change anytime.",
                         ))
                         .children(Experience::ALL.into_iter().map(|experience| {
@@ -311,14 +311,14 @@ impl Workbench {
                                 .p_2()
                                 .rounded(px(6.))
                                 .border_1()
-                                .border_color(rgb(if selected { 0xA99CF4 } else { theme::BORDER }))
-                                .bg(rgb(if selected { 0x272237 } else { theme::CONTROL }))
+                                .border_color(rgb(if selected { 0xA99CF4 } else { theme::border() }))
+                                .bg(rgb(if selected { 0x272237 } else { theme::control() }))
                                 .cursor_pointer()
-                                .hover(|s| s.bg(rgb(theme::HOVER)))
+                                .hover(|s| s.bg(rgb(theme::hover())))
                                 .child(div().h_flex().gap_1().items_center().font_weight(FontWeight::SEMIBOLD)
-                                    .when(selected, |el| el.child(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check).small().text_color(rgb(theme::ACCENT))))
+                                    .when(selected, |el| el.child(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check).small().text_color(rgb(theme::accent()))))
                                     .child(experience.label()))
-                                .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(experience.description()))
+                                .child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child(experience.description()))
                                 .on_click(move |_, window, cx| {
                                     window.close_dialog(cx);
                                     let _ = owner.update(cx, |this, cx| {
@@ -363,7 +363,7 @@ impl Workbench {
                     div()
                         .v_flex()
                         .gap_2()
-                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Your role here: {role}. Twitch checks every action.")))
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(format!("Your role here: {role}. Twitch checks every action.")))
                         .child(div().font_weight(FontWeight::SEMIBOLD).child("Chat modes"))
                         .child(mode_buttons(owner.clone(), pane.clone(), channel.clone(), settings))
                         .child(div().font_weight(FontWeight::SEMIBOLD).child("Chat"))
@@ -378,7 +378,7 @@ impl Workbench {
                                         let (owner, pane, channel) = (owner.clone(), pane.clone(), channel.clone());
                                         dialog
                                             .title(format!("Clear #{channel} for everyone?"))
-                                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Every viewer's chat is emptied. This can't be undone."))
+                                            .child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child("Every viewer's chat is emptied. This can't be undone."))
                                             .footer(div().h_flex().justify_end().gap_2()
                                                 .child(Button::new("clear-cancel").small().label("Cancel").on_click(|_, w, cx| w.close_dialog(cx)))
                                                 .child(Button::new("clear-confirm").small().danger().label("Clear chat").on_click(move |_, w, cx| {
@@ -405,7 +405,7 @@ impl Workbench {
                                 .child(Button::new("mod-shield-on").small().danger().icon(Icon::new(gpui_kit::assets::IconName::Shield)).label("Turn on").tooltip("Shield Mode applies your stricter Shield Mode settings in Twitch's mod view (/shield)").on_click(run(true)))
                                 .child(Button::new("mod-shield-off").small().label("Turn off").tooltip("/shieldoff").on_click(run(false)))
                         })
-                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(
                             "Right-click a message to delete, time out or ban. Type /help for every moderator command.",
                         )),
                 )
@@ -469,7 +469,7 @@ impl Workbench {
                 .child(
                     div()
                         .text_size(px(12.))
-                        .text_color(rgb(theme::MUTED))
+                        .text_color(rgb(theme::muted()))
                         .child(body),
                 )
                 .footer(
@@ -503,7 +503,7 @@ impl Workbench {
             .pb_2()
             .text_size(px(10.))
             .font_weight(FontWeight::SEMIBOLD)
-            .text_color(rgb(theme::MUTED))
+            .text_color(rgb(theme::muted()))
             .child(title.to_uppercase())
     }
     fn feed_icon(kind: crate::activity_feed::Kind) -> gpui_kit::assets::IconName {
@@ -548,13 +548,15 @@ impl Workbench {
                         .border_1()
                         .map(|el| {
                             if selected {
-                                el.bg(rgb(0x272237))
-                                    .border_color(rgb(0xA99CF4))
-                                    .text_color(rgb(0xD9D2FA))
+                                el.bg(rgb(crate::theme::tone(0x272237)))
+                                    .border_color(rgb(crate::theme::tone(0xA99CF4)))
+                                    .text_color(rgb(crate::theme::tone(0xD9D2FA)))
                             } else {
-                                el.border_color(rgb(theme::BORDER))
-                                    .text_color(rgb(theme::MUTED))
-                                    .hover(|s| s.bg(rgb(theme::HOVER)).text_color(rgb(theme::TEXT)))
+                                el.border_color(rgb(theme::border()))
+                                    .text_color(rgb(theme::muted()))
+                                    .hover(|s| {
+                                        s.bg(rgb(theme::hover())).text_color(rgb(theme::text()))
+                                    })
                             }
                         })
                         .child(label)
@@ -586,15 +588,15 @@ impl Workbench {
                             div()
                                 .size(px(36.))
                                 .rounded_full()
-                                .bg(rgb(theme::CONTROL))
+                                .bg(rgb(theme::control()))
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .child(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Inbox)),
                         )
                         .child(div().text_size(px(13.)).font_weight(FontWeight::SEMIBOLD).child(if self.feed_filter.is_some() { "Nothing of this kind yet" } else { "No activity yet" }))
-                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).text_center().child("Follows, subs, Bits, raids, rewards and donations land here as they happen.")),
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).text_center().child("Follows, subs, Bits, raids, rewards and donations land here as they happen.")),
                 )
                 .into_any_element();
         }
@@ -625,7 +627,7 @@ impl Workbench {
                             .gap_2()
                             .py_2()
                             .border_b_1()
-                            .border_color(rgb(theme::BORDER))
+                            .border_color(rgb(theme::border()))
                             .opacity(0.2 + 0.8 * eased)
                             .top(px(-6. * (1. - eased)))
                             .child(
@@ -677,14 +679,14 @@ impl Workbench {
                                                 div()
                                                     .flex_shrink_0()
                                                     .text_size(px(10.))
-                                                    .text_color(rgb(theme::MUTED))
+                                                    .text_color(rgb(theme::muted()))
                                                     .child(item.at.format("%H:%M").to_string()),
                                             ),
                                     )
                                     .child(
                                         div()
                                             .text_size(px(11.))
-                                            .text_color(rgb(theme::MUTED))
+                                            .text_color(rgb(theme::muted()))
                                             .line_clamp(2)
                                             .child(if item.source == "Twitch" {
                                                 item.detail.clone()
@@ -780,14 +782,14 @@ impl Workbench {
                                         .w(px(70. + 14. * (index % 3) as f32))
                                         .h(px(10.))
                                         .rounded(px(3.))
-                                        .bg(rgb(theme::HOVER)),
+                                        .bg(rgb(theme::hover())),
                                 )
                                 .child(
                                     div()
                                         .w(px(110. + 18. * (index % 2) as f32))
                                         .h(px(8.))
                                         .rounded(px(3.))
-                                        .bg(rgb(theme::CONTROL)),
+                                        .bg(rgb(theme::control())),
                                 ),
                         )
                         .child(
@@ -795,7 +797,7 @@ impl Workbench {
                                 .w(px(36.))
                                 .h(px(20.))
                                 .rounded_full()
-                                .bg(rgb(theme::CONTROL)),
+                                .bg(rgb(theme::control())),
                         );
                     if reduced {
                         row.into_any_element()
@@ -826,7 +828,7 @@ impl Workbench {
                                 .child(
                                     div()
                                         .text_size(px(11.))
-                                        .text_color(rgb(theme::MUTED))
+                                        .text_color(rgb(theme::muted()))
                                         .child(detail),
                                 ),
                         )
@@ -950,7 +952,7 @@ impl Workbench {
                     .py(px(2.))
                     .rounded(px(4.))
                     .cursor_pointer()
-                    .hover(|s| s.bg(rgb(theme::HOVER)))
+                    .hover(|s| s.bg(rgb(theme::hover())))
                     .text_size(px(11.))
                     .tooltip(move |_, cx| cx.new(|_| crate::media_hover::Card(card.clone())).into())
                     .child(match avatar {
@@ -958,7 +960,7 @@ impl Workbench {
                         None => div()
                             .size(px(18.))
                             .rounded_full()
-                            .bg(rgb(0x3A3350))
+                            .bg(rgb(crate::theme::tone(0x3A3350)))
                             .into_any_element(),
                     })
                     .child(div().flex_shrink_0().child(live.label().to_owned()))
@@ -969,14 +971,14 @@ impl Workbench {
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .text_ellipsis()
-                            .text_color(rgb(if same { 0xC5B8E6 } else { theme::MUTED }))
+                            .text_color(rgb(if same { 0xC5B8E6 } else { theme::muted() }))
                             .child(live.game.clone()),
                     )
                     .when(!hide_counts, |el| {
                         el.child(
                             div()
                                 .flex_shrink_0()
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .child(crate::follows_live::viewers(live.viewers)),
                         )
                     })
@@ -1002,7 +1004,7 @@ impl Workbench {
                             div()
                                 .flex_1()
                                 .text_size(px(10.))
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .child(format!("LIVE NOW · YOU FOLLOW · {count}")),
                         )
                         .child(
@@ -1051,7 +1053,7 @@ impl Workbench {
                     el.child(
                         div()
                             .text_size(px(11.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child(format!("No live channel you follow matches “{typed}” — you can still raid it.")),
                     )
                 })
@@ -1299,14 +1301,14 @@ impl Workbench {
         let live = detail.as_ref().is_some_and(|i| i.live);
         let (tag_color, tag) = match &detail {
             Some(info) if info.live => (
-                theme::STREAM_LIVE,
+                theme::stream_live(),
                 format!(
                     "LIVE{}",
                     info.uptime().map(|u| format!(" · {u}")).unwrap_or_default()
                 ),
             ),
-            Some(_) => (theme::STREAM_OFFLINE, "OFFLINE".into()),
-            None => (theme::STREAM_UNKNOWN, "CHECKING".into()),
+            Some(_) => (theme::stream_offline(), "OFFLINE".into()),
+            None => (theme::stream_unknown(), "CHECKING".into()),
         };
         let chat_problem = pane
             .as_ref()
@@ -1338,9 +1340,9 @@ impl Workbench {
             .w(px(STUDIO_WIDTH))
             .h_full()
             .flex_shrink_0()
-            .bg(rgb(theme::PANEL))
+            .bg(rgb(theme::panel()))
             .border_l_1()
-            .border_color(rgb(theme::BORDER))
+            .border_color(rgb(theme::border()))
             .child(
                 div()
                     .v_flex()
@@ -1387,13 +1389,13 @@ impl Workbench {
                             .map(
                                 |el| match (&chat_problem, detail.as_ref().filter(|i| i.live)) {
                                     (Some(problem), _) => el
-                                        .text_color(rgb(theme::STREAM_UNKNOWN))
+                                        .text_color(rgb(theme::stream_unknown()))
                                         .child(format!("Chat · {problem}")),
-                                    (None, Some(info)) => el.text_color(rgb(theme::MUTED)).child(
+                                    (None, Some(info)) => el.text_color(rgb(theme::muted())).child(
                                         format!("{} viewers · {}", info.viewers, info.category),
                                     ),
                                     (None, None) => {
-                                        el.text_color(rgb(theme::MUTED)).child("Chat connected")
+                                        el.text_color(rgb(theme::muted())).child("Chat connected")
                                     }
                                 },
                             ),

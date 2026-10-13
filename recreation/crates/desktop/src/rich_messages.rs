@@ -66,7 +66,7 @@ pub fn heading(message: &Message) -> Option<AnyElement> {
                 el.child(
                     div()
                         .text_size(px(10.))
-                        .text_color(rgb(accent(message).unwrap_or(theme::MUTED)))
+                        .text_color(rgb(accent(message).unwrap_or(theme::muted())))
                         .child(labels.join(" · ")),
                 )
             })
@@ -76,7 +76,7 @@ pub fn heading(message: &Message) -> Option<AnyElement> {
                     el.child(
                         div()
                             .text_size(px(12.))
-                            .text_color(rgb(0xC5B8E6))
+                            .text_color(rgb(crate::theme::tone(0xC5B8E6)))
                             .child(text),
                     )
                 },
@@ -152,8 +152,8 @@ pub fn attachments(message: &Message, media: &mut MediaCache, cx: &mut App) -> O
                 .overflow_hidden()
                 .rounded(px(4.))
                 .border_1()
-                .border_color(rgb(theme::BORDER))
-                .bg(rgb(theme::ELEVATED))
+                .border_color(rgb(theme::border()))
+                .bg(rgb(theme::elevated()))
                 .child(if let Some(image) = image {
                     canvas(
                         |bounds, _, _| bounds,
@@ -189,7 +189,7 @@ pub fn attachments(message: &Message, media: &mut MediaCache, cx: &mut App) -> O
                         .justify_center()
                         .p_2()
                         .text_size(px(11.))
-                        .text_color(rgb(theme::MUTED))
+                        .text_color(rgb(theme::muted()))
                         .child(label)
                         .into_any_element()
                 })

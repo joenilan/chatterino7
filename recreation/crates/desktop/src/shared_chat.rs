@@ -238,7 +238,7 @@ impl ChannelPane {
                     .rounded_full()
                     .border_2()
                     .border_color(rgb(ring))
-                    .bg(rgb(theme::PANEL))
+                    .bg(rgb(theme::panel()))
                     .overflow_hidden()
                     .flex()
                     .items_center()
@@ -259,7 +259,7 @@ impl ChannelPane {
                         Some(image) => crate::emote_picker::avatar(image, SIZE - 4.),
                         None => div()
                             .text_size(px(12.))
-                            .text_color(rgb(theme::TEXT))
+                            .text_color(rgb(theme::text()))
                             .child(initial)
                             .into_any_element(),
                     })
@@ -294,9 +294,9 @@ impl ChannelPane {
                         .items_center()
                         .p(px(4.))
                         .rounded_full()
-                        .bg(rgba((theme::PANEL << 8) | 0xE0))
+                        .bg(rgba((theme::panel() << 8) | 0xE0))
                         .border_1()
-                        .border_color(rgb(theme::BORDER))
+                        .border_color(rgb(theme::border()))
                         .shadow_md()
                         .children(bubbles),
                 )

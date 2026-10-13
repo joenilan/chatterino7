@@ -110,7 +110,7 @@ impl Workbench {
                     div()
                         .v_flex()
                         .gap_2()
-                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(
                             "In OBS: Tools → WebSocket Server Settings → Enable WebSocket server. \"Show Connect Info\" has the password. Jawjack connects locally; the password is kept in Windows Credential Manager.",
                         ))
                         .child(div().text_size(px(12.)).child("Address"))
@@ -139,7 +139,7 @@ impl Workbench {
 
                         )
                         .when_some(found.clone().flatten(), |el, list| {
-                                    el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(if list.is_empty() {
+                                    el.child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(if list.is_empty() {
                                         "None found. Is OBS's WebSocket server on, and port open in the firewall? A custom port: type it above first.".to_owned()
                                     } else {
                                         "Found:".to_owned()
@@ -229,7 +229,7 @@ impl Workbench {
             return div()
                 .v_flex()
                 .gap_2()
-                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(
                     "Switch scenes, see if you're live, your mic state and stream health, from OBS 28 or newer.",
                 ))
                 .child(
@@ -276,7 +276,7 @@ impl Workbench {
                                 0xF07A7A,
                             )
                         } else {
-                            pill("OFFLINE".into(), theme::MUTED)
+                            pill("OFFLINE".into(), theme::muted())
                         })
                         .when(state.recording, |el| el.child(pill("REC".into(), 0xE8C468)))
                     })
@@ -287,7 +287,7 @@ impl Workbench {
                                 .flex_1()
                                 .min_w_0()
                                 .text_size(px(11.))
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .child(state.status.clone()),
                         )
                     })
@@ -328,11 +328,11 @@ impl Workbench {
                             .px_2()
                             .py_1()
                             .rounded(px(6.))
-                            .bg(rgb(0x3A1D20))
+                            .bg(rgb(crate::theme::tone(0x3A1D20)))
                             .border_1()
-                            .border_color(rgb(0xF07A7A))
+                            .border_color(rgb(crate::theme::tone(0xF07A7A)))
                             .text_size(px(11.))
-                            .text_color(rgb(0xF2B8B8))
+                            .text_color(rgb(crate::theme::tone(0xF2B8B8)))
                             .child("Your mic is muted while you're live."),
                     )
                 },
@@ -342,7 +342,7 @@ impl Workbench {
                 el.child(
                     div()
                         .text_size(px(11.))
-                        .text_color(rgb(if warn { 0xE8C468 } else { theme::MUTED }))
+                        .text_color(rgb(if warn { 0xE8C468 } else { theme::muted() }))
                         .child(format!(
                             "{} kbps · {:.1}% dropped · CPU {:.0}% · {:.0} fps",
                             h.kbps, h.dropped, h.cpu, h.fps
@@ -363,7 +363,7 @@ impl Workbench {
                                         .pt_1()
                                         .text_size(px(10.))
                                         .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(rgb(theme::MUTED))
+                                        .text_color(rgb(theme::muted()))
                                         .child(label.to_uppercase())
                                         .into_any_element();
                                 }
@@ -494,7 +494,7 @@ impl Workbench {
                 .h(px(4.))
                 .w_full()
                 .rounded(px(2.))
-                .bg(rgb(theme::CONTROL))
+                .bg(rgb(theme::control()))
                 .child(
                     div()
                         .h_full()
@@ -531,7 +531,7 @@ impl Workbench {
                         .child(
                             div()
                                 .flex_shrink_0()
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .child(right),
                         ),
                 )
@@ -544,9 +544,9 @@ impl Workbench {
             .mb_2()
             .p_2()
             .rounded(px(8.))
-            .bg(rgb(theme::ELEVATED))
+            .bg(rgb(theme::elevated()))
             .border_1()
-            .border_color(rgb(theme::BORDER));
+            .border_color(rgb(theme::border()));
         if let Some(by) = &self.hype.shield {
             strip = strip.child(item(
                 gpui_kit::assets::IconName::Shield,
@@ -570,7 +570,7 @@ impl Workbench {
                 if train.golden {
                     0xE8C468
                 } else {
-                    theme::ACCENT
+                    theme::accent()
                 },
                 format!(
                     "{}Hype Train · Level {}",
@@ -707,9 +707,9 @@ impl Workbench {
         ];
         let check = |state: Option<bool>| {
             let (icon, color) = match state {
-                Some(true) => (IconName::Check, theme::STREAM_LIVE),
+                Some(true) => (IconName::Check, theme::stream_live()),
                 Some(false) => (IconName::CircleX, 0xE8C468),
-                None => (IconName::Minus, theme::MUTED),
+                None => (IconName::Minus, theme::muted()),
             };
             div()
                 .size(px(16.))
@@ -726,9 +726,9 @@ impl Workbench {
             .p_2()
             .mb_2()
             .rounded(px(8.))
-            .bg(rgb(theme::ELEVATED))
+            .bg(rgb(theme::elevated()))
             .border_1()
-            .border_color(rgb(theme::BORDER))
+            .border_color(rgb(theme::border()))
             .child(
                 div()
                     .h_flex()
@@ -774,7 +774,7 @@ impl Workbench {
                             .child(label),
                     )
                     .when(state == Some(false), |el| {
-                        el.child(div().text_color(rgb(theme::MUTED)).child(hint))
+                        el.child(div().text_color(rgb(theme::muted())).child(hint))
                     }),
             );
         }
@@ -789,20 +789,20 @@ impl Workbench {
                     .gap_2()
                     .text_size(px(11.))
                     .cursor_pointer()
-                    .child(check(Some(done)).when(!done, |el| el.text_color(rgb(theme::MUTED))))
+                    .child(check(Some(done)).when(!done, |el| el.text_color(rgb(theme::muted()))))
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
-                            .when(done, |el| el.text_color(rgb(theme::MUTED)))
+                            .when(done, |el| el.text_color(rgb(theme::muted())))
                             .child(item),
                     )
                     .child(
                         div()
                             .id(("checklist-remove", index))
                             .px_1()
-                            .text_color(rgb(theme::MUTED))
-                            .hover(|s| s.text_color(rgb(theme::TEXT)))
+                            .text_color(rgb(theme::muted()))
+                            .hover(|s| s.text_color(rgb(theme::text())))
                             .child("×")
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 cx.stop_propagation();
@@ -877,9 +877,9 @@ impl Workbench {
                 .mb_2()
                 .p_2()
                 .rounded(px(8.))
-                .bg(rgb(0x192D27))
+                .bg(rgb(crate::theme::tone(0x192D27)))
                 .border_1()
-                .border_color(rgb(0x91D7BA))
+                .border_color(rgb(crate::theme::tone(0x91D7BA)))
                 .child(
                     div()
                         .h_flex()
@@ -887,7 +887,7 @@ impl Workbench {
                         .gap_2()
                         .child(
                             div()
-                                .text_color(rgb(0x91D7BA))
+                                .text_color(rgb(crate::theme::tone(0x91D7BA)))
                                 .child(Icon::new(gpui_kit::assets::IconName::Rocket).xsmall()),
                         )
                         .child(

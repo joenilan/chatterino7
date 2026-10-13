@@ -307,7 +307,7 @@ impl Workbench {
                     .child(
                         div()
                             .text_size(px(11.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child(format!(
                                 "{count} retained messages · newest 200 shown · this session"
                             )),
@@ -321,7 +321,7 @@ impl Workbench {
                             .overflow_y_scroll()
                             .min_w_0()
                             .when(rows.is_empty(), |el| {
-                                el.child(div().p_3().text_color(rgb(theme::MUTED)).child(if all {
+                                el.child(div().p_3().text_color(rgb(theme::muted())).child(if all {
                                     "You're caught up."
                                 } else {
                                     "Mentions, replies to you and your highlight words appear here."
@@ -357,7 +357,7 @@ impl Workbench {
                                             .bg(rgb(if highlight {
                                                 background
                                             } else {
-                                                theme::CONTROL
+                                                theme::control()
                                             }))
                                             .min_w_0()
                                             .child(

@@ -27,8 +27,8 @@ impl Render for PinnedCard {
         div()
             .v_flex()
             .size_full()
-            .bg(rgb(theme::CANVAS))
-            .text_color(rgb(theme::TEXT))
+            .bg(rgb(theme::canvas()))
+            .text_color(rgb(theme::text()))
             .font_family("Segoe UI")
             .text_size(px(13.))
             .child(
@@ -38,7 +38,7 @@ impl Render for PinnedCard {
                     .flex_shrink_0()
                     .items_center()
                     .border_b_1()
-                    .border_color(rgb(theme::BORDER))
+                    .border_color(rgb(theme::border()))
                     .child(
                         div()
                             .h_flex()
@@ -51,7 +51,7 @@ impl Render for PinnedCard {
                             .window_control_area(WindowControlArea::Drag)
                             .child(
                                 div()
-                                    .text_color(rgb(theme::ACCENT))
+                                    .text_color(rgb(theme::accent()))
                                     .font_weight(FontWeight::BOLD)
                                     .child("//"),
                             )
@@ -75,11 +75,13 @@ impl Render for PinnedCard {
                             .justify_center()
                             .cursor_pointer()
                             .text_color(rgb(if self.on_top {
-                                theme::ACCENT
+                                theme::accent()
                             } else {
-                                theme::MUTED
+                                theme::muted()
                             }))
-                            .hover(|style| style.bg(rgb(theme::HOVER)).text_color(rgb(theme::TEXT)))
+                            .hover(|style| {
+                                style.bg(rgb(theme::hover())).text_color(rgb(theme::text()))
+                            })
                             .on_click(cx.listener(|this, _, window, cx| {
                                 if crate::workspace::sound_settings::set_on_top(
                                     window,

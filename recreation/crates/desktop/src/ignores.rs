@@ -285,7 +285,7 @@ impl Render for Editor {
                 .child(
                     div()
                         .text_size(px(11.))
-                        .text_color(rgb(theme::MUTED))
+                        .text_color(rgb(theme::muted()))
                         .whitespace_nowrap()
                         .child(detail),
                 )
@@ -334,7 +334,7 @@ impl Render for Editor {
             ));
         }
         div().id("ignores-editor").v_flex().gap_2().max_h(px(height)).overflow_y_scroll()
-            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Hidden locally as messages arrive; already shown messages stay. Nothing is sent to Twitch, and Twitch blocks are separate."))
+            .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("Hidden locally as messages arrive; already shown messages stay. Nothing is sent to Twitch, and Twitch blocks are separate."))
             .child(div().h_flex().flex_wrap().gap_1()
                 .child(Button::new("ignore-kind").small().label(if self.user { "Chatter" } else { "Phrase" }).on_click(cx.listener(|this, _, _, cx| { this.user = !this.user; cx.notify(); })))
                 .when(!self.user, |el| el
@@ -345,8 +345,8 @@ impl Render for Editor {
                 .child(div().flex_1().child(Input::new(&self.entry).small()))
                 .child(Button::new("ignore-add").small().label("Add").on_click(cx.listener(|this, _, w, cx| this.add(w, cx)))))
             .when(!self.user && self.replace, |el| el.child(Input::new(&self.replacement).small()))
-            .when(!self.status.is_empty(), |el| el.child(div().text_size(px(11.)).text_color(rgb(0xE9C99C)).child(self.status.clone())))
-            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("{} chatters · {} phrases", ignores.users.len(), ignores.phrases.len())))
+            .when(!self.status.is_empty(), |el| el.child(div().text_size(px(11.)).text_color(rgb(crate::theme::tone(0xE9C99C))).child(self.status.clone())))
+            .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(format!("{} chatters · {} phrases", ignores.users.len(), ignores.phrases.len())))
             .children(rows)
     }
 }

@@ -46,20 +46,20 @@ impl Workbench {
             let max_height=(f32::from(window.viewport_size().height)-150.).max(72.);
             let mut body=div().id("channel-details-body").v_flex().gap_3().min_w_0().max_h(px(max_height)).overflow_y_scroll()
                 .child(div().h_flex().gap_2().child(stream_marker(&channel,live)).child(match live{Some(true)=>"Live broadcast",Some(false)=>"Broadcast offline",None=>"Broadcast status unknown"}))
-                .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(format!("Chat · {chat}")));
+                .child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child(format!("Chat · {chat}")));
             if let Some((info,age))=detail {
                 if info.live {
                     body=body.child(div().font_weight(FontWeight::SEMIBOLD).child(info.title.clone()))
-                        .child(div().h_flex().flex_wrap().gap_2().text_color(rgb(0xC5B8E6)).child(info.category.clone()).child(format!("{} viewers",info.viewers)))
-                        .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(format!("Language · {}",info.language)))
-                        .child(div().text_size(px(12.)).text_color(rgb(0xB3DCC7)).child(info.uptime().map(|value|format!("Live for {value}")).unwrap_or_else(||"Uptime unavailable".into())))
-                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(info.local_start().map(|value|format!("Started · {value}")).unwrap_or_else(||"Start time unavailable".into())))
+                        .child(div().h_flex().flex_wrap().gap_2().text_color(rgb(crate::theme::tone(0xC5B8E6))).child(info.category.clone()).child(format!("{} viewers",info.viewers)))
+                        .child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child(format!("Language · {}",info.language)))
+                        .child(div().text_size(px(12.)).text_color(rgb(crate::theme::tone(0xB3DCC7))).child(info.uptime().map(|value|format!("Live for {value}")).unwrap_or_else(||"Uptime unavailable".into())))
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(info.local_start().map(|value|format!("Started · {value}")).unwrap_or_else(||"Start time unavailable".into())))
                         .child(Button::new("copy-stream-title").ghost().small().label("Copy stream title").on_click({let title=info.title.clone();move|_,window,cx|{cx.write_to_clipboard(ClipboardItem::new_string(title.clone()));window.push_notification(Notification::info("Stream title copied"),cx);}}));
                 }
-                body=body.child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(format!("Snapshot {age}s ago · refreshes about every minute")));
-            }else{body=body.child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Waiting for current Twitch metadata. An unavailable status does not mean chat is disconnected."));}
-            body=body.child(div().border_t_1().border_color(rgb(theme::BORDER)).pt_2().text_size(px(12.)).child(room.as_ref().map(|r|r.summary()).unwrap_or_else(||"Room settings not available yet".into())))
-                .child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child("Room modes are public restrictions. Your role or subscription may grant exemptions; Twitch validates each send."));
+                body=body.child(div().text_size(px(10.)).text_color(rgb(theme::muted())).child(format!("Snapshot {age}s ago · refreshes about every minute")));
+            }else{body=body.child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child("Waiting for current Twitch metadata. An unavailable status does not mean chat is disconnected."));}
+            body=body.child(div().border_t_1().border_color(rgb(theme::border())).pt_2().text_size(px(12.)).child(room.as_ref().map(|r|r.summary()).unwrap_or_else(||"Room settings not available yet".into())))
+                .child(div().text_size(px(10.)).text_color(rgb(theme::muted())).child("Room modes are public restrictions. Your role or subscription may grant exemptions; Twitch validates each send."));
             dialog.w(px(width)).title(format!("#{channel}")).child(body)
                 .footer(div().h_flex().justify_end().child(Button::new("channel-details-done").label("Done").on_click(|_,window,cx|window.close_dialog(cx))))
         });

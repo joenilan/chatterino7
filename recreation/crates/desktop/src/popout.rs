@@ -48,7 +48,7 @@ impl Render for OverlayView {
         div()
             .v_flex()
             .size_full()
-            .text_color(rgb(theme::TEXT))
+            .text_color(rgb(theme::text()))
             .when(!self.locked, |el| {
                 el.child(
                     div()
@@ -57,7 +57,7 @@ impl Render for OverlayView {
                         .flex_shrink_0()
                         .items_center()
                         .rounded_t(px(8.))
-                        .bg(rgba((theme::PANEL << 8) | 0xE0))
+                        .bg(rgba((theme::panel() << 8) | 0xE0))
                         .child(
                             div()
                                 .h_flex()
@@ -69,7 +69,7 @@ impl Render for OverlayView {
                                 .px_2()
                                 .window_control_area(WindowControlArea::Drag)
                                 .text_size(px(11.))
-                                .child(div().text_color(rgb(theme::ACCENT)).font_weight(FontWeight::BOLD).child("//"))
+                                .child(div().text_color(rgb(theme::accent())).font_weight(FontWeight::BOLD).child("//"))
                                 .child(format!("#{} overlay · drag to move", self.channel)),
                         )
                         .child(
@@ -101,8 +101,8 @@ impl Render for PopoutView {
         div()
             .v_flex()
             .size_full()
-            .bg(rgb(theme::CANVAS))
-            .text_color(rgb(theme::TEXT))
+            .bg(rgb(theme::canvas()))
+            .text_color(rgb(theme::text()))
             .child(
                 div()
                     .h_flex()
@@ -110,7 +110,7 @@ impl Render for PopoutView {
                     .flex_shrink_0()
                     .items_center()
                     .border_b_1()
-                    .border_color(rgb(theme::BORDER))
+                    .border_color(rgb(theme::border()))
                     .child(
                         div()
                             .h_flex()
@@ -122,7 +122,7 @@ impl Render for PopoutView {
                             .window_control_area(WindowControlArea::Drag)
                             .child(
                                 div()
-                                    .text_color(rgb(theme::ACCENT))
+                                    .text_color(rgb(theme::accent()))
                                     .font_weight(FontWeight::BOLD)
                                     .child("//"),
                             )
@@ -143,11 +143,13 @@ impl Render for PopoutView {
                             .justify_center()
                             .cursor_pointer()
                             .text_color(rgb(if self.on_top {
-                                theme::ACCENT
+                                theme::accent()
                             } else {
-                                theme::MUTED
+                                theme::muted()
                             }))
-                            .hover(|style| style.bg(rgb(theme::HOVER)).text_color(rgb(theme::TEXT)))
+                            .hover(|style| {
+                                style.bg(rgb(theme::hover())).text_color(rgb(theme::text()))
+                            })
                             .tooltip({
                                 let on_top = self.on_top;
                                 move |w, cx| {

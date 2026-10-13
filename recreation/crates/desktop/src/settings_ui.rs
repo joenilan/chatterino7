@@ -60,7 +60,7 @@ pub(super) fn stacked_row(
         .gap_2()
         .py(px(10.))
         .border_b_1()
-        .border_color(rgb(theme::BORDER))
+        .border_color(rgb(theme::border()))
         .child(
             div()
                 .v_flex()
@@ -69,7 +69,7 @@ pub(super) fn stacked_row(
                 .child(
                     div()
                         .text_size(px(11.))
-                        .text_color(rgb(theme::MUTED))
+                        .text_color(rgb(theme::muted()))
                         .child(detail),
                 ),
         )
@@ -90,7 +90,7 @@ pub(super) fn row(
         .gap_4()
         .py(px(10.))
         .border_b_1()
-        .border_color(rgb(theme::BORDER))
+        .border_color(rgb(theme::border()))
         .child(
             div()
                 .v_flex()
@@ -101,7 +101,7 @@ pub(super) fn row(
                 .child(
                     div()
                         .text_size(px(11.))
-                        .text_color(rgb(theme::MUTED))
+                        .text_color(rgb(theme::muted()))
                         .child(detail),
                 ),
         )
@@ -116,7 +116,7 @@ pub(super) fn heading(text: &'static str) -> Div {
         .pb_1()
         .text_size(px(10.))
         .font_weight(FontWeight::SEMIBOLD)
-        .text_color(rgb(theme::MUTED))
+        .text_color(rgb(theme::muted()))
         .child(text.to_uppercase())
 }
 fn open_button(id: &'static str, label: &'static str) -> Button {
@@ -232,7 +232,7 @@ impl Workbench {
                         "Restore a backup",
                         "Jawjack keeps a copy of your settings each day (the last 7). Restoring one replaces your current settings and closes Jawjack; open it again to continue.",
                         div().h_flex().flex_wrap().gap_1()
-                            .when(backups.is_empty(), |el| el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("No backups yet; the first is made the next time Jawjack starts.")))
+                            .when(backups.is_empty(), |el| el.child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("No backups yet; the first is made the next time Jawjack starts.")))
                             .children(backups.into_iter().enumerate().map(|(index, (date, file))| {
                                 let label = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d").map(|d| d.format("%b %-d").to_string()).unwrap_or(date.clone());
                                 Button::new(("settings-backup", index)).small().label(label.clone()).on_click(cx.listener(move |_, _, window, cx| {
@@ -242,7 +242,7 @@ impl Workbench {
                                     window.open_dialog(cx, move |dialog, _, _| {
                                         let (file, owner) = (file.clone(), owner.clone());
                                         dialog.title(format!("Restore settings from {label}?"))
-                                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Your current workspaces, channels and settings are replaced by that day's copy, and Jawjack closes. Sign-ins are unaffected."))
+                                            .child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child("Your current workspaces, channels and settings are replaced by that day's copy, and Jawjack closes. Sign-ins are unaffected."))
                                             .footer(div().h_flex().justify_end().gap_2()
                                                 .child(Button::new("backup-cancel").small().label("Cancel").on_click(|_, w, cx| w.close_dialog(cx)))
                                                 .child(Button::new("backup-restore").small().danger().label("Restore and close").on_click(move |_, w, cx| {
@@ -288,6 +288,18 @@ impl Workbench {
             1 => {
                 let font = self.font_size as u32;
                 page.child(row(
+                    "Theme",
+                    "Dark, light, or follow Windows' app mode (Settings › Personalization › Colors).",
+                    crate::theme::Segmented::new("settings-theme")
+                        .selected_index(crate::theme::THEME.load(std::sync::atomic::Ordering::Relaxed))
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            crate::theme::THEME.store((*index).min(2), std::sync::atomic::Ordering::Relaxed);
+                            this.apply_theme(cx);
+                            this.schedule_save(cx);
+                        }))
+                        .children(crate::theme::THEMES.map(crate::theme::segment)),
+                ))
+                .child(row(
                     "Text size",
                     "Ctrl+wheel or Ctrl+plus/minus. Ctrl+0 resets.",
                     div()
@@ -1100,7 +1112,7 @@ impl Workbench {
                 .child(row(
                     "Whispers",
                     "A notification for each whisper unless that conversation is open.",
-                    div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Always on"),
+                    div().text_size(px(11.)).text_color(rgb(theme::muted())).child("Always on"),
                 )),
             5 => self.streamer_rows(page, cx),
             6 => {
@@ -1135,7 +1147,7 @@ impl Workbench {
                     ))
             }
             7 => page
-                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).pb_1().child("Click a shortcut to change it, then press the new keys. Esc cancels."))
+                .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).pb_1().child("Click a shortcut to change it, then press the new keys. Esc cancels."))
                 .children(crate::hotkeys::HOTKEYS.iter().map(|hotkey| {
                     let keys = crate::hotkeys::keys(hotkey);
                     let custom = keys != hotkey.default;
@@ -1147,7 +1159,7 @@ impl Workbench {
                         .gap_1()
                         .py(px(5.))
                         .border_b_1()
-                        .border_color(rgb(theme::BORDER))
+                        .border_color(rgb(theme::border()))
                         .when(!shown, |el| el.hidden())
                         .child(div().flex_1().text_size(px(13.)).child(hotkey.label))
                         .when(custom, |el| {
@@ -1188,13 +1200,13 @@ impl Workbench {
                         .gap_1()
                         .py(px(8.))
                         .border_b_1()
-                        .border_color(rgb(theme::BORDER))
+                        .border_color(rgb(theme::border()))
                         .when(!shown, |el| el.hidden())
                         .child(div().text_size(px(13.)).child("What Run command 1–4 do"))
-                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Each runs in the channel you're in, as if you typed it: a /command (including your custom commands), or a message. Give them keys above."))
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("Each runs in the channel you're in, as if you typed it: a /command (including your custom commands), or a message. Give them keys above."))
                         .children(inputs.into_iter().enumerate().map(|(index, input)| {
                             div().h_flex().items_center().gap_2()
-                                .child(div().w(px(20.)).text_size(px(12.)).text_color(rgb(theme::MUTED)).child(format!("{}", index + 1)))
+                                .child(div().w(px(20.)).text_size(px(12.)).text_color(rgb(theme::muted())).child(format!("{}", index + 1)))
                                 .child(div().flex_1().child(Input::new(&input).small()))
                         }))
                 })
@@ -1205,7 +1217,7 @@ impl Workbench {
                     .items_center()
                     .py(px(7.))
                     .border_b_1()
-                    .border_color(rgb(theme::BORDER))
+                    .border_color(rgb(theme::border()))
                     .when(!shown, |el| el.hidden())
                     .child(div().flex_1().text_size(px(13.)).child(*what))
                     .child(
@@ -1213,9 +1225,9 @@ impl Workbench {
                             .px(px(6.))
                             .py(px(1.))
                             .rounded(px(4.))
-                            .bg(rgb(theme::CONTROL))
+                            .bg(rgb(theme::control()))
                             .border_1()
-                            .border_color(rgb(theme::BORDER))
+                            .border_color(rgb(theme::border()))
                             .text_size(px(11.))
                             .child(*keys),
                     )
@@ -1280,9 +1292,9 @@ impl Workbench {
             .h_full()
             .p_2()
             .gap(px(2.))
-            .bg(rgb(theme::PANEL))
+            .bg(rgb(theme::panel()))
             .border_r_1()
-            .border_color(rgb(theme::BORDER))
+            .border_color(rgb(theme::border()))
             .children(SECTIONS.iter().enumerate().map(|(index, (label, icon))| {
                 let active = index == self.settings_section
                     && self.settings_search.read(cx).value().trim().is_empty();
@@ -1297,16 +1309,16 @@ impl Workbench {
                     .cursor_pointer()
                     .text_size(px(13.))
                     .when(active, |el| {
-                        el.bg(rgb(theme::CONTROL)).text_color(rgb(theme::TEXT))
+                        el.bg(rgb(theme::control())).text_color(rgb(theme::text()))
                     })
                     .when(!active, |el| {
-                        el.text_color(rgb(theme::MUTED))
-                            .hover(|s| s.bg(rgb(theme::HOVER)).text_color(rgb(theme::TEXT)))
+                        el.text_color(rgb(theme::muted()))
+                            .hover(|s| s.bg(rgb(theme::hover())).text_color(rgb(theme::text())))
                     })
                     .child(
                         Icon::new(*icon)
                             .small()
-                            .when(active, |i| i.text_color(rgb(theme::ACCENT))),
+                            .when(active, |i| i.text_color(rgb(theme::accent()))),
                     )
                     .when(!narrow, |el| el.child(*label))
                     .on_click(cx.listener(move |this, _, window, cx| {
@@ -1322,7 +1334,7 @@ impl Workbench {
             div()
                 .v_flex()
                 .h_full()
-                .bg(rgb(theme::PANEL))
+                .bg(rgb(theme::panel()))
                 .child(
                     div()
                         .w(px(184.))
@@ -1360,7 +1372,7 @@ impl Workbench {
                             .pt_3()
                             .text_size(px(10.))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(theme::ACCENT))
+                            .text_color(rgb(theme::accent()))
                             .child(SECTIONS[index].0.to_uppercase()),
                     )
                     .child(section);
@@ -1370,7 +1382,7 @@ impl Workbench {
                     div()
                         .py_4()
                         .text_size(px(12.))
-                        .text_color(rgb(theme::MUTED))
+                        .text_color(rgb(theme::muted()))
                         .child("No settings match. Try another word."),
                 );
             }
@@ -1405,9 +1417,9 @@ impl Workbench {
                     .opacity(ease)
                     .h_flex()
                     .overflow_hidden()
-                    .bg(rgb(theme::ELEVATED))
+                    .bg(rgb(theme::elevated()))
                     .border_1()
-                    .border_color(rgb(theme::BORDER))
+                    .border_color(rgb(theme::border()))
                     .rounded(px(10.))
                     .shadow_lg()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -1426,7 +1438,7 @@ impl Workbench {
                                     .h(px(48.))
                                     .px_5()
                                     .border_b_1()
-                                    .border_color(rgb(theme::BORDER))
+                                    .border_color(rgb(theme::border()))
                                     .child(
                                         div()
                                             .flex_1()
@@ -1483,12 +1495,12 @@ impl Workbench {
             .gap_1()
             .py(px(10.))
             .border_b_1()
-            .border_color(rgb(theme::BORDER))
+            .border_color(rgb(theme::border()))
             .child(div().text_size(px(13.)).child("Nickname rules"))
             .child(
                 div()
                     .text_size(px(11.))
-                    .text_color(rgb(theme::MUTED))
+                    .text_color(rgb(theme::muted()))
                     .child(DETAIL),
             )
             .children(rules.iter().enumerate().map(|(index, rule)| {
@@ -1609,9 +1621,9 @@ impl Workbench {
             .gap_1()
             .py(px(10.))
             .border_b_1()
-            .border_color(rgb(theme::BORDER))
+            .border_color(rgb(theme::border()))
             .child(div().text_size(px(13.)).child("Your moderator buttons"))
-            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+            .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(
                 "Shown after delete, timeout and ban in moderator mode. {user}, {msg-id} and {channel} are filled from the message. Any /command, including your custom commands. For an icon instead of text, use a label like :ban, :timer, :gavel, :trash or :shield.",
             ))
             .children(buttons.iter().enumerate().map(|(index, b)| {
@@ -1621,7 +1633,7 @@ impl Workbench {
                     .gap_2()
                     .text_size(px(12.))
                     .child(div().w(px(60.)).font_weight(FontWeight::SEMIBOLD).child(b.label.clone()))
-                    .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(rgb(theme::MUTED)).child(b.command.clone()))
+                    .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(rgb(theme::muted())).child(b.command.clone()))
                     .child(Button::new(("mod-button-remove", index)).xsmall().ghost().icon(IconName::Close).on_click(cx.listener(move |this, _, _, cx| {
                         let mut list = (*this.custom_mod_buttons).clone();
                         if index < list.len() {
@@ -1724,14 +1736,14 @@ impl Workbench {
                         .child(
                             div()
                                 .text_size(px(11.))
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .child("Use Ctrl or Alt with a key, or an F-key. Esc cancels."),
                         )
                         .when(!shown.borrow().is_empty(), |el| {
                             el.child(
                                 div()
                                     .text_size(px(11.))
-                                    .text_color(rgb(0xE9C99C))
+                                    .text_color(rgb(crate::theme::tone(0xE9C99C)))
                                     .child(shown.borrow().clone()),
                             )
                         }),
@@ -1769,9 +1781,10 @@ impl Workbench {
                             .cursor_pointer()
                             .font_family(font.clone())
                             .when(selected, |el| {
-                                el.bg(rgb(theme::CONTROL)).text_color(rgb(theme::ACCENT))
+                                el.bg(rgb(theme::control()))
+                                    .text_color(rgb(theme::accent()))
                             })
-                            .hover(|s| s.bg(rgb(theme::HOVER)))
+                            .hover(|s| s.bg(rgb(theme::hover())))
                             .child(font.clone())
                             .on_click(move |_, w, cx| {
                                 if let Ok(mut font) = crate::theme::CHAT_FONT.lock() {

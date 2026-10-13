@@ -190,20 +190,20 @@ impl Render for Browser {
                 this.scroll.scroll_to_item(this.selected);w.prevent_default();cx.stop_propagation();cx.notify();
             }))
             .child(Input::new(&self.query).small())
-            .child(div().text_size(px(11.)).text_color(rgb(crate::theme::MUTED)).child(format!("{} matches · newest first · Enter restores draft, never sends",matches.len())))
+            .child(div().text_size(px(11.)).text_color(rgb(crate::theme::muted())).child(format!("{} matches · newest first · Enter restores draft, never sends",matches.len())))
             .child(div().id("sent-history-results").v_flex().gap_1().max_h(px(height)).overflow_y_scroll().track_scroll(&self.scroll)
-                .when(matches.is_empty(),|el|el.child(div().p_3().text_color(rgb(crate::theme::MUTED)).child(if self.items.is_empty(){"No successful sends in this channel yet."}else{"No sent messages match that search."})))
+                .when(matches.is_empty(),|el|el.child(div().p_3().text_color(rgb(crate::theme::muted())).child(if self.items.is_empty(){"No successful sends in this channel yet."}else{"No sent messages match that search."})))
                 .children(matches.into_iter().enumerate().map(|(row,index)|{
                     let text=self.items[index].clone();let preview=text.chars().take(160).collect::<String>();
                     div().id(("sent-history",index)).p_2().rounded(px(4.)).min_w_0().cursor_pointer()
-                        .bg(rgb(if row==selected{0x303A50}else{crate::theme::CONTROL}))
-                        .border_1().border_color(rgb(if row==selected{0x91C7E8}else{crate::theme::BORDER}))
-                        .hover(|s|s.bg(rgb(crate::theme::HOVER)))
+                        .bg(rgb(if row==selected{0x303A50}else{crate::theme::control()}))
+                        .border_1().border_color(rgb(if row==selected{0x91C7E8}else{crate::theme::border()}))
+                        .hover(|s|s.bg(rgb(crate::theme::hover())))
                         .child(div().text_size(px(12.)).child(preview))
-                        .child(div().text_size(px(10.)).text_color(rgb(crate::theme::MUTED)).child(format!("{} characters",text.chars().count())))
+                        .child(div().text_size(px(10.)).text_color(rgb(crate::theme::muted())).child(format!("{} characters",text.chars().count())))
                         .on_click(cx.listener(move|this,_,w,cx|this.choose(index,w,cx)))
                 })))
-            .child(div().text_size(px(11.)).text_color(rgb(crate::theme::MUTED)).child("Session-only history. Alt+Down returns through newer entries to your previous draft."))
+            .child(div().text_size(px(11.)).text_color(rgb(crate::theme::muted())).child("Session-only history. Alt+Down returns through newer entries to your previous draft."))
     }
 }
 impl ChannelPane {

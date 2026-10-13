@@ -98,12 +98,12 @@ impl Workbench {
                     div()
                         .v_flex()
                         .gap_2()
-                        .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(subtitle))
+                        .child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child(subtitle))
                         .child(
                             div()
                                 .text_size(px(11.))
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(rgb(theme::ACCENT))
+                                .text_color(rgb(theme::accent()))
                                 .child("WHAT'S CHANGED"),
                         )
                         .child(
@@ -117,7 +117,7 @@ impl Workbench {
                                 .when(notes.is_empty(), |el| {
                                     el.child(
                                         div()
-                                            .text_color(rgb(theme::MUTED))
+                                            .text_color(rgb(theme::muted()))
                                             .child("No release notes were published."),
                                     )
                                 })
@@ -130,7 +130,7 @@ impl Workbench {
                                         .h_flex()
                                         .items_start()
                                         .gap_1()
-                                        .child(div().text_color(rgb(theme::MUTED)).child("•"))
+                                        .child(div().text_color(rgb(theme::muted())).child("•"))
                                         .child(div().flex_1().min_w_0().child(text)),
                                     NoteLine::Text(text) => div().child(text),
                                 })),
@@ -139,12 +139,12 @@ impl Workbench {
                             el.child(
                                 div()
                                     .text_size(px(11.))
-                                    .text_color(rgb(0xF29D9D))
+                                    .text_color(rgb(crate::theme::tone(0xF29D9D)))
                                     .child("The download failed or didn't match its published checksum. Nothing was installed."),
                             )
                         })
                         .when_some(reason.filter(|_| !can_download), |el, reason| {
-                            el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(reason))
+                            el.child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(reason))
                         }),
                 )
                 .footer(
@@ -211,7 +211,7 @@ impl Workbench {
                         .gap_2()
                         .text_size(px(12.))
                         .child("Any running work will be interrupted. Make sure you're ready before continuing.")
-                        .child(div().text_color(rgb(theme::MUTED)).child(
+                        .child(div().text_color(rgb(theme::muted())).child(
                             "Jawjack saves your workspace and closes; the installer then runs quietly, keeps your settings and sign-ins, and starts Jawjack again.",
                         )),
                 )
@@ -289,7 +289,7 @@ impl Workbench {
             Button::new("update-chip")
                 .ghost()
                 .xsmall()
-                .icon(icon.text_color(rgb(theme::ACCENT)))
+                .icon(icon.text_color(rgb(theme::accent())))
                 .label(label)
                 .tooltip(format!("Jawjack {version}"))
                 .disabled(matches!(
@@ -341,7 +341,7 @@ impl Workbench {
                     Icon::new(gpui_kit::assets::IconName::Download),
                     Some(format!("Jawjack {version} is available")),
                     format!("Update {version} ready to download"),
-                    Some(theme::ACCENT),
+                    Some(theme::accent()),
                 ),
                 Phase::Downloading => (
                     Icon::new(IconName::LoaderCircle),
@@ -350,7 +350,7 @@ impl Workbench {
                         updates.percent().unwrap_or(0)
                     )),
                     String::new(),
-                    Some(theme::ACCENT),
+                    Some(theme::accent()),
                 ),
                 Phase::Downloaded if failed(ErrorContext::Install) => (
                     Icon::new(gpui_kit::assets::IconName::RotateCcw),
@@ -362,13 +362,13 @@ impl Workbench {
                     Icon::new(gpui_kit::assets::IconName::RotateCcw),
                     Some(format!("Restart to install {version}")),
                     format!("Update {version} downloaded. Click to restart and install."),
-                    Some(theme::STREAM_LIVE),
+                    Some(theme::stream_live()),
                 ),
                 Phase::Installing => (
                     Icon::new(IconName::LoaderCircle),
                     Some(format!("Installing {version}…")),
                     String::new(),
-                    Some(theme::ACCENT),
+                    Some(theme::accent()),
                 ),
                 Phase::Unpublished => (
                     Icon::new(IconName::RefreshCw),
@@ -408,7 +408,7 @@ impl Workbench {
             .child(
                 div()
                     .flex_shrink_0()
-                    .text_color(rgb(theme::MUTED))
+                    .text_color(rgb(theme::muted()))
                     .child(format!("v{}", updates.current_version())),
             )
             .child(div().flex_1().min_w_0())
@@ -423,14 +423,14 @@ impl Workbench {
                     .py(px(2.))
                     .rounded(px(4.))
                     .when(known, |el| {
-                        el.bg(rgb(theme::CONTROL))
+                        el.bg(rgb(theme::control()))
                             .border_1()
-                            .border_color(rgb(accent.unwrap_or(theme::BORDER)))
+                            .border_color(rgb(accent.unwrap_or(theme::border())))
                     })
-                    .text_color(rgb(accent.unwrap_or(theme::MUTED)))
+                    .text_color(rgb(accent.unwrap_or(theme::muted())))
                     .when(!busy, |el| {
                         el.cursor_pointer()
-                            .hover(|s| s.bg(rgb(theme::HOVER)).text_color(rgb(theme::TEXT)))
+                            .hover(|s| s.bg(rgb(theme::hover())).text_color(rgb(theme::text())))
                             .on_click(cx.listener(|this, _, w, cx| this.update_click(w, cx)))
                     })
                     .when(!tip.is_empty(), |el| {

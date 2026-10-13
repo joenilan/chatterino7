@@ -155,12 +155,12 @@ pub fn row_context(
             .px_1()
             .text_size(px(11.))
             .line_height(px(16.))
-            .text_color(rgb(0xB6A9E6))
+            .text_color(rgb(crate::theme::tone(0xB6A9E6)))
             .min_w_0()
             .overflow_hidden()
             .text_ellipsis()
             .cursor_pointer()
-            .hover(|s| s.bg(rgb(theme::CONTROL)))
+            .hover(|s| s.bg(rgb(theme::control())))
             .on_click(move |_, w, cx| {
                 let _ = owner.update(cx, |p, cx| {
                     p.message_action(&id, crate::message_actions::Action::Thread, w, cx)
@@ -254,9 +254,9 @@ impl ChannelPane {
                 .min_w_0()
                 .px_2()
                 .py_1()
-                .bg(rgb(0x282333))
+                .bg(rgb(crate::theme::tone(0x282333)))
                 .border_l_2()
-                .border_color(rgb(0xB6A9E6))
+                .border_color(rgb(crate::theme::tone(0xB6A9E6)))
                 .child(
                     div()
                         .flex_1()
@@ -265,7 +265,7 @@ impl ChannelPane {
                         .child(
                             div()
                                 .text_size(px(11.))
-                                .text_color(rgb(0xC9BAF7))
+                                .text_color(rgb(crate::theme::tone(0xC9BAF7)))
                                 .overflow_hidden()
                                 .text_ellipsis()
                                 .child(label),
@@ -273,7 +273,7 @@ impl ChannelPane {
                         .child(
                             div()
                                 .text_size(px(11.))
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .overflow_hidden()
                                 .text_ellipsis()
                                 .child(preview),
@@ -351,12 +351,12 @@ impl ChannelPane {
             let height=(f32::from(window.viewport_size().height)-180.).clamp(70.,520.);
             dialog.w(px(width)).title("Retained conversation")
                 .child(div().v_flex().gap_2().min_w_0()
-                    .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("#{channel} · {count} retained messages{suffix}",channel=p.name,suffix=if count>100{" · newest 100 shown"}else{""})))
-                    .when(!has_root,|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Original message is outside retained history.")))
+                    .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(format!("#{channel} · {count} retained messages{suffix}",channel=p.name,suffix=if count>100{" · newest 100 shown"}else{""})))
+                    .when(!has_root,|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("Original message is outside retained history.")))
                     .child(div().id("conversation-history").v_flex().gap_2().max_h(px(height)).overflow_y_scroll()
                         .children(rows.into_iter().map(|(id,name,body,deleted,replyable)|{
                             let jump=owner.clone();let jump_id=id.clone();let reply=owner.clone();
-                            div().p_2().v_flex().gap_1().bg(rgb(theme::CONTROL)).rounded(px(4.)).min_w_0()
+                            div().p_2().v_flex().gap_1().bg(rgb(theme::control())).rounded(px(4.)).min_w_0()
                                 .child(div().h_flex().gap_1().min_w_0().child(div().flex_1().min_w_0().text_size(px(12.)).font_weight(FontWeight::SEMIBOLD).overflow_hidden().text_ellipsis().child(name))
                                     .child(Button::new(SharedString::from(format!("thread-jump-{id}"))).xsmall().label("Jump").on_click(move|_,w,cx|{w.close_dialog(cx);let _=jump.update(cx,|p,cx|p.jump_message(&jump_id,w,cx));}))
                                     .when(!deleted&&replyable,|el|el.child(Button::new(SharedString::from(format!("thread-reply-{id}"))).xsmall().label("Reply").on_click(move|_,w,cx|{w.close_dialog(cx);let _=reply.update(cx,|p,cx|p.message_action(&id,crate::message_actions::Action::Reply,w,cx));}))))

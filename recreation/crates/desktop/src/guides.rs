@@ -228,8 +228,8 @@ impl Workbench {
                             .size(px(22.))
                             .flex_shrink_0()
                             .rounded_full()
-                            .bg(rgb(0x272237))
-                            .text_color(rgb(theme::ACCENT))
+                            .bg(rgb(crate::theme::tone(0x272237)))
+                            .text_color(rgb(theme::accent()))
                             .text_size(px(11.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .flex()
@@ -244,7 +244,7 @@ impl Workbench {
                             .min_w_0()
                             .gap_1()
                             .child(div().text_size(px(13.)).font_weight(FontWeight::SEMIBOLD).child(step.title))
-                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(step.detail))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(step.detail))
                             .when_some(step.link, |el, (label, url)| {
                                 el.child(
                                     div().h_flex().child(
@@ -258,7 +258,7 @@ impl Workbench {
                             }),
                     )
             });
-            let body = div().v_flex().gap_3().child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(intro)).children(list);
+            let body = div().v_flex().gap_3().child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child(intro)).children(list);
             let body = match &key_input {
                 Some(input) => body.child(div().pl(px(34.)).child(Input::new(input).small().mask_toggle())),
                 None => body,
@@ -297,7 +297,7 @@ impl Workbench {
                         .h_flex()
                         .items_center()
                         .gap_2()
-                        .child(div().flex_1().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(format!("{count} steps")))
+                        .child(div().flex_1().text_size(px(10.)).text_color(rgb(theme::muted())).child(format!("{count} steps")))
                         .child(Button::new("guide-close").small().ghost().label("Close").on_click(|_, w, cx| w.close_dialog(cx)))
                         .when(guide == Guide::YouTube, |el| {
                             el.child(Button::new("guide-test").small().primary().label("Test & save").on_click(move |_, window, cx| {

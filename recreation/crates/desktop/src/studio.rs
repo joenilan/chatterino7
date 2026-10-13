@@ -503,7 +503,7 @@ impl Render for StreamEditor {
         let label = |text: &'static str| {
             div()
                 .text_size(px(11.))
-                .text_color(rgb(theme::MUTED))
+                .text_color(rgb(theme::muted()))
                 .child(text)
         };
         let presets = self.presets.borrow().clone();
@@ -535,11 +535,11 @@ impl Render for StreamEditor {
                                 .h(px(22.))
                                 .rounded(px(11.))
                                 .border_1()
-                                .border_color(rgb(theme::BORDER))
-                                .bg(rgb(theme::CONTROL))
+                                .border_color(rgb(theme::border()))
+                                .bg(rgb(theme::control()))
                                 .text_size(px(11.))
                                 .cursor_pointer()
-                                .hover(|s| s.border_color(rgb(theme::ACCENT)))
+                                .hover(|s| s.border_color(rgb(theme::accent())))
                                 .tooltip(move |w, cx| {
                                     gpui_kit::component::tooltip::Tooltip::new(tip.clone())
                                         .build(w, cx)
@@ -556,8 +556,8 @@ impl Render for StreamEditor {
                                     div()
                                         .id(("stream-preset-remove", index))
                                         .px(px(3.))
-                                        .text_color(rgb(theme::MUTED))
-                                        .hover(|s| s.text_color(rgb(theme::TEXT)))
+                                        .text_color(rgb(theme::muted()))
+                                        .hover(|s| s.text_color(rgb(theme::text())))
                                         .child("×")
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             cx.stop_propagation();
@@ -585,7 +585,7 @@ impl Render for StreamEditor {
                             .text_color(rgb(if count > TITLE_LIMIT {
                                 0xF07A7A
                             } else {
-                                theme::MUTED
+                                theme::muted()
                             }))
                             .child(format!("{count}/{TITLE_LIMIT}")),
                     ),
@@ -630,7 +630,7 @@ impl Render for StreamEditor {
                         .v_flex()
                         .rounded(px(6.))
                         .border_1()
-                        .border_color(rgb(theme::BORDER))
+                        .border_color(rgb(theme::border()))
                         .overflow_hidden()
                         .children(self.results.iter().enumerate().map(|(index, category)| {
                             let selected = current.as_deref() == Some(category.id.as_str());
@@ -645,9 +645,10 @@ impl Render for StreamEditor {
                                 .text_size(px(12.))
                                 .cursor_pointer()
                                 .when(selected, |el| {
-                                    el.bg(rgb(0x272237)).text_color(rgb(0xA99CF4))
+                                    el.bg(rgb(crate::theme::tone(0x272237)))
+                                        .text_color(rgb(crate::theme::tone(0xA99CF4)))
                                 })
-                                .hover(|s| s.bg(rgb(theme::HOVER)))
+                                .hover(|s| s.bg(rgb(theme::hover())))
                                 .child(
                                     div()
                                         .flex_1()
@@ -671,7 +672,7 @@ impl Render for StreamEditor {
                 el.child(
                     div()
                         .text_size(px(11.))
-                        .text_color(rgb(if self.error { 0xE9C99C } else { theme::MUTED }))
+                        .text_color(rgb(if self.error { 0xE9C99C } else { theme::muted() }))
                         .child(self.status.clone()),
                 )
             })

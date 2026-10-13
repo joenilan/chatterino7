@@ -97,7 +97,7 @@ impl Workbench {
                                 div()
                                     .flex_shrink_0()
                                     .text_size(px(11.))
-                                    .text_color(rgb(theme::MUTED))
+                                    .text_color(rgb(theme::muted()))
                                     .child(if prediction {
                                         format!("{} pts · {}", choice.points, choice.users)
                                     } else {
@@ -110,12 +110,12 @@ impl Workbench {
                             .h(px(6.))
                             .w_full()
                             .rounded_full()
-                            .bg(rgb(theme::CONTROL))
+                            .bg(rgb(theme::control()))
                             .child(
                                 div()
                                     .h_full()
                                     .rounded_full()
-                                    .bg(rgb(if won { theme::STREAM_LIVE } else { 0xA99CF4 }))
+                                    .bg(rgb(if won { theme::stream_live() } else { 0xA99CF4 }))
                                     .w(relative(width.clamp(0., 1.))),
                             ),
                     )
@@ -128,7 +128,7 @@ impl Workbench {
             section = section.child(
                 div()
                     .text_size(px(11.))
-                    .text_color(rgb(theme::MUTED))
+                    .text_color(rgb(theme::muted()))
                     .child(problem),
             );
         }
@@ -145,9 +145,9 @@ impl Workbench {
                     .gap_2()
                     .p_2()
                     .rounded(px(8.))
-                    .bg(rgb(theme::ELEVATED))
+                    .bg(rgb(theme::elevated()))
                     .border_1()
-                    .border_color(rgb(theme::BORDER))
+                    .border_color(rgb(theme::border()))
                     .child(
                         div()
                             .h_flex()
@@ -166,9 +166,9 @@ impl Workbench {
                                 div()
                                     .text_size(px(10.))
                                     .text_color(rgb(if running {
-                                        theme::STREAM_LIVE
+                                        theme::stream_live()
                                     } else {
-                                        theme::MUTED
+                                        theme::muted()
                                     }))
                                     .child(if running {
                                         remaining(poll.ends).unwrap_or_else(|| "Ending…".into())
@@ -230,9 +230,9 @@ impl Workbench {
                     .gap_2()
                     .p_2()
                     .rounded(px(8.))
-                    .bg(rgb(theme::ELEVATED))
+                    .bg(rgb(theme::elevated()))
                     .border_1()
-                    .border_color(rgb(theme::BORDER))
+                    .border_color(rgb(theme::border()))
                     .child(
                         div()
                             .h_flex()
@@ -240,7 +240,7 @@ impl Workbench {
                             .items_center()
                             .child(gpui_kit::component::Icon::new(Kit::Trophy).xsmall())
                             .child(div().flex_1().min_w_0().text_size(px(12.)).font_weight(FontWeight::SEMIBOLD).child(p.title.clone()))
-                            .child(div().text_size(px(10.)).text_color(rgb(if active { theme::STREAM_LIVE } else { theme::MUTED })).child(match p.status.as_str() {
+                            .child(div().text_size(px(10.)).text_color(rgb(if active { theme::stream_live() } else { theme::muted() })).child(match p.status.as_str() {
                                 "ACTIVE" => remaining(p.locks).unwrap_or_else(|| "Locking…".into()),
                                 "LOCKED" => "Locked · pick the winner".into(),
                                 _ => "Resolved".into(),
@@ -319,11 +319,11 @@ impl Workbench {
                     .size(px(28.))
                     .flex_shrink_0()
                     .rounded(px(6.))
-                    .bg(rgb(theme::CONTROL))
+                    .bg(rgb(theme::control()))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_color(rgb(0xA99CF4))
+                    .text_color(rgb(crate::theme::tone(0xA99CF4)))
                     .child(gpui_kit::component::Icon::new(icon).xsmall()),
             )
             .child(
@@ -335,7 +335,7 @@ impl Workbench {
                     .child(
                         div()
                             .text_size(px(11.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child(detail),
                     ),
             )
@@ -396,7 +396,7 @@ impl Workbench {
                             div()
                                 .pt_1()
                                 .text_size(px(11.))
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .child(if prediction {
                                     "Predictions open for"
                                 } else {

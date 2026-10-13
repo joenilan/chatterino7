@@ -64,12 +64,12 @@ impl Render for StreamPreview {
             .gap_1()
             .p_2()
             .w(px(336.))
-            .bg(rgb(theme::ELEVATED))
+            .bg(rgb(theme::elevated()))
             .border_1()
-            .border_color(rgb(theme::BORDER))
+            .border_color(rgb(theme::border()))
             .rounded(px(8.))
             .text_size(px(12.))
-            .text_color(rgb(theme::TEXT))
+            .text_color(rgb(theme::text()))
             .when(live, |el| {
                 el.child(crate::emote_picker::icon(image, String::new(), 320., 180.))
             })
@@ -84,7 +84,7 @@ impl Render for StreamPreview {
                     .v_flex()
                     .gap_1()
                     .child(div().child(info.title.clone()))
-                    .child(div().text_color(rgb(0xC5B8E6)).child(
+                    .child(div().text_color(rgb(crate::theme::tone(0xC5B8E6))).child(
                         if crate::streamer_mode::hides(crate::streamer_mode::VIEWER_COUNTS) {
                             info.category.clone()
                         } else {
@@ -98,20 +98,20 @@ impl Render for StreamPreview {
                         |el, uptime| {
                             el.child(
                                 div()
-                                    .text_color(rgb(theme::STREAM_LIVE))
+                                    .text_color(rgb(theme::stream_live()))
                                     .child(format!("Live for {uptime}")),
                             )
                         },
                     ),
-                Some(_) => div().text_color(rgb(theme::MUTED)).child("Offline"),
+                Some(_) => div().text_color(rgb(theme::muted())).child("Offline"),
                 None => div()
-                    .text_color(rgb(theme::MUTED))
+                    .text_color(rgb(theme::muted()))
                     .child("Stream status loading…"),
             })
             .child(
                 div()
                     .text_size(px(10.))
-                    .text_color(rgb(theme::MUTED))
+                    .text_color(rgb(theme::muted()))
                     .child("Middle-click to open in browser · Ctrl+I for details"),
             )
     }

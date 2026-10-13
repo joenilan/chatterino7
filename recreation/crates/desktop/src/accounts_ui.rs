@@ -119,7 +119,7 @@ impl Workbench {
             .w(px(56.))
             .h(px(3.))
             .rounded_full()
-            .bg(rgb(theme::ACCENT))
+            .bg(rgb(theme::accent()))
             .absolute()
             .top_0();
         let bar = if reduced {
@@ -139,7 +139,7 @@ impl Workbench {
             .absolute()
             .inset_0()
             .occlude()
-            .bg(rgb(theme::CANVAS))
+            .bg(rgb(theme::canvas()))
             .flex()
             .items_center()
             .justify_center()
@@ -155,7 +155,7 @@ impl Workbench {
                             .text_size(px(26.))
                             .child(
                                 div()
-                                    .text_color(rgb(theme::ACCENT))
+                                    .text_color(rgb(theme::accent()))
                                     .font_weight(FontWeight::BOLD)
                                     .child("//"),
                             )
@@ -168,13 +168,13 @@ impl Workbench {
                             .h(px(3.))
                             .rounded_full()
                             .overflow_hidden()
-                            .bg(rgb(theme::CONTROL))
+                            .bg(rgb(theme::control()))
                             .child(bar),
                     )
                     .child(
                         div()
                             .text_size(px(12.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child(status),
                     ),
             );
@@ -204,7 +204,7 @@ impl Workbench {
             .absolute()
             .inset_0()
             .occlude()
-            .bg(rgb(theme::CANVAS))
+            .bg(rgb(theme::canvas()))
             .flex()
             .items_center()
             .justify_center()
@@ -220,15 +220,15 @@ impl Workbench {
                             .h_flex()
                             .gap_2()
                             .text_size(px(22.))
-                            .child(div().text_color(rgb(theme::ACCENT)).font_weight(FontWeight::BOLD).child("//"))
+                            .child(div().text_color(rgb(theme::accent())).font_weight(FontWeight::BOLD).child("//"))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("JAWJACK")),
                     )
                     .child(
                         div()
                             .v_flex()
                             .gap_1()
-                            .child(div().text_size(px(16.)).text_color(rgb(theme::TEXT)).child("Sign in to Twitch"))
-                            .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(if tabs > 0 {
+                            .child(div().text_size(px(16.)).text_color(rgb(theme::text())).child("Sign in to Twitch"))
+                            .child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child(if tabs > 0 {
                                 format!("Your {} and settings are kept and come back as soon as you're signed in.", if tabs == 1 { "workspace".to_owned() } else { format!("{tabs} workspaces") })
                             } else {
                                 "Sign in to chat, moderate and use your streamer tools.".to_owned()
@@ -239,7 +239,7 @@ impl Workbench {
                             .rounded(px(8.))
                             .overflow_hidden()
                             .border_1()
-                            .border_color(rgb(theme::BORDER))
+                            .border_color(rgb(theme::border()))
                             .child(self.account.clone()),
                     )
                     .when(!others.is_empty(), |el| {
@@ -247,7 +247,7 @@ impl Workbench {
                             div()
                                 .v_flex()
                                 .gap_2()
-                                .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("Or continue with a saved account"))
+                                .child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child("Or continue with a saved account"))
                                 .child(div().h_flex().flex_wrap().gap_2().children(others.into_iter().map(|(index, login)| {
                                     Button::new(SharedString::from(format!("continue-as-{index}")))
                                         .small()
@@ -264,8 +264,8 @@ impl Workbench {
                             .gap_2()
                             .pt_2()
                             .border_t_1()
-                            .border_color(rgb(theme::BORDER))
-                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Read-only: no chatting, whispers or tools."))
+                            .border_color(rgb(theme::border()))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("Read-only: no chatting, whispers or tools."))
                             .child(
                                 Button::new("read-as-guest")
                                     .ghost()
@@ -370,17 +370,17 @@ impl Workbench {
                     .py(px(6.))
                     .rounded(px(6.))
                     .cursor_pointer()
-                    .when(*account == focused, |el| el.bg(rgb(theme::CONTROL)))
-                    .hover(|s| s.bg(rgb(theme::HOVER)))
+                    .when(*account == focused, |el| el.bg(rgb(theme::control())))
+                    .hover(|s| s.bg(rgb(theme::hover())))
                     .on_click(move |_, _, cx| {
                         let _ = focus_owner.update(cx, |this, cx| {
                             this.account_focus = Some(index);
                             cx.notify();
                         });
                     })
-                    .child(div().size(px(7.)).flex_shrink_0().rounded_full().bg(rgb(if signed_in { theme::STREAM_LIVE } else { theme::MUTED })))
+                    .child(div().size(px(7.)).flex_shrink_0().rounded_full().bg(rgb(if signed_in { theme::stream_live() } else { theme::muted() })))
                     .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().text_size(px(13.)).child(login.unwrap_or_else(|| "Not signed in".into())))
-                    .when(is_active, |el| el.child(div().text_size(px(10.)).font_weight(FontWeight::SEMIBOLD).text_color(rgb(theme::ACCENT)).child("ACTIVE")))
+                    .when(is_active, |el| el.child(div().text_size(px(10.)).font_weight(FontWeight::SEMIBOLD).text_color(rgb(theme::accent())).child("ACTIVE")))
                     .when(!is_active && signed_in, |el| {
                         el.child(Button::new(("account-switch", index)).xsmall().ghost().label("Switch").on_click(move |_, _, cx| {
                             let _ = owner.update(cx, |this, cx| this.switch_account(index, cx));
@@ -410,7 +410,7 @@ impl Workbench {
                                 }
                             })),
                         )
-                        .child(div().pt_2().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                        .child(div().pt_2().text_size(px(11.)).text_color(rgb(theme::muted())).child(
                             "The active account reads chat and runs tools. With more than one account signed in, each message box gets a \"send as\" picker.",
                         ))
                         .child(div().pt_2().child(focused.clone())),

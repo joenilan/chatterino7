@@ -1,51 +1,157 @@
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
 
-pub const SHELL: u32 = 0x141518;
-pub const CANVAS: u32 = 0x0A0B0D;
-pub const PANEL: u32 = 0x0F1012;
-pub const ELEVATED: u32 = 0x1A1B1E;
-pub const CONTROL: u32 = 0x1F2024;
-pub const HOVER: u32 = 0x27292D;
-pub const BORDER: u32 = 0x222428;
-pub const TEXT: u32 = 0xECEEF1;
-pub const MUTED: u32 = 0xA4A9B1;
-pub const STREAM_LIVE: u32 = 0x91D7BA;
-pub const STREAM_OFFLINE: u32 = 0xB4ACC6;
-pub const STREAM_UNKNOWN: u32 = 0xE8C68A;
-/// Jawjack's lilac accent: primary buttons, switches and selected states.
-pub const ACCENT: u32 = 0xA99CF4;
+/// Settings › Appearance › Theme: Dark, Light, or follow Windows.
+pub const THEMES: [&str; 3] = ["Dark", "Light", "System"];
+pub static THEME: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// The resolved mode (System follows Windows' app mode).
+static LIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub fn is_light() -> bool {
+    LIGHT.load(std::sync::atomic::Ordering::Relaxed)
+}
+/// Dark value, light value.
+const fn pick(dark: u32, light: u32) -> [u32; 2] {
+    [dark, light]
+}
+macro_rules! colors {
+    ($($(#[$doc:meta])* $name:ident = $value:expr;)*) => {$(
+        $(#[$doc])*
+        pub fn $name() -> u32 {
+            $value[is_light() as usize]
+        }
+    )*};
+}
+colors! {
+    shell = pick(0x141518, 0xECEEF2);
+    canvas = pick(0x0A0B0D, 0xFFFFFF);
+    panel = pick(0x0F1012, 0xF6F7F9);
+    elevated = pick(0x1A1B1E, 0xFFFFFF);
+    control = pick(0x1F2024, 0xEAEBEF);
+    hover = pick(0x27292D, 0xE0E2E7);
+    border = pick(0x222428, 0xD9DBE1);
+    text = pick(0xECEEF1, 0x17181C);
+    muted = pick(0xA4A9B1, 0x5B606A);
+    stream_live = pick(0x91D7BA, 0x15805A);
+    stream_offline = pick(0xB4ACC6, 0x6C6488);
+    stream_unknown = pick(0xE8C68A, 0x8F6212);
+    /// Jawjack's lilac accent: primary buttons, switches and selected states.
+    accent = pick(0xA99CF4, 0x6A55D8);
+}
+/// A fixed colour written for the dark theme, in its light-theme form: pale
+/// text gets deeper, dark tints get light. Unknown colours stay as they are.
+pub fn tone(dark: u32) -> u32 {
+    if !is_light() {
+        return dark;
+    }
+    match dark {
+        // Text and accents.
+        0xA99CF4 | 0xB9A1FF => 0x6A55D8,
+        0xC5B8E6 => 0x5E4FA8,
+        0xB6A9E6 => 0x5B4BB0,
+        0xC9BAF7 => 0x5A47C0,
+        0xD9D2FA => 0x4A3AA8,
+        0xBAAFF8 => 0x7A67E0,
+        0x968AE6 => 0x5944C2,
+        0xE9C99C => 0x8A5A12,
+        0xE8C468 | 0xE8C68A => 0x8F6212,
+        0xF29D9D => 0xB3261E,
+        0xF2B8B8 => 0x9B1C1C,
+        0xF07A7A => 0xD14343,
+        0x91C7E8 => 0x1F6FB0,
+        0xB3DCC7 | 0x91D7BA => 0x15805A,
+        0x9DBFCE => 0x3C7088,
+        // Dark text on the accent.
+        0x16121F => 0xFFFFFF,
+        // Tinted backgrounds.
+        0x241D33 => 0xEEE9FB,
+        0x272237 => 0xECE7FA,
+        0x2E2640 => 0xE4DCF8,
+        0x3A3350 => 0xDCD3F3,
+        0x2A2340 => 0xE6E0F8,
+        0x2A1F3D => 0xEFE9FC,
+        0x282333 => 0xF1EEF9,
+        0x272331 => 0xFFF1BF,
+        0x1E1A10 => 0xFFF6DF,
+        0x3A2328 => 0xFBE3E3,
+        0x3A1D20 => 0xFDECEC,
+        0x192D27 => 0xE5F5EE,
+        0x25272B => 0xD5D8DE,
+        0x315166 => 0xC6DAF2,
+        // Borders.
+        0x6D5BC7 => 0xB3A6EE,
+        0x5A4A1E => 0xE3C77E,
+        0x4A3D73 => 0xC4B8EE,
+        0x2B3038 => 0xD3D6DC,
+        0x40535E => 0xB9C6CE,
+        other => other,
+    }
+}
+/// `tone` for an RRGGBBAA colour (a white wash becomes a dark one).
+pub fn tone_a(dark: u32) -> u32 {
+    let (color, alpha) = (dark >> 8, dark & 0xFF);
+    let color = if is_light() && color == 0xFFFFFF {
+        0
+    } else {
+        tone(color)
+    };
+    (color << 8) | alpha
+}
+/// Resolve Settings › Theme, restyle the UI kit and redraw every window.
+/// Returns true when the mode changed.
+pub fn apply(cx: &mut App) -> bool {
+    let light = match THEME.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => false,
+        1 => true,
+        _ => matches!(
+            cx.window_appearance(),
+            WindowAppearance::Light | WindowAppearance::VibrantLight
+        ),
+    };
+    let changed = LIGHT.swap(light, std::sync::atomic::Ordering::Relaxed) != light;
+    install(cx);
+    cx.refresh_windows();
+    changed
+}
 
 pub fn install(cx: &mut App) {
-    Theme::change(ThemeMode::Dark, None, cx);
+    Theme::change(
+        if is_light() {
+            ThemeMode::Light
+        } else {
+            ThemeMode::Dark
+        },
+        None,
+        cx,
+    );
+    let light = is_light();
     Theme::update(cx, |theme| {
         theme.font_family = "Segoe UI".into();
         theme.font_size = px(14.);
         theme.radius = px(6.);
         theme.radius_lg = px(10.);
-        theme.background = rgb(CANVAS).into();
-        theme.foreground = rgb(TEXT).into();
-        theme.border = rgb(BORDER).into();
-        theme.title_bar = rgb(SHELL).into();
-        theme.title_bar_border = rgb(BORDER).into();
-        theme.muted = rgb(PANEL).into();
-        theme.muted_foreground = rgb(MUTED).into();
-        theme.popover = rgb(ELEVATED).into();
-        theme.popover_foreground = rgb(TEXT).into();
-        theme.button = rgb(CONTROL).into();
-        theme.button_hover = rgb(HOVER).into();
-        theme.button_active = rgb(0x25272B).into();
-        theme.button_foreground = rgb(TEXT).into();
-        theme.selection = rgb(0x315166).into();
+        theme.background = rgb(canvas()).into();
+        theme.foreground = rgb(text()).into();
+        theme.border = rgb(border()).into();
+        theme.title_bar = rgb(shell()).into();
+        theme.title_bar_border = rgb(border()).into();
+        theme.muted = rgb(panel()).into();
+        theme.muted_foreground = rgb(muted()).into();
+        theme.popover = rgb(elevated()).into();
+        theme.popover_foreground = rgb(text()).into();
+        theme.button = rgb(control()).into();
+        theme.button_hover = rgb(hover()).into();
+        theme.button_active = rgb(if light { 0xD5D8DE } else { 0x25272B }).into();
+        theme.button_foreground = rgb(text()).into();
+        theme.selection = rgb(if light { 0xC6DAF2 } else { 0x315166 }).into();
         // Primary actions use the lilac accent with dark text, not the kit's white.
-        theme.primary = rgb(ACCENT).into();
-        theme.primary_hover = rgb(0xBAAFF8).into();
-        theme.primary_active = rgb(0x968AE6).into();
-        theme.primary_foreground = rgb(0x16121F).into();
-        theme.button_primary = rgb(ACCENT).into();
-        theme.button_primary_hover = rgb(0xBAAFF8).into();
-        theme.button_primary_active = rgb(0x968AE6).into();
-        theme.button_primary_foreground = rgb(0x16121F).into();
+        theme.primary = rgb(accent()).into();
+        theme.primary_hover = rgb(if light { 0x7A67E0 } else { 0xBAAFF8 }).into();
+        theme.primary_active = rgb(if light { 0x5944C2 } else { 0x968AE6 }).into();
+        theme.primary_foreground = rgb(if light { 0xFFFFFF } else { 0x16121F }).into();
+        theme.button_primary = rgb(accent()).into();
+        theme.button_primary_hover = rgb(if light { 0x7A67E0 } else { 0xBAAFF8 }).into();
+        theme.button_primary_active = rgb(if light { 0x5944C2 } else { 0x968AE6 }).into();
+        theme.button_primary_foreground = rgb(if light { 0xFFFFFF } else { 0x16121F }).into();
         // Buttons read the resolved tokens; rebuild them from the edited colors.
         theme.tokens = (&theme.colors).into();
     });
@@ -73,13 +179,29 @@ pub fn readable_name_color(user_id: &str, color: Option<u32>) -> u32 {
         };
         0.2126 * linear(c[0]) + 0.7152 * linear(c[1]) + 0.0722 * linear(c[2])
     };
-    let background = luminance([10. / 255., 11. / 255., 13. / 255.]);
-    // Preserve the chosen hue where possible, lifting unreadable dark names.
+    // Preserve the chosen hue where possible, lifting unreadable dark names
+    // (or darkening unreadable light ones on the light theme).
+    let light = is_light();
+    let background = if light {
+        1.
+    } else {
+        luminance([10. / 255., 11. / 255., 13. / 255.])
+    };
     for _ in 0..32 {
-        if (luminance(channels) + 0.05) / (background + 0.05) >= 4.5 {
+        let name = luminance(channels);
+        let contrast = if light {
+            (background + 0.05) / (name + 0.05)
+        } else {
+            (name + 0.05) / (background + 0.05)
+        };
+        if contrast >= 4.5 {
             break;
         }
-        channels = channels.map(|v| v + (1. - v) * 0.08);
+        channels = if light {
+            channels.map(|v| v * 0.9)
+        } else {
+            channels.map(|v| v + (1. - v) * 0.08)
+        };
     }
 
     ((channels[0] * 255.).round() as u32) << 16
@@ -235,7 +357,7 @@ impl RenderOnce for Segmented {
             .p(px(2.))
             .gap(px(2.))
             .rounded(px(7.))
-            .bg(rgb(CONTROL))
+            .bg(rgb(control()))
             .children(
                 self.labels
                     .into_iter()
@@ -252,13 +374,13 @@ impl RenderOnce for Segmented {
                             .text_size(px(12.))
                             .cursor_pointer()
                             .when(chosen, |el| {
-                                el.bg(rgb(ACCENT))
+                                el.bg(rgb(accent()))
                                     .text_color(rgb(0x16121F))
                                     .font_weight(FontWeight::SEMIBOLD)
                             })
                             .when(!chosen, |el| {
-                                el.text_color(rgb(MUTED))
-                                    .hover(|s| s.bg(rgb(HOVER)).text_color(rgb(TEXT)))
+                                el.text_color(rgb(muted()))
+                                    .hover(|s| s.bg(rgb(hover())).text_color(rgb(text())))
                             })
                             .child(label)
                             .when_some(on_click, |el, f| {

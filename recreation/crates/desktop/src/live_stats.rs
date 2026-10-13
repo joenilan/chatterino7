@@ -69,11 +69,11 @@ impl Workbench {
                 .px_2()
                 .py_1()
                 .rounded(px(6.))
-                .bg(rgb(theme::CONTROL))
+                .bg(rgb(theme::control()))
                 .child(
                     div()
                         .text_size(px(9.))
-                        .text_color(rgb(theme::MUTED))
+                        .text_color(rgb(theme::muted()))
                         .child(label),
                 )
                 .child(
@@ -86,7 +86,7 @@ impl Workbench {
                     el.child(
                         div()
                             .text_size(px(9.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child(s),
                     )
                 })
@@ -113,9 +113,9 @@ impl Workbench {
                     .h(px(2. + 20. * *n as f32 / peak_pace as f32))
                     .rounded(px(1.))
                     .bg(rgb(if *n == 0 {
-                        theme::BORDER
+                        theme::border()
                     } else {
-                        theme::ACCENT
+                        theme::accent()
                     }))
             }));
         Some(
@@ -126,9 +126,9 @@ impl Workbench {
                 .mb_2()
                 .p_2()
                 .rounded(px(8.))
-                .bg(rgb(theme::ELEVATED))
+                .bg(rgb(theme::elevated()))
                 .border_1()
-                .border_color(rgb(theme::BORDER))
+                .border_color(rgb(theme::border()))
                 .child(
                     div()
                         .h_flex()
@@ -154,14 +154,14 @@ impl Workbench {
                     div().h_flex().items_end().gap_2().child(spark).child(
                         div()
                             .text_size(px(9.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child("last 30 min"),
                     ),
                 )
                 .child(
                     div()
                         .text_size(px(11.))
-                        .text_color(rgb(theme::MUTED))
+                        .text_color(rgb(theme::muted()))
                         .child(format!(
                             "This stream: {} follows · {} subs · {} Bits events · {} raids",
                             count(crate::activity_feed::Kind::Follow),
@@ -183,7 +183,7 @@ impl Workbench {
                                 .text_color(rgb(if h.dropped >= 1. {
                                     0xE8C468
                                 } else {
-                                    theme::MUTED
+                                    theme::muted()
                                 }))
                                 .child(format!(
                                     "OBS: {} kbps · {:.1}% dropped · {:.0} fps",

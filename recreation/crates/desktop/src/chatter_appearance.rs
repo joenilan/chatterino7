@@ -94,7 +94,7 @@ fn values(
         Some(
             appearance
                 .and_then(|a| a.color)
-                .map(|color| COLORS.get(color).map(|c| c.1).unwrap_or(theme::TEXT))
+                .map(|color| COLORS.get(color).map(|c| c.1).unwrap_or(theme::text()))
                 .unwrap_or_else(|| theme::readable_name_color(id, original)),
         ),
     )
@@ -297,32 +297,32 @@ impl Render for Editor {
                 }
             })
             .unwrap_or_else(|| "Choose a chatter".into());
-        let color = self.color.map(|i| COLORS[i].1).unwrap_or(theme::TEXT);
+        let color = self.color.map(|i| COLORS[i].1).unwrap_or(theme::text());
         let height = (f32::from(window.viewport_size().height) - 150.).clamp(100., 580.);
         div().id("chatter-appearance-editor").v_flex().gap_2().max_h(px(height)).overflow_y_scroll()
             .capture_key_down(cx.listener(|this,e:&KeyDownEvent,w,cx|{if e.keystroke.modifiers.control&&!e.keystroke.modifiers.alt&&e.keystroke.key=="s"{this.save(w,cx);w.prevent_default();cx.stop_propagation();}}))
-            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Only changes what you see. Real Twitch identity, mentions, replies and sender filters stay unchanged. Copied transcript text uses the displayed nickname; Copy username keeps the real login."))
+            .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("Only changes what you see. Real Twitch identity, mentions, replies and sender filters stay unchanged. Copied transcript text uses the displayed nickname; Copy username keeps the real login."))
             .child(div().id("saved-chatter-appearances").v_flex().gap_1().max_h(px(150.)).overflow_y_scroll()
-                .when(entries.is_empty(),|el|el.child(div().p_2().text_color(rgb(theme::MUTED)).child("Right-click a message → Personalize chatter… to add someone.")))
+                .when(entries.is_empty(),|el|el.child(div().p_2().text_color(rgb(theme::muted())).child("Right-click a message → Personalize chatter… to add someone.")))
                 .children(entries.into_iter().map(|(id,t)|{
                     let label=if !t.login.is_empty(){format!("@{}",t.login)}else{format!("{} · {}",t.name.chars().take(20).collect::<String>(),id)};
                     Button::new(SharedString::from(format!("appearance-{id}"))).small().w_full().min_w_0().overflow_hidden().label(format!("{label}{}",if self.selected.as_ref()==Some(&id){" · editing"}else{""})).on_click(cx.listener(move|this,_,w,cx|this.select(Some(id.clone()),w,cx)))
                 })))
-            .when_some(target.clone(),|el,t|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Original: {} · @{} · ID {}",t.name,t.login,t.id))))
+            .when_some(target.clone(),|el,t|el.child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(format!("Original: {} · @{} · ID {}",t.name,t.login,t.id))))
             .child(div().text_size(px(12.)).child("Local nickname · leave empty to use Twitch’s display name"))
             .child(Input::new(&self.alias).small())
             .child(div().h_flex().flex_wrap().gap_1()
                 .child(Button::new("appearance-color-auto").small().label("Twitch color").disabled(self.color.is_none()).on_click(cx.listener(|this,_,_,cx|{this.color=None;this.edited(cx);})))
                 .children(COLORS.iter().enumerate().map(|(i,(label,color,_))|Button::new(("appearance-color",i)).small().label(*label).when(self.color==Some(i),|b|b.icon(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check))).text_color(rgb(*color)).selected(self.color==Some(i)).on_click(cx.listener(move|this,_,_,cx|{this.color=Some(i);this.edited(cx);})))) )
-            .child(div().p_3().rounded(px(4.)).bg(rgb(theme::CANVAS)).v_flex().gap_1()
+            .child(div().p_3().rounded(px(4.)).bg(rgb(theme::canvas())).v_flex().gap_1()
                 .child(div().text_color(rgb(color)).font_weight(FontWeight::SEMIBOLD).child(preview))
-                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Nickname and color preview · not a chat message")))
+                .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("Nickname and color preview · not a chat message")))
             .child(div().h_flex().flex_wrap().gap_1()
                 .child(Button::new("save-chatter-appearance").small().label("Save · Ctrl+S").disabled(target.is_none()).on_click(cx.listener(|this,_,w,cx|this.save(w,cx))))
                 .child(Button::new("reset-chatter-appearance").small().label(if self.reset_armed{"Confirm reset"}else{"Reset to Twitch…"}).disabled(target.is_none()).on_click(cx.listener(|this,_,w,cx|{
                     if !this.reset_armed{this.reset_armed=true;this.status="Confirm to remove this chatter’s saved nickname and color.".into();cx.notify();return;}
                     this.alias.update(cx,|a,cx|a.set_value("",w,cx));this.color=None;this.save(w,cx);
                 }))))
-            .when(!self.status.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xE9C99C)).child(self.status.clone())))
+            .when(!self.status.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(crate::theme::tone(0xE9C99C))).child(self.status.clone())))
     }
 }

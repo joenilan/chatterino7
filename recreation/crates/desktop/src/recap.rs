@@ -124,11 +124,11 @@ impl Workbench {
                     .v_flex()
                     .p_2()
                     .rounded(px(6.))
-                    .bg(rgb(theme::CONTROL))
+                    .bg(rgb(theme::control()))
                     .child(
                         div()
                             .text_size(px(10.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child(label.to_uppercase()),
                     )
                     .child(
@@ -150,7 +150,7 @@ impl Workbench {
                         .child(
                             div()
                                 .text_size(px(12.))
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .child(format!("{} · {}", recap.title, recap.category)),
                         )
                         .child(
@@ -173,7 +173,7 @@ impl Workbench {
                             el.child(
                                 div()
                                     .text_size(px(11.))
-                                    .text_color(rgb(theme::MUTED))
+                                    .text_color(rgb(theme::muted()))
                                     .child(format!(
                                         "Top chatters: {}",
                                         recap

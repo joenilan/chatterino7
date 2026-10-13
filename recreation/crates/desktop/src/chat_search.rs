@@ -520,7 +520,7 @@ impl ChannelPane {
                 )
         })
         .collect::<Vec<_>>();
-        div().v_flex().p_1().gap_1().bg(rgb(theme::PANEL)).border_b_1().border_color(rgb(theme::BORDER))
+        div().v_flex().p_1().gap_1().bg(rgb(theme::panel())).border_b_1().border_color(rgb(theme::border()))
             .key_context("JawjackSearch")
             .capture_action(cx.listener(|this,_:&gpui_kit::base::input::Enter,_,cx|{this.next_search(true,cx);cx.stop_propagation();}))
             .capture_action(cx.listener(|this,_:&gpui_kit::base::input::Escape,w,cx|{this.close_search(w,cx);cx.stop_propagation();}))
@@ -530,7 +530,7 @@ impl ChannelPane {
             .child(div().h_flex().flex_wrap().gap_1().children(filters)
                 .child(Button::new("search-all-channels").xsmall().label("All chats").tooltip("Search all open channels · Ctrl+Shift+F").on_click(cx.listener(|this,_,_,cx|cx.emit(crate::PaneEvent::SearchAll(this.search.query.clone())))))
                 .child(Button::new("search-help").xsmall().label("?").tooltip("Combine from:username, badge:moderator (Twitch), has:link/emote/reply/gif/bits, is:notice/deleted, quoted phrases and -excluded words. Search is local to retained chat.")))
-            .child(div().h_flex().gap_1().justify_between().text_size(px(11.)).text_color(rgb(theme::MUTED))
+            .child(div().h_flex().gap_1().justify_between().text_size(px(11.)).text_color(rgb(theme::muted()))
                 .child(if let Some(error)=error {error}else if self.search.query.trim().is_empty(){"Search retained messages".to_string()}else{format!("{ordinal} / {count} messages")})
                 .child(div().h_flex().gap_1()
                     .child(Button::new("search-previous").xsmall().disabled(count==0).label("↑").tooltip("Previous match · Shift+F3").on_click(cx.listener(|this,_,_,cx|this.next_search(false,cx))))

@@ -609,9 +609,9 @@ impl Render for Editor {
         let max_height = (f32::from(window.viewport_size().height) - 150.).clamp(100., 650.);
         div().id("highlight-rule-editor")
             .capture_key_down(cx.listener(|this,event:&KeyDownEvent,w,cx|{if event.keystroke.modifiers.control&&!event.keystroke.modifiers.alt&&event.keystroke.key=="s"{this.save(w,cx);w.prevent_default();cx.stop_propagation();}})).v_flex().gap_2().max_h(px(max_height)).overflow_y_scroll()
-            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Local highlights across all workspaces. First matching rule chooses the color. Mentions, replies and your simple highlight words stay enabled. Your own messages are excluded. Each rule can play its own sound."))
+            .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("Local highlights across all workspaces. First matching rule chooses the color. Mentions, replies and your simple highlight words stay enabled. Your own messages are excluded. Each rule can play its own sound."))
             .child(div().h_flex().gap_2().child(Button::new("new-highlight-rule").small().label("New rule").on_click(cx.listener(|this,_,w,cx|this.select(None,w,cx))))
-                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("{}/24 rules",rules.len()))))
+                .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(format!("{}/24 rules",rules.len()))))
             .child(div().id("saved-highlight-rules").v_flex().gap_1().max_h(px(130.)).overflow_y_scroll().children(rules.iter().enumerate().map(|(index,r)|{
                 let limit=if f32::from(window.viewport_size().width)<500.{18}else{36};
                 let label=r.pattern.chars().take(limit).collect::<String>();let suffix=if r.pattern.chars().count()>limit{"…"}else{""};
@@ -624,7 +624,7 @@ impl Render for Editor {
                 .child(Button::new("rule-badge").small().label("Badge").tooltip(format!("Highlight everyone with a badge: {BADGE_EXAMPLES}")).selected(self.draft.badge).when(self.draft.badge,|b|b.primary()).on_click(cx.listener(|this,_,_,cx|{this.draft.badge=true;this.draft.author=false;this.draft.regex=false;this.edited(cx);})))
                 .child(Button::new("rule-enabled").small().label(if self.draft.enabled{"Enabled"}else{"Disabled"}).on_click(cx.listener(|this,_,_,cx|{this.draft.enabled = !this.draft.enabled;this.edited(cx);})))
                 .when(!self.draft.badge,|el|el.child(Button::new("rule-regex").small().label(if self.draft.regex{"Regex"}else{"Plain text"}).tooltip("Match a regular expression instead of plain text").on_click(cx.listener(|this,_,_,cx|{this.draft.regex = !this.draft.regex;this.edited(cx);})))))
-            .when(self.draft.badge,|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Badge set, e.g. {BADGE_EXAMPLES}. In the preview, type badges in the sender box."))))
+            .when(self.draft.badge,|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(format!("Badge set, e.g. {BADGE_EXAMPLES}. In the preview, type badges in the sender box."))))
             .child(Input::new(&self.pattern).small()).child(Input::new(&self.channel).small())
             .when(!self.draft.author&&!self.draft.badge,|el|el.child(div().h_flex().flex_wrap().gap_1()
                 .child(Button::new("rule-case").small().label(if self.draft.case_sensitive{"Match case"}else{"Ignore case"}).on_click(cx.listener(|this,_,_,cx|{this.draft.case_sensitive = !this.draft.case_sensitive;this.edited(cx);})))
@@ -632,11 +632,11 @@ impl Render for Editor {
             .child(div().h_flex().flex_wrap().gap_1().children(COLORS.iter().enumerate().map(|(index,(name,color,_))|
                 Button::new(("rule-color",index)).small().label(*name).when(self.draft.color==index,|b|b.icon(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check))).text_color(rgb(*color)).selected(self.draft.color==index).on_click(cx.listener(move|this,_,_,cx|{this.draft.color=index;this.edited(cx);}))))
                 .child(div().h_flex().items_center().gap_1()
-                    .child(div().size(px(14.)).rounded(px(3.)).border_1().border_color(rgb(theme::BORDER)).when(custom,|el|el.bg(rgb(accent))))
+                    .child(div().size(px(14.)).rounded(px(3.)).border_1().border_color(rgb(theme::border())).when(custom,|el|el.bg(rgb(accent))))
                     .child(div().w(px(84.)).child(Input::new(&self.hex).small()))
                     .when(custom,|el|el.child(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check).small().text_color(rgb(accent))))))
             .child(div().h_flex().flex_wrap().items_center().gap_1()
-                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Sound"))
+                .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("Sound"))
                 .children(SOUNDS.iter().enumerate().map(|(index,label)|{let index=index as u8;
                     let label=if index==CUSTOM_SOUND&&!self.draft.sound_file.is_empty(){std::path::Path::new(&self.draft.sound_file).file_name().map(|n|n.to_string_lossy().into_owned()).unwrap_or_else(||(*label).into())}else{(*label).into()};
                     Button::new(("rule-sound",index as usize)).small().label(label).selected(self.draft.sound==index).when(self.draft.sound==index,|b|b.primary()).on_click(cx.listener(move|this,_,w,cx|{
@@ -648,7 +648,7 @@ impl Render for Editor {
             .child(div().border_l_2().border_color(rgb(accent)).bg(rgb(background)).rounded(px(4.)).p_2().v_flex().gap_1()
                 .child(div().text_size(px(11.)).child(format!("Preview in #{} · {}",self.preview_channel,if preview{"matches"}else{"does not match"})))
                 .child(Input::new(&self.sample).small()).child(Input::new(&self.login).small())
-                .when_some(current.err(),|el,error|el.child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child(error))))
+                .when_some(current.err(),|el,error|el.child(div().text_size(px(10.)).text_color(rgb(theme::muted())).child(error))))
             .child(div().h_flex().flex_wrap().gap_1()
                 .child(Button::new("save-highlight-rule").small().label("Save rule · Ctrl+S").on_click(cx.listener(|this,_,w,cx|this.save(w,cx))))
                 .when(self.selected.is_some(),|el|el
@@ -659,7 +659,7 @@ impl Render for Editor {
                         if let Some(index)=this.selected.take()&& index<this.rules.borrow().len(){this.rules.borrow_mut().remove(index);cx.emit(Changed);}
                         this.switch_pending=Some(None);this.select(None,w,cx);this.status="Rule removed.".into();
                     })))))
-            .when(!self.status.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xE9C99C)).child(self.status.clone())))
+            .when(!self.status.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(crate::theme::tone(0xE9C99C))).child(self.status.clone())))
     }
 }
 

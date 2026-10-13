@@ -366,7 +366,7 @@ impl Paint {
                     y as f64 + 0.5,
                     width as f64,
                     height as f64,
-                    crate::theme::CANVAS,
+                    crate::theme::canvas(),
                     None,
                 )?;
                 pixels.extend_from_slice(&[

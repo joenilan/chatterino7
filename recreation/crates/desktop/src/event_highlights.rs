@@ -298,7 +298,7 @@ impl Render for Editor {
             .child(
                 div()
                     .text_size(px(11.))
-                    .text_color(rgb(theme::MUTED))
+                    .text_color(rgb(theme::muted()))
                     .child("Colours and sounds for kinds of chat events. Your highlight rules win when both match. Applies to new messages."),
             )
             .children(KINDS.iter().map(|(kind, key, label, detail)| {
@@ -308,7 +308,7 @@ impl Render for Editor {
                     .v_flex()
                     .gap_1()
                     .child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(13.)).child(*label))
-                    .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(*detail))
+                    .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(*detail))
                     .child(
                         div()
                             .h_flex()
@@ -355,7 +355,7 @@ impl Render for Editor {
                                 .flex_wrap()
                                 .items_center()
                                 .gap_1()
-                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).pr_1().child("Sound"))
+                                .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).pr_1().child("Sound"))
                                 .children(SOUNDS.iter().enumerate().map(|(index, label)| {
                                     let index = index as u8;
                                     Button::new(SharedString::from(format!("event-{key}-sound-{index}")))

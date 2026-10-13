@@ -277,8 +277,8 @@ impl Render for WorkspaceSearch {
             .child(div().h_flex().gap_1().min_w_0()
                 .child(div().flex_1().min_w_0().child(Input::new(&self.input)))
                 .child(Button::new("global-search-run").small().label(if self.running{"Restart"}else{"Search"}).on_click(cx.listener(|s,_,_,cx|s.begin(cx)))))
-            .child(div().text_size(px(11.)).text_color(rgb(if self.error.is_some(){0xF0AAAA}else{theme::MUTED})).child(status))
-            .when(!self.running&&!self.dirty&&self.error.is_none()&&!self.requested.is_empty()&&self.hits.is_empty(),|el|el.child(div().p_2().text_color(rgb(theme::MUTED)).child("No matches in currently retained chat. Try fewer filters or a different phrase.")))
+            .child(div().text_size(px(11.)).text_color(rgb(if self.error.is_some(){0xF0AAAA}else{theme::muted()})).child(status))
+            .when(!self.running&&!self.dirty&&self.error.is_none()&&!self.requested.is_empty()&&self.hits.is_empty(),|el|el.child(div().p_2().text_color(rgb(theme::muted())).child("No matches in currently retained chat. Try fewer filters or a different phrase.")))
             .children(rows.into_iter().enumerate().skip(page*visible).take(visible).map(|(index,hit)| {
                 // Resolve only visible rows from current owners; never retain preview bodies.
                 let preview=hit.pane.upgrade().filter(|p|open.contains(p)).and_then(|pane|{
@@ -289,19 +289,19 @@ impl Render for WorkspaceSearch {
                 });
                 let valid=preview.is_some();let (author,body)=preview.unwrap_or_else(||("Result unavailable".into(),"Message changed, was pruned, or no longer matches.".into()));
                 div().id(("global-hit",index)).v_flex().gap_1().p_2().min_w_0().rounded(px(4.))
-                    .bg(rgb(if index==self.selected{theme::HOVER}else{theme::CONTROL}))
+                    .bg(rgb(if index==self.selected{theme::hover()}else{theme::control()}))
                     .child(div().h_flex().gap_1().min_w_0()
-                        .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(0xC9BAF7)).child(format!("#{} · {} · {author}",hit.channel,hit.workspace)))
+                        .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(crate::theme::tone(0xC9BAF7))).child(format!("#{} · {} · {author}",hit.channel,hit.workspace)))
                         .child(Button::new(("global-jump",index)).xsmall().label("Jump").disabled(!valid||self.dirty||self.running).on_click(cx.listener(move|s,_,w,cx|s.choose(hit.clone(),w,cx)))))
                     .child(div().text_size(px(12.)).max_h(px(36.)).overflow_hidden().child(body))
             }))
             .child(div().h_flex().justify_between().gap_1()
                 .child(Button::new("global-results-previous").small().label("← Previous").disabled(page==0||self.running)
                     .on_click(cx.listener(move|s,_,_,cx|{s.selected=s.selected.saturating_sub(visible);cx.notify();})))
-                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(if self.hits.is_empty(){"No results".into()}else{format!("{}–{} of {}",page*visible+1,((page+1)*visible).min(self.hits.len()),self.hits.len())}))
+                .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(if self.hits.is_empty(){"No results".into()}else{format!("{}–{} of {}",page*visible+1,((page+1)*visible).min(self.hits.len()),self.hits.len())}))
                 .child(Button::new("global-results-next").small().label("Next →").disabled((page+1)*visible>=self.hits.len()||self.running)
                     .on_click(cx.listener(move|s,_,_,cx|{s.selected=(s.selected+visible).min(s.hits.len().saturating_sub(1));cx.notify();}))))
-            .child(div().text_size(px(10.)).text_color(rgb(theme::MUTED)).child("Open channels only · ↑ ↓ select · Enter searches / jumps · Esc closes · Search refreshes arrivals"))
+            .child(div().text_size(px(10.)).text_color(rgb(theme::muted())).child("Open channels only · ↑ ↓ select · Enter searches / jumps · Esc closes · Search refreshes arrivals"))
     }
 }
 impl Workbench {

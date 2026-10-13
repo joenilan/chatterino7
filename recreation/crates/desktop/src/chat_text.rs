@@ -35,7 +35,7 @@ impl ChatText {
             highlights.push((
                 0..name.len(),
                 HighlightStyle {
-                    color: Some(rgb(color.unwrap_or(crate::theme::MUTED)).into()),
+                    color: Some(rgb(color.unwrap_or(crate::theme::muted())).into()),
                     font_weight: Some(FontWeight::SEMIBOLD),
                     ..Default::default()
                 },
@@ -45,7 +45,7 @@ impl ChatText {
             (
                 link.range.clone(),
                 HighlightStyle {
-                    color: Some(rgb(0x91C7E8).into()),
+                    color: Some(rgb(crate::theme::tone(0x91C7E8)).into()),
                     underline: Some(UnderlineStyle {
                         thickness: px(1.),
                         color: None,
@@ -69,7 +69,7 @@ impl ChatText {
                     None => HighlightStyle {
                         underline: Some(UnderlineStyle {
                             thickness: px(1.),
-                            color: Some(rgb(0xB6A9E6).into()),
+                            color: Some(rgb(crate::theme::tone(0xB6A9E6)).into()),
                             wavy: false,
                         }),
                         ..Default::default()
@@ -90,7 +90,7 @@ impl ChatText {
         self.styled = StyledText::new(self.text.clone()).with_highlights([(
             0..name.len(),
             HighlightStyle {
-                color: Some(rgb(color.unwrap_or(crate::theme::MUTED)).into()),
+                color: Some(rgb(color.unwrap_or(crate::theme::muted())).into()),
                 font_weight: Some(FontWeight::SEMIBOLD),
                 ..Default::default()
             },
@@ -319,7 +319,7 @@ impl Element for ChatText {
                     &prefix,
                     bounds.origin,
                     layout.line_height(),
-                    color.unwrap_or(crate::theme::MUTED),
+                    color.unwrap_or(crate::theme::muted()),
                     window,
                     cx,
                 )

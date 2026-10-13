@@ -48,7 +48,7 @@ impl Workbench {
                     div()
                         .v_flex()
                         .gap_2()
-                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(
                             "Made from Jawjack, so you can pause it and handle its redemptions here.",
                         ))
                         .child(Input::new(&title).small())
@@ -94,7 +94,7 @@ impl Workbench {
         let Some(list) = self.rewards.list.clone() else {
             return div()
                 .text_size(px(11.))
-                .text_color(rgb(theme::MUTED))
+                .text_color(rgb(theme::muted()))
                 .child("Loading your rewards…");
         };
         let queue = self.rewards.queue.clone();
@@ -105,7 +105,7 @@ impl Workbench {
                 div()
                     .h_flex()
                     .items_center()
-                    .child(div().flex_1().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!(
+                    .child(div().flex_1().text_size(px(11.)).text_color(rgb(theme::muted())).child(format!(
                         "{} rewards{}",
                         list.len(),
                         if queue.is_empty() { String::new() } else { format!(" · {} waiting", queue.len()) }
@@ -121,7 +121,7 @@ impl Workbench {
                     .gap_2()
                     .p_1()
                     .rounded(px(6.))
-                    .bg(rgb(0x272237))
+                    .bg(rgb(crate::theme::tone(0x272237)))
                     .child(
                         div()
                             .v_flex()
@@ -129,7 +129,7 @@ impl Workbench {
                             .min_w_0()
                             .child(div().text_size(px(12.)).overflow_hidden().whitespace_nowrap().text_ellipsis().child(format!("{} · {}", r.user, r.reward)))
                             .when(!r.input.is_empty(), |el| {
-                                el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).overflow_hidden().whitespace_nowrap().text_ellipsis().child(r.input.clone()))
+                                el.child(div().text_size(px(11.)).text_color(rgb(theme::muted())).overflow_hidden().whitespace_nowrap().text_ellipsis().child(r.input.clone()))
                             }),
                     )
                     .child(Button::new(("redeem-done", index)).xsmall().primary().label("Complete").on_click(cx.listener(move |this, _, _, cx| {
@@ -150,9 +150,9 @@ impl Workbench {
                     .gap_2()
                     .py(px(3.))
                     .text_size(px(12.))
-                    .when(!reward.enabled || reward.paused, |el| el.text_color(rgb(theme::MUTED)))
+                    .when(!reward.enabled || reward.paused, |el| el.text_color(rgb(theme::muted())))
                     .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().child(reward.title.clone()))
-                    .child(div().flex_shrink_0().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(reward.cost.to_string()))
+                    .child(div().flex_shrink_0().text_size(px(11.)).text_color(rgb(theme::muted())).child(reward.cost.to_string()))
                     .when(reward.manageable, |el| {
                         el.child(
                             gpui_kit::component::switch::Switch::new(("reward-active", index))
@@ -169,7 +169,7 @@ impl Workbench {
                         el.child(
                             div()
                                 .id(("reward-locked", index))
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .child(Icon::new(gpui_kit::assets::IconName::Lock).xsmall())
                                 .tooltip(|w, cx| {
                                     gpui_kit::component::tooltip::Tooltip::new(

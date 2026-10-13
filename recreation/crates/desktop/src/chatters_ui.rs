@@ -117,7 +117,7 @@ impl ChannelPane {
                             .pb_1()
                             .text_size(px(10.))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child(GROUPS[group].to_uppercase()),
                     );
                 }
@@ -143,7 +143,7 @@ impl ChannelPane {
                         .h(px(26.))
                         .rounded(px(5.))
                         .cursor_pointer()
-                        .hover(|s| s.bg(rgb(theme::HOVER)))
+                        .hover(|s| s.bg(rgb(theme::hover())))
                         .child(
                             div()
                                 .flex_1()
@@ -194,7 +194,7 @@ impl ChannelPane {
                         .child(
                             div()
                                 .text_size(px(11.))
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .child(summary),
                         )
                         .child(
@@ -208,7 +208,7 @@ impl ChannelPane {
                                         div()
                                             .py_2()
                                             .text_size(px(11.))
-                                            .text_color(rgb(theme::MUTED))
+                                            .text_color(rgb(theme::muted()))
                                             .child(format!(
                                                 "{} more · search to narrow",
                                                 total - SHOWN

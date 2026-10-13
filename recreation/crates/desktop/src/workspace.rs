@@ -580,6 +580,9 @@ impl Workbench {
                 "Twitch channel or link, a YouTube live link, /mentions, /whispers or /live",
             )
         });
+        // Settings › Theme › System follows Windows' app mode as it changes.
+        cx.observe_window_appearance(window, |this: &mut Self, _, cx| this.apply_theme(cx))
+            .detach();
         cx.subscribe_in(&input, window, |this: &mut Self, _, event, window, cx| {
             if this.adding && matches!(event, InputEvent::PressEnter { shift: false, .. }) {
                 this.accept_input(window, cx);
@@ -941,6 +944,11 @@ impl Workbench {
                     );
                 }
                 crate::nickname_rules::load(&state["nickname_rules"]);
+                theme::THEME.store(
+                    (state["theme"].as_u64().unwrap_or(0) as usize).min(2),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                theme::apply(cx);
                 crate::spell::LANGUAGE.store(
                     (state["spell_language"].as_u64().unwrap_or(0) as usize)
                         .min(crate::spell::LANGUAGES.len() - 1),
@@ -3285,6 +3293,7 @@ impl Workbench {
             crate::name_paint::paint_option(2)
         ]);
         value["nickname_rules"] = crate::nickname_rules::json();
+        value["theme"] = json!(theme::THEME.load(std::sync::atomic::Ordering::Relaxed));
         value["spell_language"] =
             json!(crate::spell::LANGUAGE.load(std::sync::atomic::Ordering::Relaxed));
         value["tab_style"] = json!(theme::TAB_STYLE.load(std::sync::atomic::Ordering::Relaxed));
@@ -4222,9 +4231,9 @@ impl Workbench {
             .items_center()
             .justify_center()
             .border_2()
-            .border_color(rgb(0xA99CF4))
-            .bg(rgba(0xA99CF42A))
-            .text_color(rgb(theme::TEXT))
+            .border_color(rgb(crate::theme::tone(0xA99CF4)))
+            .bg(rgba(crate::theme::tone_a(0xA99CF42A)))
+            .text_color(rgb(theme::text()))
             .when(edge.vertical(), |el| el.left_0().right_0().h(relative(0.5)))
             .when(!edge.vertical() && edge != DropEdge::Center, |el| {
                 el.top_0().bottom_0().w(relative(0.5))
@@ -4239,7 +4248,7 @@ impl Workbench {
                     .px_3()
                     .py_2()
                     .rounded(px(5.))
-                    .bg(rgb(theme::PANEL))
+                    .bg(rgb(theme::panel()))
                     .child(edge.label()),
             )
             .with_animation(
@@ -4290,6 +4299,24 @@ impl Workbench {
         for name in names {
             catalog.reload_channel(&name);
         }
+    }
+    /// Settings › Theme changed (or Windows' mode, when following it): restyle
+    /// the kit and recolour names for the new background.
+    pub(crate) fn apply_theme(&mut self, cx: &mut Context<Self>) {
+        if !crate::theme::apply(cx) {
+            return;
+        }
+        for pane in self.panes() {
+            pane.update(cx, |p, cx| {
+                crate::chatter_appearance::restyle(
+                    &self.chatter_appearance,
+                    &mut p.timeline.borrow_mut(),
+                );
+                p.scroller.update(cx, |s, cx| s.remeasure(cx));
+                cx.notify();
+            });
+        }
+        cx.notify();
     }
     pub(crate) fn remeasure_all(&mut self, cx: &mut Context<Self>) {
         for pane in self
@@ -4667,9 +4694,9 @@ impl Workbench {
                             .items_center()
                             .cursor_pointer()
                             .bg(rgb(if selected {
-                                theme::CONTROL
+                                theme::control()
                             } else {
-                                theme::PANEL
+                                theme::panel()
                             }))
                             // The selected marker faces the chat; side tabs fill the list.
                             .map(|el| match theme::tab_position() {
@@ -4678,17 +4705,17 @@ impl Workbench {
                                 3 => el.border_l_2().w_full(),
                                 _ => el.border_b_2(),
                             })
-                            .border_color(rgb(if selected { 0xA99CF4 } else { theme::PANEL }))
+                            .border_color(rgb(if selected { 0xA99CF4 } else { theme::panel() }))
                             .on_prepaint(move |bounds, _, _| {
                                 tab_bounds.borrow_mut().insert(tab_name.clone(), bounds);
                             })
-                            .hover(|s| s.bg(rgb(theme::HOVER)))
+                            .hover(|s| s.bg(rgb(theme::hover())))
                             .child(stream_marker(&channel, self.streams.get(&channel)))
                             .when(pins.contains(&channel), |el| {
                                 el.child(
                                     div()
                                         .mr_1()
-                                        .text_color(rgb(0xA99CF4))
+                                        .text_color(rgb(crate::theme::tone(0xA99CF4)))
                                         .child(Icon::new(gpui_kit::assets::IconName::Pin).xsmall()),
                                 )
                             })
@@ -4726,8 +4753,8 @@ impl Workbench {
                                         .px_1()
                                         .rounded(px(3.))
                                         .text_size(px(10.))
-                                        .bg(rgb(0x2A2340))
-                                        .text_color(rgb(theme::ACCENT))
+                                        .bg(rgb(crate::theme::tone(0x2A2340)))
+                                        .text_color(rgb(theme::accent()))
                                         .child(plus)
                                         .tooltip(move |w, cx| {
                                             gpui_kit::component::tooltip::Tooltip::new(who.clone())
@@ -4786,7 +4813,7 @@ impl Workbench {
                                         .text_color(rgb(if counts.1 > 0 {
                                             0xE4BCFA
                                         } else {
-                                            theme::TEXT
+                                            theme::text()
                                         }))
                                         .child(if counts.1 > 0 {
                                             format!("@{}", crate::attention::count(counts.1))
@@ -5363,7 +5390,7 @@ impl Workbench {
                                     .overflow_y_scroll()
                                     .when(position == 2, |el| el.border_r_1())
                                     .when(position == 3, |el| el.border_l_1())
-                                    .border_color(rgb(theme::BORDER))
+                                    .border_color(rgb(theme::border()))
                             } else {
                                 el.h_flex().flex_wrap().min_h(px(if theme::compact_tabs() {
                                     22.
@@ -5373,7 +5400,7 @@ impl Workbench {
                             }
                         })
                         .flex_shrink_0()
-                        .bg(rgb(theme::PANEL))
+                        .bg(rgb(theme::panel()))
                         .on_prepaint(move |bounds, _, _| {
                             strip_bounds.borrow_mut().insert(strip_name.clone(), bounds);
                         })
@@ -5624,15 +5651,15 @@ impl Workbench {
             .w(px(190.))
             .flex_shrink_0()
             .h_full()
-            .bg(rgb(theme::PANEL))
+            .bg(rgb(theme::panel()))
             .border_r_1()
-            .border_color(rgb(theme::BORDER))
+            .border_color(rgb(theme::border()))
             .p_3()
             .gap_3()
             .child(
                 div()
                     .text_size(px(10.))
-                    .text_color(rgb(theme::MUTED))
+                    .text_color(rgb(theme::muted()))
                     .child("YOUR WORKSPACES"),
             )
             .child(
@@ -5680,11 +5707,11 @@ impl Workbench {
                             .rounded(px(5.))
                             .cursor_pointer()
                             .bg(rgb(if ix == self.active {
-                                theme::CONTROL
+                                theme::control()
                             } else {
-                                theme::PANEL
+                                theme::panel()
                             }))
-                            .hover(|s| s.bg(rgb(theme::HOVER)))
+                            .hover(|s| s.bg(rgb(theme::hover())))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.select_tab(ix, cx);
                                 this.focus.focus(window, cx);
@@ -5708,7 +5735,7 @@ impl Workbench {
                                 move |drag, _, _, cx| cx.new(|_| DragPreview(drag.name.clone())),
                             )
                             .drag_over::<DraggedTab>(|style, _, _, _| {
-                                style.border_t_2().border_color(rgb(0xA99CF4))
+                                style.border_t_2().border_color(rgb(crate::theme::tone(0xA99CF4)))
                             })
                             .on_drop(cx.listener({
                                 let id = tab.id;
@@ -5717,7 +5744,7 @@ impl Workbench {
                                 }
                             }))
                             .drag_over::<DraggedChannel>(|style, _, _, _| {
-                                style.bg(rgb(theme::HOVER))
+                                style.bg(rgb(theme::hover()))
                             })
                             .on_drop(cx.listener({
                                 let id = tab.id;
@@ -5755,7 +5782,7 @@ impl Workbench {
                             .child(
                                 div()
                                     .text_size(px(11.))
-                                    .text_color(rgb(theme::MUTED))
+                                    .text_color(rgb(theme::muted()))
                                     .child(format!(
                                         "{} channels{}",
                                         tab.panes.len(),
@@ -5870,9 +5897,9 @@ impl Workbench {
                     .gap_1()
                     .p_2()
                     .border_t_1()
-                    .border_color(rgb(theme::BORDER))
+                    .border_color(rgb(theme::border()))
                     .text_size(px(11.))
-                    .text_color(rgb(theme::MUTED))
+                    .text_color(rgb(theme::muted()))
                     .child(self.render_updates(cx)),
             )
             .into_any_element()
@@ -5909,7 +5936,7 @@ impl Workbench {
                         .pt_1()
                         .px_1()
                         .text_size(px(10.))
-                        .text_color(rgb(0xC5B8E6))
+                        .text_color(rgb(crate::theme::tone(0xC5B8E6)))
                         .overflow_hidden()
                         .whitespace_nowrap()
                         .text_ellipsis()
@@ -5963,7 +5990,7 @@ impl Workbench {
                     .py(px(3.))
                     .rounded(px(5.))
                     .cursor_pointer()
-                    .hover(|s| s.bg(rgb(theme::HOVER)))
+                    .hover(|s| s.bg(rgb(theme::hover())))
                     .tooltip(move |_, cx| cx.new(|_| crate::media_hover::Card(card.clone())).into())
                     .child(
                         div()
@@ -5975,7 +6002,7 @@ impl Workbench {
                                 None => div()
                                     .size(px(22.))
                                     .rounded_full()
-                                    .bg(rgb(0x3A3350))
+                                    .bg(rgb(crate::theme::tone(0x3A3350)))
                                     .flex()
                                     .items_center()
                                     .justify_center()
@@ -5999,8 +6026,8 @@ impl Workbench {
                                     .size(px(8.))
                                     .rounded_full()
                                     .border_2()
-                                    .border_color(rgb(theme::PANEL))
-                                    .bg(rgb(theme::STREAM_LIVE)),
+                                    .border_color(rgb(theme::panel()))
+                                    .bg(rgb(theme::stream_live())),
                             ),
                     )
                     .child(
@@ -6014,7 +6041,7 @@ impl Workbench {
                                     .whitespace_nowrap()
                                     .text_ellipsis()
                                     .text_size(px(12.))
-                                    .when(is_open, |el| el.text_color(rgb(theme::ACCENT)))
+                                    .when(is_open, |el| el.text_color(rgb(theme::accent())))
                                     .child(live.label().to_owned()),
                             )
                             .when(sort.by != SortBy::Category, |el| {
@@ -6024,7 +6051,7 @@ impl Workbench {
                                         .whitespace_nowrap()
                                         .text_ellipsis()
                                         .text_size(px(10.))
-                                        .text_color(rgb(theme::MUTED))
+                                        .text_color(rgb(theme::muted()))
                                         .child(live.game.clone()),
                                 )
                             }),
@@ -6033,7 +6060,7 @@ impl Workbench {
                         div()
                             .flex_shrink_0()
                             .text_size(px(10.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .when(!hide_counts, |el| {
                                 el.child(match sort.by {
                                     SortBy::LiveTime => live.uptime().unwrap_or_default(),
@@ -6069,7 +6096,7 @@ impl Workbench {
                                 .gap_1()
                                 .cursor_pointer()
                                 .text_size(px(10.))
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .child(
                                     Icon::new(if self.follows_open {
                                         IconName::ChevronDown
@@ -6154,7 +6181,7 @@ impl Workbench {
                     el.child(
                         div()
                             .text_size(px(11.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child("Nobody you follow is live."),
                     )
                 })
@@ -6162,7 +6189,7 @@ impl Workbench {
                     el.child(
                         div()
                             .text_size(px(11.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child("No live channels match."),
                     )
                 })
@@ -6217,10 +6244,10 @@ impl Workbench {
                 .gap_3()
                 .items_center()
                 .rounded(px(6.))
-                .bg(rgb(0x2A1F3D))
+                .bg(rgb(crate::theme::tone(0x2A1F3D)))
                 .border_1()
-                .border_color(rgb(0x6D5BC7))
-                .child(Icon::new(gpui_kit::assets::IconName::Lock).text_color(rgb(theme::ACCENT)))
+                .border_color(rgb(crate::theme::tone(0x6D5BC7)))
+                .child(Icon::new(gpui_kit::assets::IconName::Lock).text_color(rgb(theme::accent())))
                 .child(
                     div()
                         .flex_1()
@@ -6230,13 +6257,13 @@ impl Workbench {
                             div()
                                 .text_size(px(13.))
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(rgb(theme::TEXT))
+                                .text_color(rgb(theme::text()))
                                 .child("You're signed out of Twitch"),
                         )
                         .child(
                             div()
                                 .text_size(px(12.))
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(rgb(theme::muted()))
                                 .child(detail),
                         ),
                 )
@@ -6338,7 +6365,7 @@ impl Render for Workbench {
                         .font_weight(FontWeight::SEMIBOLD)
                         .child("No channels here yet."),
                 )
-                .child(div().text_color(rgb(theme::MUTED)).child(
+                .child(div().text_color(rgb(theme::muted())).child(
                     "Add a channel, or open the welcome guide for your channel, channels you moderate and live follows.",
                 ))
                 .child(
@@ -6369,8 +6396,8 @@ impl Render for Workbench {
             .size_full()
             .font_family("Segoe UI")
             .text_size(px(13.))
-            .bg(rgb(theme::SHELL))
-            .text_color(rgb(theme::TEXT))
+            .bg(rgb(theme::shell()))
+            .text_color(rgb(theme::text()))
             .capture_any_mouse_down(cx.listener(|this, event: &MouseDownEvent, window, cx| {
                 if event.button == MouseButton::Left {
                     cx.stop_active_drag(window);
@@ -6631,7 +6658,7 @@ impl Render for Workbench {
                     .h(px(32.))
                     .flex_shrink_0()
                     .border_b_1()
-                    .border_color(rgb(theme::BORDER))
+                    .border_color(rgb(theme::border()))
                     .child(
                         Button::new("sidebar")
                             .ghost()
@@ -6656,7 +6683,7 @@ impl Render for Workbench {
                             .window_control_area(WindowControlArea::Drag)
                             .child(
                                 div()
-                                    .text_color(rgb(0xA99CF4))
+                                    .text_color(rgb(crate::theme::tone(0xA99CF4)))
                                     .font_weight(FontWeight::BOLD)
                                     .child("//"),
                             )
@@ -6673,10 +6700,10 @@ impl Render for Workbench {
                                         .ml_1()
                                         .px(px(5.))
                                         .rounded(px(3.))
-                                        .bg(rgb(theme::ELEVATED))
+                                        .bg(rgb(theme::elevated()))
                                         .border_1()
-                                        .border_color(rgb(0xE8C468))
-                                        .text_color(rgb(0xE8C468))
+                                        .border_color(rgb(crate::theme::tone(0xE8C468)))
+                                        .text_color(rgb(crate::theme::tone(0xE8C468)))
                                         .text_size(px(10.))
                                         .child(label),
                                 )
@@ -6859,9 +6886,9 @@ impl Render for Workbench {
                                         .v_flex()
                                         .p_3()
                                         .gap_2()
-                                        .bg(rgb(theme::ELEVATED))
+                                        .bg(rgb(theme::elevated()))
                                         .border_b_1()
-                                        .border_color(rgb(theme::BORDER))
+                                        .border_color(rgb(theme::border()))
                                         .child(div().text_size(px(12.)).child(if self.renaming {
                                             "Rename workspace".to_owned()
                                         } else if let Some(old) = &self.replacing {
@@ -6908,7 +6935,7 @@ impl Render for Workbench {
                                             el.child(
                                                 div()
                                                     .text_size(px(12.))
-                                                    .text_color(rgb(0xF29D9D))
+                                                    .text_color(rgb(crate::theme::tone(0xF29D9D)))
                                                     .child(error),
                                             )
                                         }),
@@ -6962,9 +6989,9 @@ impl Render for Workbench {
                     .px_2()
                     .gap_2()
                     .border_t_1()
-                    .border_color(rgb(theme::BORDER))
+                    .border_color(rgb(theme::border()))
                     .text_size(px(10.))
-                    .text_color(rgb(theme::MUTED))
+                    .text_color(rgb(theme::muted()))
                     .child(
                         div()
                             .flex_1()
@@ -6985,13 +7012,13 @@ impl Render for Workbench {
 
 fn stream_marker(channel: &str, status: Option<bool>) -> impl IntoElement {
     let (color, label) = match status {
-        Some(true) => (theme::STREAM_LIVE, "Stream live"),
+        Some(true) => (theme::stream_live(), "Stream live"),
         Some(false) => (
-            theme::STREAM_OFFLINE,
+            theme::stream_offline(),
             "Stream offline · chat may still be connected",
         ),
         None => (
-            theme::STREAM_UNKNOWN,
+            theme::stream_unknown(),
             "Stream status unknown · not checked yet or unavailable",
         ),
     };

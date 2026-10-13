@@ -469,23 +469,23 @@ impl ChannelPane {
             let height=(f32::from(window.viewport_size().height)-160.).clamp(60.,440.);
             dialog.w(px(width)).title("Composer commands")
                 .child(div().id("composer-command-list").v_flex().gap_2().max_h(px(height)).overflow_y_scroll()
-                    .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Choosing a command inserts it; Enter runs it. Twitch commands run only where your role and permissions allow; unknown commands are never posted to chat."))
+                    .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("Choosing a command inserts it; Enter runs it. Twitch commands run only where your role and permissions allow; unknown commands are never posted to chat."))
                     .children(COMMANDS.iter().map(|command| {
                         let owner=owner.clone(); let name=command.name;
-                        div().v_flex().gap_1().p_2().bg(rgb(theme::CONTROL)).rounded(px(4.))
+                        div().v_flex().gap_1().p_2().bg(rgb(theme::control())).rounded(px(4.))
                             .child(Button::new(SharedString::from(format!("command-{name}"))).small().label(command.usage).on_click(move|_,w,cx| {
                                 w.close_dialog(cx); let _=owner.update(cx,|p,cx|p.command_draft(&format!("{name} "),w,cx));
                             }))
-                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(command.description))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(command.description))
                     }))
                     .child(div().pt_2().font_weight(FontWeight::SEMIBOLD).text_size(px(12.)).child("Twitch"))
                     .children(crate::twitch_actions::COMMANDS.iter().map(|command| {
                         let owner=owner.clone(); let name=command.name;
-                        div().v_flex().gap_1().p_2().bg(rgb(theme::CONTROL)).rounded(px(4.))
+                        div().v_flex().gap_1().p_2().bg(rgb(theme::control())).rounded(px(4.))
                             .child(Button::new(SharedString::from(format!("command-{name}"))).small().label(command.usage).on_click(move|_,w,cx| {
                                 w.close_dialog(cx); let _=owner.update(cx,|p,cx|p.command_draft(&format!("{name} "),w,cx));
                             }))
-                            .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(command.description))
+                            .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(command.description))
                     })))
         });
     }

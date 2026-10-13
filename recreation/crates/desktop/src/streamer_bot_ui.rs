@@ -134,7 +134,7 @@ impl Workbench {
                 // Enter belongs to the fields inside; it must not close the dialog.
                 .on_ok(|_, _, _| false)
                 .child(div().v_flex().gap_2()
-                    .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("In Streamer.bot: Servers/Clients → WebSocket Server → Auto Start + Start. Jawjack connects locally; the password is kept in Windows Credential Manager."))
+                    .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child("In Streamer.bot: Servers/Clients → WebSocket Server → Auto Start + Start. Jawjack connects locally; the password is kept in Windows Credential Manager."))
                     .child(div().text_size(px(12.)).child("Address"))
                     .child(div().h_flex().gap_1().child(div().flex_1().child(Input::new(&host).small())).child(div().w(px(80.)).child(Input::new(&port).small())))
                     .child(div().text_size(px(12.)).child("Password"))
@@ -207,8 +207,8 @@ impl Workbench {
                                     cx.notify();
                                 });
                             }))
-                        .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().when(!action.enabled, |el| el.text_color(rgb(theme::MUTED))).child(action.name.clone()))
-                        .when(!action.group.is_empty(), |el| el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).whitespace_nowrap().child(action.group.clone())))
+                        .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().when(!action.enabled, |el| el.text_color(rgb(theme::muted()))).child(action.name.clone()))
+                        .when(!action.group.is_empty(), |el| el.child(div().text_size(px(11.)).text_color(rgb(theme::muted())).whitespace_nowrap().child(action.group.clone())))
                 })
                 .collect::<Vec<_>>();
             let empty = rows.is_empty();
@@ -218,11 +218,11 @@ impl Workbench {
                 // Enter belongs to the fields inside; it must not close the dialog.
                 .on_ok(|_, _, _| false)
                 .child(div().v_flex().gap_2()
-                    .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("Pin up to {MAX_PINNED} actions as Studio buttons; they also appear when you right-click a message, with that user and message passed as arguments.")))
+                    .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(format!("Pin up to {MAX_PINNED} actions as Studio buttons; they also appear when you right-click a message, with that user and message passed as arguments.")))
                     .child(Input::new(&filter).small())
                     .child(div().id("bot-actions").v_flex().gap_1().max_h(px(height)).overflow_y_scroll()
                         .children(rows)
-                        .when(empty, |el| el.child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child("No actions yet. Is Streamer.bot connected?")))))
+                        .when(empty, |el| el.child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child("No actions yet. Is Streamer.bot connected?")))))
         });
     }
     pub(super) fn render_bot_card(&self, cx: &mut Context<Self>) -> Div {
@@ -233,7 +233,7 @@ impl Workbench {
             return div()
                 .v_flex()
                 .gap_2()
-                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(
                     "Run your Streamer.bot actions from here, and see donations plus YouTube and Kick events in Activity.",
                 ))
                 .child(
@@ -245,9 +245,9 @@ impl Workbench {
                 );
         }
         let status_color = if connected {
-            theme::STREAM_LIVE
+            theme::stream_live()
         } else {
-            theme::STREAM_UNKNOWN
+            theme::stream_unknown()
         };
         div()
             .v_flex()
@@ -272,7 +272,7 @@ impl Workbench {
                             .whitespace_nowrap()
                             .text_ellipsis()
                             .text_size(px(11.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child(self.streamer_bot.status.clone()),
                     )
                     .child(
@@ -288,7 +288,7 @@ impl Workbench {
                 el.child(
                     div()
                         .text_size(px(11.))
-                        .text_color(rgb(theme::MUTED))
+                        .text_color(rgb(theme::muted()))
                         .child("Pin the actions you use live to get one-click buttons here."),
                 )
             })

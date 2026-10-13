@@ -152,10 +152,10 @@ impl Render for DragPreview {
         div()
             .px_3()
             .py_2()
-            .bg(rgb(theme::PANEL))
-            .text_color(rgb(theme::TEXT))
+            .bg(rgb(theme::panel()))
+            .text_color(rgb(theme::text()))
             .border_1()
-            .border_color(rgb(0xA99CF4))
+            .border_color(rgb(crate::theme::tone(0xA99CF4)))
             .rounded(px(5.))
             .child(self.0.clone())
     }
@@ -994,7 +994,7 @@ impl Render for ChannelPane {
                         .hits
                         .keys()
                         .filter(|row| **row >= first)
-                        .map(|row| (at(*row), theme::ACCENT)),
+                        .map(|row| (at(*row), theme::accent())),
                 );
             }
             // A tall list can have thousands; keep the newest few hundred.
@@ -1071,8 +1071,8 @@ impl Render for ChannelPane {
             .min_w_0()
             .h_full()
             .map(|el| match self.overlay {
-                Some(opacity) => el.bg(rgba((theme::CANVAS << 8) | (opacity.clamp(0., 1.) * 255.) as u32)),
-                None => el.bg(rgb(theme::CANVAS)).border_1().border_color(rgb(theme::BORDER)),
+                Some(opacity) => el.bg(rgba((theme::canvas() << 8) | (opacity.clamp(0., 1.) * 255.) as u32)),
+                None => el.bg(rgb(theme::canvas())).border_1().border_color(rgb(theme::border())),
             })
             .rounded(px(10.))
             .overflow_hidden()
@@ -1083,9 +1083,9 @@ impl Render for ChannelPane {
                     .h(px(26.))
                     .px_2()
                     .gap_2()
-                    .bg(rgb(theme::PANEL))
+                    .bg(rgb(theme::panel()))
                     .border_b_1()
-                    .border_color(rgb(theme::BORDER))
+                    .border_color(rgb(theme::border()))
                     .child(
                         // Name and status truncate first so the pane controls stay reachable.
                         div()
@@ -1139,7 +1139,7 @@ impl Render for ChannelPane {
                                         .text_ellipsis()
                                         .text_size(px(11.))
                                         .font_weight(FontWeight::NORMAL)
-                                        .text_color(rgb(theme::MUTED))
+                                        .text_color(rgb(theme::muted()))
                                         .child(text)
                                 }))),
                     )
@@ -1152,7 +1152,7 @@ impl Render for ChannelPane {
                             .whitespace_nowrap()
                             .text_ellipsis()
                             .text_size(px(12.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child(if self.connected { if paused { "Paused".to_owned() } else if following { "Latest".to_owned() } else { format!("{retained}/{} · History", self.timeline.borrow().capacity()) } } else { self.connection.clone() }),
                     )
                     .child(Button::new("chatter-list").ghost().xsmall().icon(Icon::new(gpui_kit::assets::IconName::Users)).tooltip("Chatters").on_click(cx.listener(|this,_,window,cx|this.open_chatter_list(window,cx))))
@@ -1233,8 +1233,8 @@ impl Render for ChannelPane {
                     .when_some(self.row_menu.as_ref().map(|(menu, at, _)| (menu.clone(), *at)), |el, (menu, at)| {
                         el.child(deferred(anchored().position(at).snap_to_window_with_margin(px(8.)).child(menu)).with_priority(1))
                     })
-                    .when(retained == 0, |el| el.child(div().v_flex().p_6().gap_2().text_color(rgb(theme::MUTED))
-                        .child(div().text_color(rgb(theme::TEXT)).text_size(px(16.)).child(if let Some(title) = combined::special_title(&self.name) { title.to_owned() } else if youtube::is_youtube(&self.name) { format!("{} is ready", combined::title(&self.name)) } else { format!("#{} is ready", combined::title(&self.name)) }))
+                    .when(retained == 0, |el| el.child(div().v_flex().p_6().gap_2().text_color(rgb(theme::muted()))
+                        .child(div().text_color(rgb(theme::text())).text_size(px(16.)).child(if let Some(title) = combined::special_title(&self.name) { title.to_owned() } else if youtube::is_youtube(&self.name) { format!("{} is ready", combined::title(&self.name)) } else { format!("#{} is ready", combined::title(&self.name)) }))
                         .child(if self.connected && !combined::is_special(&self.name) { "Connected. Waiting for messages…".to_string() } else { self.connection.clone() })
                         .when(youtube::is_youtube(&self.name) && self.connection.contains("Connect YouTube"), |el| el.child(div().pt_2().h_flex().child(
                             Button::new("youtube-setup").small().primary().label("Connect YouTube").on_click(cx.listener(|_, _, _, cx| cx.emit(PaneEvent::SetUpYouTube))))))))
@@ -1248,7 +1248,7 @@ impl Render for ChannelPane {
                             // Someone blocked after their messages arrived disappears too.
                             let blocked = ignores.borrow().blocked.contains(&message.user_id);
                             if blocked && ignores.borrow().blocked_placeholder {
-                                return div().text_size(px(11.)).text_color(rgb(theme::MUTED)).italic().py(px(2.))
+                                return div().text_size(px(11.)).text_color(rgb(theme::muted())).italic().py(px(2.))
                                     .child("Message from someone you blocked")
                                     .into_any_element();
                             }
@@ -1339,8 +1339,8 @@ impl Render for ChannelPane {
                                 .group(row_group.clone())
                                 .when_some(hover_reply, |el, (owner, id)| {
                                     el.child(div().id(SharedString::from(format!("hover-reply-{id}"))).absolute().top(px(2.)).right(px(6.)).size(px(20.)).rounded(px(4.)).flex().items_center().justify_center()
-                                        .bg(rgb(theme::ELEVATED)).border_1().border_color(rgb(theme::BORDER)).text_color(rgb(theme::MUTED)).cursor_pointer()
-                                        .opacity(0.).group_hover(row_group.clone(), |s| s.opacity(1.)).hover(|s| s.text_color(rgb(theme::TEXT)))
+                                        .bg(rgb(theme::elevated())).border_1().border_color(rgb(theme::border())).text_color(rgb(theme::muted())).cursor_pointer()
+                                        .opacity(0.).group_hover(row_group.clone(), |s| s.opacity(1.)).hover(|s| s.text_color(rgb(theme::text())))
                                         .tooltip(|w, cx| gpui_kit::component::tooltip::Tooltip::new("Reply").build(w, cx))
                                         .capture_any_mouse_down(move |event: &MouseDownEvent, window, cx| {
                                             if event.button != MouseButton::Left { return; }
@@ -1354,11 +1354,11 @@ impl Render for ChannelPane {
                                 .border_l_2().border_color(rgba(0x00000000)).pl(px(6.)).pr(px(4.))
                                 .when(message.deleted, |el| el.opacity(0.45))
                                 // Settings → Appearance → Alternate row backgrounds (Chatterino's option).
-                                .when(theme::alternate_rows() && row % 2 == 1, |el| el.bg(rgba(0xFFFFFF07)))
+                                .when(theme::alternate_rows() && row % 2 == 1, |el| el.bg(rgba(crate::theme::tone_a(0xFFFFFF07))))
                                 // Shared Chat: a short rounded bar in the guest channel's colour, in the row's left gutter.
                                 .when_some(message.presentation.source_id.as_ref().filter(|_| shared_style == 0 || shared_style == 2).map(|id| shared_colors.get(id).copied().unwrap_or_else(|| shared_chat::color_of(id))), |el, color| el.child(div().absolute().left(px(1.)).top(px(4.)).bottom(px(4.)).w(px(3.)).rounded_full().bg(rgb(color))))
-                                .when(theme::flag(&theme::SEPARATORS), |el| el.child(div().absolute().left_0().right_0().bottom_0().h(px(1.)).bg(rgb(theme::BORDER))))
-                                .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(0xA99CF40D)).py(px(2.)).rounded_r(px(4.)))
+                                .when(theme::flag(&theme::SEPARATORS), |el| el.child(div().absolute().left_0().right_0().bottom_0().h(px(1.)).bg(rgb(theme::border()))))
+                                .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(crate::theme::tone_a(0xA99CF40D))).py(px(2.)).rounded_r(px(4.)))
                                 .when(highlight_rows.contains(&row),|el|{let (accent,background)=highlight_rules::colors(highlight_colors.get(&row).copied().unwrap_or(0));el.bg(rgb(background)).border_color(rgb(accent)).py(px(2.)).rounded_r(px(4.))})
                                 .on_prepaint(move|bounds,window,cx|{
                                     let clip=window.content_mask().bounds;
@@ -1368,27 +1368,27 @@ impl Render for ChannelPane {
                                         presented.set(Some(presented.get().map_or(row,|old|old.max(row))));
                                     }
                                 })
-                                .when(search_current==Some(row),|el|el.bg(rgb(0x272331)))
+                                .when(search_current==Some(row),|el|el.bg(rgb(crate::theme::tone(0x272331))))
                                 .when_some(pulse,|el,(_,at)|{let alpha=if cx.reduce_motion(){255}else{(255.*(1.-at.elapsed().as_secs_f32()/1.2).clamp(0.,1.))as u32};el.border_color(rgba((0x9DD8CB<<8)|alpha))})
                                 .left(px(12.0 * (1.0 - eased)))
                                 .top(px(6.0 * (1.0 - eased)))
                                 // Recent history is dimmed, as in Chatterino.
-                                .opacity((if message.presentation.similar { 0.4 } else if message.presentation.historical { 0.6 } else { 0.25 + 0.75 * eased }) * if shared_style == 2 && message.presentation.source_id.is_some() { 0.55 } else { 1.0 })
+                                .opacity((if message.presentation.similar { 0.4 } else if message.presentation.historical { if theme::is_light() { 0.7 } else { 0.6 } } else { 0.25 + 0.75 * eased }) * if shared_style == 2 && message.presentation.source_id.is_some() { 0.55 } else { 1.0 })
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()
                                 .on_mouse_down(MouseButton::Right,move|event,window,cx|{let at=event.position;let owner=row_owner.clone();let id=row_id.clone();window.defer(cx,move|window,cx|{let build=owner.clone();let menu=gpui_kit::component::menu::PopupMenu::build(window,cx,move|menu,window,cx|message_actions::menu(build,id,menu,window,cx));let _=owner.update(cx,|pane,cx|pane.open_row_menu(menu,at,window,cx));});})
-                                .when(read_boundary==Some(row)&&index>0,|el|el.child(div().h_flex().items_center().gap_2().h(px(18.)).text_size(px(10.)).text_color(rgb(0x9DBFCE)).child(div().h(px(1.)).flex_1().bg(rgb(0x40535E))).child("Last read position").child(div().h(px(1.)).flex_1().bg(rgb(0x40535E)))))
+                                .when(read_boundary==Some(row)&&index>0,|el|el.child(div().h_flex().items_center().gap_2().h(px(18.)).text_size(px(10.)).text_color(rgb(crate::theme::tone(0x9DBFCE))).child(div().h(px(1.)).flex_1().bg(rgb(crate::theme::tone(0x40535E)))).child("Last read position").child(div().h(px(1.)).flex_1().bg(rgb(crate::theme::tone(0x40535E))))))
                                 .children(rich_heading)
                                 .children(automod_controls)
                                 .children(reply_line)
                                 .child(div().h_flex().items_start().min_w_0().gap_1()
-                                .when_some(timestamp,|el,(label,full)|el.child(div().id(SharedString::from(format!("timestamp-{}",message.id))).w(px(match timestamps{2=>55.,3=>58.,4=>76.,_=>37.})).h(first_line_height).flex_shrink_0().flex().items_center().text_size(px(10.)).text_color(rgb(theme::MUTED)).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(w,cx)).child(label)))
+                                .when_some(timestamp,|el,(label,full)|el.child(div().id(SharedString::from(format!("timestamp-{}",message.id))).w(px(match timestamps{2=>55.,3=>58.,4=>76.,_=>37.})).h(first_line_height).flex_shrink_0().flex().items_center().text_size(px(10.)).text_color(rgb(theme::muted())).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(w,cx)).child(label)))
                                 .when(mod_buttons && !message.deleted && !message.id.starts_with(automod::LINE_PREFIX) && message.login.is_some() && own_user.as_deref() != Some(message.user_id.as_str()), |el| {
                                     let tool = |id: &'static str, icon: gpui_kit::assets::IconName, tip: &'static str, hover: u32, action: message_actions::Action| {
                                         let (owner, message_id) = (menu_owner.clone(), message.id.clone());
                                         div().id(SharedString::from(format!("{id}-{}", message.id))).size(px(16.)).h(first_line_height).flex_shrink_0().flex().items_center().justify_center()
-                                            .text_color(rgb(theme::MUTED)).cursor_pointer().hover(move |s| s.text_color(rgb(hover)))
+                                            .text_color(rgb(theme::muted())).cursor_pointer().hover(move |s| s.text_color(rgb(hover)))
                                             .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(tip).build(w, cx))
                                             // Act on press, in capture: the row's own handlers would swallow a click.
                                             .capture_any_mouse_down(move |event: &MouseDownEvent, window, cx| {
@@ -1406,8 +1406,8 @@ impl Render for ChannelPane {
                                         .children(custom_buttons.iter().enumerate().map(|(index, button)| {
                                             let (owner, message_id, command, tip) = (menu_owner.clone(), message.id.clone(), button.command.clone(), button.command.clone());
                                             div().id(SharedString::from(format!("mod-custom-{index}-{}", message.id))).h(first_line_height).px(px(3.)).flex_shrink_0().flex().items_center()
-                                                .rounded(px(3.)).text_size(px(10.)).text_color(rgb(theme::MUTED)).cursor_pointer()
-                                                .hover(|s| s.text_color(rgb(theme::TEXT)).bg(rgb(theme::HOVER)))
+                                                .rounded(px(3.)).text_size(px(10.)).text_color(rgb(theme::muted())).cursor_pointer()
+                                                .hover(|s| s.text_color(rgb(theme::text())).bg(rgb(theme::hover())))
                                                 .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(w, cx))
                                                 .capture_any_mouse_down(move |event: &MouseDownEvent, window, cx| {
                                                     if event.button != MouseButton::Left { return; }
@@ -1432,7 +1432,7 @@ impl Render for ChannelPane {
                                     el.child(div().id(SharedString::from(format!("origin-{}", message.id))).h(first_line_height).flex().items_center().gap_1().flex_shrink_0().child(icon)
                                         .when_some(go, |el, (owner, channel, id)| {
                                             let tip = if live_tab { format!("Open #{channel}") } else { format!("Go to message in #{channel}") };
-                                            el.cursor_pointer().rounded(px(3.)).hover(|s| s.bg(rgb(theme::HOVER)))
+                                            el.cursor_pointer().rounded(px(3.)).hover(|s| s.bg(rgb(theme::hover())))
                                                 .tooltip(move |w, cx| gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(w, cx))
                                                 .capture_any_mouse_down(move |event: &MouseDownEvent, _, cx| {
                                                     // Capture: the message text would otherwise take the press for selecting.
@@ -1458,7 +1458,7 @@ impl Render for ChannelPane {
                                         .tooltip(media_hover::image_card(name.clone(), "Shared Chat · sent in their channel".into(), image.clone()))
                                         .child(div().size(px(20.)).rounded_full().flex().items_center().justify_center().when_some(ring, |el, ring| el.border_2().border_color(rgb(ring))).child(match image {
                                             Some(image) => emote_picker::avatar(image, if ring.is_some() { 14. } else { 18. }),
-                                            None => div().size(px(14.)).rounded_full().bg(rgb(0x3A3350)).flex().items_center().justify_center().text_size(px(9.)).text_color(rgb(theme::TEXT))
+                                            None => div().size(px(14.)).rounded_full().bg(rgb(crate::theme::tone(0x3A3350))).flex().items_center().justify_center().text_size(px(9.)).text_color(rgb(theme::text()))
                                                 .child(message.presentation.source.as_deref().and_then(|n| n.chars().next()).unwrap_or('?').to_uppercase().to_string()).into_any_element(),
                                         })))
                                 })
@@ -1466,16 +1466,16 @@ impl Render for ChannelPane {
                                     div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(media_hover::image_card(badge.title.clone(),media_hover::source(badge.key.provider()).to_owned(),image.clone())).child(div().size(px(18.)).when_some(background,|el,color|el.bg(rgb(color))).child(emote_picker::icon(image,String::new(),18.,18.)))
                                 }).collect::<Vec<_>>())
                                 .when(message.deleted, |el| el.child(div().h(first_line_height).flex().items_center().flex_shrink_0()
-                                    .child(div().px(px(4.)).rounded(px(3.)).bg(rgb(0x3A2328)).text_color(rgb(0xF29D9D)).text_size(px(10.)).child("deleted"))))
+                                    .child(div().px(px(4.)).rounded(px(3.)).bg(rgb(crate::theme::tone(0x3A2328))).text_color(rgb(crate::theme::tone(0xF29D9D))).text_size(px(10.)).child("deleted"))))
                                 .child(div().flex_1().min_w_0().v_flex().child(div().min_w_0()
                                     // Collapsed: only the first lines, with "Show more" under them.
                                     .when(collapsed, |el| el.max_h(first_line_height * collapse_lines as f32).overflow_hidden())
                                     // `/me`: the whole message in the chatter's colour, like Chatterino.
-                                    .when(message.presentation.kind == "action", |el| el.text_color(rgb(message.author_color().unwrap_or(theme::TEXT))).italic())
+                                    .when(message.presentation.kind == "action", |el| el.text_color(rgb(message.author_color().unwrap_or(theme::text()))).italic())
                                     .child(if message.presentation.kind == chat_core::MODERATION || message.presentation.kind == chat_core::SYSTEM {
                                     let repeats = message.presentation.repeats;
                                     let text = message.presentation.notice.clone().unwrap_or_default();
-                                    div().text_color(rgb(theme::MUTED)).italic()
+                                    div().text_color(rgb(theme::muted())).italic()
                                         .child(if repeats > 0 { format!("{text} ({} times)", repeats + 1) } else { text })
                                         .into_any_element()
                                 } else if let Some(inline) = inline {
@@ -1486,7 +1486,7 @@ impl Render for ChannelPane {
                                 }))
                                 .when(collapsed, |el| {
                                     let (owner, id) = (menu_owner.clone(), message.id.clone());
-                                    el.child(div().id(SharedString::from(format!("expand-{id}"))).text_size(px(11.)).text_color(rgb(theme::ACCENT)).cursor_pointer().hover(|s| s.underline())
+                                    el.child(div().id(SharedString::from(format!("expand-{id}"))).text_size(px(11.)).text_color(rgb(theme::accent())).cursor_pointer().hover(|s| s.underline())
                                         .capture_any_mouse_down(move |event: &MouseDownEvent, _, cx| {
                                             if event.button != MouseButton::Left { return; }
                                             cx.stop_propagation();
@@ -1515,7 +1515,7 @@ impl Render for ChannelPane {
                     )
                     .children(self.render_shared_avatars(window, cx)),
             )
-            .child(div().key_context("JawjackComposer").relative().v_flex().when(hide_input,|el|el.hidden()).p_1().gap_1().bg(rgb(theme::PANEL)).border_t_1().border_color(rgb(theme::BORDER))
+            .child(div().key_context("JawjackComposer").relative().v_flex().when(hide_input,|el|el.hidden()).p_1().gap_1().bg(rgb(theme::panel())).border_t_1().border_color(rgb(theme::border()))
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                     if this.picker.open {
                         if event.keystroke.modifiers.alt && matches!(event.keystroke.key.as_str(),"left"|"right"){this.picker_action(&event.keystroke.key,window,cx);}
@@ -1582,13 +1582,13 @@ impl Render for ChannelPane {
                 .child(Textarea::new(&self.draft))
                 // Routine progress sits inline so side-by-side composers keep equal height;
                 // failures keep a full-width row so their explanation is never truncated.
-                .when(!routine_status && !self.send_status.is_empty(), |el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(self.send_status.clone())))
-                .child(div().h_flex().justify_between().gap_2().text_size(px(11.)).text_color(rgb(theme::MUTED))
+                .when(!routine_status && !self.send_status.is_empty(), |el|el.child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(self.send_status.clone())))
+                .child(div().h_flex().justify_between().gap_2().text_size(px(11.)).text_color(rgb(theme::muted()))
                     .child(div().h_flex().gap_2().flex_shrink_0()
-                        .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(0xF29D9D))).child(format!("{} / 500", self.draft.read(cx).value().chars().count())))
-                        .children(self.slow_mode_wait(cx).map(|left| div().text_color(rgb(0xE8C468)).child(format!("Slow mode · {left}s"))))
+                        .child(div().when(self.draft.read(cx).value().chars().count() > 500, |el|el.text_color(rgb(crate::theme::tone(0xF29D9D)))).child(format!("{} / 500", self.draft.read(cx).value().chars().count())))
+                        .children(self.slow_mode_wait(cx).map(|left| div().text_color(rgb(crate::theme::tone(0xE8C468))).child(format!("Slow mode · {left}s"))))
                         .when(routine_status && !self.send_status.is_empty(), |el|el.child(self.send_status.clone())))
-                    .when_some(self.room_settings.as_ref().filter(|r|!r.labels().is_empty()).map(|r|r.summary()),|el,summary|el.child(div().id("room-modes-hint").max_w(px(120.)).min_w_0().flex_shrink(1.).overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(rgb(0xC5B8E6)).tooltip({let summary=summary.clone();move|w,cx|gpui_kit::component::tooltip::Tooltip::new(format!("{summary}. Your role may grant exemptions; Twitch validates sending. Ctrl+I for channel details.")).build(w,cx)}).child(summary)))
+                    .when_some(self.room_settings.as_ref().filter(|r|!r.labels().is_empty()).map(|r|r.summary()),|el,summary|el.child(div().id("room-modes-hint").max_w(px(120.)).min_w_0().flex_shrink(1.).overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(rgb(crate::theme::tone(0xC5B8E6))).tooltip({let summary=summary.clone();move|w,cx|gpui_kit::component::tooltip::Tooltip::new(format!("{summary}. Your role may grant exemptions; Twitch validates sending. Ctrl+I for channel details.")).build(w,cx)}).child(summary)))
                     .child(div().h_flex().gap_2().when_some(self.send_to.clone(), |el, current| {
                         // Combined feed: one explicit destination, never all of them.
                         let sources = self.all_sources();
@@ -1669,11 +1669,11 @@ fn caption_control(
         .flex()
         .items_center()
         .justify_center()
-        .text_color(rgb(theme::MUTED))
+        .text_color(rgb(theme::muted()))
         .hover(move |style| {
             style
-                .bg(rgb(if close { 0xC42B1C } else { theme::HOVER }))
-                .text_color(rgb(theme::TEXT))
+                .bg(rgb(if close { 0xC42B1C } else { theme::hover() }))
+                .text_color(rgb(theme::text()))
         })
         .window_control_area(area)
         .child(Icon::new(icon).small())
@@ -1838,7 +1838,7 @@ fn automod_row(
     row.child(
         div()
             .text_size(px(10.))
-            .text_color(rgb(theme::MUTED))
+            .text_color(rgb(theme::muted()))
             .child(outcome),
     )
     .into_any_element()

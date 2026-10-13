@@ -249,14 +249,14 @@ impl Workbench {
                 .flex_shrink_0()
                 .h_full()
                 .border_r_1()
-                .border_color(rgb(theme::BORDER))
+                .border_color(rgb(theme::border()))
                 .child(div().p_2().child(Input::new(&start).small()))
                 .when(conversations.is_empty(), |el| {
                     el.child(
                         div()
                             .p_2()
                             .text_size(px(11.))
-                            .text_color(rgb(theme::MUTED))
+                            .text_color(rgb(theme::muted()))
                             .child("No whispers this session."),
                     )
                 })
@@ -275,8 +275,8 @@ impl Workbench {
                                 .px_2()
                                 .py(px(6.))
                                 .cursor_pointer()
-                                .when(active, |el| el.bg(rgb(theme::CONTROL)))
-                                .hover(|s| s.bg(rgb(theme::HOVER)))
+                                .when(active, |el| el.bg(rgb(theme::control())))
+                                .hover(|s| s.bg(rgb(theme::hover())))
                                 .child(
                                     div()
                                         .h_flex()
@@ -297,8 +297,8 @@ impl Workbench {
                                                 div()
                                                     .px(px(5.))
                                                     .rounded_full()
-                                                    .bg(rgb(theme::ACCENT))
-                                                    .text_color(rgb(0x16121F))
+                                                    .bg(rgb(theme::accent()))
+                                                    .text_color(rgb(crate::theme::tone(0x16121F)))
                                                     .text_size(px(10.))
                                                     .child(c.unread.to_string()),
                                             )
@@ -307,7 +307,7 @@ impl Workbench {
                                 .child(
                                     div()
                                         .text_size(px(11.))
-                                        .text_color(rgb(theme::MUTED))
+                                        .text_color(rgb(theme::muted()))
                                         .overflow_hidden()
                                         .whitespace_nowrap()
                                         .text_ellipsis()
@@ -344,7 +344,7 @@ impl Workbench {
                             .px_3()
                             .py_2()
                             .border_b_1()
-                            .border_color(rgb(theme::BORDER))
+                            .border_color(rgb(theme::border()))
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(if c.name.eq_ignore_ascii_case(&c.login) {
                                 c.name.clone()
@@ -368,13 +368,17 @@ impl Workbench {
                                         .px_2()
                                         .py_1()
                                         .rounded(px(8.))
-                                        .bg(rgb(if line.mine { 0x2D2648 } else { theme::CONTROL }))
+                                        .bg(rgb(if line.mine {
+                                            0x2D2648
+                                        } else {
+                                            theme::control()
+                                        }))
                                         .v_flex()
                                         .child(div().text_size(px(13.)).child(line.text.clone()))
                                         .child(
                                             div()
                                                 .text_size(px(10.))
-                                                .text_color(rgb(theme::MUTED))
+                                                .text_color(rgb(theme::muted()))
                                                 .child(line.at.format("%H:%M").to_string()),
                                         ),
                                 )
@@ -386,7 +390,7 @@ impl Workbench {
                             .gap_2()
                             .p_2()
                             .border_t_1()
-                            .border_color(rgb(theme::BORDER))
+                            .border_color(rgb(theme::border()))
                             .child(div().flex_1().child(Input::new(&reply).small()))
                             .child(
                                 Button::new("whisper-send")
@@ -409,7 +413,7 @@ impl Workbench {
                     .items_center()
                     .justify_center()
                     .text_size(px(12.))
-                    .text_color(rgb(theme::MUTED))
+                    .text_color(rgb(theme::muted()))
                     .child("Pick a conversation or type a login to start one."),
             };
             dialog
@@ -423,7 +427,7 @@ impl Workbench {
                         .h_flex()
                         .rounded(px(6.))
                         .border_1()
-                        .border_color(rgb(theme::BORDER))
+                        .border_color(rgb(theme::border()))
                         .overflow_hidden()
                         .child(list)
                         .child(thread),
