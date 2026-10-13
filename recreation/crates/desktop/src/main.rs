@@ -357,6 +357,9 @@ struct ChannelPane {
     viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
     /// Long messages the reader expanded (Settings → Appearance → Collapse).
     expanded: Rc<RefCell<std::collections::HashSet<String>>>,
+    /// Overlay mode (Chatterino's overlay window): only the messages, over a
+    /// background this opaque (0 = fully see-through).
+    pub overlay: Option<f32>,
     /// The open right-click menu on a message. Held here, not on the row, so new
     /// chat re-rendering the rows doesn't close it.
     row_menu: Option<(
@@ -507,6 +510,7 @@ impl ChannelPane {
             viewport: Rc::new(RefCell::new(None)),
             expanded: Default::default(),
             row_menu: None,
+            overlay: None,
         }
     }
     /// Tab menu → "Clear messages locally": empties this view; nobody else is affected.
@@ -1013,13 +1017,14 @@ impl Render for ChannelPane {
         let menu_owner = cx.weak_entity();
         // Chatterino's "hide input when empty": back as soon as this chat is
         // focused, you start typing, reply, or something is sending.
-        let hide_input = crate::replies::option(crate::replies::HIDE_EMPTY_INPUT)
-            && self.draft.read(cx).value().is_empty()
-            && self.reply_target.is_none()
-            && self.pending.is_none()
-            && !self.picker.open
-            && !self.focus.is_focused(window)
-            && !self.draft.read(cx).focus_handle(cx).is_focused(window);
+        let hide_input = self.overlay.is_some()
+            || crate::replies::option(crate::replies::HIDE_EMPTY_INPUT)
+                && self.draft.read(cx).value().is_empty()
+                && self.reply_target.is_none()
+                && self.pending.is_none()
+                && !self.picker.open
+                && !self.focus.is_focused(window)
+                && !self.draft.read(cx).focus_handle(cx).is_focused(window);
         let automod_held = self.automod.clone();
         let automod_outcomes = self.automod_outcomes.clone();
         let link_press = self.link_press.clone();
@@ -1065,14 +1070,16 @@ impl Render for ChannelPane {
             .flex_1()
             .min_w_0()
             .h_full()
-            .bg(rgb(theme::CANVAS))
-            .border_1()
-            .border_color(rgb(theme::BORDER))
+            .map(|el| match self.overlay {
+                Some(opacity) => el.bg(rgba((theme::CANVAS << 8) | (opacity.clamp(0., 1.) * 255.) as u32)),
+                None => el.bg(rgb(theme::CANVAS)).border_1().border_color(rgb(theme::BORDER)),
+            })
             .rounded(px(10.))
             .overflow_hidden()
             .child(
                 div()
                     .h_flex()
+                    .when(self.overlay.is_some(), |el| el.hidden())
                     .h(px(26.))
                     .px_2()
                     .gap_2()

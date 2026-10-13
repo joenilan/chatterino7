@@ -57,6 +57,29 @@ pub fn set_topmost(hwnd: isize, on: bool) -> bool {
     false
 }
 
+/// Let clicks pass through the window `hwnd` to whatever is behind it (an
+/// overlay over a game), or stop doing so. Returns false if Windows refused.
+pub fn set_click_through(hwnd: isize, on: bool) -> bool {
+    #[cfg(all(windows, target_pointer_width = "64"))]
+    if hwnd != 0 {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_LAYERED, WS_EX_TRANSPARENT,
+        };
+        // SAFETY: Get/SetWindowLongPtrW take plain values; only this window's
+        // extended style changes, and an invalid handle makes them fail harmlessly.
+        unsafe {
+            let style = GetWindowLongPtrW(hwnd as _, GWL_EXSTYLE);
+            let flags = (WS_EX_LAYERED | WS_EX_TRANSPARENT) as isize;
+            let next = if on { style | flags } else { style & !flags };
+            SetWindowLongPtrW(hwnd as _, GWL_EXSTYLE, next);
+            return GetWindowLongPtrW(hwnd as _, GWL_EXSTYLE) == next;
+        }
+    }
+    #[cfg(not(all(windows, target_pointer_width = "64")))]
+    let _ = (hwnd, on);
+    false
+}
+
 /// Claim "the Jawjack window" for one profile (`key`, e.g. "default" or "dev").
 /// Returns false when another Jawjack on the same profile already holds it; that
 /// window (found by its title, `title`) is brought to the front. The claim lasts

@@ -406,6 +406,18 @@ impl Workbench {
                         .children(crate::theme::UI_SCALES.map(|s| crate::theme::segment(format!("{s}%")))),
                 ))
                 .child(row(
+                    "Overlay background",
+                    "How see-through an overlay window is (a tab's menu › Layout › Open as overlay). 0% shows only the messages.",
+                    crate::theme::Segmented::new("settings-overlay-opacity")
+                        .selected_index([0u32, 25, 55, 80, 100].iter().position(|o| *o == super::popout::OVERLAY_OPACITY.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(2))
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            super::popout::OVERLAY_OPACITY.store([0u32, 25, 55, 80, 100][(*index).min(4)], std::sync::atomic::Ordering::Relaxed);
+                            this.schedule_save(cx);
+                            cx.refresh_windows();
+                        }))
+                        .children(["0%", "25%", "55%", "80%", "100%"].map(crate::theme::segment)),
+                ))
+                .child(row(
                     "Emoji style",
                     "Draw emoji with Windows' own font, or as Twitter, Google, Apple or Facebook images (loaded from cdn.jsdelivr.net). Applies to new messages.",
                     crate::theme::Segmented::new("settings-emoji-style")

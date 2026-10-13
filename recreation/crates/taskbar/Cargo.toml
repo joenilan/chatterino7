@@ -7,4 +7,4 @@ publish.workspace = true
 description = "The few Win32 calls Jawjack needs that GPUI doesn't offer (taskbar flash, always on top, one window per profile)."
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }

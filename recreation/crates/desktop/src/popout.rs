@@ -9,6 +9,83 @@ pub(super) const POPOUT_TAB: u64 = u64::MAX;
 pub(super) struct Popout {
     pub pane: Entity<ChannelPane>,
     pub window: AnyWindowHandle,
+    /// Set for an overlay window (not reopened at launch).
+    pub overlay: Option<Entity<OverlayView>>,
+}
+
+/// Settings › Overlay opacity: how opaque an overlay's background is (percent).
+pub(crate) static OVERLAY_OPACITY: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(55);
+
+/// An overlay window (Chatterino's): one channel's messages in a transparent
+/// window kept on top, e.g. over a game. A slim bar moves it; Lock makes it
+/// click-through (unlock from the channel's tab menu in the main window).
+pub(super) struct OverlayView {
+    pane: Entity<ChannelPane>,
+    channel: SharedString,
+    pub(super) locked: bool,
+}
+impl OverlayView {
+    pub(super) fn set_locked(&mut self, locked: bool, window: &mut Window, cx: &mut Context<Self>) {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        if let Ok(handle) = HasWindowHandle::window_handle(window)
+            && let RawWindowHandle::Win32(win32) = handle.as_raw()
+        {
+            jawjack_taskbar::set_click_through(win32.hwnd.get(), locked);
+        }
+        self.locked = locked;
+        cx.notify();
+    }
+}
+impl Render for OverlayView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        window.set_ui_zoom(theme::ui_zoom());
+        let opacity = OVERLAY_OPACITY
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .min(100) as f32
+            / 100.;
+        self.pane.update(cx, |p, _| p.overlay = Some(opacity));
+        div()
+            .v_flex()
+            .size_full()
+            .text_color(rgb(theme::TEXT))
+            .when(!self.locked, |el| {
+                el.child(
+                    div()
+                        .h_flex()
+                        .h(px(26.))
+                        .flex_shrink_0()
+                        .items_center()
+                        .rounded_t(px(8.))
+                        .bg(rgba((theme::PANEL << 8) | 0xE0))
+                        .child(
+                            div()
+                                .h_flex()
+                                .flex_1()
+                                .min_w_0()
+                                .h_full()
+                                .items_center()
+                                .gap_1()
+                                .px_2()
+                                .window_control_area(WindowControlArea::Drag)
+                                .text_size(px(11.))
+                                .child(div().text_color(rgb(theme::ACCENT)).font_weight(FontWeight::BOLD).child("//"))
+                                .child(format!("#{} overlay · drag to move", self.channel)),
+                        )
+                        .child(
+                            Button::new("overlay-lock")
+                                .ghost()
+                                .xsmall()
+                                .icon(Icon::new(gpui_kit::assets::IconName::Lock))
+                                .label("Lock")
+                                .tooltip("Clicks go through to what's behind. Unlock from the channel's tab menu (Layout).")
+                                .on_click(cx.listener(|this, _, window, cx| this.set_locked(true, window, cx))),
+                        )
+                        .child(caption_control("overlay-close", IconName::WindowClose, WindowControlArea::Close, true)),
+                )
+            })
+            .child(div().flex_1().min_h_0().child(self.pane.clone()))
+    }
 }
 
 /// The popout window's content: a slim draggable title bar above the pane.
@@ -127,6 +204,7 @@ impl Workbench {
     pub(super) fn popout_channels(&self, cx: &App) -> Vec<String> {
         self.popouts
             .iter()
+            .filter(|p| p.overlay.is_none())
             .map(|p| p.pane.read(cx).name.to_string())
             .collect()
     }
@@ -184,12 +262,121 @@ impl Workbench {
             if let Ok((window, view)) = built {
                 let pane = view.read(cx).pane.clone();
                 owner.update(cx, |this, cx| {
-                    this.popouts.push(Popout { pane, window });
+                    this.popouts.push(Popout {
+                        pane,
+                        window,
+                        overlay: None,
+                    });
                     this.schedule_save(cx);
                     cx.notify();
                 });
             }
         });
+    }
+    /// Open `channel` as an overlay window (or bring its overlay forward).
+    pub(super) fn open_overlay(&mut self, channel: String, cx: &mut Context<Self>) {
+        if let Some(existing) = self
+            .popouts
+            .iter()
+            .find(|p| p.overlay.is_some() && p.pane.read(cx).name.as_ref() == channel)
+        {
+            let _ = existing
+                .window
+                .update(cx, |_, window, _| window.activate_window());
+            return;
+        }
+        let owner = cx.entity();
+        cx.defer(move |cx| {
+            let options = WindowOptions {
+                titlebar: Some(TitlebarOptions {
+                    title: Some(format!("#{channel} overlay · Jawjack").into()),
+                    appears_transparent: true,
+                    ..Default::default()
+                }),
+                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                    None,
+                    size(px(360.), px(520.)),
+                    cx,
+                ))),
+                window_background: WindowBackgroundAppearance::Transparent,
+                window_min_size: Some(size(px(200.), px(160.))),
+                ..Default::default()
+            };
+            let built = gpui_kit::open_window(options, cx, |window, cx| {
+                let pane = owner.update(cx, |this, cx| {
+                    let pane = this.make_pane(POPOUT_TAB, &channel, window, cx);
+                    this.seed_popout(&pane, cx);
+                    pane
+                });
+                crate::workspace::sound_settings::set_on_top(window, true);
+                let closing = owner.downgrade();
+                let closing_pane = pane.clone();
+                window.on_window_should_close(cx, move |_, cx| {
+                    let _ = closing.update(cx, |this, cx| {
+                        this.popouts.retain(|p| p.pane != closing_pane);
+                        cx.notify();
+                    });
+                    true
+                });
+                cx.new(|_| OverlayView {
+                    pane,
+                    channel: channel.clone().into(),
+                    locked: false,
+                })
+            });
+            if let Ok((window, view)) = built {
+                // The UI kit's root paints the theme background on every window;
+                // an overlay's root stays clear so only its own backdrop shows.
+                let _ = window.update(cx, |_, window, cx| {
+                    gpui_kit::base::Root::update(window, cx, |root, _, _| {
+                        use gpui_kit::Refineable as _;
+                        root.style()
+                            .refine(&StyleRefinement::default().bg(gpui_kit::transparent_black()));
+                    });
+                });
+                let pane = view.read(cx).pane.clone();
+                owner.update(cx, |this, cx| {
+                    this.popouts.push(Popout {
+                        pane,
+                        window,
+                        overlay: Some(view),
+                    });
+                    cx.notify();
+                });
+            }
+        });
+    }
+    /// The overlay showing `channel`, if any: (window, view).
+    pub(super) fn overlay_of(
+        &self,
+        channel: &str,
+        cx: &App,
+    ) -> Option<(AnyWindowHandle, Entity<OverlayView>)> {
+        self.popouts.iter().find_map(|p| {
+            let view = p.overlay.clone()?;
+            (p.pane.read(cx).name.as_ref() == channel).then(|| (p.window, view))
+        })
+    }
+    /// Lock/unlock (click-through or clickable) or close a channel's overlay.
+    pub(super) fn overlay_action(&mut self, channel: &str, close: bool, cx: &mut Context<Self>) {
+        let Some((handle, view)) = self.overlay_of(channel, cx) else {
+            return;
+        };
+        let _ = handle.update(cx, |_, window, cx| {
+            if close {
+                window.remove_window();
+            } else {
+                view.update(cx, |v, cx| {
+                    let locked = !v.locked;
+                    v.set_locked(locked, window, cx)
+                });
+            }
+        });
+        if close {
+            let pane = view.read(cx).pane.clone();
+            self.popouts.retain(|p| p.pane != pane);
+            cx.notify();
+        }
     }
     /// Start a popout with the chat already loaded in a tab for the same channel.
     /// Copy a channel's current chat into a new pane (pop-outs, duplicated workspaces).

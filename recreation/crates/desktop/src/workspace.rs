@@ -941,6 +941,12 @@ impl Workbench {
                     );
                 }
                 crate::nickname_rules::load(&state["nickname_rules"]);
+                if let Some(opacity) = state["overlay_opacity"].as_u64() {
+                    popout::OVERLAY_OPACITY.store(
+                        opacity.min(100) as u32,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
                 if let Some(scale) = state["ui_scale"]
                     .as_u64()
                     .filter(|s| theme::UI_SCALES.contains(&(*s as u32)))
@@ -3270,6 +3276,8 @@ impl Workbench {
             crate::name_paint::paint_option(2)
         ]);
         value["nickname_rules"] = crate::nickname_rules::json();
+        value["overlay_opacity"] =
+            json!(popout::OVERLAY_OPACITY.load(std::sync::atomic::Ordering::Relaxed));
         value["ui_scale"] = json!(theme::UI_SCALE.load(std::sync::atomic::Ordering::Relaxed));
         value["emoji_style"] =
             json!(crate::emoji::STYLE.load(std::sync::atomic::Ordering::Relaxed));
@@ -5239,7 +5247,32 @@ impl Workbench {
                                     let owner = owner.clone();
                                     let menu_channel = menu_channel.clone();
                                     let menu_pane = menu_pane.clone();
-                                    move |menu, _, _| {
+                                    move |menu, _, cx| {
+                                        let overlay = owner.upgrade().and_then(|o| o.read(cx).overlay_of(&menu_channel, cx).map(|(_, v)| v.read(cx).locked));
+                                        let menu = match overlay {
+                                            None => menu.item(PopupMenuItem::new("Open as overlay").on_click({
+                                                let owner = owner.clone();
+                                                let channel = menu_channel.clone();
+                                                move |_, _, cx| {
+                                                    let _ = owner.update(cx, |this, cx| this.open_overlay(channel.clone(), cx));
+                                                }
+                                            })),
+                                            Some(locked) => menu
+                                                .item(PopupMenuItem::new(if locked { "Unlock overlay" } else { "Lock overlay (click-through)" }).on_click({
+                                                    let owner = owner.clone();
+                                                    let channel = menu_channel.clone();
+                                                    move |_, _, cx| {
+                                                        let _ = owner.update(cx, |this, cx| this.overlay_action(&channel, false, cx));
+                                                    }
+                                                }))
+                                                .item(PopupMenuItem::new("Close overlay").on_click({
+                                                    let owner = owner.clone();
+                                                    let channel = menu_channel.clone();
+                                                    move |_, _, cx| {
+                                                        let _ = owner.update(cx, |this, cx| this.overlay_action(&channel, true, cx));
+                                                    }
+                                                })),
+                                        };
                                         menu.item(PopupMenuItem::new("Pop out to its own window").on_click({
                                             let owner = owner.clone();
                                             let channel = menu_channel.clone();
