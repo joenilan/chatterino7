@@ -1213,7 +1213,13 @@ impl Render for ChannelPane {
                             };
                             // A filtered-out row draws nothing (rows have no padding of their own).
                             // Someone blocked after their messages arrived disappears too.
-                            if ignores.borrow().blocked.contains(&message.user_id)
+                            let blocked = ignores.borrow().blocked.contains(&message.user_id);
+                            if blocked && ignores.borrow().blocked_placeholder {
+                                return div().text_size(px(11.)).text_color(rgb(theme::MUTED)).italic().py(px(2.))
+                                    .child("Message from someone you blocked")
+                                    .into_any_element();
+                            }
+                            if blocked
                                 || (message.deleted && theme::flag(&theme::HIDE_DELETED))
                                 || (message.presentation.kind == chat_core::MODERATION && streamer_mode::hides(streamer_mode::MOD_ACTIONS))
                                 || match &message.presentation.source_id {

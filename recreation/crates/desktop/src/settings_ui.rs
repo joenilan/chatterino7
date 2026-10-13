@@ -862,20 +862,24 @@ impl Workbench {
                     ))
                 })
                 .child(row(
-                    "Hide blocked users",
+                    "Blocked users",
                     match &self.blocks.ids {
                         Some(ids) if ids.len() >= crate::blocks::MAX_IDS => format!(
-                            "New messages from people you've blocked on Twitch stay hidden, as on twitch.tv ({}+ blocked; the first {} are used).",
+                            "Messages from people you've blocked on Twitch: hidden (as on twitch.tv), a placeholder line, or shown ({}+ blocked; the first {} are used).",
                             crate::blocks::MAX_IDS, crate::blocks::MAX_IDS
                         ),
-                        Some(ids) => format!("New messages from the {} people you've blocked on Twitch stay hidden, as on twitch.tv.", ids.len()),
-                        None => "New messages from people you've blocked on Twitch stay hidden, as on twitch.tv.".into(),
+                        Some(ids) => format!("Messages from the {} people you've blocked on Twitch: hidden (as on twitch.tv), a placeholder line, or shown.", ids.len()),
+                        None => "Messages from people you've blocked on Twitch: hidden (as on twitch.tv), a placeholder line, or shown.".into(),
                     },
-                    Switch::new("settings-hide-blocked").checked(self.hide_blocked).on_click(cx.listener(|this, on: &bool, _, cx| {
-                        this.hide_blocked = *on;
-                        this.apply_blocks();
-                        this.remeasure_all(cx);
-                    })),
+                    crate::theme::Segmented::new("settings-blocked-mode")
+                        .selected_index(self.blocked_mode)
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            this.blocked_mode = (*index).min(2);
+                            this.apply_blocks();
+                            this.schedule_save(cx);
+                            this.remeasure_all(cx);
+                        }))
+                        .children(crate::ignores::BLOCKED_MODES.map(crate::theme::segment)),
                 ))
                 .child(row(
                     "Ignores",

@@ -219,7 +219,8 @@ pub struct Workbench {
     popouts: Vec<popout::Popout>,
     /// Twitch block list; blocked users' messages are hidden unless turned off.
     blocks: crate::blocks::Blocks,
-    hide_blocked: bool,
+    /// Index into ignores::BLOCKED_MODES.
+    blocked_mode: usize,
     similar_mode: crate::similarity::Mode,
     spellcheck: bool,
     /// Saved view filters by "{tab id}:{channel}".
@@ -729,7 +730,15 @@ impl Workbench {
             pinged: Default::default(),
             popouts: Vec::new(),
             blocks: crate::blocks::Blocks::new(),
-            hide_blocked: state["hide_blocked"].as_bool().unwrap_or(true),
+            // Older saves had an on/off "hide blocked users".
+            blocked_mode: state["blocked_mode"]
+                .as_u64()
+                .map(|m| (m as usize).min(2))
+                .unwrap_or(if state["hide_blocked"].as_bool().unwrap_or(true) {
+                    0
+                } else {
+                    2
+                }),
             mod_buttons: state["mod_buttons"].as_bool().unwrap_or(false),
             custom_mod_buttons: std::rc::Rc::new(crate::mod_buttons::load(
                 &state["custom_mod_buttons"],
@@ -3125,7 +3134,7 @@ impl Workbench {
         value["send_as"] = json!(self.send_as);
         value["automod_hidden"] = json!(self.automod_hidden);
         value["popouts"] = json!(self.popout_channels(cx));
-        value["hide_blocked"] = json!(self.hide_blocked);
+        value["blocked_mode"] = json!(self.blocked_mode);
         value["similar_messages"] = json!(self.similar_mode.key());
         value["quiet_unread"] = json!(self.quiet_unread);
         value["live_alert_sound"] = json!(self.live_alert_sound);

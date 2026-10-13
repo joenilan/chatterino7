@@ -64,9 +64,14 @@ pub struct Ignores {
     pub users: Vec<String>,
     pub phrases: Vec<Phrase>,
     /// Twitch-blocked user IDs (session only, from the account's block list);
-    /// empty when hiding blocked users is turned off.
+    /// empty when blocked users are shown.
     pub blocked: std::collections::BTreeSet<String>,
+    /// Show a "blocked user" line in place of their messages instead of
+    /// nothing (Settings › Blocked users › Placeholder).
+    pub blocked_placeholder: bool,
 }
+/// Settings › Blocked users: what their messages look like.
+pub const BLOCKED_MODES: [&str; 3] = ["Hide", "Placeholder", "Show"];
 pub type Shared = Rc<RefCell<Ignores>>;
 
 pub enum Outcome {
@@ -106,7 +111,7 @@ impl Ignores {
     }
     /// Hide the message, or rewrite matched text in place.
     pub fn apply(&self, message: &mut Message) -> Outcome {
-        if self.blocked.contains(&message.user_id) {
+        if self.blocked.contains(&message.user_id) && !self.blocked_placeholder {
             return Outcome::Hide;
         }
         if message

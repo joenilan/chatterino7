@@ -91,6 +91,6 @@ Chatterino import.
 - [x] Scroll speed, smooth scrolling (S) — mouse wheel; touchpads keep native scrolling
 - [ ] Shared chat: badge on all messages; source routing (M)
 - [x] Twitch GIF messages toggle (S) — Appearance → Twitch GIF messages (not yet seen with a real GIF message)
-- [ ] Blocked users: ~~hide already-shown messages~~ done; display modes (S)
+- [x] Blocked users: ~~hide already-shown messages, display modes (hide / placeholder / show)~~ done
 - [ ] Multiple windows with workspaces; drag between windows (M)
 - [x] Exclude own messages from filters (S) — Filter view → Always show my own messages

@@ -355,12 +355,14 @@ impl Workbench {
 impl Workbench {
     /// Share the block list with the message filter (or clear it when turned off).
     pub(super) fn apply_blocks(&mut self) {
-        let blocked = if self.hide_blocked {
+        let blocked = if self.blocked_mode < 2 {
             self.blocks.ids.clone().unwrap_or_default()
         } else {
             Default::default()
         };
-        self.ignores.borrow_mut().blocked = blocked;
+        let mut ignores = self.ignores.borrow_mut();
+        ignores.blocked = blocked;
+        ignores.blocked_placeholder = self.blocked_mode == 1;
     }
 }
 
