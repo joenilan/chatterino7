@@ -23,6 +23,16 @@ impl Workbench {
             }
             Ping::Rule { sound: 2, .. } => Some(crate::sound::Tone::Chime),
             Ping::Rule { sound: 3, .. } => Some(crate::sound::Tone::Soft),
+            Ping::Rule {
+                sound: crate::highlight_rules::CUSTOM_SOUND,
+                index,
+                ..
+            } => self
+                .highlight_rules
+                .borrow()
+                .get(index as usize)
+                .filter(|rule| !rule.sound_file.is_empty())
+                .map(|rule| crate::sound::Tone::Custom(rule.sound_file.clone().into())),
             Ping::Rule { .. } => None,
         };
         let flash = !matches!(ping, Ping::Rule { flash: false, .. });

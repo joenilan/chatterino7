@@ -19,6 +19,39 @@ pub const COLORS: [(&str, u32, u32); 6] = [
     ("Peach", 0xE8C68A, 0x30291D),
     ("Red", 0xF07A7A, 0x3A1D20),
 ];
+/// A rule's colour is an index into COLORS, or CUSTOM_COLOR | 0xRRGGBB for a
+/// colour of your own. Read either with `colors`.
+pub const CUSTOM_COLOR: usize = 1 << 24;
+/// Accent and row background for a highlight colour (palette or custom).
+pub fn colors(color: usize) -> (u32, u32) {
+    if color & CUSTOM_COLOR != 0 {
+        let accent = (color & 0xFF_FFFF) as u32;
+        (accent, tint(accent))
+    } else {
+        let (_, accent, background) = COLORS[color.min(COLORS.len() - 1)];
+        (accent, background)
+    }
+}
+/// A dark row background carrying a little of `accent`, like the palette's.
+fn tint(accent: u32) -> u32 {
+    let base = [0x12u32, 0x13, 0x16];
+    let mut out = 0;
+    for (i, shift) in [16u32, 8, 0].into_iter().enumerate() {
+        let channel = (accent >> shift) & 0xFF;
+        out |= ((base[i] * 82 + channel * 18) / 100) << shift;
+    }
+    out
+}
+/// "#ff8800", "ff8800" or "#f80" as 0xRRGGBB.
+pub fn parse_hex(text: &str) -> Option<u32> {
+    let hex = text.trim().trim_start_matches('#');
+    let full: String = match hex.len() {
+        3 => hex.chars().flat_map(|c| [c, c]).collect(),
+        6 => hex.into(),
+        _ => return None,
+    };
+    u32::from_str_radix(&full, 16).ok()
+}
 pub type Rules = Rc<RefCell<Vec<Rule>>>;
 /// Regular expressions stay small so a pasted pattern cannot exhaust memory.
 pub const REGEX_LIMIT: usize = 256 * 1024;
@@ -56,13 +89,17 @@ pub struct Rule {
     pub badge: bool,
     /// Index into SOUNDS: what plays when this rule pings.
     pub sound: u8,
+    /// The .wav played when `sound` is CUSTOM_SOUND.
+    pub sound_file: String,
     /// Copy matches into Mentions tabs (Chatterino's "show in mentions").
     pub mentions: bool,
     /// Flash the taskbar (when that's on in Notifications).
     pub flash: bool,
 }
 /// Per-rule ping sound: the Highlights sound setting, nothing, or a fixed tone.
-pub const SOUNDS: [&str; 4] = ["Default sound", "No sound", "Chime", "Soft"];
+pub const SOUNDS: [&str; 5] = ["Default sound", "No sound", "Chime", "Soft", "Your file…"];
+/// SOUNDS index for a rule's own .wav (`sound_file`).
+pub const CUSTOM_SOUND: u8 = 4;
 /// Badge sets offered as examples in the editor; any Twitch badge set ID works.
 pub const BADGE_EXAMPLES: &str =
     "broadcaster, moderator, vip, subscriber, founder, partner, artist-badge";
@@ -81,6 +118,7 @@ impl Default for Rule {
             color: 0,
             badge: false,
             sound: 0,
+            sound_file: String::new(),
             mentions: true,
             flash: true,
         }
@@ -123,8 +161,15 @@ impl Rule {
                 .ok_or("Enter a channel login, or leave it empty for every channel.")?
         };
         self.folded = self.pattern.to_lowercase();
-        self.color = self.color.min(COLORS.len() - 1);
+        if self.color & CUSTOM_COLOR == 0 {
+            self.color = self.color.min(COLORS.len() - 1);
+        } else {
+            self.color &= CUSTOM_COLOR | 0xFF_FFFF;
+        }
         self.sound = self.sound.min(SOUNDS.len() as u8 - 1);
+        if self.sound == CUSTOM_SOUND && self.sound_file.is_empty() {
+            self.sound = 0;
+        }
         Ok(self)
     }
     pub fn matches(&self, text: &str, login: Option<&str>, channel: &str) -> bool {
@@ -288,10 +333,7 @@ pub fn load(value: &serde_json::Value) -> Rules {
                 case_sensitive: item["case_sensitive"].as_bool().unwrap_or(false),
                 whole_word: item["whole_word"].as_bool().unwrap_or(true),
                 enabled: item["enabled"].as_bool().unwrap_or(true),
-                color: item["color"]
-                    .as_u64()
-                    .unwrap_or(0)
-                    .min(COLORS.len() as u64 - 1) as usize,
+                color: item["color"].as_u64().unwrap_or(0) as usize,
                 badge: item["badge"].as_bool().unwrap_or(false),
                 sound: item["sound"]
                     .as_u64()
@@ -299,6 +341,12 @@ pub fn load(value: &serde_json::Value) -> Rules {
                     .min(SOUNDS.len() as u64 - 1) as u8,
                 mentions: item["mentions"].as_bool().unwrap_or(true),
                 flash: item["flash"].as_bool().unwrap_or(true),
+                sound_file: item["sound_file"]
+                    .as_str()
+                    .unwrap_or("")
+                    .chars()
+                    .take(1024)
+                    .collect(),
             };
             if let Ok(rule) = rule.validate() {
                 rules.push(rule);
@@ -308,7 +356,7 @@ pub fn load(value: &serde_json::Value) -> Rules {
     Rc::new(RefCell::new(rules))
 }
 pub fn json(rules: &Rules) -> serde_json::Value {
-    serde_json::Value::Array(rules.borrow().iter().map(|r|serde_json::json!({"pattern":r.pattern,"regex":r.regex,"channel":r.channel,"author":r.author,"case_sensitive":r.case_sensitive,"whole_word":r.whole_word,"enabled":r.enabled,"color":r.color,"badge":r.badge,"sound":r.sound,"mentions":r.mentions,"flash":r.flash})).collect())
+    serde_json::Value::Array(rules.borrow().iter().map(|r|{let mut v=serde_json::json!({"pattern":r.pattern,"regex":r.regex,"channel":r.channel,"author":r.author,"case_sensitive":r.case_sensitive,"whole_word":r.whole_word,"enabled":r.enabled,"color":r.color,"badge":r.badge,"sound":r.sound,"mentions":r.mentions,"flash":r.flash}); v["sound_file"]=serde_json::json!(r.sound_file); v}).collect())
 }
 
 pub struct Changed;
@@ -319,6 +367,8 @@ pub struct Editor {
     channel: Entity<InputState>,
     sample: Entity<InputState>,
     login: Entity<InputState>,
+    /// "#RRGGBB" for a custom colour.
+    hex: Entity<InputState>,
     draft: Rule,
     selected: Option<usize>,
     switch_pending: Option<Option<usize>>,
@@ -352,6 +402,22 @@ impl Editor {
                 .placeholder("Sample sender login")
                 .validate(|value, _| value.len() <= 25 && !value.chars().any(char::is_control))
         });
+        let hex = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("#RRGGBB")
+                .validate(|value, _| {
+                    value.len() <= 7 && value.chars().all(|c| c == '#' || c.is_ascii_hexdigit())
+                })
+        });
+        cx.subscribe_in(&hex, window, |this: &mut Self, input, event, _, cx| {
+            if matches!(event, InputEvent::Change)
+                && let Some(rgb) = parse_hex(&input.read(cx).value())
+            {
+                this.draft.color = CUSTOM_COLOR | rgb as usize;
+                this.edited(cx);
+            }
+        })
+        .detach();
         for input in [&pattern, &scope, &sample, &login] {
             cx.subscribe_in(input, window, |this: &mut Self, _, event, _, cx| {
                 if matches!(event, InputEvent::Change) {
@@ -369,6 +435,7 @@ impl Editor {
             channel: scope,
             sample,
             login,
+            hex,
             draft: Rule::default(),
             selected: None,
             switch_pending: None,
@@ -389,6 +456,36 @@ impl Editor {
         r.pattern = self.pattern.read(cx).value().to_string();
         r.channel = self.channel.read(cx).value().to_string();
         r
+    }
+    /// "Your file…": pick a .wav for this rule, check it plays, and use it.
+    fn choose_sound(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let paths = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Use this sound".into()),
+        });
+        cx.spawn_in(window, async move |view, cx| {
+            let Ok(Ok(Some(paths))) = paths.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            let _ = view.update(cx, |this, cx| match crate::sound::check_custom(&path) {
+                Ok(()) => {
+                    crate::sound::play(&crate::sound::Tone::Custom(path.clone()), 0.6);
+                    this.draft.sound_file = path.display().to_string();
+                    this.draft.sound = CUSTOM_SOUND;
+                    this.edited(cx);
+                }
+                Err(error) => {
+                    this.status = error;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
     fn select(&mut self, index: Option<usize>, window: &mut Window, cx: &mut Context<Self>) {
         let original = self
@@ -411,6 +508,12 @@ impl Editor {
         self.channel.update(cx, |p, cx| {
             p.set_value(self.draft.channel.clone(), window, cx)
         });
+        let hex = if self.draft.color & CUSTOM_COLOR != 0 {
+            format!("#{:06x}", self.draft.color & 0xFF_FFFF)
+        } else {
+            String::new()
+        };
+        self.hex.update(cx, |p, cx| p.set_value(hex, window, cx));
         self.selected = index;
         self.switch_pending = None;
         self.delete_armed = false;
@@ -501,7 +604,8 @@ impl Render for Editor {
                 )
             })
             .unwrap_or(false);
-        let (_, accent, background) = COLORS[self.draft.color];
+        let (accent, background) = colors(self.draft.color);
+        let custom = self.draft.color & CUSTOM_COLOR != 0;
         let max_height = (f32::from(window.viewport_size().height) - 150.).clamp(100., 650.);
         div().id("highlight-rule-editor")
             .capture_key_down(cx.listener(|this,event:&KeyDownEvent,w,cx|{if event.keystroke.modifiers.control&&!event.keystroke.modifiers.alt&&event.keystroke.key=="s"{this.save(w,cx);w.prevent_default();cx.stop_propagation();}})).v_flex().gap_2().max_h(px(max_height)).overflow_y_scroll()
@@ -526,11 +630,18 @@ impl Render for Editor {
                 .child(Button::new("rule-case").small().label(if self.draft.case_sensitive{"Match case"}else{"Ignore case"}).on_click(cx.listener(|this,_,_,cx|{this.draft.case_sensitive = !this.draft.case_sensitive;this.edited(cx);})))
                 .when(!self.draft.regex,|el|el.child(Button::new("rule-word").small().label(if self.draft.whole_word{"Whole words"}else{"Anywhere in text"}).on_click(cx.listener(|this,_,_,cx|{this.draft.whole_word = !this.draft.whole_word;this.edited(cx);}))))))
             .child(div().h_flex().flex_wrap().gap_1().children(COLORS.iter().enumerate().map(|(index,(name,color,_))|
-                Button::new(("rule-color",index)).small().label(*name).when(self.draft.color==index,|b|b.icon(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check))).text_color(rgb(*color)).selected(self.draft.color==index).on_click(cx.listener(move|this,_,_,cx|{this.draft.color=index;this.edited(cx);})))))
+                Button::new(("rule-color",index)).small().label(*name).when(self.draft.color==index,|b|b.icon(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check))).text_color(rgb(*color)).selected(self.draft.color==index).on_click(cx.listener(move|this,_,_,cx|{this.draft.color=index;this.edited(cx);}))))
+                .child(div().h_flex().items_center().gap_1()
+                    .child(div().size(px(14.)).rounded(px(3.)).border_1().border_color(rgb(theme::BORDER)).when(custom,|el|el.bg(rgb(accent))))
+                    .child(div().w(px(84.)).child(Input::new(&self.hex).small()))
+                    .when(custom,|el|el.child(gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Check).small().text_color(rgb(accent))))))
             .child(div().h_flex().flex_wrap().items_center().gap_1()
                 .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Sound"))
                 .children(SOUNDS.iter().enumerate().map(|(index,label)|{let index=index as u8;
-                    Button::new(("rule-sound",index as usize)).small().label(*label).selected(self.draft.sound==index).when(self.draft.sound==index,|b|b.primary()).on_click(cx.listener(move|this,_,_,cx|{this.draft.sound=index;if index>=2{crate::sound::play(&if index==2{crate::sound::Tone::Chime}else{crate::sound::Tone::Soft},0.6);}this.edited(cx);}))})))
+                    let label=if index==CUSTOM_SOUND&&!self.draft.sound_file.is_empty(){std::path::Path::new(&self.draft.sound_file).file_name().map(|n|n.to_string_lossy().into_owned()).unwrap_or_else(||(*label).into())}else{(*label).into()};
+                    Button::new(("rule-sound",index as usize)).small().label(label).selected(self.draft.sound==index).when(self.draft.sound==index,|b|b.primary()).on_click(cx.listener(move|this,_,w,cx|{
+                        if index==CUSTOM_SOUND{this.choose_sound(w,cx);return;}
+                        this.draft.sound=index;if index>=2{crate::sound::play(&if index==2{crate::sound::Tone::Chime}else{crate::sound::Tone::Soft},0.6);}this.edited(cx);}))})))
             .child(div().h_flex().flex_wrap().items_center().gap_3()
                 .child(gpui_kit::component::checkbox::Checkbox::new("rule-mentions").label("Show in Mentions").checked(self.draft.mentions).on_click(cx.listener(|this,on:&bool,_,cx|{this.draft.mentions=*on;this.edited(cx);})))
                 .child(gpui_kit::component::checkbox::Checkbox::new("rule-flash").label("Flash taskbar").checked(self.draft.flash).on_click(cx.listener(|this,on:&bool,_,cx|{this.draft.flash=*on;this.edited(cx);}))))
@@ -549,6 +660,44 @@ impl Render for Editor {
                         this.switch_pending=Some(None);this.select(None,w,cx);this.status="Rule removed.".into();
                     })))))
             .when(!self.status.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xE9C99C)).child(self.status.clone())))
+    }
+}
+
+#[cfg(test)]
+mod custom_tests {
+    use super::{COLORS, CUSTOM_COLOR, CUSTOM_SOUND, Rule, Rules, colors, json, load, parse_hex};
+    use std::{cell::RefCell, rc::Rc};
+    #[test]
+    fn custom_colours_and_sounds_survive_save_and_load() {
+        assert_eq!(parse_hex("#ff8800"), Some(0xFF8800));
+        assert_eq!(parse_hex("f80"), Some(0xFF8800));
+        assert_eq!(parse_hex("#ff88"), None);
+        let rule = Rule {
+            pattern: "pizza".into(),
+            color: CUSTOM_COLOR | 0xFF8800,
+            sound: CUSTOM_SOUND,
+            sound_file: "C:/sounds/ding.wav".into(),
+            ..Default::default()
+        }
+        .validate()
+        .unwrap();
+        let rules: Rules = Rc::new(RefCell::new(vec![rule]));
+        let loaded = load(&json(&rules));
+        let loaded = loaded.borrow();
+        assert_eq!(colors(loaded[0].color).0, 0xFF8800);
+        assert_eq!(loaded[0].sound, CUSTOM_SOUND);
+        assert_eq!(loaded[0].sound_file, "C:/sounds/ding.wav");
+        // Palette colours still read from the palette.
+        assert_eq!(colors(1), (COLORS[1].1, COLORS[1].2));
+        // "Your file" with no file falls back to the default sound.
+        let empty = Rule {
+            pattern: "x".into(),
+            sound: CUSTOM_SOUND,
+            ..Default::default()
+        }
+        .validate()
+        .unwrap();
+        assert_eq!(empty.sound, 0);
     }
 }
 

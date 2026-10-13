@@ -37,6 +37,8 @@ pub enum Ping {
         sound: u8,
         mentions: bool,
         flash: bool,
+        /// Which rule (its place in the list), for its own sound file.
+        index: u8,
     },
 }
 pub fn terms(text: &str) -> Vec<String> {
@@ -266,6 +268,11 @@ impl Attention {
         if let Some(rule) = crate::highlight_rules::first_match(&self.rules, message, &self.channel)
         {
             return Some(Ping::Rule {
+                index: self
+                    .rules
+                    .iter()
+                    .position(|r| std::ptr::eq(r, rule))
+                    .unwrap_or(0) as u8,
                 sound: rule.sound,
                 mentions: rule.mentions,
                 flash: rule.flash,

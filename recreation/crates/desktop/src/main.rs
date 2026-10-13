@@ -950,7 +950,7 @@ impl Render for ChannelPane {
                 .filter(|row| **row >= first)
                 .map(|row| {
                     let color = highlight_colors.get(row).copied().unwrap_or(0);
-                    (at(*row), crate::highlight_rules::COLORS[color.min(5)].1)
+                    (at(*row), crate::highlight_rules::colors(color).0)
                 })
                 .collect();
             if self.search.open {
@@ -1285,7 +1285,7 @@ impl Render for ChannelPane {
                                 .when_some(message.presentation.source_id.as_ref().filter(|_| shared_style == 0 || shared_style == 2).map(|id| shared_colors.get(id).copied().unwrap_or_else(|| shared_chat::color_of(id))), |el, color| el.child(div().absolute().left(px(1.)).top(px(4.)).bottom(px(4.)).w(px(3.)).rounded_full().bg(rgb(color))))
                                 .when(theme::flag(&theme::SEPARATORS), |el| el.child(div().absolute().left_0().right_0().bottom_0().h(px(1.)).bg(rgb(theme::BORDER))))
                                 .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(0xA99CF40D)).py(px(2.)).rounded_r(px(4.)))
-                                .when(highlight_rows.contains(&row),|el|{let (_,accent,background)=highlight_rules::COLORS[highlight_colors.get(&row).copied().unwrap_or(0)];el.bg(rgb(background)).border_color(rgb(accent)).py(px(2.)).rounded_r(px(4.))})
+                                .when(highlight_rows.contains(&row),|el|{let (accent,background)=highlight_rules::colors(highlight_colors.get(&row).copied().unwrap_or(0));el.bg(rgb(background)).border_color(rgb(accent)).py(px(2.)).rounded_r(px(4.))})
                                 .on_prepaint(move|bounds,window,cx|{
                                     let clip=window.content_mask().bounds;
                                     if following&&eligible.get()&&window.is_window_active()&&!window.has_active_dialog(cx)
