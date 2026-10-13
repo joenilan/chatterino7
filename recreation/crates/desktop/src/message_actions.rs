@@ -1158,188 +1158,52 @@ impl ChannelPane {
         }
         self.catalog.borrow_mut().profiles.request(&user_id);
         let owner = cx.entity().downgrade();
-        window.open_dialog(cx,move|dialog,window,cx|{
-                    let current=owner.upgrade().map(|pane|{
-                        let pane=pane.read(cx);let timeline=pane.timeline.borrow();
-                        let messages=timeline.messages().iter().filter(|m|m.user_id==user_id).collect::<Vec<_>>();
-                        let last=messages.last().copied();
-                        (pane.name.to_string(),messages.len(),last.map(|m|m.author_label().to_owned()).unwrap_or_else(||clicked_name.clone()),last.and_then(|m|m.login.clone()).or_else(||clicked_login.clone()),messages.iter().rev().take(20).map(|m|(*m).clone()).collect::<Vec<_>>(),last.map(|m|{
-                            // Show the provider's badge title and art, not internal set IDs.
-                            let catalog=pane.catalog.borrow();
-                            m.badges.iter().map(|b|match catalog.twitch.badge(&m.channel_id,&b.set_id,&b.id){
-                                Some(badge)=>(badge.title.clone(),Some(badge.key.clone())),
-                                None=>(b.set_id.replace('_'," "),None),
-                            }).collect::<Vec<_>>()
-                        }).unwrap_or_default())
-                    });
-                    let Some((channel,count,name,login,recent,badges))=current else{return dialog.title("Channel closed");};
-                    // Moderator actions for this chatter, where you can moderate (like Chatterino's user card).
-                    let role=owner.upgrade().and_then(|pane|pane.read(cx).role);
-                    let moderating=matches!(role,Some(crate::capabilities::Role::Moderator|crate::capabilities::Role::Broadcaster));
-                    let broadcaster=matches!(role,Some(crate::capabilities::Role::Broadcaster));
-                    // Follow age: only the broadcaster and moderators can look it up.
-                    // Pronouns (Settings → Chat; off by default, as in Chatterino).
-                    let pronouns=login.clone().filter(|_|crate::pronouns::enabled()).map(|l|crate::pronouns::get(&l));
-                    if pronouns==Some(crate::pronouns::State::Loading){window.request_animation_frame();}
-                    let pronouns=pronouns.and_then(|state|match state{
-                        crate::pronouns::State::Ready(Some(p))=>Some(format!("Pronouns: {p}")),
-                        crate::pronouns::State::Ready(None)=>Some("Pronouns: not set".to_owned()),
-                        crate::pronouns::State::Loading=>Some("Pronouns: loading…".to_owned()),
-                        crate::pronouns::State::Failed=>None,
-                    });
-                    // The channel's own broadcaster can't follow, subscribe to or be moderated in it.
-                    let own_channel=login.as_deref()==Some(channel.as_str());
-                    let follow=owner.upgrade().filter(|_|!own_channel).and_then(|pane|{
-                        let known=pane.read(cx).follow_ages.get(&user_id).cloned();
-                        if known.is_none()&&moderating{
-                            let id=user_id.clone();
-                            pane.update(cx,|p,cx|{p.follow_ages.insert(id.clone(),Err("Loading…".into()));cx.emit(PaneEvent::WantFollowAge(id));});
-                        }
-                        known
-                    }).map(|result|match result{
-                        Ok(Some(at))=>format!("Following #{channel} since {}",created_label(&at)),
-                        Ok(None)=>format!("Not following #{channel}"),
-                        Err(e) if e=="Loading…"=>"Checking follow age…".into(),
-                        Err(_)=>"Follow age unavailable".into(),
-                    });
-                    let sub=owner.upgrade().filter(|_|!own_channel).and_then(|pane|pane.read(cx).sub_status.get(&user_id).cloned()).map(|sub|sub.unwrap_or_else(||format!("Not subscribed to #{channel}")));
-                    let mod_row=login.clone().filter(|_|moderating&&!own_channel).map(|target|{
-                        let act=|label:&'static str,id:&'static str,request:crate::twitch_actions::Request|{
-                            let owner=owner.clone();
-                            Button::new(id).small().label(label).on_click(move|_,w,cx|{w.close_dialog(cx);let request=request.clone();let _=owner.update(cx,|_,cx|cx.emit(PaneEvent::TwitchCommand{request,draft:String::new()}));})
-                        };
-                        let timeout=|s:u32|crate::twitch_actions::Request::Timeout{login:target.clone(),seconds:s,reason:String::new()};
-                        div().v_flex().gap_1().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL))
-                            .child(div().text_size(px(11.)).text_color(rgb(0xB6A9E6)).child("Moderate"))
-                            .child(div().h_flex().flex_wrap().gap_1()
-                                .child(act("1m","card-timeout-1m",timeout(60)))
-                                .child(act("10m","card-timeout-10m",timeout(600)))
-                                .child(act("1h","card-timeout-1h",timeout(3600)))
-                                .child(act("1d","card-timeout-1d",timeout(86_400)))
-                                // Any other length: start /timeout in the message box (e.g. 3h, 2w).
-                                .child({let owner=owner.clone();let target=target.clone();Button::new("card-timeout-custom").small().label("Other…").tooltip("Starts /timeout in the message box; add a length like 30m, 3h or 2w").on_click(move|_,w,cx|{w.close_dialog(cx);let text=format!("/timeout {target} ");let _=owner.update(cx,|p,cx|p.command_draft(&text,w,cx));})})
-                                .child({let owner=owner.clone();let target=target.clone();let channel=channel.clone();Button::new("card-ban").small().danger().label("Ban…").on_click(move|_,w,cx|{
-                                    // Same confirmation as the message menu's ban.
-                                    w.close_dialog(cx);let owner=owner.clone();let login=target.clone();let channel=channel.clone();
-                                    w.open_dialog(cx,move|dialog,_,_|{let owner=owner.clone();let login=login.clone();dialog.title(format!("Ban @{login} from #{channel}?"))
-                                        .footer(div().h_flex().justify_end().gap_2()
-                                            .child(Button::new("card-ban-cancel").small().label("Cancel").on_click(|_,w,cx|w.close_dialog(cx)))
-                                            .child(Button::new("card-ban-confirm").small().danger().label("Ban").on_click(move|_,w,cx|{w.close_dialog(cx);let login=login.clone();let _=owner.update(cx,|_,cx|cx.emit(PaneEvent::TwitchCommand{request:crate::twitch_actions::Request::Ban{login,reason:String::new()},draft:String::new()}));})))});
-                                })})
-                                .child(act("Unban","card-unban",crate::twitch_actions::Request::Unban{login:target.clone()}))
-                                // A warning needs a reason: start the command in the message box.
-                                .child({let owner=owner.clone();let target=target.clone();Button::new("card-warn").small().label("Warn…").tooltip("Starts /warn in the message box; type the reason and send").on_click(move|_,w,cx|{w.close_dialog(cx);let text=format!("/warn {target} ");let _=owner.update(cx,|p,cx|p.command_draft(&text,w,cx));})}))
-                            .when(broadcaster,|el|el.child(div().h_flex().flex_wrap().gap_1()
-                                .child(act("Make mod","card-mod",crate::twitch_actions::Request::Moderator{login:target.clone(),add:true}))
-                                .child(act("Remove mod","card-unmod",crate::twitch_actions::Request::Moderator{login:target.clone(),add:false}))
-                                .child(act("Make VIP","card-vip",crate::twitch_actions::Request::Vip{login:target.clone(),add:true}))
-                                .child(act("Remove VIP","card-unvip",crate::twitch_actions::Request::Vip{login:target.clone(),add:false}))))
-                    });
-                    if let Some(pane)=owner.upgrade(){pane.read(cx).catalog.borrow_mut().profiles.request(&user_id);}
-                    let profile=owner.upgrade().and_then(|pane|pane.read(cx).catalog.borrow().profiles.get(&user_id).cloned());
-                    let followers=owner.upgrade().and_then(|pane|pane.read(cx).catalog.borrow_mut().profiles.followers(&user_id));
-                    // Their 7TV account: a 7TV profile link, and its (often animated) picture.
-                    let seven=owner.upgrade().and_then(|pane|pane.read(cx).catalog.borrow_mut().profiles.seven(&user_id));
-                    let seven_avatar=seven.as_ref().and_then(|s|s.avatar.clone()).filter(|_|crate::name_paint::paint_option(crate::name_paint::SEVEN_AVATARS));
-                    let avatar_key=seven_avatar.clone().or_else(||profile.as_ref().and_then(|p|p.avatar.clone()));
-                    let avatar=avatar_key.as_ref().filter(|_|!crate::streamer_mode::hides(crate::streamer_mode::CARD_AVATARS)).and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(key,cx)}));
-                    let avatar_source=if seven_avatar.is_some(){"7TV profile picture"}else{"Twitch profile picture"};
-                    let seven_id=seven.map(|s|s.id);
-                    let cosmetics=owner.upgrade().map(|pane|{
-                        let pane=pane.read(cx);let catalog=pane.catalog.borrow();
-                        (catalog.paints.for_user(&user_id).cloned(),catalog.paints.preview_for_user(&user_id),catalog.paints.pending_for_user(&user_id),catalog.badges.for_user(&user_id).cloned())
-                    });
-                    let cosmetic_panel=cosmetics.and_then(|(paint,preview,pending,badge)|{
-                        if paint.is_none()&&!pending&&badge.is_none(){return None;}
-                        let badge_image=badge.as_ref().and_then(|b|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(&b.key,cx)}));
-                        Some(div().v_flex().gap_1().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL))
-                            .child(div().text_size(px(11.)).text_color(rgb(0xB6A9E6)).child("7TV cosmetics · observed active grants"))
-                            .when_some(badge,|el,b|el.child(div().h_flex().gap_2()
-                                .child(crate::emote_picker::icon(badge_image,String::new(),28.,28.))
-                                .child(div().text_size(px(12.)).child(b.title))))
-                            .when_some(paint,|el,p|el
-                                .child(div().text_size(px(12.)).child(p.name))
-                                .when_some(preview,|el,image|el.child(img(image).w_full().h(px(32.)).object_fit(ObjectFit::Fill)))
-                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
-                                    p.limitation.map(|reason|format!("{reason} · preview unavailable")).or(p.approximation).unwrap_or_else(||"Static username paint · local color overrides take priority".into()))))
-                            .when(pending,|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Paint grant received; waiting for its definition")))
-                            .into_any_element())
-                    });
-                    // Their name in the card wears their 7TV paint, as in chat.
-                    let card_paint=owner.upgrade().and_then(|pane|{
-                        let (paint,cache,media)={
-                            let pane=pane.read(cx);
-                            if !crate::name_paint::paint_option(0)||pane.chatter_appearance.borrow().get(&user_id).is_some_and(|a|a.color.is_some()){return None;}
-                            let catalog=pane.catalog.borrow();
-                            let mut paint=catalog.paints.for_user(&user_id).filter(|p|p.limitation.is_none()).cloned()?;
-                            if !crate::name_paint::paint_option(1){paint.shadows.clear();}
-                            (paint,catalog.paint_cache.clone(),pane.media.clone())
-                        };
-                        let image=paint.image().and_then(crate::media::EmoteKey::paint_image).and_then(|key|media.borrow_mut().get(&key,cx));
-                        Some(crate::name_paint::Request{paint,cache,image})
-                    });
-                    let card_focus=owner.upgrade().map(|pane|pane.read(cx).focus.clone());
-                    let width=(f32::from(window.viewport_size().width)-24.).clamp(180., 420.);
-                    let body_height=(f32::from(window.viewport_size().height)-160.).clamp(60.,480.);
-                    let mention_owner=owner.clone();let mention_login=login.clone();let profile_login=login.clone();let id=user_id.clone();let search_id=user_id.clone();let search_owner=owner.clone();let note_owner=owner.clone();let note_target=crate::chatter_appearance::Target{id:user_id.clone(),login:login.clone().unwrap_or_default(),name:name.clone()};
-                    dialog.w(px(width)).title(name).child(div().id("chatter-body").v_flex().gap_2().min_w_0().max_h(px(body_height)).overflow_y_scroll()
-                        .when_some(profile,|el,profile|el.child(div().h_flex().items_start().gap_2()
-                            .child(div().id("chatter-avatar").flex_shrink_0().tooltip(crate::media_hover::image_card(profile.display_name.clone(),avatar_source.into(),avatar.clone())).child(crate::emote_picker::icon(avatar,String::new(),48.,48.)))
-                            .child(div().v_flex().gap_1().flex_1().min_w_0().child(card_name(&profile.display_name, card_paint.clone(), card_focus.clone()))
-                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(match followers{
-                                    Some(n)=>format!("Created · {} · {} follower{}",created_label(&profile.created),group_digits(n),if n==1{""}else{"s"}),
-                                    None=>format!("Created · {}",created_label(&profile.created)),
-                                }))
-                                .when(!profile.role.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(profile.role)))))
-                            .when(!profile.description.is_empty(),|el|el.child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(profile.description))))
-                        .child(login.clone().map(|login|format!("@{login}" )).unwrap_or_else(||"Login unavailable".into()))
-                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("{count} retained messages in #{channel}")))
-                        .when_some(follow,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(text)))
-                        .when_some(sub,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(text)))
-                        .when_some(pronouns,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(text)))
-                        .when(!badges.is_empty(),|el|el.child(div().h_flex().flex_wrap().gap_x_3().gap_y_1().text_size(px(11.)).children(badges.into_iter().map(|(title,key)|{
-                            let image=key.and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(&key,cx)}));
-                            div().h_flex().gap_1().items_center().when_some(image,|el,image|el.child(crate::emote_picker::icon(Some(image),String::new(),18.,18.))).child(title)
-                        }))))
-                        .children(cosmetic_panel)
-                        .children(mod_row)
-                        .child(div().id("chatter-recent").v_flex().gap_2().max_h(px(210.)).overflow_y_scroll()
-                            .children(recent.into_iter().map(|message|{
-                                let body=owner.upgrade().map(|pane|{let media=pane.read(cx).media.clone();let mut media=media.borrow_mut();card_body(&message,&mut media,cx)}).unwrap_or_else(||message.body().into_any_element());
-                                div().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL)).min_w_0().child(body)
-                            })))
-                        .child(div().h_flex().flex_wrap().gap_1()
-                            .when(login.is_some(),|el|el
-                                .child(Button::new("chatter-mention").small().label("Mention").on_click(move|_,w,cx|{if let Some(login)=&mention_login{w.close_dialog(cx);let _=mention_owner.update(cx,|p,cx|p.insert_mention(login,w,cx));}}))
-                                .child(Button::new("chatter-profile").small().label("Twitch profile").on_click(move|_,_,cx|{if let Some(login)=&profile_login{cx.open_url(&format!("https://www.twitch.tv/{login}"));}}))
-                                .when_some(seven_id,|el,id|el.child(Button::new("chatter-7tv").small().label("7TV profile").on_click(move|_,_,cx|cx.open_url(&format!("https://7tv.app/users/{id}"))))))
-                            .child(Button::new("chatter-search").small().label("Search messages").tooltip("Find this chatter in retained channel history").on_click(move|_,w,cx|{w.close_dialog(cx);let _=search_owner.update(cx,|p,cx|p.search_for_author(&search_id,w,cx));}))
-                            .child(Button::new("chatter-private-note").small().label("Private note…").on_click(move|_,w,cx|{w.close_dialog(cx);let _=note_owner.update(cx,|_,cx|cx.emit(PaneEvent::EditChatterNote(note_target.clone())));}))
-                            .child(Button::new("chatter-copy-id").small().label("Copy ID").on_click(move|_,w,cx|copy(id.clone(),w,cx)))
-                            .when_some(login.clone(),|el,login|{
-                                let ignored=owner.upgrade().is_some_and(|pane|pane.read(cx).ignores.borrow().users.contains(&login));
-                                let (open_owner,open_login)=(owner.clone(),login.clone());
-                                let (ignore_owner,ignore_login)=(owner.clone(),login.clone());
-                                let (block_owner,block_login)=(owner.clone(),login.clone());
-                                el.child(Button::new("chatter-open-channel").small().label("Open channel").tooltip("Open their chat as a tab").on_click(move|_,w,cx|{w.close_dialog(cx);let target=open_login.clone();let _=open_owner.update(cx,|_,cx|cx.emit(PaneEvent::OpenChannel(target)));}))
-                                .child(Button::new("chatter-ignore").small().label(if ignored{"Unignore"}else{"Ignore"}).tooltip("Hide their messages in Jawjack (only you)").on_click(move|_,w,cx|{
-                                    let login=ignore_login.clone();
-                                    let _=ignore_owner.update(cx,|p,cx|{
-                                        let note=if ignored{p.ignores.borrow_mut().users.retain(|u|*u!=login);format!("No longer ignoring @{login}")}else{match p.ignores.borrow_mut().add_user(&login){Ok(())=>format!("Ignoring @{login} (only you)"),Err(problem)=>problem}};
-                                        cx.emit(PaneEvent::IgnoresChanged);
-                                        p.command_feedback(note,w,cx);
-                                    });
-                                }))
-                                .child(Button::new("chatter-block").small().label("Block…").tooltip("Block on Twitch: no whispers from them, and they're hidden from your chat").on_click(move|_,w,cx|{
-                                    w.close_dialog(cx);let (owner,login)=(block_owner.clone(),block_login.clone());
-                                    w.open_dialog(cx,move|dialog,_,_|{let (owner,login)=(owner.clone(),login.clone());dialog.title(format!("Block @{login} on Twitch?"))
-                                        .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(format!("They can't whisper you, and their messages are hidden while \"Hide blocked users\" is on. Undo with /unblock {login}.")))
-                                        .footer(div().h_flex().justify_end().gap_2()
-                                            .child(Button::new("card-block-cancel").small().label("Cancel").on_click(|_,w,cx|w.close_dialog(cx)))
-                                            .child(Button::new("card-block-confirm").small().danger().label("Block").on_click(move|_,w,cx|{w.close_dialog(cx);let login=login.clone();let _=owner.update(cx,|_,cx|cx.emit(PaneEvent::TwitchCommand{request:crate::twitch_actions::Request::Block{login,add:true},draft:String::new()}));})))})
-                                }))
-                            })))
-                });
+        window.open_dialog(cx, move |dialog, window, cx| {
+            let frame = chatter_card(
+                CardFrame::default(),
+                owner.clone(),
+                user_id.clone(),
+                clicked_name.clone(),
+                clicked_login.clone(),
+                window,
+                cx,
+            );
+            // Pin: the same card in its own small window that stays open.
+            let (pin_owner, pin_id, pin_name, pin_login) = (
+                owner.clone(),
+                user_id.clone(),
+                frame.title.to_string(),
+                clicked_login.clone(),
+            );
+            dialog
+                .w(px(frame.width))
+                .title(frame.title.clone())
+                .children(frame.body)
+                .footer(
+                    div().h_flex().w_full().justify_end().child(
+                        Button::new("chatter-pin")
+                            .small()
+                            .ghost()
+                            .icon(gpui_kit::component::Icon::new(
+                                gpui_kit::assets::IconName::Pin,
+                            ))
+                            .label("Pin")
+                            .tooltip("Keep this card open in its own window while you chat")
+                            .on_click(move |_, w, cx| {
+                                w.close_dialog(cx);
+                                let (id, name, login) =
+                                    (pin_id.clone(), pin_name.clone(), pin_login.clone());
+                                let _ = pin_owner.update(cx, |_, cx| {
+                                    cx.emit(PaneEvent::PinCard {
+                                        user_id: id,
+                                        name,
+                                        login,
+                                    })
+                                });
+                            }),
+                    ),
+                )
+        });
     }
     pub(crate) fn insert_mention(
         &mut self,
@@ -1591,4 +1455,340 @@ mod lowercase_tests {
             "see https://paypai.com/Login?Next=A and example.org/Path ok"
         );
     }
+}
+
+/// What a user card is built into: the chatter dialog, or a pinned card's
+/// window. Mirrors the dialog builder's `w`, `title` and `child`.
+#[derive(Default)]
+pub(crate) struct CardFrame {
+    pub title: SharedString,
+    pub width: f32,
+    pub body: Option<AnyElement>,
+}
+impl CardFrame {
+    fn w(mut self, width: Pixels) -> Self {
+        self.width = f32::from(width);
+        self
+    }
+    fn title(mut self, title: impl Into<SharedString>) -> Self {
+        self.title = title.into();
+        self
+    }
+    fn child(mut self, body: impl IntoElement) -> Self {
+        self.body = Some(body.into_any_element());
+        self
+    }
+}
+/// A chatter's card: profile, badges, moderation, recent messages and actions.
+pub(crate) fn chatter_card(
+    dialog: CardFrame,
+    owner: WeakEntity<ChannelPane>,
+    user_id: String,
+    clicked_name: String,
+    clicked_login: Option<String>,
+    window: &mut Window,
+    cx: &mut App,
+) -> CardFrame {
+    let current = owner.upgrade().map(|pane| {
+        let pane = pane.read(cx);
+        let timeline = pane.timeline.borrow();
+        let messages = timeline
+            .messages()
+            .iter()
+            .filter(|m| m.user_id == user_id)
+            .collect::<Vec<_>>();
+        let last = messages.last().copied();
+        (
+            pane.name.to_string(),
+            messages.len(),
+            last.map(|m| m.author_label().to_owned())
+                .unwrap_or_else(|| clicked_name.clone()),
+            last.and_then(|m| m.login.clone())
+                .or_else(|| clicked_login.clone()),
+            messages
+                .iter()
+                .rev()
+                .take(20)
+                .map(|m| (*m).clone())
+                .collect::<Vec<_>>(),
+            last.map(|m| {
+                // Show the provider's badge title and art, not internal set IDs.
+                let catalog = pane.catalog.borrow();
+                m.badges
+                    .iter()
+                    .map(
+                        |b| match catalog.twitch.badge(&m.channel_id, &b.set_id, &b.id) {
+                            Some(badge) => (badge.title.clone(), Some(badge.key.clone())),
+                            None => (b.set_id.replace('_', " "), None),
+                        },
+                    )
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        )
+    });
+    let Some((channel, count, name, login, recent, badges)) = current else {
+        return dialog.title("Channel closed");
+    };
+    // Moderator actions for this chatter, where you can moderate (like Chatterino's user card).
+    let role = owner.upgrade().and_then(|pane| pane.read(cx).role);
+    let moderating = matches!(
+        role,
+        Some(crate::capabilities::Role::Moderator | crate::capabilities::Role::Broadcaster)
+    );
+    let broadcaster = matches!(role, Some(crate::capabilities::Role::Broadcaster));
+    // Follow age: only the broadcaster and moderators can look it up.
+    // Pronouns (Settings → Chat; off by default, as in Chatterino).
+    let pronouns = login
+        .clone()
+        .filter(|_| crate::pronouns::enabled())
+        .map(|l| crate::pronouns::get(&l));
+    if pronouns == Some(crate::pronouns::State::Loading) {
+        window.request_animation_frame();
+    }
+    let pronouns = pronouns.and_then(|state| match state {
+        crate::pronouns::State::Ready(Some(p)) => Some(format!("Pronouns: {p}")),
+        crate::pronouns::State::Ready(None) => Some("Pronouns: not set".to_owned()),
+        crate::pronouns::State::Loading => Some("Pronouns: loading…".to_owned()),
+        crate::pronouns::State::Failed => None,
+    });
+    // The channel's own broadcaster can't follow, subscribe to or be moderated in it.
+    let own_channel = login.as_deref() == Some(channel.as_str());
+    let follow = owner
+        .upgrade()
+        .filter(|_| !own_channel)
+        .and_then(|pane| {
+            let known = pane.read(cx).follow_ages.get(&user_id).cloned();
+            if known.is_none() && moderating {
+                let id = user_id.clone();
+                pane.update(cx, |p, cx| {
+                    p.follow_ages.insert(id.clone(), Err("Loading…".into()));
+                    cx.emit(PaneEvent::WantFollowAge(id));
+                });
+            }
+            known
+        })
+        .map(|result| match result {
+            Ok(Some(at)) => format!("Following #{channel} since {}", created_label(&at)),
+            Ok(None) => format!("Not following #{channel}"),
+            Err(e) if e == "Loading…" => "Checking follow age…".into(),
+            Err(_) => "Follow age unavailable".into(),
+        });
+    let sub = owner
+        .upgrade()
+        .filter(|_| !own_channel)
+        .and_then(|pane| pane.read(cx).sub_status.get(&user_id).cloned())
+        .map(|sub| sub.unwrap_or_else(|| format!("Not subscribed to #{channel}")));
+    let mod_row=login.clone().filter(|_|moderating&&!own_channel).map(|target|{
+                        let act=|label:&'static str,id:&'static str,request:crate::twitch_actions::Request|{
+                            let owner=owner.clone();
+                            Button::new(id).small().label(label).on_click(move|_,w,cx|{w.close_dialog(cx);let request=request.clone();let _=owner.update(cx,|_,cx|cx.emit(PaneEvent::TwitchCommand{request,draft:String::new()}));})
+                        };
+                        let timeout=|s:u32|crate::twitch_actions::Request::Timeout{login:target.clone(),seconds:s,reason:String::new()};
+                        div().v_flex().gap_1().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL))
+                            .child(div().text_size(px(11.)).text_color(rgb(0xB6A9E6)).child("Moderate"))
+                            .child(div().h_flex().flex_wrap().gap_1()
+                                .child(act("1m","card-timeout-1m",timeout(60)))
+                                .child(act("10m","card-timeout-10m",timeout(600)))
+                                .child(act("1h","card-timeout-1h",timeout(3600)))
+                                .child(act("1d","card-timeout-1d",timeout(86_400)))
+                                // Any other length: start /timeout in the message box (e.g. 3h, 2w).
+                                .child({let owner=owner.clone();let target=target.clone();Button::new("card-timeout-custom").small().label("Other…").tooltip("Starts /timeout in the message box; add a length like 30m, 3h or 2w").on_click(move|_,w,cx|{w.close_dialog(cx);let text=format!("/timeout {target} ");let _=owner.update(cx,|p,cx|p.command_draft(&text,w,cx));})})
+                                .child({let owner=owner.clone();let target=target.clone();let channel=channel.clone();Button::new("card-ban").small().danger().label("Ban…").on_click(move|_,w,cx|{
+                                    // Same confirmation as the message menu's ban.
+                                    w.close_dialog(cx);let owner=owner.clone();let login=target.clone();let channel=channel.clone();
+                                    w.open_dialog(cx,move|dialog,_,_|{let owner=owner.clone();let login=login.clone();dialog.title(format!("Ban @{login} from #{channel}?"))
+                                        .footer(div().h_flex().justify_end().gap_2()
+                                            .child(Button::new("card-ban-cancel").small().label("Cancel").on_click(|_,w,cx|w.close_dialog(cx)))
+                                            .child(Button::new("card-ban-confirm").small().danger().label("Ban").on_click(move|_,w,cx|{w.close_dialog(cx);let login=login.clone();let _=owner.update(cx,|_,cx|cx.emit(PaneEvent::TwitchCommand{request:crate::twitch_actions::Request::Ban{login,reason:String::new()},draft:String::new()}));})))});
+                                })})
+                                .child(act("Unban","card-unban",crate::twitch_actions::Request::Unban{login:target.clone()}))
+                                // A warning needs a reason: start the command in the message box.
+                                .child({let owner=owner.clone();let target=target.clone();Button::new("card-warn").small().label("Warn…").tooltip("Starts /warn in the message box; type the reason and send").on_click(move|_,w,cx|{w.close_dialog(cx);let text=format!("/warn {target} ");let _=owner.update(cx,|p,cx|p.command_draft(&text,w,cx));})}))
+                            .when(broadcaster,|el|el.child(div().h_flex().flex_wrap().gap_1()
+                                .child(act("Make mod","card-mod",crate::twitch_actions::Request::Moderator{login:target.clone(),add:true}))
+                                .child(act("Remove mod","card-unmod",crate::twitch_actions::Request::Moderator{login:target.clone(),add:false}))
+                                .child(act("Make VIP","card-vip",crate::twitch_actions::Request::Vip{login:target.clone(),add:true}))
+                                .child(act("Remove VIP","card-unvip",crate::twitch_actions::Request::Vip{login:target.clone(),add:false}))))
+                    });
+    if let Some(pane) = owner.upgrade() {
+        pane.read(cx)
+            .catalog
+            .borrow_mut()
+            .profiles
+            .request(&user_id);
+    }
+    let profile = owner.upgrade().and_then(|pane| {
+        pane.read(cx)
+            .catalog
+            .borrow()
+            .profiles
+            .get(&user_id)
+            .cloned()
+    });
+    let followers = owner.upgrade().and_then(|pane| {
+        pane.read(cx)
+            .catalog
+            .borrow_mut()
+            .profiles
+            .followers(&user_id)
+    });
+    // Their 7TV account: a 7TV profile link, and its (often animated) picture.
+    let seven = owner
+        .upgrade()
+        .and_then(|pane| pane.read(cx).catalog.borrow_mut().profiles.seven(&user_id));
+    let seven_avatar = seven
+        .as_ref()
+        .and_then(|s| s.avatar.clone())
+        .filter(|_| crate::name_paint::paint_option(crate::name_paint::SEVEN_AVATARS));
+    let avatar_key = seven_avatar
+        .clone()
+        .or_else(|| profile.as_ref().and_then(|p| p.avatar.clone()));
+    let avatar = avatar_key
+        .as_ref()
+        .filter(|_| !crate::streamer_mode::hides(crate::streamer_mode::CARD_AVATARS))
+        .and_then(|key| {
+            owner.upgrade().and_then(|pane| {
+                let media = pane.read(cx).media.clone();
+                media.borrow_mut().get(key, cx)
+            })
+        });
+    let avatar_source = if seven_avatar.is_some() {
+        "7TV profile picture"
+    } else {
+        "Twitch profile picture"
+    };
+    let seven_id = seven.map(|s| s.id);
+    let cosmetics = owner.upgrade().map(|pane| {
+        let pane = pane.read(cx);
+        let catalog = pane.catalog.borrow();
+        (
+            catalog.paints.for_user(&user_id).cloned(),
+            catalog.paints.preview_for_user(&user_id),
+            catalog.paints.pending_for_user(&user_id),
+            catalog.badges.for_user(&user_id).cloned(),
+        )
+    });
+    let cosmetic_panel=cosmetics.and_then(|(paint,preview,pending,badge)|{
+                        if paint.is_none()&&!pending&&badge.is_none(){return None;}
+                        let badge_image=badge.as_ref().and_then(|b|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(&b.key,cx)}));
+                        Some(div().v_flex().gap_1().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL))
+                            .child(div().text_size(px(11.)).text_color(rgb(0xB6A9E6)).child("7TV cosmetics · observed active grants"))
+                            .when_some(badge,|el,b|el.child(div().h_flex().gap_2()
+                                .child(crate::emote_picker::icon(badge_image,String::new(),28.,28.))
+                                .child(div().text_size(px(12.)).child(b.title))))
+                            .when_some(paint,|el,p|el
+                                .child(div().text_size(px(12.)).child(p.name))
+                                .when_some(preview,|el,image|el.child(img(image).w_full().h(px(32.)).object_fit(ObjectFit::Fill)))
+                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(
+                                    p.limitation.map(|reason|format!("{reason} · preview unavailable")).or(p.approximation).unwrap_or_else(||"Static username paint · local color overrides take priority".into()))))
+                            .when(pending,|el|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child("Paint grant received; waiting for its definition")))
+                            .into_any_element())
+                    });
+    // Their name in the card wears their 7TV paint, as in chat.
+    let card_paint = owner.upgrade().and_then(|pane| {
+        let (paint, cache, media) = {
+            let pane = pane.read(cx);
+            if !crate::name_paint::paint_option(0)
+                || pane
+                    .chatter_appearance
+                    .borrow()
+                    .get(&user_id)
+                    .is_some_and(|a| a.color.is_some())
+            {
+                return None;
+            }
+            let catalog = pane.catalog.borrow();
+            let mut paint = catalog
+                .paints
+                .for_user(&user_id)
+                .filter(|p| p.limitation.is_none())
+                .cloned()?;
+            if !crate::name_paint::paint_option(1) {
+                paint.shadows.clear();
+            }
+            (paint, catalog.paint_cache.clone(), pane.media.clone())
+        };
+        let image = paint
+            .image()
+            .and_then(crate::media::EmoteKey::paint_image)
+            .and_then(|key| media.borrow_mut().get(&key, cx));
+        Some(crate::name_paint::Request {
+            paint,
+            cache,
+            image,
+        })
+    });
+    let card_focus = owner.upgrade().map(|pane| pane.read(cx).focus.clone());
+    let width = (f32::from(window.viewport_size().width) - 24.).clamp(180., 420.);
+    let body_height = (f32::from(window.viewport_size().height) - 160.).clamp(60., 480.);
+    let mention_owner = owner.clone();
+    let mention_login = login.clone();
+    let profile_login = login.clone();
+    let id = user_id.clone();
+    let search_id = user_id.clone();
+    let search_owner = owner.clone();
+    let note_owner = owner.clone();
+    let note_target = crate::chatter_appearance::Target {
+        id: user_id.clone(),
+        login: login.clone().unwrap_or_default(),
+        name: name.clone(),
+    };
+    dialog.w(px(width)).title(name).child(div().id("chatter-body").v_flex().gap_2().min_w_0().max_h(px(body_height)).overflow_y_scroll()
+                        .when_some(profile,|el,profile|el.child(div().h_flex().items_start().gap_2()
+                            .child(div().id("chatter-avatar").flex_shrink_0().tooltip(crate::media_hover::image_card(profile.display_name.clone(),avatar_source.into(),avatar.clone())).child(crate::emote_picker::icon(avatar,String::new(),48.,48.)))
+                            .child(div().v_flex().gap_1().flex_1().min_w_0().child(card_name(&profile.display_name, card_paint.clone(), card_focus.clone()))
+                                .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(match followers{
+                                    Some(n)=>format!("Created · {} · {} follower{}",created_label(&profile.created),group_digits(n),if n==1{""}else{"s"}),
+                                    None=>format!("Created · {}",created_label(&profile.created)),
+                                }))
+                                .when(!profile.role.is_empty(),|el|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(profile.role)))))
+                            .when(!profile.description.is_empty(),|el|el.child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(profile.description))))
+                        .child(login.clone().map(|login|format!("@{login}" )).unwrap_or_else(||"Login unavailable".into()))
+                        .child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(format!("{count} retained messages in #{channel}")))
+                        .when_some(follow,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(text)))
+                        .when_some(sub,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(0xC5B8E6)).child(text)))
+                        .when_some(pronouns,|el,text|el.child(div().text_size(px(11.)).text_color(rgb(theme::MUTED)).child(text)))
+                        .when(!badges.is_empty(),|el|el.child(div().h_flex().flex_wrap().gap_x_3().gap_y_1().text_size(px(11.)).children(badges.into_iter().map(|(title,key)|{
+                            let image=key.and_then(|key|owner.upgrade().and_then(|pane|{let media=pane.read(cx).media.clone();media.borrow_mut().get(&key,cx)}));
+                            div().h_flex().gap_1().items_center().when_some(image,|el,image|el.child(crate::emote_picker::icon(Some(image),String::new(),18.,18.))).child(title)
+                        }))))
+                        .children(cosmetic_panel)
+                        .children(mod_row)
+                        .child(div().id("chatter-recent").v_flex().gap_2().max_h(px(210.)).overflow_y_scroll()
+                            .children(recent.into_iter().map(|message|{
+                                let body=owner.upgrade().map(|pane|{let media=pane.read(cx).media.clone();let mut media=media.borrow_mut();card_body(&message,&mut media,cx)}).unwrap_or_else(||message.body().into_any_element());
+                                div().p_2().rounded(px(4.)).bg(rgb(theme::CONTROL)).min_w_0().child(body)
+                            })))
+                        .child(div().h_flex().flex_wrap().gap_1()
+                            .when(login.is_some(),|el|el
+                                .child(Button::new("chatter-mention").small().label("Mention").on_click(move|_,w,cx|{if let Some(login)=&mention_login{w.close_dialog(cx);let _=mention_owner.update(cx,|p,cx|p.insert_mention(login,w,cx));}}))
+                                .child(Button::new("chatter-profile").small().label("Twitch profile").on_click(move|_,_,cx|{if let Some(login)=&profile_login{cx.open_url(&format!("https://www.twitch.tv/{login}"));}}))
+                                .when_some(seven_id,|el,id|el.child(Button::new("chatter-7tv").small().label("7TV profile").on_click(move|_,_,cx|cx.open_url(&format!("https://7tv.app/users/{id}"))))))
+                            .child(Button::new("chatter-search").small().label("Search messages").tooltip("Find this chatter in retained channel history").on_click(move|_,w,cx|{w.close_dialog(cx);let _=search_owner.update(cx,|p,cx|p.search_for_author(&search_id,w,cx));}))
+                            .child(Button::new("chatter-private-note").small().label("Private note…").on_click(move|_,w,cx|{w.close_dialog(cx);let _=note_owner.update(cx,|_,cx|cx.emit(PaneEvent::EditChatterNote(note_target.clone())));}))
+                            .child(Button::new("chatter-copy-id").small().label("Copy ID").on_click(move|_,w,cx|copy(id.clone(),w,cx)))
+                            .when_some(login.clone(),|el,login|{
+                                let ignored=owner.upgrade().is_some_and(|pane|pane.read(cx).ignores.borrow().users.contains(&login));
+                                let (open_owner,open_login)=(owner.clone(),login.clone());
+                                let (ignore_owner,ignore_login)=(owner.clone(),login.clone());
+                                let (block_owner,block_login)=(owner.clone(),login.clone());
+                                el.child(Button::new("chatter-open-channel").small().label("Open channel").tooltip("Open their chat as a tab").on_click(move|_,w,cx|{w.close_dialog(cx);let target=open_login.clone();let _=open_owner.update(cx,|_,cx|cx.emit(PaneEvent::OpenChannel(target)));}))
+                                .child(Button::new("chatter-ignore").small().label(if ignored{"Unignore"}else{"Ignore"}).tooltip("Hide their messages in Jawjack (only you)").on_click(move|_,w,cx|{
+                                    let login=ignore_login.clone();
+                                    let _=ignore_owner.update(cx,|p,cx|{
+                                        let note=if ignored{p.ignores.borrow_mut().users.retain(|u|*u!=login);format!("No longer ignoring @{login}")}else{match p.ignores.borrow_mut().add_user(&login){Ok(())=>format!("Ignoring @{login} (only you)"),Err(problem)=>problem}};
+                                        cx.emit(PaneEvent::IgnoresChanged);
+                                        p.command_feedback(note,w,cx);
+                                    });
+                                }))
+                                .child(Button::new("chatter-block").small().label("Block…").tooltip("Block on Twitch: no whispers from them, and they're hidden from your chat").on_click(move|_,w,cx|{
+                                    w.close_dialog(cx);let (owner,login)=(block_owner.clone(),block_login.clone());
+                                    w.open_dialog(cx,move|dialog,_,_|{let (owner,login)=(owner.clone(),login.clone());dialog.title(format!("Block @{login} on Twitch?"))
+                                        .child(div().text_size(px(12.)).text_color(rgb(theme::MUTED)).child(format!("They can't whisper you, and their messages are hidden while \"Hide blocked users\" is on. Undo with /unblock {login}.")))
+                                        .footer(div().h_flex().justify_end().gap_2()
+                                            .child(Button::new("card-block-cancel").small().label("Cancel").on_click(|_,w,cx|w.close_dialog(cx)))
+                                            .child(Button::new("card-block-confirm").small().danger().label("Block").on_click(move|_,w,cx|{w.close_dialog(cx);let login=login.clone();let _=owner.update(cx,|_,cx|cx.emit(PaneEvent::TwitchCommand{request:crate::twitch_actions::Request::Block{login,add:true},draft:String::new()}));})))})
+                                }))
+                            })))
 }

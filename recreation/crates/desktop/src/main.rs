@@ -240,6 +240,12 @@ enum PaneEvent {
     },
     /// Whispers tab: open the whisper conversation with this login.
     OpenWhisper(String),
+    /// Keep a chatter's card open in its own window.
+    PinCard {
+        user_id: String,
+        name: String,
+        login: Option<String>,
+    },
     /// Delete / time out / ban on YouTube: (YouTube source name, action).
     YouTubeModerate(String, google_auth::Moderation),
     OpenCommands(String),

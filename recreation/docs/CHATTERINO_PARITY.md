@@ -70,7 +70,7 @@ Chatterino import.
 - [x] Hotkeys: ~~streamer mode, emote picker, settings, sidebar, whispers, move tab, highlights, hide tabs, chatter list, Streamlink, open in browser, player pop-out~~ done (39 rebindable); ~~clip (Alt+X), last channel (Alt+`), save and quit (Ctrl+Q)~~ done; ~~run a command (4 slots)~~ done
 - [x] Highlight rules: ~~per-rule flash, show in mentions, custom sound file, free colour (#RRGGBB)~~ done
 - [ ] Event highlights: ~~own messages, thread replies (as mentions), whispers, AutoMod, per-kind sound, per-kind flash~~ done; elevated/hype chat (not parsed yet) (S)
-- [ ] User card: ~~block, ignore, open channel, warn, avatar card, follower count, custom timeout, emotes in recent messages~~ done; 7TV profile, pin card (M)
+- [x] User card: ~~block, ignore, open channel, warn, avatar card, follower count, custom timeout, emotes in recent messages, 7TV profile, pin card (own window)~~ done
 - [x] Custom command placeholders (S–M) — {my.*} {channel.id} {stream.*}, and {user.name} {user.id} {msg.id} {msg.text}: commands using them appear in the message menu
 - [ ] Mod buttons: ~~any command~~ done (any /command, incl. custom commands); image icons (S)
 - [x] Timestamps: 12-hour, custom format, hide while live (S)

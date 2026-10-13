@@ -4,6 +4,7 @@ mod accounts_ui;
 mod activity;
 #[path = "automod_actions.rs"]
 mod automod_actions;
+mod card_window;
 #[path = "channel_details.rs"]
 mod channel_details;
 #[path = "channel_switcher.rs"]
@@ -2611,6 +2612,21 @@ impl Workbench {
                         p.message_action(id, crate::message_actions::Action::Reply, window, cx)
                     });
                 }
+                return;
+            }
+            if let PaneEvent::PinCard {
+                user_id,
+                name,
+                login,
+            } = event
+            {
+                this.pin_card(
+                    pane.clone(),
+                    user_id.clone(),
+                    name.clone(),
+                    login.clone(),
+                    cx,
+                );
                 return;
             }
             if let PaneEvent::OpenWhisper(login) = event {
