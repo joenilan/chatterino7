@@ -5831,17 +5831,25 @@ impl Workbench {
         .detach();
         cx.notify();
     }
-    fn render_sidebar(&self, reading_available: bool, cx: &mut Context<Self>) -> AnyElement {
+    fn render_sidebar(
+        &self,
+        reading_available: bool,
+        viewport_height: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let workspace_limit = (viewport_height * 0.26).clamp(52., 152.);
         div()
             .v_flex()
             .w(px(190.))
             .flex_shrink_0()
             .h_full()
+            .min_h_0()
+            .overflow_hidden()
             .bg(rgb(theme::panel()))
             .border_r_1()
             .border_color(rgb(theme::border()))
-            .p_3()
-            .gap_3()
+            .p_2()
+            .gap_2()
             .child(
                 div()
                     .text_size(px(10.))
@@ -5873,7 +5881,8 @@ impl Workbench {
                 div()
                     .id("workspace-list")
                     .v_flex()
-                    .flex_1()
+                    .flex_shrink_0()
+                    .max_h(px(workspace_limit))
                     .min_h_0()
                     .overflow_y_scroll()
                     .gap_1()
@@ -6109,8 +6118,9 @@ impl Workbench {
             .child(
                 div()
                     .v_flex()
+                    .flex_shrink_0()
                     .gap_1()
-                    .p_2()
+                    .pt_2()
                     .border_t_1()
                     .border_color(rgb(theme::border()))
                     .text_size(px(11.))
@@ -6283,6 +6293,21 @@ impl Workbench {
                                 })
                             }),
                     )
+                    // Left click adds a channel tab; middle click opens the stream
+                    // in the browser, without changing the current Jawjack layout.
+                    .on_mouse_down(
+                        MouseButton::Middle,
+                        cx.listener({
+                            let middle_login = live.login.clone();
+                            move |_, _, window, cx| {
+                                window.prevent_default();
+                                cx.stop_propagation();
+                                if let Some(name) = chat_core::twitch_login(&middle_login) {
+                                    cx.open_url(&format!("https://www.twitch.tv/{name}"));
+                                }
+                            }
+                        }),
+                    )
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.open_channel(login.clone(), window, cx)
                     }))
@@ -6294,8 +6319,9 @@ impl Workbench {
         Some(
             div()
                 .v_flex()
-                .flex_shrink_0()
-                .max_h(px(320.))
+                .flex_1()
+                .min_h_0()
+                .overflow_hidden()
                 .gap_1()
                 .child(
                     div()
@@ -6413,6 +6439,7 @@ impl Workbench {
                         div()
                             .id("live-follows")
                             .v_flex()
+                            .flex_1()
                             .min_h_0()
                             .overflow_y_scroll()
                             .children(rows),
@@ -7095,7 +7122,7 @@ impl Render for Workbench {
                                         .left(px(sidebar_width - 190.))
                                         .w(px(190.))
                                         .h_full()
-                                        .child(self.render_sidebar(reading_available, cx)),
+                                        .child(self.render_sidebar(reading_available, f32::from(window.viewport_size().height), cx)),
                                 ),
                         )
                     })

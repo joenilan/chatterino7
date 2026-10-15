@@ -315,7 +315,7 @@ impl Workbench {
             match updates.phase() {
                 Phase::Checking => (
                     Icon::new(IconName::LoaderCircle),
-                    None,
+                    Some("Checking…".into()),
                     "Checking for updates…".into(),
                     None,
                 ),
@@ -372,7 +372,7 @@ impl Workbench {
                 ),
                 Phase::Unpublished => (
                     Icon::new(IconName::RefreshCw),
-                    None,
+                    Some("Check updates".into()),
                     "No release published yet. Click to check again.".into(),
                     None,
                 ),
@@ -385,7 +385,7 @@ impl Workbench {
                     ),
                     None => (
                         Icon::new(IconName::RefreshCw),
-                        None,
+                        Some("Check updates".into()),
                         "Check for updates".into(),
                         None,
                     ),
@@ -401,9 +401,11 @@ impl Workbench {
                 "update-control-{:?}",
                 updates.phase()
             )))
-            .h_flex()
+            // Compact sidebar: a full-width, two-line footer keeps both the
+            // version and update action visible even in narrow windows.
+            .v_flex()
+            .w_full()
             .gap_1()
-            .items_center()
             .min_w_0()
             .child(
                 div()
@@ -411,10 +413,10 @@ impl Workbench {
                     .text_color(rgb(theme::muted()))
                     .child(format!("v{}", updates.current_version())),
             )
-            .child(div().flex_1().min_w_0())
             .child(
                 div()
                     .id("update-button")
+                    .w_full()
                     .h_flex()
                     .gap_1()
                     .items_center()
