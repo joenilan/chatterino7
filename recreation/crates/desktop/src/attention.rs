@@ -11,8 +11,8 @@ pub struct Attention {
     pub unread: BTreeSet<u64>,
     pub read_boundary: Option<u64>,
     pub highlights: Rc<BTreeSet<u64>>,
-    /// Rows that mention you or match your highlights (what the "@" counts and
-    /// Mentions collects). Event colours such as subs and raids aren't in it.
+    /// New rows that are also copied into Mentions. Excludes ordinary unread,
+    /// colored events, and custom rules opting out of the Mentions tab.
     pinged: BTreeSet<u64>,
     pub colors: Rc<BTreeMap<u64, usize>>,
     pub arrivals: BTreeMap<u64, Instant>,
@@ -297,6 +297,17 @@ impl Attention {
         (kind != Kind::Whisper && kind != Kind::OwnMessage && self.events.pings(kind))
             .then_some(Ping::Event(kind))
     }
+    /// The same filtering used when copying a Ping into the Mentions tab.
+    fn to_mentions(ping: Ping) -> bool {
+        matches!(
+            ping,
+            Ping::Mention | Ping::Highlight | Ping::Rule { mentions: true, .. }
+        )
+    }
+    /// Whether this retained row belongs in the Mentions view.
+    pub fn in_mentions(&self, row: u64) -> bool {
+        self.pinged.contains(&row)
+    }
     /// Records a new row; returns a ping for a fresh (not history) mention or highlight.
     pub fn appended(&mut self, message: &Message, row: u64, first: u64) -> Option<Ping> {
         // Your own messages never need catching up on.
@@ -335,7 +346,7 @@ impl Attention {
             Rc::make_mut(&mut self.colors).insert(row, color);
             if !message.presentation.historical {
                 ping = self.ping(message);
-                if matches!(ping, Some(p) if !matches!(p, Ping::Event(_))) {
+                if ping.is_some_and(Self::to_mentions) {
                     self.pinged.insert(row);
                 }
             }
@@ -397,7 +408,9 @@ impl Attention {
             {
                 highlights.insert(row);
                 colors.insert(row, color);
-                if self.ping(message).is_none() {
+                if message.presentation.historical
+                    || !self.ping(message).is_some_and(Self::to_mentions)
+                {
                     self.pinged.remove(&row);
                 }
             } else {
@@ -470,6 +483,54 @@ mod follow_tests {
             presentation: Default::default(),
             deleted: false,
         }
+    }
+    #[test]
+    fn bell_follows_mentions_tab_not_every_chat_message() {
+        let mut a = Attention {
+            identity: Some(("me".into(), "mylogin".into())),
+            terms: vec!["spotlight".into()],
+            ..Attention::default()
+        };
+        let normal = message("regular", None);
+        assert_eq!(a.appended(&normal, 0, 0), None);
+        let mut someone_elses_mention = message("unrelated", None);
+        someone_elses_mention.mentions.push("another-viewer".into());
+        assert_eq!(a.appended(&someone_elses_mention, 1, 0), None);
+        let mut mention = message("mention", None);
+        mention.mentions.push("me".into());
+        assert_eq!(a.appended(&mention, 2, 0), Some(super::Ping::Mention));
+        let mut highlight = message("highlight", None);
+        highlight.fragments = vec![chat_core::Fragment::Text("spotlight".into())];
+        assert_eq!(a.appended(&highlight, 3, 0), Some(super::Ping::Highlight));
+        let mut event = message("event", None);
+        event.presentation.notice_type = Some("resub".into());
+        a.appended(&event, 4, 0);
+        assert_eq!(a.counts(), (5, 2));
+        assert!(!a.in_mentions(0));
+        assert!(!a.in_mentions(1));
+        assert!(a.in_mentions(2));
+        assert!(a.in_mentions(3));
+        assert!(!a.in_mentions(4));
+        a.mark_all();
+        assert_eq!(a.counts(), (0, 0));
+    }
+    #[test]
+    fn rules_that_opt_out_of_mentions_do_not_badge_the_bell() {
+        assert!(!Attention::to_mentions(super::Ping::Rule {
+            sound: 1,
+            mentions: false,
+            flash: false,
+            index: 0,
+        }));
+        assert!(Attention::to_mentions(super::Ping::Rule {
+            sound: 1,
+            mentions: true,
+            flash: false,
+            index: 0,
+        }));
+        assert!(!Attention::to_mentions(super::Ping::Event(
+            crate::event_highlights::Kind::Subscription,
+        )));
     }
     #[test]
     fn event_colours_are_not_mentions() {

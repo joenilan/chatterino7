@@ -2,6 +2,48 @@
 use super::*;
 use std::collections::BTreeMap;
 struct FontFeedback;
+
+/// The bell never switches to the broader unread/highlights stream, even if
+/// Activity was last used in its "All unread" mode.
+fn activity_row_visible(
+    mentions_only: bool,
+    all_unread: bool,
+    mention: bool,
+    highlight: bool,
+    unread: bool,
+    deleted: bool,
+) -> bool {
+    !deleted
+        && if mentions_only {
+            mention
+        } else if all_unread {
+            unread
+        } else {
+            highlight
+        }
+}
+
+#[cfg(test)]
+mod activity_filter_tests {
+    use super::activity_row_visible;
+    #[test]
+    fn bell_excludes_regular_unread_and_visual_only_highlights() {
+        assert!(!activity_row_visible(true, true, false, false, true, false));
+        assert!(!activity_row_visible(true, true, false, true, true, false));
+        assert!(activity_row_visible(true, true, true, false, false, false));
+        assert!(!activity_row_visible(true, true, true, true, true, true));
+    }
+    #[test]
+    fn activity_shortcut_preserves_unread_and_highlight_filters() {
+        assert!(activity_row_visible(false, true, false, false, true, false));
+        assert!(activity_row_visible(
+            false, false, false, true, false, false
+        ));
+        assert!(!activity_row_visible(
+            false, false, false, false, true, false
+        ));
+    }
+}
 impl Workbench {
     pub(super) fn sync_attention(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let identity = self.account.read(cx).identity().and_then(|i| {
@@ -202,23 +244,42 @@ impl Workbench {
         Some(pane)
     }
     pub(super) fn open_activity(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_activity_view(false, window, cx);
+    }
+    /// Bell: same notices copied into /mentions. Shortcut: broader activity.
+    pub(super) fn open_mentions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_activity_view(true, window, cx);
+    }
+    fn open_activity_view(
+        &mut self,
+        mentions_only: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let owner = cx.entity().downgrade();
         window.open_dialog(cx, move |dialog, window, cx| {
             let Some(view) = owner.upgrade() else {
                 return dialog.title("Workspace closed");
             };
             let this = view.read(cx);
-            let all = this.activity_all;
+            let all = !mentions_only && this.activity_all;
             let mut rows = BTreeMap::new();
             for pane in this.panes() {
                 let p = pane.read(cx);
+                // Special tabs duplicate source messages.
+                if crate::combined::is_special(&p.name) {
+                    continue;
+                }
                 let timeline = p.timeline.borrow();
                 let first = (p.next_id - timeline.messages().len()) as u64;
                 for (index, m) in timeline.messages().iter().enumerate() {
                     let row = first + index as u64;
                     let highlight = p.attention.highlights.contains(&row);
+                    let mention = p.attention.in_mentions(row) || p.attention.mentions_self(m);
                     let unread = p.attention.unread.contains(&row);
-                    if m.deleted || if all { !unread } else { !highlight } {
+                    if !activity_row_visible(
+                        mentions_only, all, mention, highlight, unread, m.deleted,
+                    ) {
                         continue;
                     }
                     let Some(at) = p.attention.arrivals.get(&row).copied() else {
@@ -261,12 +322,12 @@ impl Workbench {
             let highlights = owner.clone();
             let unread = owner.clone();
             let mark = owner.clone();
-            dialog.w(px(width)).title("Highlights & unread").child(
+            dialog.w(px(width)).title(if mentions_only { "Mentions" } else { "Highlights & unread" }).child(
                 div()
                     .v_flex()
                     .gap_2()
                     .min_w_0()
-                    .child(
+                    .when(!mentions_only, |el| el.child(
                         div()
                             .h_flex()
                             .flex_wrap()
@@ -303,14 +364,16 @@ impl Workbench {
                                         let _ = mark.update(cx, |p, cx| p.mark_all_read(cx));
                                     }),
                             ),
-                    )
+                    ))
                     .child(
                         div()
                             .text_size(px(11.))
                             .text_color(rgb(theme::muted()))
-                            .child(format!(
-                                "{count} retained messages · newest 200 shown · this session"
-                            )),
+                            .child(if mentions_only {
+                                format!("{count} retained mentions · newest 200 shown · this session")
+                            } else {
+                                format!("{count} retained messages · newest 200 shown · this session")
+                            }),
                     )
                     .child(
                         div()

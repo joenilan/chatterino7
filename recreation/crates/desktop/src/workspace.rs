@@ -7003,15 +7003,13 @@ impl Render for Workbench {
                             .ghost()
                             .xsmall()
                             .icon(IconName::Bell)
-                            .when(counts.1 > 0 || counts.0 > 0, |b| {
-                                b.label(if counts.1 > 0 {
-                                    format!("@{}", crate::attention::count(counts.1))
-                                } else {
-                                    crate::attention::count(counts.0)
-                                })
+                            // Badge only messages destined for the Mentions tab.
+                            // Plain unread chat must not light up the notification bell.
+                            .when(counts.1 > 0, |b| {
+                                b.label(crate::attention::count(counts.1))
                             })
-                            .tooltip("Activity: mentions, highlights and unread messages across your channels (\"@\" = messages that mention you or match your highlights) · Ctrl+Shift+M")
-                            .on_click(cx.listener(|this, _, w, cx| this.open_activity(w, cx))),
+                            .tooltip("Mentions, replies to you and opted-in highlights. Ctrl+Shift+M opens all activity.")
+                            .on_click(cx.listener(|this, _, w, cx| this.open_mentions(w, cx))),
                     )
                     .child(
                         Button::new("account-menu")

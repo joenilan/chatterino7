@@ -79,7 +79,9 @@ Optional session-only native app control is described in
 - Composer @name: recent-speaker suggestions; :emote or Tab: emote completion
 - Alt+Up / Alt+Down in composer: recall successful sends and return to your draft
 - Ctrl+F: find retained messages; F3 / Shift+F3: next / previous match
-- Ctrl+Shift+M: activity; Ctrl+Shift+R: mark all read (latest source)
+- Titlebar bell: only mentions, replies to you and highlights opted into Mentions;
+  the bell count shows unread mentions without an @ prefix.
+- Ctrl+Shift+M: broader Highlights & unread activity; Ctrl+Shift+R: mark all read
 - Ctrl+wheel or Ctrl+= / Ctrl+-: transcript font size; Ctrl+0: reset (latest source)
 - Transcript Ctrl+A selects retained messages; Ctrl+C, Ctrl+Insert or right-click
   copies. Escape clears selection or dismisses the active interaction.
