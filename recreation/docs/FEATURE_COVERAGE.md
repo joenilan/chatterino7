@@ -1,5 +1,12 @@
 # Jawjack feature coverage and delivery plan
 
+**Current published checkpoint:** `0.1.0-preview.16` (2026-10-15),
+with first-line-only metadata, full-width wrapped continuations,
+tighter timestamp/badge spacing and dimmed/struck deleted messages.
+Source and Windows test evidence exists; native narrow-width, deleted-row
+and rich selection acceptance remain pending. See
+[post-release handoff](HANDOFF_2026-10-15_PREVIEW16.md).
+
 This is the master coverage register for replacing Chatterino7 with Jawjack and
 supporting newer Twitch chat features. Every row is a deliverable or an explicit
 research item. A feature being in Chatterino does not prove the current public API

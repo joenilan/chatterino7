@@ -1,3 +1,41 @@
+## Jawjack preview.16 publication — 2026-10-15
+
+**Published, independently verified over HTTPS:** `0.1.0-preview.16`,
+from committed source `dfed4f403`, branch `recreation/gpui-foundation`.
+This release includes the full-width chat wrapping from `de790fd5e` and
+deleted-message dim/strikethrough plus denser timestamps/badges from
+`fe788982a`. Normal Git push completed; no force push or CI requested.
+
+- Rust 1.99 locked Windows desktop suite: **113 passed, 5 ignored**.
+  `Build-Release.ps1` exported committed HEAD, built the installer and
+  portable ZIP, and verified setup payload hashes.
+- `Test-InstallerSandbox.py --fresh-setup` against preview.16 passed
+  corruption refusal, install/upgrade/uninstall, data retention and updater
+  wait/relaunch/result/error/lock tests; it verified **real profile unchanged**.
+- Local publisher preflight passed. Publisher activated the immutable
+  archive and public `latest.json` through the existing owner workflow.
+- **Independent public HTTPS check on Windows:** downloaded the versioned
+  installer, verified **15,466,368 bytes** and SHA-256
+  `0bef3896fb6e558b42d81684c49d81cda70ac38a4d2e379d3f90064c2d048cac`
+  against `latest.json`; `archive/index.json` listed preview.16 first
+  (16 release records); archived notes were reachable.
+- Portable ZIP: **14,977,049 bytes**; SHA-256
+  `b9239cf5e14fb33799684e5a6e37459e469594408ac33e32dd252bef0b596c93`.
+- Links: `https://apps.zombie.digital/downloads/jawjack/latest.json`,
+  `https://apps.zombie.digital/jawjack/releases`.
+- The owner's running installed Jawjack was not stopped, installed over
+  or restarted; owner plans to update it themselves.
+
+The next work is native **acceptance**, not reimplementation or republication:
+verify 420–440px split wrapping, actual deleted message rows,
+copy/selection/link/emote geometry and DPI/resize. Wider read-only guest
+QA already observed 168 messages without obvious text overlap, but an
+actual deletion and narrow split were not observed. See
+[post-publication handoff](HANDOFF_2026-10-15_PREVIEW16.md).
+Do not mark full native P0 parity accepted from this source/build evidence.
+
+---
+
 ## Deleted-message and metadata-density polish — 2026-10-15 (local; before next preview)
 
 **Source behavior:** Removed the space-consuming red `deleted` badge and its

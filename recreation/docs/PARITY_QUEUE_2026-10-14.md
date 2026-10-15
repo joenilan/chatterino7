@@ -1,5 +1,11 @@
 # Jawjack — next Chatterino parity work (2026-10-14)
 
+**Historical queue.** Preview.16 has shipped the first-line chat layout and
+deleted-message styling. For today's **updated** priorities and unresolved
+native acceptance, read
+[HANDOFF_2026-10-15_PREVIEW16.md](HANDOFF_2026-10-15_PREVIEW16.md)
+before working from the older P0 EventSub instructions below.
+
 **2026-10-15 priority update:** This remains the historical parity backlog, but the next execution handoff is now [HANDOFF_2026-10-15.md](HANDOFF_2026-10-15.md). The owner requested **full-width continuation-line chat wrapping** as the new P0. Preview.15 already shipped the EventSub observability *source* slice described below; its real provider-event validation remains open and is now P1. Do not repeat the completed source batch.
 
 This is the **current prioritized continuation queue**, not a replacement for

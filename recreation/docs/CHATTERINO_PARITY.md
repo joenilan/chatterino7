@@ -1,5 +1,12 @@
 # Chatterino parity checklist
 
+**Published preview.16 (2026-10-15):** Full-width continuation wrapping,
+reduced timestamp/badge gaps, and body-only strike/fade of deleted messages
+shipped from `dfed4f403`. Rust tests and public release verification pass.
+**Actual deleted-row rendering, 420–440px panes and rich selection/link
+hitboxes remain unverified**, so the P0 checkbox must stay open for native
+acceptance. [Current handoff](HANDOFF_2026-10-15_PREVIEW16.md).
+
 From an audit of the Chatterino source (2026-10-12), each item checked against
 Jawjack's code. Tick items as they land. Size: S/M/L. **[dead]** = depends on a
 removed/private API; **[design]** = intentionally different in Jawjack.
