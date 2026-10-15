@@ -98,6 +98,43 @@ held-message and elevated/hype-chat parity, after verifying current Twitch
 subscription permissions. Never autonomously moderate, run ads/raids, post chat,
 fulfil rewards, change OAuth scopes, or purchase Bits during parity testing.
 
+## 2026-10-14 implementation update (unreleased)
+
+P0 was implemented through an initial **source- and unit-test-verified**
+slice, not closed as a fully proven live integration. The working tree now
+provides:
+
+- `workspace.own_eventsub.subscriptions` for all optional kinds: subscribed,
+  pending, refused/retrying, or disconnected gap; safe HTTP code/retry delay.
+- Custom and automatic reward notifications counted before vs after Activity
+  parsing; unmapped broadcaster-channel notifications also counted (not
+  rendered), without retaining message or viewer data. Duplicate IDs suppressed.
+- Reward-specific Studio refusal warning, missing-subscription-ID rejection,
+  and independent retry without restarting healthy chat.
+- Account reset and WebSocket gap counters. WebSocket events missed during
+  downtime are not recoverable from the custom-reward queue.
+- A single Enter keydown send path and an in-flight guard for live slash
+  actions; successful chat send no longer emits DraftChanged twice.
+- After `/raid`, a local estimated countdown with Twitch Stream Manager link
+  for Raid Now and an explicit Cancel action; no fictitious Helix
+  "immediate raid" endpoint was used.
+
+Validation: 107 unit tests passed, 5 ignored; locked Rust 1.99 release
+build passed. After initial ephemeral-control failures, a **single owned
+QA launcher** kept the native `--profile` window alive through successful
+session inspection. A separate signed-out QA profile reproduced first-Enter
+inline completion (7 → 8), and the corrected build verified first Enter
+executes local `/uptime` (7 → 0), repeated Enter stays empty, Tab and
+arrow-selected completion still work. Additional source audit corrected
+repeated sends: the original text is retained for success acknowledgements
+even when Twitch requires an invisible suffix on the wire; the regression
+test passed. Installed Jawjack remained running untouched. No actual live
+redemption, real raid, real Twitch send, or live optional-subscription
+acceptance is claimed; countdown UI appearance remains unverified.
+Continue with signed-in authorized-native and reconnect checks
+before marking AC04/TW06 complete or publishing. Queued raid does not
+confirm raid delivery.
+
 ## Project invariants and QA
 
 - Jawjack uses native Rust + GPUI Kit, not a re-skinned webview; reuse current

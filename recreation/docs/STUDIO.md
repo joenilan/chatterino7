@@ -128,6 +128,23 @@ Under the Raid box in Tools, up to 8 live channels you follow (from the LIVE NOW
 are listed with category and viewers, and the title shows on hover. Clicking one fills the Raid box, and Raid still asks
 for confirmation. Verified: the list shows and a click fills the box (no raid was started).
 
+## Raid countdown and Twitch control — 2026-10-14 source build
+
+After a successful `/raid target` (or Studio raid request), the originating
+composer shows a **locally estimated** 90-second countdown, a **Raid Now on
+Twitch** button, and **Cancel**. The first button opens the broadcaster's
+Twitch Stream Manager in a browser. It is deliberately *not* a Jawjack
+"raid immediately" API call: the
+[official Twitch raid API](https://dev.twitch.tv/docs/api/raids)
+exposes queue/start and cancel; only Twitch's own UX offers Raid Now.
+Cancel sends the already-supported authorized `DELETE /raids`.
+The banner clears on a successful cancel or once its local estimate expires.
+This is **not** actual raid confirmation; the official way to confirm a raid
+is the separate `channel.raid` EventSub event, which Jawjack does not
+currently subscribe to for outbound raid completion.
+The running installed app has **not** been updated, and no live raid or cancel
+was exercised in testing.
+
 ## Channel points (2026-10-11)
 
 Studio → Tools → Channel points lists every reward with its cost. Twitch only lets the app that created a

@@ -395,6 +395,12 @@ impl ChannelPane {
                 if let Some(parsed) = twitch {
                     match parsed {
                         Ok(request) => {
+                            if self.twitch_command_in_flight {
+                                // Enter auto-repeat must not repeat a raid, ad, or
+                                // moderation action while Helix is still working.
+                                return true;
+                            }
+                            self.twitch_command_in_flight = true;
                             self.command_feedback("Asking Twitch…", window, cx);
                             cx.emit(PaneEvent::TwitchCommand {
                                 request,

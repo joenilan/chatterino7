@@ -320,6 +320,9 @@ struct ChannelPane {
     connected: bool,
     room_settings: Option<room_settings::RoomSettings>,
     pending: Option<(u64, String, Option<String>, u64)>,
+    /// A slash command is waiting for a Twitch response; repeated Enter must
+    /// not queue the same consequential API request (including /raid).
+    pub(crate) twitch_command_in_flight: bool,
     compose_revision: u64,
     input_history: input_history::History,
     reply_target: Option<replies::Target>,
@@ -329,6 +332,10 @@ struct ChannelPane {
     read_eligible: Rc<Cell<bool>>,
     presented_row: Rc<Cell<Option<u64>>>,
     send_status: String,
+    /// Locally estimated countdown after a successful POST /helix/raids:
+    /// (target login, broadcaster login, when Twitch accepted the request).
+    pub(crate) raid_pending: Option<(String, String, Instant)>,
+    raid_tick: bool,
     timeline: Rc<RefCell<Timeline>>,
     media: Rc<RefCell<media::MediaCache>>,
     catalog: Rc<RefCell<catalog::Catalog>>,
@@ -481,6 +488,7 @@ impl ChannelPane {
             connected: false,
             room_settings: None,
             pending: None,
+            twitch_command_in_flight: false,
             reply_target: None,
             attention: Default::default(),
             attention_cursor: None,
@@ -490,6 +498,8 @@ impl ChannelPane {
             compose_revision: 0,
             input_history: Default::default(),
             send_status: String::new(),
+            raid_pending: None,
+            raid_tick: false,
             timeline: Rc::new(RefCell::new(timeline)),
             selection: Rc::new(RefCell::new(Selection::default())),
             focus: cx.focus_handle(),
@@ -555,6 +565,66 @@ impl ChannelPane {
         }
         Some(left)
     }
+    /// Twitch's API can queue/cancel raids, but only Twitch's own web UX
+    /// exposes Raid Now. This opens the broadcaster's stream manager, rather
+    /// than misleadingly claiming Jawjack can finish the raid via Helix.
+    fn render_raid_status(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let Some((target, broadcaster, queued_at)) = self.raid_pending.clone() else {
+            return Vec::new();
+        };
+        let remaining = 90_u64.saturating_sub(queued_at.elapsed().as_secs());
+        if remaining == 0 {
+            self.raid_pending = None;
+            return Vec::new();
+        }
+        if !self.raid_tick {
+            self.raid_tick = true;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                let _ = this.update(cx, |pane, cx| {
+                    pane.raid_tick = false;
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+        let url = format!("https://dashboard.twitch.tv/u/{broadcaster}/stream-manager");
+        vec![
+            div()
+                .h_flex()
+                .items_center()
+                .flex_wrap()
+                .gap_2()
+                .py_1()
+                .px_2()
+                .rounded(px(5.))
+                .bg(rgb(theme::control()))
+                .child(div().text_size(px(11.)).child(format!(
+                    "Raid queued → @{target} · ~{remaining}s (Twitch countdown)"
+                )))
+                .child(
+                    Button::new("raid-now-twitch")
+                        .xsmall()
+                        .label("Raid Now on Twitch ↗")
+                        .tooltip("Open Twitch Stream Manager. Only Twitch can complete a raid early; this button does not send another raid request.")
+                        .on_click(cx.listener(move |_, _, _, cx| cx.open_url(&url))),
+                )
+                .child(
+                    Button::new("raid-cancel")
+                        .xsmall()
+                        .ghost()
+                        .label("Cancel")
+                        .tooltip("Cancel the queued Twitch raid; does not affect your stream")
+                        .on_click(cx.listener(|_, _, _, cx| {
+                            cx.emit(PaneEvent::TwitchCommand {
+                                request: crate::twitch_actions::Request::Unraid,
+                                draft: String::new(),
+                            });
+                        })),
+                )
+                .into_any_element(),
+        ]
+    }
     fn change_history_limit(&mut self, limit: usize, cx: &mut Context<Self>) {
         self.search.dirty = true;
         let removed = self.timeline.borrow_mut().set_capacity(limit);
@@ -596,7 +666,7 @@ impl ChannelPane {
         self.submit(window, cx);
     }
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.pending.is_some() {
+        if self.pending.is_some() || self.twitch_command_in_flight {
             return;
         }
         let text = twitch_message_text(&self.draft.read(cx).value());
@@ -638,18 +708,24 @@ impl ChannelPane {
             return;
         }
         let reply_parent = self.reply_target.as_ref().map(|target| target.id.clone());
-        let text =
-            duplicates::duplicate_safe(&mut self.last_sent, text, youtube::is_youtube(&self.name));
+        // Twitch repeats may need a wire-only invisible suffix. Retain the
+        // *original draft* for the success acknowledgement so a repeated
+        // message clears normally instead of lingering and being sent again.
+        let (pending_text, outgoing_text) = duplicates::pending_and_wire(
+            &mut self.last_sent,
+            text,
+            youtube::is_youtube(&self.name),
+        );
         self.pending = Some((
             request,
-            text.clone(),
+            pending_text,
             reply_parent.clone(),
             self.compose_revision,
         ));
         self.send_status = "Sending…".into();
         cx.emit(PaneEvent::Send {
             request,
-            text,
+            text: outgoing_text,
             reply_parent,
         });
         cx.notify();
@@ -807,9 +883,6 @@ impl ChannelPane {
         if clear_reply {
             self.draft
                 .update(cx, |draft, cx| draft.set_value("", window, cx));
-            cx.emit(PaneEvent::DraftChanged);
-        }
-        if clear_reply {
             cx.emit(PaneEvent::DraftChanged);
         }
         self.send_status = match result {
@@ -1517,14 +1590,33 @@ impl Render for ChannelPane {
             )
             .child(div().key_context("JawjackComposer").relative().v_flex().when(hide_input,|el|el.hidden()).p_1().gap_1().bg(rgb(theme::panel())).border_t_1().border_color(rgb(theme::border()))
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    // Handle the *physical* Enter before the multiline Textarea can
+                    // change the draft. An inserted newline changes compose_revision,
+                    // which otherwise leaves an already-sent message in the composer.
+                    // One handler owns Enter, regardless of completion/picker state.
+                    if event.keystroke.key == "enter" {
+                        if event.keystroke.modifiers.shift {
+                            window.prevent_default();
+                            cx.stop_propagation();
+                        } else if !event.keystroke.modifiers.control
+                            && !event.keystroke.modifiers.platform
+                            && !event.keystroke.modifiers.alt
+                        {
+                            window.prevent_default();
+                            cx.stop_propagation();
+                            if this.picker.open {
+                                this.picker_action("enter", window, cx);
+                            } else if !this.completion_action("enter", window, cx) {
+                                this.submit(window, cx);
+                            }
+                        }
+                        return;
+                    }
                     if this.picker.open {
                         if event.keystroke.modifiers.alt && matches!(event.keystroke.key.as_str(),"left"|"right"){this.picker_action(&event.keystroke.key,window,cx);}
                         return;
                     }
-                    if event.keystroke.key == "enter" && event.keystroke.modifiers.shift {
-                        window.prevent_default();
-                        cx.stop_propagation();
-                    } else if !event.keystroke.modifiers.control && !event.keystroke.modifiers.platform
+                    if !event.keystroke.modifiers.control && !event.keystroke.modifiers.platform
                         && let Some(text) = &event.keystroke.key_char {
                             let input = this.draft.read(cx);
                             let current = input.value().to_string();
@@ -1532,16 +1624,6 @@ impl Render for ChannelPane {
                             let count = current[..selected.start].chars().count() + text.chars().count() + current[selected.end..].chars().count();
                             if count > 500 { window.prevent_default(); cx.stop_propagation(); }
                         }
-                }))
-                .capture_action(cx.listener(|this, action: &gpui_kit::base::input::Enter, window, cx| {
-                    // Enter has exactly one semantic owner. Never also submit from
-                    // InputEvent::PressEnter after inserting a completion.
-                    if !action.shift {
-                        if this.picker.open {
-                            this.picker_action("enter",window,cx);
-                        } else if !this.completion_action("enter",window,cx) {this.submit(window,cx);}
-                    }
-                    cx.stop_propagation();
                 }))
                 .on_action(cx.listener(|this,_: &PreviousInput,window,cx|this.recall_input(true,window,cx)))
                 .on_action(cx.listener(|this,_: &NextInput,window,cx|this.recall_input(false,window,cx)))
@@ -1574,6 +1656,7 @@ impl Render for ChannelPane {
                         cx.stop_propagation();
                     }
                 }))
+                .children(self.render_raid_status(cx))
                 .children(self.render_automod(cx))
                 .children(self.render_spelling(cx))
                 .children(self.render_reply_target(cx))
@@ -1619,7 +1702,7 @@ impl Render for ChannelPane {
                                 menu
                             }))
                     }).child(Button::new("sent-history").ghost().small().icon(Icon::new(gpui_kit::assets::IconName::RotateCcwClock)).tooltip("Sent message history · Ctrl+Shift+H").on_click(cx.listener(|this,_,w,cx|this.open_input_history(w,cx)))).child(div().id("emote-button-area").on_prepaint(move|bounds,_,cx|{if emote_button_bounds.replace(Some(bounds))!=Some(bounds)&&emote_picker_open{let owner=emote_button_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|_,cx|cx.notify());});}}).on_hover(cx.listener(|this,over,_,cx|{if *over{this.prepare_picker_media(cx);}})).child(Button::new("emotes-toggle").ghost().small().icon(Icon::new(gpui_kit::assets::IconName::Sticker)).tooltip("Emotes · type :name or press Tab to complete").on_click(cx.listener(|this,_,w,cx|this.toggle_picker(w,cx)))))
-                    .when(crate::replies::option(0), |el| el.child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else if commands::is_command(&self.draft.read(cx).value()) { "Run" } else { "Send" }).disabled(self.pending.is_some() || (!self.connected && !commands::is_command(&self.draft.read(cx).value()))).tooltip("Send a message or run a local /command").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx))))))))
+                    .when(crate::replies::option(0), |el| el.child(Button::new("send").small().label(if self.pending.is_some() { "Sending…" } else if self.twitch_command_in_flight { "Working…" } else if commands::is_command(&self.draft.read(cx).value()) { "Run" } else { "Send" }).disabled(self.pending.is_some() || self.twitch_command_in_flight || (!self.connected && !commands::is_command(&self.draft.read(cx).value()))).tooltip("Send a message or run a local /command").on_click(cx.listener(|this,_,window,cx|this.submit(window,cx))))))))
             .child(
                 canvas(
                     |_, _, _| (),

@@ -209,6 +209,35 @@ Attention inspection adds `unread`, `unread_highlights`, `retained_highlights` a
 Ctrl+Shift+R mark all open panes read, Ctrl+plus/minus chat font, Ctrl+0 reset.
 No synthetic attention-message injection was added.
 
+## Isolated native QA — 2026-10-14
+
+The first `--profile qa-p0-20261014 --control-session …` attempts
+timed out or exited after the tool-owned child launcher ended. The
+working procedure is to **launch the QA GUI and invoke control
+requests within the same persistent owning process**, then terminate
+only that child. The signed-out QA `inspect` response included
+`workspace.own_eventsub` (empty as expected without OAuth), profile
+isolation and a separate workspace. Do not interpret this as live
+optional-subscription acceptance.
+
+A fresh `--profile qa-p0-keyboard2` instance was tested using
+`ctrl-k` to create an unsent/disconnected channel pane, focus,
+`text`, and `key`. For local `/uptime`, the initial bug was
+reproduced (first Enter completed suggestion instead of submitting).
+After correction the first Enter executed it, leaving 0 draft chars,
+a second Enter left the composer empty, Tab still completed partial
+commands and Down+Enter still selected a navigated suggestion.
+All runs were signed out: no real Twitch send, moderation, raid or
+reward action. The installed Jawjack was neither used nor restarted.
+A second final build check in
+`--profile qa-p0-final-20261014 --control-session p0qa20261014h`
+verified the full `workspace.own_eventsub` inspection keys,
+including `unmapped_reward_notifications: 0`. Local first-Enter,
+repeat-Enter, Tab, and Down+Enter outcomes matched the corrected
+behavior above. The temporary process was stopped and the installed
+Jawjack was still running. The raid banner itself still needs an
+authorized live raid and native visual verification.
+
 ## Windows acceptance pass — 2026-10-11
 
 Locked Rust 1.99.0 release builds on Windows, driven through control sessions

@@ -566,6 +566,11 @@ impl Workbench {
                         }))
                 }),
         );
+        let reward_event_warning = self.own_extras_refused.as_ref().is_some_and(|refused| {
+            refused
+                .iter()
+                .any(|kind| kind.contains("channel_points_") && kind.ends_with("redemption.add"))
+        });
         let items: Vec<_> = self
             .feed
             .items
@@ -578,6 +583,7 @@ impl Workbench {
             return div()
                 .v_flex()
                 .child(chips)
+                .when(reward_event_warning, |el| el.child(div().pt_2().text_size(px(11.)).text_color(rgb(crate::theme::tone(0xE8C468))).child("Twitch refused a channel-point subscription. Retrying; chat remains connected.")))
                 .child(
                     div()
                         .v_flex()
@@ -605,6 +611,7 @@ impl Workbench {
         div()
             .v_flex()
             .child(chips)
+            .when(reward_event_warning, |el| el.child(div().pt_2().text_size(px(11.)).text_color(rgb(crate::theme::tone(0xE8C468))).child("Twitch refused a channel-point subscription. Retrying; chat remains connected.")))
             .child(
                 div()
                     .v_flex()

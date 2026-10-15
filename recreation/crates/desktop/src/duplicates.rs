@@ -18,9 +18,35 @@ pub fn duplicate_safe(last: &mut Option<(String, Instant)>, text: String, youtub
     *last = Some((sent.clone(), Instant::now()));
     sent
 }
+/// Keep the exact user draft for acknowledgement/clear checks, separately
+/// from Twitch's invisible repeat suffix. The wire payload must never become
+/// the value used to decide whether the editor still contains a sent draft.
+pub fn pending_and_wire(
+    last: &mut Option<(String, Instant)>,
+    draft: String,
+    youtube: bool,
+) -> (String, String) {
+    let outgoing = duplicate_safe(last, draft.clone(), youtube);
+    (draft, outgoing)
+}
+
 #[cfg(test)]
 mod duplicate_tests {
     use super::*;
+    #[test]
+    fn repeated_wire_messages_keep_an_unmodified_pending_draft() {
+        let mut last = None;
+        let (draft, first) = pending_and_wire(&mut last, "hello".into(), false);
+        assert_eq!(draft, "hello");
+        assert_eq!(first, "hello");
+        let (draft, wire) = pending_and_wire(&mut last, "hello".into(), false);
+        assert_eq!(draft, "hello");
+        assert_eq!(wire, "hello \u{E0000}");
+        assert_ne!(
+            wire, draft,
+            "wire suffix must not be used for draft clearing"
+        );
+    }
     #[test]
     fn repeats_alternate_an_invisible_suffix() {
         let mut last = None;

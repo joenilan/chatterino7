@@ -54,6 +54,17 @@ pub enum Event {
     ModAutomod(Vec<String>),
     /// Own-channel extras (follows, redemptions, AutoMod) Twitch refused.
     OwnExtras(Vec<&'static str>),
+    /// Status of every optional own-channel subscription, without event payloads.
+    OwnKindStatuses(Vec<OwnKindStatus>),
+    /// A real reward notification reached this client (even if malformed).
+    OwnRewardObserved(&'static str, bool),
+    /// A reward notification arrived, but no broadcaster/channel mapping
+    /// remained. Count this silent-drop case without retaining its payload.
+    OwnRewardUnmapped,
+    /// A previously online own-channel WebSocket dropped (no Twitch event replay).
+    OwnWebSocketGap,
+    /// An account change invalidates previous broadcaster diagnostics.
+    OwnReset,
     /// A held AutoMod message, or its outcome, in a channel you moderate.
     AutoMod(String, crate::automod::Update),
     /// A whisper received by the signed-in account.
@@ -451,6 +462,12 @@ const OWN_KINDS: [(&str, &str); 18] = [
     ("channel.shield_mode.begin", "1"),
     ("channel.shield_mode.end", "1"),
 ];
+fn reward_subscription(kind: &str) -> Option<&'static str> {
+    OWN_KINDS
+        .iter()
+        .find(|(name, _)| *name == kind && name.contains("reward_redemption.add"))
+        .map(|(name, _)| *name)
+}
 /// EventSub allows 300 enabled subscriptions per WebSocket and three WebSockets
 /// per user token. One shard also carries the own channel's extras.
 /// Each socket also keeps room for the AutoMod queue (hold + update) of this many
@@ -503,6 +520,27 @@ struct Shard {
     seen_generation: u64,
     online: bool,
 }
+/// Bounded, session-only EventSub diagnostics. Never include user text, IDs,
+/// authentication headers, or Twitch's raw error response.
+#[derive(Clone)]
+pub struct OwnKindStatus {
+    kind: &'static str,
+    version: &'static str,
+    state: &'static str,
+    http: Option<u16>,
+    retry_in_seconds: Option<u64>,
+}
+impl OwnKindStatus {
+    pub fn inspection(&self) -> Value {
+        json!({
+            "kind": self.kind,
+            "version": self.version,
+            "state": self.state,
+            "http": self.http,
+            "retry_in_seconds": self.retry_in_seconds,
+        })
+    }
+}
 /// Per-channel subscription progress on its shard.
 struct Assignment {
     shard: usize,
@@ -513,10 +551,14 @@ struct Assignment {
     notices_unavailable: bool,
     /// Own-channel extras Twitch refused (missing scope or role).
     extras_refused: Vec<&'static str>,
+    active_extras: HashSet<&'static str>,
+    extras_http: HashMap<&'static str, u16>,
     /// A failed extra can be retried independently of live chat subscriptions.
     extra_retry_at: Option<Instant>,
     extra_retry_cursor: usize,
     ready: bool,
+    /// True only after a formerly live socket dropped; initial setup is not a gap.
+    socket_gap: bool,
     failed_until: Option<Instant>,
 }
 impl Assignment {
@@ -529,9 +571,12 @@ impl Assignment {
             step: 0,
             notices_unavailable: false,
             extras_refused: Vec::new(),
+            active_extras: HashSet::new(),
+            extras_http: HashMap::new(),
             extra_retry_at: None,
             extra_retry_cursor: 0,
             ready: false,
+            socket_gap: false,
             failed_until: None,
         }
     }
@@ -541,10 +586,45 @@ impl Assignment {
         self.step = 0;
         self.notices_unavailable = false;
         self.extras_refused.clear();
+        self.active_extras.clear();
+        self.extras_http.clear();
         self.extra_retry_at = None;
         self.extra_retry_cursor = 0;
         self.ready = false;
+        self.socket_gap = false;
     }
+    fn own_statuses(&self) -> Vec<OwnKindStatus> {
+        OWN_KINDS
+            .iter()
+            .map(|&(kind, version)| {
+                let state = if self.socket_gap {
+                    "socket_gap"
+                } else if self.active_extras.contains(kind) {
+                    "subscribed"
+                } else if self.extras_refused.contains(&kind) {
+                    "retrying"
+                } else {
+                    "pending"
+                };
+                let retry_in_seconds = (state == "retrying")
+                    .then(|| {
+                        self.extra_retry_at
+                            .map(|when| when.saturating_duration_since(Instant::now()).as_secs())
+                    })
+                    .flatten();
+                OwnKindStatus {
+                    kind,
+                    version,
+                    state,
+                    http: self.extras_http.get(kind).copied(),
+                    retry_in_seconds,
+                }
+            })
+            .collect()
+    }
+}
+fn report_own(tx: &mpsc::SyncSender<(u64, Event)>, version: u64, a: &Assignment) {
+    let _ = tx.send((version, Event::OwnKindStatuses(a.own_statuses())));
 }
 fn state(
     tx: &mpsc::SyncSender<(u64, Event)>,
@@ -585,6 +665,8 @@ fn run(
         let c = config.lock().map(|c| c.clone()).unwrap_or_default();
         let version = epoch.load(Ordering::Relaxed);
         if user(&c.identity) != user(&identity) {
+            // Old broadcaster diagnostics must not leak into a new account.
+            let _ = tx.send((version, Event::OwnReset));
             // Account change: tear everything down; the UI already reset its panes.
             for shard in shards.iter_mut().filter_map(Option::take) {
                 shard.stop.store(true, Ordering::Relaxed);
@@ -704,6 +786,9 @@ fn run(
             {
                 assignment.generation = shard.seen_generation;
             }
+            if c.own.as_deref() == Some(channel.as_str()) {
+                report_own(&tx, version, &assignment);
+            }
             assigned.insert((*channel).clone(), assignment);
             state(&tx, version, channel, "Connecting…", false);
         }
@@ -742,12 +827,15 @@ fn run(
                     {
                         // A revoked reward/follow/etc. must not tear down healthy chat.
                         a.ids.retain(|id| id != &revoked_id);
+                        a.active_extras.remove(extra);
+                        a.extras_http.remove(extra);
                         if !a.extras_refused.contains(&extra) {
                             a.extras_refused.push(extra);
                         }
                         a.extra_retry_cursor = 0;
                         a.extra_retry_at = Some(Instant::now() + FAILURE_RETRY);
                         let _ = tx.send((version, Event::OwnExtras(a.extras_refused.clone())));
+                        report_own(&tx, version, a);
                     } else {
                         // Delete retained IDs before retrying; forgetting their IDs
                         // causes Twitch 409 conflicts on the next subscription pass.
@@ -772,10 +860,20 @@ fn run(
                     if online {
                         if a.generation != generation {
                             a.restart(generation);
+                            if c.own.as_deref() == Some(channel.as_str()) {
+                                report_own(&tx, version, a);
+                            }
                             state(&tx, version, channel, "Connecting…", false);
                         }
                     } else {
                         a.ready = false;
+                        a.socket_gap = true;
+                        if c.own.as_deref() == Some(channel.as_str()) {
+                            if shard.online {
+                                let _ = tx.send((version, Event::OwnWebSocketGap));
+                            }
+                            report_own(&tx, version, a);
+                        }
                         state(
                             &tx,
                             version,
@@ -1022,6 +1120,13 @@ fn run(
         shard.stop.store(true, Ordering::Relaxed);
     }
 }
+/// Require both Twitch's enabled acknowledgement and a retained ID.
+fn enabled_subscription_id(status: u16, value: &Value) -> Option<&str> {
+    if status != 202 || value["data"][0]["status"].as_str() != Some("enabled") {
+        return None;
+    }
+    value["data"][0]["id"].as_str().filter(|id| !id.is_empty())
+}
 /// Context for one subscription request on one shard session.
 struct Step<'a> {
     client: &'a reqwest::blocking::Client,
@@ -1125,13 +1230,19 @@ impl Step<'_> {
             *next_request = Instant::now() + until_reset();
             return;
         }
-        if status == 202 && value["data"][0]["status"].as_str() == Some("enabled") {
-            if let Some(id) = value["data"][0]["id"].as_str() {
-                a.ids.push(id.to_owned());
+        // A 202 without a usable subscription ID is not a successful
+        // subscription: reporting it as connected hid missing reward events.
+        let enabled_id = enabled_subscription_id(status, &value);
+        if let Some(id) = enabled_id {
+            a.ids.push(id.to_owned());
+            if extra {
+                a.active_extras.insert(kind);
+                a.extras_http.remove(kind);
             }
         } else if extra {
             // Activity-feed and AutoMod extras are best effort (missing scope or role).
             a.extras_refused.push(kind);
+            a.extras_http.insert(kind, status);
         } else if optional_kind(kind) {
             a.notices_unavailable = true;
         } else {
@@ -1175,6 +1286,9 @@ impl Step<'_> {
                 true,
             );
         }
+        if own && extra {
+            report_own(tx, version, a);
+        }
     }
     /// Retry a refused own-channel extra without restarting any chat subscriptions.
     fn retry_extra(&self, a: &mut Assignment, kind: &'static str, kind_version: &'static str) {
@@ -1203,20 +1317,22 @@ impl Step<'_> {
             .send()
             .ok()
             .and_then(|r| response_json(r).ok());
-        let accepted = match response {
-            Some((202, value)) if value["data"][0]["status"] == "enabled" => {
-                if let Some(id) = value["data"][0]["id"].as_str() {
-                    a.ids.push(id.to_owned());
-                    true
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        };
+        let last_http = response.as_ref().map(|(status, _)| *status);
+        let accepted = response
+            .as_ref()
+            .and_then(|(status, value)| enabled_subscription_id(*status, value))
+            .is_some_and(|id| {
+                a.ids.push(id.to_owned());
+                true
+            });
         if accepted {
             a.extras_refused.remove(a.extra_retry_cursor);
+            a.active_extras.insert(kind);
+            a.extras_http.remove(kind);
         } else {
+            if let Some(status) = last_http {
+                a.extras_http.insert(kind, status);
+            }
             a.extra_retry_cursor += 1;
         }
         if a.extra_retry_cursor >= a.extras_refused.len() {
@@ -1233,6 +1349,7 @@ impl Step<'_> {
         let _ = self
             .tx
             .send((self.version, Event::OwnExtras(a.extras_refused.clone())));
+        report_own(self.tx, self.version, a);
     }
 }
 /// One EventSub WebSocket. Reports its session to the manager and delivers events.
@@ -1412,8 +1529,15 @@ fn deliver(
         }
         return;
     }
+    let kind = v["payload"]["subscription"]["type"].as_str().unwrap_or("");
     let id = e["broadcaster_user_id"].as_str().unwrap_or("");
     let Some(channel) = map.lock().ok().and_then(|m| m.get(id).cloned()) else {
+        // Without this counter, the socket can receive a real reward and
+        // silently drop it before Activity parsing. Never surface private
+        // event/user data from an event that cannot be mapped to an account.
+        if reward_subscription(kind).is_some() {
+            let _ = tx.send((version, Event::OwnRewardUnmapped));
+        }
         return;
     };
     if v["payload"]["subscription"]["type"] == "channel.chat_settings.update" {
@@ -1422,7 +1546,6 @@ fn deliver(
         }
         return;
     }
-    let kind = v["payload"]["subscription"]["type"].as_str().unwrap_or("");
     if kind == "channel.suspicious_user.message" {
         if let Some((message, label)) = crate::suspicious::parse(e) {
             let _ = tx.send((version, Event::Suspicious(channel, message, label)));
@@ -1459,7 +1582,22 @@ fn deliver(
             ),
         ));
     }
-    if let Some(item) = crate::activity_feed::Feed::from_eventsub(kind, e) {
+    let reward_kind = reward_subscription(kind);
+    // A malformed but delivered reward notification is not a successful
+    // Activity item. Surface its existence, without logging its payload.
+    let valid_reward = reward_kind.is_none()
+        || (e["reward"].is_object()
+            && e["user_name"].as_str().is_some_and(|name| !name.is_empty()));
+    let activity = valid_reward
+        .then(|| crate::activity_feed::Feed::from_eventsub(kind, e))
+        .flatten();
+    if let Some(reward_kind) = reward_kind {
+        let _ = tx.send((
+            version,
+            Event::OwnRewardObserved(reward_kind, activity.is_some()),
+        ));
+    }
+    if let Some(item) = activity {
         let _ = tx.send((version, Event::Activity(item)));
         return;
     }
@@ -1845,6 +1983,8 @@ mod tests {
                 },
             });
             deliver(&value, &names, &tx, &mut seen, &mut order, 7);
+            let (_, observed) = rx.try_recv().expect("reward notification observed");
+            assert!(matches!(observed, Event::OwnRewardObserved(_, true)));
             let (version, event) = rx.try_recv().expect("redemption should be delivered");
             assert_eq!(version, 7);
             let Event::Activity(item) = event else {
@@ -1856,6 +1996,99 @@ mod tests {
             deliver(&value, &names, &tx, &mut seen, &mut order, 7);
             assert!(rx.try_recv().is_err());
         }
+    }
+    #[test]
+    fn subscription_response_requires_an_enabled_id() {
+        let good = json!({"data":[{"status":"enabled","id":"sub-42"}]});
+        assert_eq!(enabled_subscription_id(202, &good), Some("sub-42"));
+        assert_eq!(enabled_subscription_id(409, &good), None);
+        assert_eq!(
+            enabled_subscription_id(202, &json!({"data":[{"status":"enabled"}]})),
+            None
+        );
+        assert_eq!(
+            enabled_subscription_id(202, &json!({"data":[{"status":"enabled","id":""}]})),
+            None
+        );
+        assert_eq!(
+            enabled_subscription_id(202, &json!({"data":[{"status":"pending","id":"sub-42"}]})),
+            None
+        );
+    }
+    #[test]
+    fn optional_status_tracks_refusal_repair_gap_and_resets() {
+        let mut assignment = Assignment::new(0);
+        let reward = OWN_KINDS[1].0;
+        assert_eq!(assignment.own_statuses()[1].state, "pending");
+        assignment.ready = true;
+        assignment.active_extras.insert(reward);
+        assert_eq!(assignment.own_statuses()[1].state, "subscribed");
+        assignment.ready = false;
+        assert_eq!(assignment.own_statuses()[1].state, "subscribed");
+        assignment.socket_gap = true;
+        assert_eq!(assignment.own_statuses()[1].state, "socket_gap");
+        assignment.socket_gap = false;
+        assignment.active_extras.remove(reward);
+        assignment.extras_refused.push(reward);
+        assignment.extras_http.insert(reward, 403);
+        assignment.extra_retry_at = Some(Instant::now() + EXTRAS_RETRY);
+        let report = assignment.own_statuses();
+        assert_eq!(report[1].state, "retrying");
+        assert_eq!(report[1].http, Some(403));
+        assert!(report[1].retry_in_seconds.is_some());
+        assignment.restart(2);
+        assert_eq!(assignment.own_statuses()[1].state, "pending");
+        assert_eq!(assignment.own_statuses()[1].http, None);
+    }
+    #[test]
+    fn malformed_reward_notification_is_counted_but_not_rendered() {
+        let names = Arc::new(Mutex::new(HashMap::from([(
+            "123".to_owned(),
+            "mychannel".to_owned(),
+        )])));
+        let (tx, rx) = mpsc::sync_channel(8);
+        let value = json!({
+            "metadata": {"message_type":"notification","message_id":"bad-reward"},
+            "payload": {"subscription":{"type":"channel.channel_points_custom_reward_redemption.add"},
+                        "event":{"broadcaster_user_id":"123","user_name":"Viewer","reward":null}}
+        });
+        deliver(
+            &value,
+            &names,
+            &tx,
+            &mut HashSet::new(),
+            &mut VecDeque::new(),
+            7,
+        );
+        assert!(matches!(
+            rx.try_recv(),
+            Ok((7, Event::OwnRewardObserved(_, false)))
+        ));
+        assert!(rx.try_recv().is_err());
+    }
+    #[test]
+    fn unmapped_reward_notifications_are_counted_without_private_payload() {
+        let names: Arc<Mutex<HashMap<String, String>>> = Default::default();
+        let (tx, rx) = mpsc::sync_channel(8);
+        let value = json!({
+            "metadata": {"message_type":"notification","message_id":"unmapped-1"},
+            "payload": {"subscription":{"type":"channel.channel_points_custom_reward_redemption.add"},
+                        "event":{"broadcaster_user_id":"unknown","user_name":"Private",
+                                 "user_input":"private text","reward":{"title":"Private reward","cost":500}}}
+        });
+        let mut seen = HashSet::new();
+        let mut order = VecDeque::new();
+        deliver(&value, &names, &tx, &mut seen, &mut order, 9);
+        assert!(matches!(rx.try_recv(), Ok((9, Event::OwnRewardUnmapped))));
+        assert!(
+            rx.try_recv().is_err(),
+            "no private Activity item may escape"
+        );
+        deliver(&value, &names, &tx, &mut seen, &mut order, 9);
+        assert!(
+            rx.try_recv().is_err(),
+            "duplicate envelope must not count twice"
+        );
     }
     #[test]
     fn own_channel_is_prioritized_even_if_no_tab_exists() {

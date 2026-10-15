@@ -288,6 +288,15 @@ pub struct Workbench {
     automod: std::collections::HashMap<String, std::rc::Rc<Vec<crate::automod::Held>>>,
     /// Own-channel extra subscriptions Twitch refused (None until the own channel connects).
     own_extras_refused: Option<Vec<&'static str>>,
+    /// Optional EventSub subscription diagnostics, never persisted to settings.
+    own_kind_statuses: Vec<crate::live::OwnKindStatus>,
+    /// Reward notification counts (seen, rendered, last seen UTC epoch), no user data.
+    own_reward_notifications: std::collections::BTreeMap<String, (u64, u64, i64)>,
+    /// An own reward arrived over EventSub but its broadcaster could not be
+    /// mapped to an open/known channel. Never retain the private event body.
+    own_unmapped_rewards: u64,
+    own_socket_gaps: u64,
+    own_last_gap: Option<i64>,
     /// Channels where you chose not to see AutoMod (not subscribed either).
     automod_hidden: std::collections::BTreeSet<String>,
     /// Moderator onboarding: channels ticked, and which are live (None while checking).
@@ -601,7 +610,17 @@ impl Workbench {
         json!({"cache":self.media.borrow().inspection(),"7tv":self.catalog.borrow().inspection()})
     }
     pub fn inspection(&self, cx: &App) -> Value {
-        json!({"own_extras_refused":self.own_extras_refused,"automod_channels":self.mod_automod_channels,"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"capabilities":self.capabilities.inspection(),"updates":self.updates.inspection(),"profile":crate::profile::name(),"seventv_presence":self.presence.last.lock().map(|s|s.clone()).unwrap_or_default(),"roles":self.panes().iter().map(|p|{let p=p.read(cx);(p.name.to_string(),p.role.map(|r|r.label()))}).collect::<BTreeMap<_,_>>(),"shared_sessions":self.panes().iter().filter_map(|p|{let p=p.read(cx);p.shared_session.clone().map(|s|(p.name.to_string(),json!({"participants":s,"hidden":p.hidden_sources})))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
+        let own_eventsub = json!({
+            "subscriptions": self.own_kind_statuses.iter().map(|s| s.inspection()).collect::<Vec<_>>(),
+            "reward_notifications": self.own_reward_notifications.iter().map(|(kind,(received,rendered,last))|
+                (kind.clone(), json!({"received":received,"rendered":rendered,"last_received_utc_epoch":last})))
+                .collect::<std::collections::BTreeMap<_,_>>(),
+            "unmapped_reward_notifications": self.own_unmapped_rewards,
+            "websocket_gaps": self.own_socket_gaps,
+            "last_gap_utc_epoch": self.own_last_gap,
+            "note": "WebSocket gaps may contain lost events; Twitch does not replay them"
+        });
+        json!({"own_eventsub":own_eventsub,"own_extras_refused":self.own_extras_refused,"automod_channels":self.mod_automod_channels,"last_drop":self.last_drop,"pointer_owner":self.pointer_owner.map(|control|if control{"local-control"}else{"native-window"}),"control_enabled":self.control_enabled,"active":self.active,"tabs":self.tabs.iter().map(|t|json!({"id":t.id,"name":t.name,"vertical":t.vertical,"dock":t.dock.as_ref().map(Dock::json),"channels":t.panes.iter().map(|p|p.read(cx).name.to_string()).collect::<Vec<_>>()})).collect::<Vec<_>>(),"adding_channel":self.adding,"appearance_open":self.settings,"font_size":self.font_size,"timestamps":self.timestamps,"pause_mode":self.pause_mode,"history_limit":self.history_limit,"save_status":self.save_status,"close_tab_pending":self.close_tab_pending,"live_workspace_filter":self.live_workspaces,"live_channel_filter":self.live_channels,"streams":self.panes().iter().map(|p|{let n=p.read(cx).name.to_string();(n.clone(),self.streams.get(&n))}).collect::<BTreeMap<_,_>>(),"capabilities":self.capabilities.inspection(),"updates":self.updates.inspection(),"profile":crate::profile::name(),"seventv_presence":self.presence.last.lock().map(|s|s.clone()).unwrap_or_default(),"roles":self.panes().iter().map(|p|{let p=p.read(cx);(p.name.to_string(),p.role.map(|r|r.label()))}).collect::<BTreeMap<_,_>>(),"shared_sessions":self.panes().iter().filter_map(|p|{let p=p.read(cx);p.shared_session.clone().map(|s|(p.name.to_string(),json!({"participants":s,"hidden":p.hidden_sources})))}).collect::<BTreeMap<_,_>>(),"disconnected":self.panes().iter().filter(|p|!p.read(cx).connected).map(|p|{let p=p.read(cx);(p.name.to_string(),p.connection.clone())}).collect::<BTreeMap<_,_>>()})
     }
     /// Channels to connect, highest priority first: visible panes, the rest of the
     /// active workspace, then other workspaces by most recent use. Beyond the
@@ -816,6 +835,11 @@ impl Workbench {
             account_focus: None,
             automod: Default::default(),
             own_extras_refused: None,
+            own_kind_statuses: Vec::new(),
+            own_reward_notifications: Default::default(),
+            own_unmapped_rewards: 0,
+            own_socket_gaps: 0,
+            own_last_gap: None,
             mod_pick: Default::default(),
             mod_live: None,
             automod_hidden: state["automod_hidden"]
@@ -1929,6 +1953,40 @@ impl Workbench {
                 }
                 crate::live::Event::ModAutomod(channels) => {
                     self.mod_automod_channels = channels;
+                }
+                crate::live::Event::OwnReset => {
+                    self.own_extras_refused = None;
+                    self.own_kind_statuses.clear();
+                    self.own_reward_notifications.clear();
+                    self.own_unmapped_rewards = 0;
+                    self.own_socket_gaps = 0;
+                    self.own_last_gap = None;
+                    cx.notify();
+                }
+                crate::live::Event::OwnKindStatuses(statuses) => {
+                    self.own_kind_statuses = statuses;
+                    cx.notify();
+                }
+                crate::live::Event::OwnWebSocketGap => {
+                    self.own_socket_gaps = self.own_socket_gaps.saturating_add(1);
+                    self.own_last_gap = Some(chrono::Utc::now().timestamp());
+                    cx.notify();
+                }
+                crate::live::Event::OwnRewardUnmapped => {
+                    self.own_unmapped_rewards = self.own_unmapped_rewards.saturating_add(1);
+                    cx.notify();
+                }
+                crate::live::Event::OwnRewardObserved(kind, rendered) => {
+                    let row = self
+                        .own_reward_notifications
+                        .entry(kind.to_owned())
+                        .or_insert((0, 0, 0));
+                    row.0 = row.0.saturating_add(1);
+                    if rendered {
+                        row.1 = row.1.saturating_add(1);
+                    }
+                    row.2 = chrono::Utc::now().timestamp();
+                    cx.notify();
                 }
                 crate::live::Event::OwnExtras(refused) => {
                     self.own_extras_refused = Some(refused);
@@ -3295,6 +3353,9 @@ impl Workbench {
         let identity = self.account.read(cx).identity();
         let (Some(identity), true) = (identity, check.available()) else {
             pane.update(cx, |p, cx| {
+                if !draft.is_empty() {
+                    p.twitch_command_in_flight = false;
+                }
                 p.command_feedback(
                     format!("{} Your draft is kept.", check.reason()),
                     window,
@@ -3302,6 +3363,16 @@ impl Workbench {
                 )
             });
             return;
+        };
+        // A successful raid API response queues Twitch's native countdown.
+        // No official Helix endpoint exists for clicking Raid Now; our banner
+        // links to Twitch's own Stream Manager for that action.
+        let raid_transition = match &request {
+            crate::twitch_actions::Request::Raid { login } => {
+                Some(Some((login.clone(), channel.clone())))
+            }
+            crate::twitch_actions::Request::Unraid => Some(None),
+            _ => None,
         };
         let blocking = matches!(request, crate::twitch_actions::Request::Block { .. });
         let task = cx.background_spawn(async move {
@@ -3312,15 +3383,25 @@ impl Workbench {
             if blocking && result.is_ok() {
                 let _ = view.update(cx, |this, _| this.blocks.refresh());
             }
-            let _ = pane.update_in(cx, |p, window, cx| match result {
-                Ok(done) => {
-                    if p.draft.read(cx).value().as_ref() == draft {
-                        p.command_draft("", window, cx);
-                    }
-                    p.command_feedback(done, window, cx);
+            let _ = pane.update_in(cx, |p, window, cx| {
+                if !draft.is_empty() {
+                    p.twitch_command_in_flight = false;
                 }
-                Err(error) => {
-                    p.command_feedback(format!("{error} Your draft is kept."), window, cx)
+                match result {
+                    Ok(done) => {
+                        if let Some(change) = raid_transition {
+                            p.raid_pending = change.map(|(target, broadcaster)| {
+                                (target, broadcaster, std::time::Instant::now())
+                            });
+                        }
+                        if p.draft.read(cx).value().as_ref() == draft {
+                            p.command_draft("", window, cx);
+                        }
+                        p.command_feedback(done, window, cx);
+                    }
+                    Err(error) => {
+                        p.command_feedback(format!("{error} Your draft is kept."), window, cx)
+                    }
                 }
             });
         })

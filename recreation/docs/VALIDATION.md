@@ -64,6 +64,67 @@ budget and ensures server oversize errors retain response identity for cleanup.
 Native paging/completion/channel switching/tooltips still await the corrected
 preview. No chat messages were sent.
 
+## Jawjack P0 EventSub, composer and raids — 2026-10-14 (unreleased)
+
+Entry state: branch `recreation/gpui-foundation`, HEAD `66de13cb1`,
+working tree clean. The installed default-profile Jawjack remained running
+at `C:\Users\ZOMBIEBOX\AppData\Local\Programs\Jawjack\Jawjack.exe`
+(separately rechecked after test attempts). It was not replaced or restarted.
+
+- `cargo +1.99.0 test -p chat-workbench --bin chat-workbench --locked`:
+  **107 passed, 5 ignored, 0 failed** (112 total), following P0, Enter,
+  raid UI and repeated-message acknowledgement changes. New cases test
+  custom/automatic redemption delivery, duplicate-ID suppression, malformed
+  reward counting, failed enablement without a subscription ID, optional
+  retry/socket-gap state, keeping the original draft distinct from a
+  Twitch repeated-message wire suffix, and recording an unmapped reward
+  notification once without leaking its private payload. A repeated live
+  send or naturally arriving redemption was not attempted.
+- `cargo +1.99.0 fmt --all`: passed. Locked Rust 1.99
+  `cargo +1.99.0 build -p chat-workbench --bin chat-workbench
+  --release --locked`: passed on Windows. Binary built locally only,
+  never installed or published.
+- Initial isolated `--profile qa-p0-20261014` control attempts
+  timed out or exited with the owned launcher. **Superseded native result:**
+  keeping the QA window alive inside the same owned Python process
+  produced successful control-session inspection, reporting the new
+  `workspace.own_eventsub` keys with zero counts (expected:
+  the separate QA account was deliberately signed out).
+- A final smoke pass against the **latest** locked release binary ran in
+  `--profile qa-p0-final-20261014`, control session
+  `p0qa20261014h`. Native `inspect` returned
+  `workspace.own_eventsub.unmapped_reward_notifications: 0`
+  and the complete diagnostic keys. In the signed-out test pane,
+  `/uptime` + first Enter cleared the draft (7 → 0), a second
+  Enter kept it empty, Tab completion produced 6 → 8, and
+  Down + Enter selected a suggestion before a later Enter
+  submitted locally. The specific child process exited afterward.
+- A fresh `--profile qa-p0-keyboard2` Windows GUI accepted actual
+  controlled key/text events in a disconnected `#dreadedzombie` pane.
+  Typing local `/uptime` opened one suggestion (7 draft chars).
+  **First Enter cleared/executed immediately (7 → 0)**; repeating Enter
+  left 0 with `send_pending=false`. Before the autocomplete fix,
+  the same native scenario was independently reproduced as 7 → 8 on
+  first Enter and 8 → 0 on second Enter.
+  `/uptim` + Tab completed to `/uptime ` (6 → 8), then Enter
+  executed (8 → 0). `/uptim` + Down + Enter intentionally
+  completed (6 → 8), and the next Enter executed (8 → 0).
+  This is verified **isolated native input control**, not a
+  genuine Twitch message send or visual screenshot review.
+- A separate sending-code audit identified a second duplicate-send cause:
+  Twitch repeats gain an invisible suffix on the wire, but the old success
+  handler compared that suffixed wire payload against the unchanged draft,
+  preventing the editor from clearing after acknowledgement. The send path
+  now retains the original draft for acknowledgement/history and sends the
+  suffix only in the wire payload. The focused unit test exercises the exact
+  two-value distinction; native **live success acknowledgement** remains open.
+- The isolated QA process was terminated by exact child PID; the installed
+  Jawjack was untouched. No real raid, cancellation, chat post, redemption,
+  moderation, account credential or OAuth scope change occurred.
+  **Actual send acknowledgement and duplicate protection in a connected
+  Twitch session**, a naturally arriving reward and raid UI/countdown
+  acceptance remain unverified.
+
 # Current checkpoint: badges and emote composition — 2026-10-09
 
 Linux offline locked build passed against the implementation tree (5.46s).

@@ -62,6 +62,9 @@ pub struct Picker {
     pub button_bounds: std::rc::Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
     pub suggestions: Vec<Choice>,
     pub selected: usize,
+    /// Inline Enter completes only after intentional up/down selection;
+    /// otherwise Enter sends/runs the current draft. Tab always completes.
+    pub selected_explicitly: bool,
     pub token: Option<(Range<usize>, String)>,
     collections: Vec<Collection>,
     collection: String,
@@ -553,6 +556,7 @@ impl ChannelPane {
             |index: usize| COMPLETION_OPTIONS[index].load(std::sync::atomic::Ordering::Relaxed);
         self.picker.suggestions.clear();
         self.picker.selected = 0;
+        self.picker.selected_explicitly = false;
         self.picker.token = None;
         if self.picker.open {
             return;
@@ -800,11 +804,20 @@ impl ChannelPane {
         }
         match key {
             "down" => {
-                self.picker.selected = (self.picker.selected + 1) % self.picker.suggestions.len()
+                self.picker.selected = (self.picker.selected + 1) % self.picker.suggestions.len();
+                self.picker.selected_explicitly = true;
             }
             "up" => {
                 self.picker.selected = (self.picker.selected + self.picker.suggestions.len() - 1)
-                    % self.picker.suggestions.len()
+                    % self.picker.suggestions.len();
+                self.picker.selected_explicitly = true;
+            }
+            "enter" if !self.picker.selected_explicitly => {
+                // Typed commands/emotes may offer a highlighted default;
+                // accepting it silently makes Enter appear stuck and can
+                // cause repeat-send attempts. Only explicit arrow selection
+                // grants Enter to the suggestion, or use Tab to complete.
+                return false;
             }
             "enter" | "tab" => {
                 let choice = self.picker.suggestions[self.picker.selected].clone();
@@ -812,6 +825,7 @@ impl ChannelPane {
             }
             "escape" => {
                 self.picker.suggestions.clear();
+                self.picker.selected_explicitly = false;
                 self.picker.token = None;
             }
             _ => return false,
@@ -835,7 +849,7 @@ impl ChannelPane {
                 div()
                     .text_size(px(11.))
                     .text_color(rgb(theme::muted()))
-                    .child("Suggestions · ↑ ↓ choose · Enter / Tab inserts · Esc dismisses"),
+                    .child("Tab completes · Enter sends · ↑ ↓ then Enter selects"),
             )
             .children(
                 items

@@ -29,6 +29,19 @@ rich media/DPI/selection acceptance and the unchecked long-term integrations.
 See [PARITY_QUEUE_2026-10-14.md](PARITY_QUEUE_2026-10-14.md) and
 [HANDOFF_2026-10-14.md](HANDOFF_2026-10-14.md).
 
+**2026-10-14 P0 source slice:** built/tested per-kind optional EventSub
+inspection, last-delivered reward counters, refused-reward banner, retry/gap
+reporting, and missing-ID rejection. The original unchecked native/live
+redemption case stays unchecked. Slash-command auto-repeat suppression and
+a read-only-to-Twitch raid countdown shortcut were also added. Composer
+Enter was verified in isolated native QA: first Enter executes local
+`/uptime` despite default suggestions, repeated Enter stays empty, and
+Tab or deliberate Arrow+Enter still completes. A repeat-send audit also
+fixed a wire-only invisible suffix incorrectly preventing acknowledged
+messages from clearing the original draft (unit tested; no live repeat
+attempted). Connected Twitch chat sends and the raid banner remain unverified;
+a real raid needs separate approval.
+
 ## A. Missing
 
 ### Chat display
