@@ -23,8 +23,13 @@ deleted-message dim/strikethrough plus denser timestamps/badges from
   `b9239cf5e14fb33799684e5a6e37459e469594408ac33e32dd252bef0b596c93`.
 - Links: `https://apps.zombie.digital/downloads/jawjack/latest.json`,
   `https://apps.zombie.digital/jawjack/releases`.
-- The owner's running installed Jawjack was not stopped, installed over
-  or restarted; owner plans to update it themselves.
+- The assistant did not stop or install over the owner's running
+  Jawjack. At publication it was still the prior running process.
+  **Later read-only check:** running Jawjack PID 62516 and
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Jawjack`
+  `DisplayVersion=0.1.0-preview.16`. Installation/restart occurred
+  separately, without any assistant-initiated update. No post-install
+  native visual acceptance has yet been recorded.
 
 The next work is native **acceptance**, not reimplementation or republication:
 verify 420–440px split wrapping, actual deleted message rows,

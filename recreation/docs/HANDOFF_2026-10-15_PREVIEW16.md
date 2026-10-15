@@ -55,11 +55,14 @@ Published commits:
   `b9239cf5e14fb33799684e5a6e37459e469594408ac33e32dd252bef0b596c93`.
 - Public feed: `https://apps.zombie.digital/downloads/jawjack/latest.json`.
   Release page: `https://apps.zombie.digital/jawjack/releases`.
-- **The installed/running Jawjack was not closed, upgraded or replaced.**
+- **The assistant did not close, upgrade or replace the installed app.**
   During publication it was still PID 49224 at
   `C:\Users\ZOMBIEBOX\AppData\Local\Programs\Jawjack\Jawjack.exe`.
-  The owner said they will install preview.16 themselves. Check the actual
-  installed version on arrival; don't assume they have updated yet.
+  A later read-only check found the app running as PID 62516 and the
+  Windows uninstall registry reporting **DisplayVersion 0.1.0-preview.16**.
+  The update happened separately while this handoff was being finished;
+  it was not initiated by the assistant. Check the current process/version
+  and get owner feedback; do not assume in-app visual acceptance passed.
 
 ## Actual native evidence vs outstanding P0 acceptance
 
