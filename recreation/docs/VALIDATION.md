@@ -1,5 +1,31 @@
 ## Jawjack preview.16 publication — 2026-10-15
 
+## Combined-feed moderator origin / Shared Chat ID safety — local 2026-10-15
+
+**Implementation:** `message_actions.rs` now emits message-origin-bound
+`TwitchMessageCommand`, and the workspace permission checker targets that
+actual channel, never `send_to`. Message menu/inline controls gate against
+each Twitch source. A Shared Chat copy is deleted in the receiving room:
+`message.id` belongs there; `presentation.source_id` points to a distinct
+broadcaster and cannot be paired with that message ID. Any explicit override
+is refused. YouTube actions remain separate. See
+[EVIDENCE_PARITY_2026-10-15.md](EVIDENCE_PARITY_2026-10-15.md).
+
+**Checks:** Windows MSVC Rust 1.99 `cargo fmt --all` succeeded and
+`cargo test -p chat-workbench --bin chat-workbench --locked` completed
+**115 passed, 0 failed, 5 ignored**. Tests cover normal and combined
+channels, Mentions origin, Delete/Timeout/Ban/Warn, mismatched/unknown source,
+YouTube exclusion, receiving-room Shared Chat delete and refusal of foreign
+broadcaster ID overrides. Final locked release build and `git diff --check`
+are separate acceptance gates.
+
+**Additional build:** locked Windows Rust 1.99 `cargo build -p chat-workbench --bin chat-workbench --locked --release` passed (optimized build, existing `chat_text.rs` dead-code warning only). `cargo fmt --all -- --check` and `git diff --check` passed. The local binary was **not installed or published**.
+
+**Not yet claimed:** actual Twitch moderation, authenticated role/source
+changes, narrow native rendering on 420–440px panes, links/selection/copy
+across real media. No push, installation, preview publication, credential
+change, OAuth scope change or live provider mutation.
+
 **Published, independently verified over HTTPS:** `0.1.0-preview.16`,
 from committed source `dfed4f403`, branch `recreation/gpui-foundation`.
 This release includes the full-width chat wrapping from `de790fd5e` and

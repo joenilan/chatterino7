@@ -708,23 +708,23 @@ pub fn menu(
     }
     // Moderator actions appear only where the account moderates or owns the channel;
     // on YouTube while signed in with Google (YouTube checks you moderate there).
-    let moderates = owner.upgrade().is_some_and(|pane| {
-        matches!(
-            pane.read(cx).role,
-            Some(crate::capabilities::Role::Moderator | crate::capabilities::Role::Broadcaster)
+    let mod_source = owner.upgrade().and_then(|pane| {
+        let pane = pane.read(cx);
+        crate::combined::moderation_origin(
+            &pane.name,
+            &message.channel_id,
+            message.presentation.origin.as_deref(),
         )
-    }) && message.login.is_some()
-        && !message.user_id.is_empty();
+        .filter(|source| pane.mod_sources.contains(source))
+    });
+    let moderates = mod_source.is_some() && message.login.is_some() && !message.user_id.is_empty();
     let youtube = crate::youtube::is_youtube(&message.channel_id)
         && crate::google_auth::SIGNED_IN.load(std::sync::atomic::Ordering::Relaxed)
         && message.user_id.starts_with("yt:")
         && !message.badges.iter().any(|b| b.set_id == "broadcaster");
     if moderates || youtube {
         // The broadcaster can't be timed out or banned in their own channel.
-        let broadcaster = !youtube
-            && owner
-                .upgrade()
-                .is_some_and(|pane| message.login.as_deref() == Some(pane.read(cx).name.as_ref()));
+        let broadcaster = !youtube && message.login.as_deref() == mod_source.as_deref();
         menu = menu.separator();
         // An inline AutoMod line isn't a Twitch message; Allow/Deny handle it.
         if !message.deleted && !id.starts_with(crate::automod::LINE_PREFIX) {
@@ -982,31 +982,60 @@ impl ChannelPane {
             return;
         }
         let login = message.login.clone().unwrap_or_default();
-        let moderate = |request| PaneEvent::TwitchCommand {
+        let mod_source = crate::combined::moderation_origin(
+            &self.name,
+            &message.channel_id,
+            message.presentation.origin.as_deref(),
+        );
+        if matches!(
+            &action,
+            Action::ModDelete | Action::ModTimeout(_) | Action::ModBan | Action::ModCustom(_)
+        ) && !mod_source
+            .as_ref()
+            .is_some_and(|source| self.mod_sources.contains(source))
+        {
+            window.push_notification(
+                Notification::info(
+                    "Cannot verify moderator access to this message's originating Twitch channel",
+                ),
+                cx,
+            );
+            return;
+        }
+        let moderate = |request| PaneEvent::TwitchMessageCommand {
+            source: mod_source.clone().unwrap_or_default(),
             request,
-            draft: String::new(),
         };
         match action {
-            // Shared Chat: a message from another channel is deleted there (where
-            // Twitch keeps it), which needs you to moderate that channel too.
+            // Twitch assigns a separate message_id to each receiving Shared Chat
+            // room. Delete its copy here; source_id is provenance, not the target.
             Action::ModDelete => cx.emit(moderate(crate::twitch_actions::Request::Delete {
                 message_id: message.id.clone(),
-                room_id: message
-                    .presentation
-                    .source_id
-                    .clone()
-                    .filter(|source| *source != message.channel_id),
+                room_id: None,
             })),
             Action::ModCustom(template) => {
-                let (name, args) =
-                    crate::mod_buttons::expand(&template, &login, &message.id, &self.name);
+                let (name, args) = crate::mod_buttons::expand(
+                    &template,
+                    &login,
+                    &message.id,
+                    mod_source.as_deref().unwrap_or(self.name.as_ref()),
+                );
                 match crate::twitch_actions::parse(&name, &args) {
                     Some(Ok(request)) => cx.emit(moderate(request)),
                     Some(Err(problem)) => window.push_notification(Notification::info(problem), cx),
                     // Jawjack's own and custom commands run as if typed.
                     None => {
-                        let line = format!("{name} {args}");
-                        self.route_command(line.trim(), window, cx);
+                        if crate::combined::is_combined(&self.name)
+                            || crate::combined::is_special(&self.name)
+                        {
+                            window.push_notification(
+                                Notification::info("Unrecognized custom commands cannot target a message source from a combined or special feed"),
+                                cx,
+                            );
+                        } else {
+                            let line = format!("{name} {args}");
+                            self.route_command(line.trim(), window, cx);
+                        }
                     }
                 }
             }
@@ -1020,11 +1049,12 @@ impl ChannelPane {
             Action::ModBan => {
                 // A ban is high impact: name the target and channel before acting.
                 let owner = cx.entity().downgrade();
-                let channel = self.name.to_string();
+                let channel = mod_source.clone().unwrap_or_default();
                 let label = message.author_label().to_owned();
                 window.open_dialog(cx, move |dialog, _, _| {
                     let owner = owner.clone();
                     let login = login.clone();
+                    let channel = channel.clone();
                     dialog
                         .title(format!("Ban {label} from #{channel}?"))
                         .child(div().text_size(px(12.)).text_color(rgb(theme::muted())).child(format!("@{login} will be banned until a moderator unbans them (/unban {login}).")))
@@ -1033,9 +1063,10 @@ impl ChannelPane {
                             .child(Button::new("ban-confirm").small().danger().label("Ban").on_click(move |_, w, cx| {
                                 w.close_dialog(cx);
                                 let login = login.clone();
-                                let _ = owner.update(cx, |_, cx| cx.emit(PaneEvent::TwitchCommand {
+                                let channel = channel.clone();
+                                let _ = owner.update(cx, |_, cx| cx.emit(PaneEvent::TwitchMessageCommand {
+                                    source: channel,
                                     request: crate::twitch_actions::Request::Ban { login, reason: String::new() },
-                                    draft: String::new(),
                                 }));
                             })))
                 });

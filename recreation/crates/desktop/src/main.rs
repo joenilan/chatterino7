@@ -245,6 +245,11 @@ enum PaneEvent {
         request: twitch_actions::Request,
         draft: String,
     },
+    /// Message-origin moderation: never fall back to the composer send destination.
+    TwitchMessageCommand {
+        source: String,
+        request: twitch_actions::Request,
+    },
     /// /ignore or /unignore changed the local ignore list (save it).
     IgnoresChanged,
     /// A word was added to the personal spellcheck dictionary (save it).
@@ -281,6 +286,8 @@ struct ChannelPane {
     name: SharedString,
     /// The signed-in account's role here, when known.
     role: Option<capabilities::Role>,
+    /// All Twitch channels this account is known to moderate (including its own).
+    mod_sources: Rc<Vec<String>>,
     /// Twitch's chatter list for @-completion (moderated or own channels only).
     chatter_list: std::rc::Rc<Vec<String>>,
     /// Latest stream snapshot, for the header hover card.
@@ -469,6 +476,7 @@ impl ChannelPane {
         Self {
             name: name.to_owned().into(),
             role: None,
+            mod_sources: Default::default(),
             chatter_list: Default::default(),
             stream: None,
             mod_tools: false,
@@ -1052,10 +1060,15 @@ impl Render for ChannelPane {
             .count()
             > 1
             || combined::is_special(&self.name);
+        let mod_sources = self.mod_sources.clone();
         let moderating = matches!(
             self.role,
             Some(capabilities::Role::Moderator | capabilities::Role::Broadcaster)
-        );
+        ) || (combined::is_combined(&self.name)
+            && combined::sources(&self.name)
+                .iter()
+                .any(|source| mod_sources.contains(source)))
+            || (self.name.as_ref() == combined::MENTIONS && !mod_sources.is_empty());
         let mod_buttons = self.mod_buttons && moderating;
         let own_user = self.attention.own_user().map(str::to_owned);
         let custom_buttons = self.custom_mod_buttons.clone();
@@ -1374,7 +1387,18 @@ impl Render for ChannelPane {
                                     let per_line = width / (f32::from(window.rem_size()) * 0.5);
                                     message.copy_line().chars().count() as f32 / per_line > collapse_lines as f32 + 0.5
                                 });
-                            let show_mod_buttons = mod_buttons && !message.deleted && !message.id.starts_with(automod::LINE_PREFIX) && message.login.is_some() && own_user.as_deref() != Some(message.user_id.as_str());
+                            let moderation_source = combined::moderation_origin(
+                                channel_name.as_ref(),
+                                &message.channel_id,
+                                message.presentation.origin.as_deref(),
+                            );
+                            let show_mod_buttons = mod_buttons
+                                && moderation_source.as_ref().is_some_and(|source| mod_sources.contains(source))
+                                && !message.deleted
+                                && !message.id.starts_with(automod::LINE_PREFIX)
+                                && message.login.is_some()
+                                && own_user.as_deref() != Some(message.user_id.as_str())
+                                && message.login.as_deref() != moderation_source.as_deref();
                             let mut badge_images=message.badges.iter().filter(|badge|theme::badge_shown(theme::badge_kind(&badge.set_id))).filter_map(|badge|{
                                 let custom=if message.presentation.source.is_none(){catalog.borrow().community.channels.get(channel_name.as_ref()).filter(|set|set.ffz_room_id==message.channel_id).and_then(|set|set.roles.get(&badge.set_id)).cloned()}else{None};
                                 if let Some(custom)=custom{

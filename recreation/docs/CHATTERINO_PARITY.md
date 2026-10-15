@@ -1,5 +1,15 @@
 # Chatterino parity checklist
 
+**2026-10-15 local source correction:** The combined-feed moderation destination
+bug is confirmed in Rust and patched locally: clicked-message actions use their
+own source rather than the pane's selected send target. Shared Chat delete
+additionally uses the *receiving* room's message ID and broadcaster; a
+cross-room source-ID override is refused because Twitch gives each copy a
+separate `message_id`/`source_message_id`. Moderator buttons are gated per
+source. Locked Rust 1.99 desktop tests **115 passed, 5 ignored**; native
+authenticated acceptance remains open. No release/install/push or live
+moderation occurred. See [evidence matrix](EVIDENCE_PARITY_2026-10-15.md).
+
 **Next session (2026-10-15):** The latest task is an **evidence-first source/API audit**, not implementing everything unchecked below. Start with [HANDOFF_2026-10-15_EVIDENCE_PARITY_AUDIT.md](HANDOFF_2026-10-15_EVIDENCE_PARITY_AUDIT.md): check current Rust, original/upstream Chatterino7 and official Twitch APIs, distinguish existing but unverified behavior from actual missing/buggy features, and first investigate combined-feed moderation origin routing.
 
 **Published preview.16 (2026-10-15):** Full-width continuation wrapping,

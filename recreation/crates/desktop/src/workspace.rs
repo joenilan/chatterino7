@@ -1724,11 +1724,22 @@ impl Workbench {
                 });
             }
         }
+        // Build the source-specific moderator set once for all panes. Combined
+        // views and Mentions do not themselves have a Twitch moderator role.
+        let mut mod_sources = self.capabilities.moderated().unwrap_or_default();
+        if let Some(login) = self.account.read(cx).login() {
+            mod_sources.push(login.to_ascii_lowercase());
+        }
+        mod_sources.sort();
+        mod_sources.dedup();
+        let mod_sources = std::rc::Rc::new(mod_sources);
         for pane in &panes {
             let role = self.capabilities.role(&pane.read(cx).name);
-            if pane.read(cx).role != role {
+            if pane.read(cx).role != role || pane.read(cx).mod_sources != mod_sources {
+                let mod_sources = mod_sources.clone();
                 pane.update(cx, |p, cx| {
                     p.role = role;
+                    p.mod_sources = mod_sources;
                     cx.notify();
                 });
             }
@@ -2749,6 +2760,28 @@ impl Workbench {
             }
             if let PaneEvent::YouTubeModerate(source, action) = event {
                 this.moderate_youtube(pane.clone(), source.clone(), action.clone(), window, cx);
+                return;
+            }
+            if let PaneEvent::TwitchMessageCommand { source, request } = event {
+                // Bind message moderation to its real originating channel, not
+                // send_to. Never route a received Shared Chat copy to another room
+                // because its source broadcaster has a different message ID.
+                let target = crate::combined::moderation_destination(&channel, source, request);
+                let Some(target) = target else {
+                    pane.update(cx, |p, cx| p.command_feedback(
+                        "Cannot verify this message's originating channel or Shared Chat broadcaster; no moderation was sent",
+                        window, cx,
+                    ));
+                    return;
+                };
+                this.run_twitch_command(
+                    pane.clone(),
+                    target,
+                    request.clone(),
+                    String::new(),
+                    window,
+                    cx,
+                );
                 return;
             }
             if let PaneEvent::TwitchCommand { request, draft } = event {
