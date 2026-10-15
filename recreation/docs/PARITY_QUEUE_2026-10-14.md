@@ -1,5 +1,7 @@
 # Jawjack — next Chatterino parity work (2026-10-14)
 
+**2026-10-15 priority update:** This remains the historical parity backlog, but the next execution handoff is now [HANDOFF_2026-10-15.md](HANDOFF_2026-10-15.md). The owner requested **full-width continuation-line chat wrapping** as the new P0. Preview.15 already shipped the EventSub observability *source* slice described below; its real provider-event validation remains open and is now P1. Do not repeat the completed source batch.
+
 This is the **current prioritized continuation queue**, not a replacement for
 [FEATURE_COVERAGE.md](FEATURE_COVERAGE.md) or the detailed
 [CHATTERINO_PARITY.md](CHATTERINO_PARITY.md). The older tables contain historically

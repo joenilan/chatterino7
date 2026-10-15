@@ -11,6 +11,8 @@ or exceed the reference without reproducing old chrome, permanent toolbars, or
 outdated networking. This register supersedes the older broad phase lists as the
 feature-tracking source; PLAN.md remains the architecture and decision overview.
 
+**Owner's next visual priority (2026-10-15):** reclaim chat width on soft-wrapped continuation lines instead of indenting them under timestamp/badge columns. See [HANDOFF_2026-10-15.md](HANDOFF_2026-10-15.md) for source-backed P0 and native acceptance criteria. This is requested work, not an implemented feature; do not mark rich-media/selection parity complete merely from a layout change.
+
 ## Evidence and status rules
 
 Audit date: 2026-10-10. Original C++ baseline: joenilan/chatterino7 branch
