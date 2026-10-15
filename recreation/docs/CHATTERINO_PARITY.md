@@ -1,10 +1,18 @@
 # Chatterino parity checklist
 
+**Current published preview:** `0.1.0-preview.17` from `d24071832`,
+verified in the public HTTPS feed. The next evidence-based parity focus is
+sender-facing `channel.chat.user_message_hold/update` EventSub semantics,
+provider authorization and AutoMod edge cases, without duplicating the
+already implemented moderator AutoMod/EventSub code. Preview.16 layout is
+provisionally fine per owner feedback, so avoid unsolicited layout rewrites.
+[Release evidence](VALIDATION.md).
+
 **Preview.16 user feedback (2026-10-15):** no issues noticed during normal
 use so far. Treat as provisional daily-use acceptance; do not repeat broad
 layout testing or equate this with exhaustive narrow/DPI/media acceptance.
 
-**Source-aware chatter-card batch (local, not published):** Current Jawjack
+**Source-aware chatter-card batch (published in preview.17):** Current Jawjack
 previously keyed follow ages by user alone and used the combined pane's
 single role/channel for card actions. Message and pinned cards now retain the
 actual Twitch source; recent messages, follow status, subscriptions and
@@ -17,15 +25,15 @@ Locked Rust 1.99 desktop tests **117 passed, 5 ignored**; no live moderation
 or natural provider-event acceptance is claimed.
 [Evidence and comparison](EVIDENCE_PARITY_2026-10-15.md).
 
-**2026-10-15 local source correction:** The combined-feed moderation destination
+**2026-10-15 source correction (published in preview.17):** The combined-feed moderation destination
 bug is confirmed in Rust and patched locally: clicked-message actions use their
 own source rather than the pane's selected send target. Shared Chat delete
 additionally uses the *receiving* room's message ID and broadcaster; a
 cross-room source-ID override is refused because Twitch gives each copy a
 separate `message_id`/`source_message_id`. Moderator buttons are gated per
 source. Locked Rust 1.99 desktop tests **115 passed, 5 ignored**; native
-authenticated acceptance remains open. No release/install/push or live
-moderation occurred. See [evidence matrix](EVIDENCE_PARITY_2026-10-15.md).
+authenticated acceptance remains open. Those fixes are now published in preview.17; no local installation or
+live moderation occurred. See [evidence matrix](EVIDENCE_PARITY_2026-10-15.md).
 
 **Next session (2026-10-15):** The latest task is an **evidence-first source/API audit**, not implementing everything unchecked below. Start with [HANDOFF_2026-10-15_EVIDENCE_PARITY_AUDIT.md](HANDOFF_2026-10-15_EVIDENCE_PARITY_AUDIT.md): check current Rust, original/upstream Chatterino7 and official Twitch APIs, distinguish existing but unverified behavior from actual missing/buggy features, and first investigate combined-feed moderation origin routing.
 

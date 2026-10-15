@@ -1,3 +1,56 @@
+## Jawjack preview.17 publication and independent verification — 2026-10-15
+
+**Published:** `0.1.0-preview.17` from committed source `d24071832`
+on `recreation/gpui-foundation`. Normal Git push
+(`6efc76403..d24071832`), no force push or CI request. This release
+includes the source-aware combined-feed moderation and Shared Chat
+receiving-room safety corrections, plus channel-bound normal and pinned
+chatter cards, separate per-channel follower/subscription caches, and
+fail-closed actions for unknown sources. Preview.16 chat wrapping and
+deleted-message layout were not changed.
+
+**Locked Windows checks:** Rust 1.99 desktop/setup command
+`cargo test -q -p chat-workbench --bin chat-workbench -p jawjack-setup --locked`:
+**117 passed, 0 failed, 5 ignored**. Cargo formatting and `git diff --check`
+passed. `scripts/Build-Release.ps1` exported committed HEAD and produced
+the release installer and portable ZIP. Optimized build passed with only the
+existing `chat_text.rs` dead-code warning.
+
+**Isolated sandbox:** `scripts/Test-InstallerSandbox.py --fresh-setup`
+passed payload integrity/corruption refusal, install, upgrade retaining data,
+uninstall both with and without data removal, updater wait/relaunch/results,
+one-installer lock, and failure paths. Before-and-after real-profile snapshots
+were identical. The `--with-app` option was not used; we did not launch a
+second potentially signed-in native app.
+
+**Publisher:** Local `.local-release/Publish-Release.py` preflight verified
+both artifacts and notes without remote access. The owner-authorized
+`--publish` call activated the immutable archive and latest feed through
+SFTP. Its success was verified **independently over public HTTPS**:
+`latest.json` reported `0.1.0-preview.17`, `archive/index.json` listed
+preview.17 first among 17 releases, and both downloaded binaries matched the
+published manifest sizes and SHA-256 hashes. The release listing and current
+and archived notes URLs returned HTTP 200.
+
+- **Installer:** `Jawjack-0.1.0-preview.17-setup.exe`,
+  **15,476,808 bytes**,
+  SHA-256 `0f67084c09e651bf445f4018b7b74b6d131f12e46df04dc410bda55cd4188f2f`.
+- **Portable:** `Jawjack-0.1.0-preview.17-x64-portable.zip`,
+  **14,987,627 bytes**,
+  SHA-256 `78417c4a78af6cc783664f5bfd537a4f7a21884b1f8c74a32eedecad64883f78`.
+- **Public:** https://apps.zombie.digital/downloads/jawjack/latest.json
+  and https://apps.zombie.digital/jawjack/releases.
+
+**Owner's installed copy preserved:** read-only uninstall-registry check
+still reported `0.1.0-preview.16` after publication. Nothing was
+installed, restarted, uninstalled or sent on Twitch; no live moderation,
+OAuth, raid or reward changes were exercised. The new per-source moderated
+behavior still needs actual signed-in acceptance. The owner reported no
+observed preview.16 visual issue so far and requested proceeding with the
+release; this is not an exhaustive narrow/selection/media test.
+
+---
+
 ## Jawjack preview.16 publication — 2026-10-15
 
 ## User-card source provenance and cache separation — local 2026-10-15

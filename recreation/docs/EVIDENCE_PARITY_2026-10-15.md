@@ -2,7 +2,7 @@
 **Date:** 2026-10-15
 **Branch:** `recreation/gpui-foundation`
 **Starting checkpoint:** `93c72eba1` (preview.16 already published at `dfed4f403`).
-**Status of this work:** local source/test batch only; no installation, push, new preview or live provider actions.
+**Release status:** Corrections from this source/test audit are now published as `0.1.0-preview.17` from commit `d24071832`, after normal Git push, locked Rust 1.99 testing, isolated installer validation and independent HTTPS artifact-hash verification. No local installation, OAuth change or live Twitch moderation occurred. See [VALIDATION.md](VALIDATION.md) for exact package hashes and release evidence.
 
 ## Evidence standard
 
