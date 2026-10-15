@@ -1,30 +1,57 @@
-# Live connections (EventSub sharding)
+# Live connections (EventSub sharding and optional activity)
 
-Each connected channel uses six EventSub subscriptions (message, delete, clear
-user, clear, notification, room settings). Twitch allows 300 enabled
-subscriptions per WebSocket and three WebSockets per user token, so Jawjack
-connects at most **150 channels** at once (50 per socket).
+Each connected Twitch chat requires six EventSub kinds (message, delete, user
+clear, clear, chat notification, and chat settings). Current source also reserves
+ten moderated-channel AutoMod queues **per socket** (two kinds each) and
+18 optional own-channel subscriptions for follows, both channel-point redemption
+kinds, AutoMod, moderation and Studio status.
 
-- A manager thread assigns channels to up to three socket shards, opening and
-  closing sockets as needed. Channels arrive in priority order: visible panes,
-  the rest of the active workspace, then other workspaces by most recent use.
-  Channels beyond the cap show why they are not connected.
-- Adding or closing a channel subscribes or deletes only that channel; other
-  chats are not interrupted. Only a change of signed-in user resets every
-  connection; token refresh and new scopes reuse existing subscriptions.
-- Requests are paced (110 ms) inside Helix's shared budget and back off on low
-  `Ratelimit-Remaining` or HTTP 429. A fresh session with no subscription is
-  served first, because Twitch closes it after ten seconds.
-- `session_reconnect` hands subscriptions over to the new socket; a fresh
-  connection resubscribes its channels. A revocation affects only that channel
-  (retried after a minute). Logins that no longer exist retry after 30 minutes.
-- Control inspection lists `disconnected` channels with their status text.
+Twitch's budget in this architecture is 300 subscriptions per WebSocket and
+three sockets per user token. Source at reviewed commit `3ec84d69f` computes:
 
-## Evidence (Windows, 2026-10-11)
+- `SOCKET_BUDGET = 300 - 10 * 2 = 280`
+- `CHANNELS_PER_SOCKET = floor(280 / 6) = 46`
+- `MAX_CHANNELS = 46 * 3 - ceil(18 / 6) = 135`
 
-Visible panes connected ~4 s after launch with 13 channels. Adding a channel
-connected it in ~2 s while #xqc kept receiving (114 → 129 messages, no gap);
-closing channels kept the rest connected. With 86 channels (two sockets), every
-existing account connected within ~80 s of a cold start.
-Not yet exercised: three sockets (>100 channels), the 150 cap, revocation and
-rate-limit back-off under real pressure, long sessions across reconnect handoffs.
+This **replaces the stale historical 150/50 limit**, and may change with the
+actual `CHANNEL_KINDS`, `MOD_KINDS`, `OWN_KINDS` constants. Recalculate
+instead of copying a number into future docs. Own channel is prioritized even
+if its chat tab is not open, so optional broadcaster activity is not lost merely
+because of a closed/hidden own tab.
+
+- The manager assigns channels in priority order, opens up to three shards,
+  and shows a reason for channels beyond the active cap.
+- Adding or removing a channel updates just that channel's subscriptions.
+  A changed signed-in **user** resets the connection; token refresh/new scopes
+  do not reset healthy subscriptions.
+- Helix requests are paced and back off for low rate budget/HTTP 429. A fresh
+  socket with no enabled subscriptions is serviced first.
+- `session_reconnect` hands the socket over; a fresh connection re-subscribes.
+  A revocation can retry its kind/channel. Since preview.13, revoked/refused
+  optional own-channel extras (including reward kinds) can retry separately
+  without tearing down healthy chat subscriptions. Optional refusals are
+  exposed by `inspect` → `workspace.own_extras_refused`.
+- `inspect` also lists disconnected channel statuses. **Connected chat is not
+  confirmation that optional reward subscriptions succeeded.** A WebSocket
+  interruption can leave an unrecoverable event gap; no guaranteed replay is
+  claimed.
+- The Helix **app-manageable custom-reward queue** is different from EventSub
+  redemption notifications. Automatic rewards do not live in that queue.
+
+## Evidence
+
+Windows 2026-10-11: 13 channels connected around four seconds after launch.
+Adding a channel took about two seconds while #xqc kept receiving chat.
+86 channels connected across two sockets in roughly 80 seconds during a cold
+start. These are historical observations, not a test of the current 135 cap.
+
+Preview.13–14 source implements optional own-channel retries; focused unit
+tests cover custom + automatic redemption classification, own-channel
+priority and duplicate notification IDs. Dedicated live retry/three-socket
+acceptance remains pending. **No actual live redemption was observed** by the end
+of preview.14. Long sessions, three sockets, revocation, suspend/resume and
+rate-limit behavior remain unverified in the field.
+
+Next validation and observability plan:
+[PARITY_QUEUE_2026-10-14.md](PARITY_QUEUE_2026-10-14.md), P0. Preserve the
+installed/live Twitch session and never simulate paid activity just for QA.

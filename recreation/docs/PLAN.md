@@ -1,9 +1,12 @@
 # Chatterino7 recreation: daily-client replacement
 
-Status: initial plan and foundation, 2026-10-09. This is development in Joe's
-personal fork, not an upstream contribution or a released replacement.
-Selected product name: **Jawjack**, by Zombie Digital. Internal crate names
-remain stable while branding is rolled out.
+This is the **historical architecture/owner-decision plan**, initiated
+2026-10-09, for Jawjack by Zombie Digital in Joe's personal Chatterino7 fork.
+Current shipped previews, feature gaps and immediate tasks are in
+[CURRENT_IMPLEMENTATION.md](CURRENT_IMPLEMENTATION.md),
+[PARITY_QUEUE_2026-10-14.md](PARITY_QUEUE_2026-10-14.md) and
+[HANDOFF_2026-10-14.md](HANDOFF_2026-10-14.md). Older "next" sections below
+record what was planned then; do not reimplement features already shipped.
 
 ## Master feature coverage (2026-10-10)
 
@@ -44,7 +47,9 @@ see the newest VALIDATION.md entry for build/runtime evidence and limits.
 
 ## Confirmed visual direction (owner feedback, 2026-10-09)
 
-Dark mode only. Follow Haiwire Studio palette and custom Windows title menu/frame,
+Historical 2026-10-09 decision: Dark mode only. Preview.12 later added
+**Light and System themes**, with Dark still the design baseline. Follow
+Haiwire Studio palette and custom Windows title menu/frame,
 not the default Windows caption. Plain-text selection must be dependable before
 adding more chat features. Current reference design files:
 https://github.com/joenilan/xhw_haiwire/blob/main/experiments/gpui-window/src/theme.rs

@@ -18,9 +18,14 @@ rewards → Sky, announcements → Sky, first-time chatters → Rose.
 - **First-time chatters:** Twitch's first-chat introduction messages. EventSub has
   no general first-message flag.
 
-Saved locally as `event_highlights` (version 2; profiles saved with the earlier green
-mention default are moved to red) in the workspace file. Highlights also count
-towards the @ badge in the activity menu.
+Saved locally as `event_highlights` (version 2; profiles saved with the
+earlier green mention default are moved to red) in the workspace file.
+**Preview.14 bell parity:** visually colored subs, raids and other unrelated
+events do **not** count as mentions. The titlebar bell shows a plain numeric
+count of unread messages qualifying for the Mentions tab (account mentions,
+replies, followed threads, highlight words and opted-in rules). Clicking it
+opens Mentions; `Ctrl+Shift+M` retains the broader Highlights & unread dialog.
+A real naturally arriving live mention still needs native acceptance.
 
 ## Name completion
 

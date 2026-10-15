@@ -13,6 +13,22 @@ on top, emote size, alternating rows, provider toggles, hotkeys, guest reading,
 Streamlink/player, Activity and Whispers dialogs, AutoMod queue, shared chat,
 Chatterino import.
 
+## Current open parity work (reviewed 2026-10-14)
+
+The checkboxes below track **implemented feature presence**, not every Twitch
+contract edge or native/live acceptance. Preview.13 added custom/automatic
+channel-point notifications, connection retry and tab navigation; preview.14
+added the mentions-only notification bell. A **real redemption arriving in
+Studio has not yet been observed**, so do not mark event reliability complete.
+
+**First next-chat batch:** source-backed EventSub optional-subscription
+diagnostics, reward visibility and native/reconnect evidence (AC04, TW06,
+WS10). Then research the sender-held AutoMod outcome and elevated/hype-chat
+notices (MD09, AT04, TW08). Later: combined-feed source-appropriate controls,
+rich media/DPI/selection acceptance and the unchecked long-term integrations.
+See [PARITY_QUEUE_2026-10-14.md](PARITY_QUEUE_2026-10-14.md) and
+[HANDOFF_2026-10-14.md](HANDOFF_2026-10-14.md).
+
 ## A. Missing
 
 ### Chat display
@@ -67,6 +83,14 @@ Chatterino import.
 - [ ] Browser extension / native messaging (M)
 
 ## B. Partial
+
+- [ ] **Real channel-point/live-event acceptance (AC04/TW06):** verify Studio
+  gets a naturally arriving custom/automatic redemption and shows actionable
+  refused/reconnecting subscription states. Source/unit tests are present,
+  live redemption evidence is pending. Never purchase/redeem merely to test.
+- [ ] **Per-origin combined-feed controls (WS11/TW09):** room restrictions,
+  usercards/chatters and moderation actions must use the actual source channel,
+  never the combined display ID.
 - [x] Hotkeys: ~~streamer mode, emote picker, settings, sidebar, whispers, move tab, highlights, hide tabs, chatter list, Streamlink, open in browser, player pop-out~~ done (39 rebindable); ~~clip (Alt+X), last channel (Alt+`), save and quit (Ctrl+Q)~~ done; ~~run a command (4 slots)~~ done
 - [x] Highlight rules: ~~per-rule flash, show in mentions, custom sound file, free colour (#RRGGBB)~~ done
 - [ ] Event highlights: ~~own messages, thread replies (as mentions), whispers, AutoMod, per-kind sound, per-kind flash~~ done; elevated/hype chat (not parsed yet) (S)

@@ -1,11 +1,34 @@
 # Jawjack recent implementation progress
 
-Updated 2026-10-11. This is a concise source-and-build progress supplement to
+Updated 2026-10-14. This is the current implementation supplement to
 FEATURE_COVERAGE.md. Older coverage-table states predate these batches; preserve
-those feature IDs and outstanding parity rather than treating their old status
-cells as proof that the newer code is absent. Native acceptance remains separate.
+their feature IDs and remaining edges without reimplementing features that
+already exist. Source, native UI and live Twitch acceptance are distinct.
+The next priorities are in [the parity queue](PARITY_QUEUE_2026-10-14.md).
 
-## Recent delivered slices
+## Latest published previews (2026-10-14)
+
+- **Preview.14** (commit `3ec84d69f`) adds a mentions-only titlebar bell with
+  a plain number, independent from regular unread messages. `Ctrl+Shift+M`
+  retains broader Highlights & Unread activity.
+- **Preview.13** adds automatic and custom own-channel redemption EventSub
+  handling, optional subscription retry, paginated queue for **app-manageable**
+  custom rewards, wheel/Ctrl+Tab channel tab navigation, independent sidebar
+  scrolling and a visible compact update footer. A genuine live redemption is
+  **not yet verified**.
+- Existing source also has guest/anonymous chat, Dark/Light/System themes,
+  role-based tools, own-channel anchors, workspaces in separate windows,
+  ten-language spellcheck and inline AutoMod. See
+  [CHATTERINO_PARITY.md](CHATTERINO_PARITY.md) before filing duplicates.
+- Preview.14 had desktop tests and sandboxed installer validation; those tests
+  are not blanket native Twitch/visual acceptance. A genuine owner-channel
+  send **was** observed in Windows validation on 2026-10-11
+  ([VALIDATION.md](VALIDATION.md)).
+- Current `live.rs` calculates **135** channel slots from six per-channel
+  kinds, ten reserved moderated AutoMod queues per socket, and 18 own extras.
+  Older 150-channel claims are stale. Recalculate from source after edits.
+
+## Earlier implementation slices (2026-10-11)
 
 - **RD01 / RD09 / AT01–02:** Manual, hover and Alt-hover chat pause; explicit resume;
   last-read divider; first-unread and previous/next-highlight navigation.
@@ -34,29 +57,32 @@ cells as proof that the newer code is absent. Native acceptance remains separate
 
 - **Import from Chatterino:** read-only preview and import of layout, highlights,
   nicknames, ignored phrases, commands and display preferences. [Import](CHATTERINO_IMPORT.md)
-- **AC04 / AT06 / AT03:** sharded EventSub connections up to 150 channels with
+- **AC04 / AT06 / AT03:** sharded EventSub connections with current
+  `MAX_CHANNELS = 135` after optional AutoMod/own-event reserves,
   incremental changes ([connections](LIVE_CONNECTIONS.md)); local ignores
   ([ignores](IGNORES.md)); regex highlight rules.
 
 ## Evidence boundary
 
-These recent batches compile in the Linux development environment. Focused source
-reviews and narrow parser checks support specific implementation claims; they do
-not establish Windows interaction, live sending, moderation, visual fidelity,
-long-session performance, or complete Chatterino parity. Each feature document
-records remaining native acceptance. Avoid replacing these distinctions with a
-blanket “all tests passed” or “complete” label.
+The earlier slices above initially had Linux build evidence; subsequent Windows
+native checks and source changes are documented in `VALIDATION.md` and feature
+docs. Treat each acceptance claim as specific to the **observed revision**.
+Preview.14 has unit and packaging evidence, but real redemption and some
+rare-event UI behavior remain unverified. No complete parity or guaranteed
+backfill across Twitch WebSocket gaps is claimed.
 
-## Priorities that remain
+## Active priorities (2026-10-14)
 
-1. Native acceptance of the combined batch largely done on Windows 2026-10-11 with
-   eleven observed defects fixed (VALIDATION.md). Remaining: hover/Alt-hover pause,
-   sent-history browser, FFZ room-role art, note reload after restart.
-2. Live acceptance of FFZ supporter/channel grants and remaining 7TV rendering/visibility parity.
-3. Account and channel capability model before moderator write actions; permission
-   changes must be deliberate, and viewer chat must keep working when declined.
-4. Streamer/Moderator/Viewer experiences, including the account-level own-chat
-   anchor in every workspace, as specified in [ROLE_EXPERIENCES.md](ROLE_EXPERIENCES.md).
-5. Continue the full register: multi-window/popouts, provider lifecycle behavior,
-   moderation, filters and future multi-platform feeds. No feature is silently
-   removed by this progress supplement.
+1. **P0:** channel-point/EventSub optional-kind visibility, refusal/retry and
+   reconnect diagnostics; real redemption acceptance when one occurs naturally.
+2. **P1:** sender AutoMod held-message outcome and elevated/hype-chat notices,
+   after verifying official contracts, role and scope limits.
+3. **P2:** combined feeds' per-origin room modes, chatter context and actions.
+4. **P3/P4:** rare rich-media/badge/FFZ/7TV cases, compact DPI/IME/bidi,
+   and native long-session/concurrency checks.
+5. Moderator pins, Lua, image upload, browser extension, Kick and generic IRC
+   remain recorded research/backlog, not silent feature removals.
+
+Read the [next parity queue](PARITY_QUEUE_2026-10-14.md) and
+[continuation handoff](HANDOFF_2026-10-14.md) for bounded scope, acceptance,
+non-disruption rules and concrete source entry points.

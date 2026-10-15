@@ -28,17 +28,22 @@ register is recreation/gpui-foundation at c12a498d82e48fc79fbb446b0d46d7ec263920
 - **Unavailable**: only use after verifying the relevant capability is unavailable;
   otherwise use Research with the unresolved question. Never silently delete a row.
 
-Latest accepted Windows code is 0cfe8325, including the attention/font/pastel
-batch and Settings pointer/compact-layout fixes. Named native checks passed for
-custom-word highlights, All unread, Mark all read, visible-tail clearing, hidden
-channel badges, font controls and settings persistence. Activity Jump, inactive/
-offscreen acknowledgment and natural own-mention/reply matching remain unverified.
-Actual delivered chat sends and live moderation are still unverified. Detailed
-measured evidence stays in VALIDATION.md, not in a blanket “everything works” label.
+**Current status supplement (2026-10-14):** the original audit baseline and
+older status cells above remain historical. Jawjack preview.14 at source
+`3ec84d69f` includes the channel-point EventSub/retry improvements, channel
+tab wheel/keyboard navigation, bounded compact sidebar, and a mentions-only
+notification bell. The earlier Windows acceptance log records an actual
+delivered owner-channel chat send on 2026-10-11; **a real channel-point
+redemption remains unverified**. Preview.14 passed focused/desktop tests and
+installer sandbox validation, not complete native acceptance of every Twitch
+event. See [current implementation](CURRENT_IMPLEMENTATION.md) and the
+[2026-10-14 parity queue](PARITY_QUEUE_2026-10-14.md); avoid converting an
+old `Part` cell into a blanket claim that current code is absent.
 
 ## Product decisions that every batch must preserve
 
-- Dark-only Studio palette, native custom titlebar, GPUI Kit controls and motion.
+- Studio palette with Dark/Light/System options (Dark by default), native
+  custom titlebar, GPUI Kit controls and restrained/reduced motion.
 - Workspace navigation in the collapsible sidebar; channel tabs own the top strip.
 - Unlimited recursive splits subject to practical screen space, drag placement and
   regrouping, compact minimum 360×280 without forcing that as the startup size.
@@ -67,9 +72,9 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | --- | --- | --- | --- | --- |
 | AC01 | Device login and saved account | Part | Native sign-in/restore observed; interrupted login, refresh/revocation and secure removal need broader real-use evidence. | controllers/accounts; providers/twitch/TwitchAccountManager.cpp |
 | AC02 | Multiple accounts and switching | Part | Accounts window (add, switch, remove), per-account vault entries, per-channel "send as" picker ([details](ACCOUNTS.md)); a second sign-in, switching and send-as are unverified live. | controllers/accounts |
-| AC03 | Anonymous reading | Research | Preserve as a compatibility target; evaluate current supported transport and auth constraints. | providers/twitch/TwitchIrcServer.cpp |
-| AC04 | EventSub lifecycle | Part | Sharded over up to three sockets (150 channels), incremental subscribe/delete, paced requests, per-channel revocation ([details](LIVE_CONNECTIONS.md)); long-session, suspend and three-socket acceptance remain. | providers/twitch/eventsub; TwitchReadConnectionPool.cpp |
-| AC05 | Text send and acknowledgements | Part | Source inspects send/drop/uncertainty; actual delivered send unverified. Add permission/room-aware feedback. | providers/twitch/TwitchChannel.cpp |
+| AC03 | Anonymous reading | Part | Guest/anonymous chat reading exists through IRC fallback; provider lifecycle, restrictions and real-use edge acceptance remain.  | providers/twitch/TwitchIrcServer.cpp |
+| AC04 | EventSub lifecycle | Part | Three sockets; current six channel kinds, optional AutoMod reserves and own extras yield `MAX_CHANNELS = 135` in source. Incremental subscriptions, scoped revocation and optional-event retry exist ([details](LIVE_CONNECTIONS.md)); live redemption, long-session and three-socket acceptance remain. | providers/twitch/eventsub; TwitchReadConnectionPool.cpp |
+| AC05 | Text send and acknowledgements | Part | A real owner-channel send was observed on Windows 2026-10-11. Delivery/error/uncertainty handling exists; cross-channel permission, room restrictions and broader live failure cases remain. | providers/twitch/TwitchChannel.cpp |
 | AC06 | Incoming delete/user clear/channel clear | Part | Redaction implemented, including reply references; real moderation-driven acceptance remains. | messages/MessageFlag.hpp; providers/twitch/eventsub |
 | AC07 | Server timestamps and message flags | Next | Extend normalized Message, time display/copy/logging, known and unknown event metadata. | messages/MessageBuilder.cpp; singletons/Settings.hpp |
 | AC08 | System notices and typed events | Next | Sub/gift/raid/announcement/reward/Bits/streak/etc. rows; distinct from connection status. | providers/twitch/IrcMessageHandler.cpp |
@@ -104,9 +109,9 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | WS05 | Broadcast status | Part | Native live/offline pastel markers observed; unknown/stale edges remain. Broadcast state must remain distinct from chat connection. | widgets/splits/SplitHeader.cpp |
 | WS06 | Stream title/game/viewers/uptime | Part | Ctrl+I/context-menu details, title/category/viewers/language/start timestamp implemented and native accepted. Own-channel title/category editor with conflict check and readback ([details](STREAMER_TOOLS.md)); live save unverified. | widgets/splits/SplitHeader.cpp |
 | WS07 | Quick switcher and visit history | Part | Ctrl+P searches open channels/workspace names, including offline-hidden tabs; keyboard/click activates correct dock and composer; native keyboard/click/compact accepted. visit history/neighbor focus remain. | widgets/dialogs/switcher; Notebook |
-| WS08 | Multiple windows and popouts | Part | Channel popout windows (tab menu), same live connection, seeded history, restored on launch ([details](POPOUTS.md)); always-on-top, geometry, cross-window drag and workspace popouts pending. | widgets/Window.cpp; common/WindowDescriptors |
+| WS08 | Multiple windows and popouts | Part | Channel popouts and workspaces in separate windows are implemented with restore and channel Move to workspace; cross-window dragging and broader geometry/DPI acceptance remain ([details](POPOUTS.md), [parity checklist](CHATTERINO_PARITY.md)). | widgets/Window.cpp; common/WindowDescriptors |
 | WS09 | Overlay and attached windows | Backlog | Always-on-top, transparency/click-through and deliberate interaction modes; browser attachment later. | widgets/OverlayWindow; AttachedWindow; FramelessEmbedWindow |
-| WS10 | Special channels | Part | New local activity dialog only; mentions, whispers, watching/live and AutoMod feeds need explicit models. | widgets/dialogs/SelectChannelDialog.cpp |
+| WS10 | Special channels | Part | Dockable /mentions, /whispers and /live exist. The titlebar bell now opens a mentions-only dialog (preview.14) while Ctrl+Shift+M retains broader activity. Native live-mention acceptance and remaining special-event lifecycle cases stay open. | widgets/dialogs/SelectChannelDialog.cpp |
 | WS11 | Combined feeds | Part | Combined feed panes (a+b+c) with origin chips, per-origin emotes and an explicit send destination ([details](COMBINED_FEEDS.md)); verified with xqc+summit1g. Per-origin room modes/chatters pending. | util/MultiChannel; SelectChannelDialog.cpp |
 | WS12 | Split recovery and reset conveniences | Part | Double-click a divider to even out that split (eased), plus Equalize this/all splits; neighbour focus, close/reopen history and drag cancellation remain. | widgets/splits |
 
@@ -124,7 +129,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | IN08 | Utility commands | Part | Twitch utility commands (/w, /color, /block) via Helix ([details](STREAMER_TOOLS.md)); /me, chatters/mods/VIP lists, popout remain. | controllers/commands/builtin/Misc.cpp; builtin/twitch |
 | IN09 | Broadcaster commands | Part | /settitle, /setgame, /marker, /commercial, /raid, /announce, /shoutout via Helix with capability checks; /clip and live acceptance remain. | controllers/commands/builtin/twitch |
 | IN10 | Configurable hotkeys | Part | Fixed shortcuts exist; action registry/editor, conflicts, contexts, arguments and import/export remain. | controllers/hotkeys; settingspages/KeyboardSettingsPage.cpp |
-| IN11 | Spellcheck | Part | English spellcheck (spellbook + bundled SCOWL en_US) with a suggestion bar above the composer; emotes, names and chat slang skipped ([details](SPELLCHECK.md)). Other languages and a personal dictionary pending. | controllers/spellcheck |
+| IN11 | Spellcheck | Part | Spellcheck, a personal dictionary and ten language choices have implementation ([details](SPELLCHECK.md), [parity checklist](CHATTERINO_PARITY.md)); full IME, international language and live UI acceptance remain. | controllers/spellcheck |
 | IN12 | Font and input QoL | Part | Native font controls/reset and saved-setting persistence observed. Continue feedback/focus/cancellation polish. | widgets/splits/SplitInput.cpp; Jawjack workspace.rs |
 
 ### Emotes and Chatterino7 identity
@@ -176,7 +181,7 @@ The next-action column is intentionally behavioral rather than a list of buttons
 | MD06 | Warnings and blocks | Part | /warn and /block, /unblock commands; block list sync and display remain. | builtin/twitch/Warn.cpp; Block.cpp |
 | MD07 | Moderator mode and custom buttons | Done | Moderator mode (crossed-swords toggle): delete / 10-min timeout / ban plus up to 8 of your own buttons (Settings > General: label + command template with {user}/{msg-id}/{channel}; moderation commands only, parsed and capability-checked like typed commands). Verified: a custom 1h button rendered on messages; buttons not clicked. | settingspages/ModerationPage.cpp |
 | MD08 | Room mode management | Part | Room mode commands (/slow, /followers, /subscribers, /emoteonly, /uniquechat); header controls remain. | builtin/twitch/ChatSettings.cpp |
-| MD09 | AutoMod and blocked terms | Part | AutoMod queue strip with Allow/Deny for your channel and up to 10 moderated channels per socket (17 live in testing) via EventSub hold/update v2 and Helix ([details](AUTOMOD.md)); inline rows pending; no live hold observed yet. | providers/twitch/eventsub; messages/MessageBuilder.cpp |
+| MD09 | AutoMod and blocked terms | Part | EventSub v2 held/update, a queue strip and inline held chat rows with Allow/Deny exist for supported mod roles ([details](AUTOMOD.md)); real hold/update, approved/denied sender follow-up and exhaustion/visibility acceptance remain. | providers/twitch/eventsub; messages/MessageBuilder.cpp |
 | MD10 | Suspicious users | Part | Own channel: channel.suspicious_user.message labels messages "Suspicious · Monitored/Restricted · likely/possible ban evader · banned in N other channels" (amber heading); subscription accepted live, no flagged chatter observed yet. Moderated channels and treatment management (monitor/restrict) pending. | builtin/twitch/LowTrust.cpp |
 | MD11 | Roles and Shield Mode | Part | /mod, /unmod, /vip and /unvip commands (broadcaster); lists and Shield Mode remain. | builtin/twitch/AddModerator.cpp; AddVIP.cpp; ShieldMode.cpp |
 | MD12 | Announcements and shoutouts | Part | /announce (colours) and /shoutout commands; display variants remain. | builtin/twitch/Announce.cpp; Shoutout.cpp |
@@ -327,6 +332,11 @@ one-shot motion and optional enlarged media. Preserve the user's narrow-window u
 case. Exact Twitch visual imitation is secondary to accurate meaning, permissions,
 readability and smooth performance.
 ## Delivery order and complete batch outcomes
+
+For the **next bounded development batch** (not the historical B0–B9 sequence),
+see [PARITY_QUEUE_2026-10-14.md](PARITY_QUEUE_2026-10-14.md) and the
+[2026-10-14 handoff](HANDOFF_2026-10-14.md). P0 prioritizes optional
+EventSub/channel-point visibility and recovery; real reward delivery is pending.
 
 The order can change for an observed regression or an owner priority. Changes must
 be recorded here; adding a task must not silently remove an earlier item.
