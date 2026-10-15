@@ -1,5 +1,7 @@
 # Chatterino parity checklist
 
+**Next session (2026-10-15):** The latest task is an **evidence-first source/API audit**, not implementing everything unchecked below. Start with [HANDOFF_2026-10-15_EVIDENCE_PARITY_AUDIT.md](HANDOFF_2026-10-15_EVIDENCE_PARITY_AUDIT.md): check current Rust, original/upstream Chatterino7 and official Twitch APIs, distinguish existing but unverified behavior from actual missing/buggy features, and first investigate combined-feed moderation origin routing.
+
 **Published preview.16 (2026-10-15):** Full-width continuation wrapping,
 reduced timestamp/badge gaps, and body-only strike/fade of deleted messages
 shipped from `dfed4f403`. Rust tests and public release verification pass.

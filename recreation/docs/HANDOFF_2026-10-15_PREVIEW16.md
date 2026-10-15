@@ -1,5 +1,7 @@
 # Jawjack — preview.16 released; next Chatterino parity handoff
 
+**Updated next-session mission:** Read [HANDOFF_2026-10-15_EVIDENCE_PARITY_AUDIT.md](HANDOFF_2026-10-15_EVIDENCE_PARITY_AUDIT.md) **first**. The previous broad parity list must not be treated as missing functionality; most features already have substantial implementations. Investigate the specific possible combined-feed source-routing problem and independently verify actual gaps before writing new code.
+
 **Date:** 2026-10-15
 **Repository:** `E:\git\chatterino7` · branch `recreation/gpui-foundation`
 **Application:** `E:\git\chatterino7\recreation`
