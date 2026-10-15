@@ -1,5 +1,22 @@
 # Chatterino parity checklist
 
+**Preview.16 user feedback (2026-10-15):** no issues noticed during normal
+use so far. Treat as provisional daily-use acceptance; do not repeat broad
+layout testing or equate this with exhaustive narrow/DPI/media acceptance.
+
+**Source-aware chatter-card batch (local, not published):** Current Jawjack
+previously keyed follow ages by user alone and used the combined pane's
+single role/channel for card actions. Message and pinned cards now retain the
+actual Twitch source; recent messages, follow status, subscriptions and
+moderation use that source (or remain read-only if ambiguous/YouTube).
+The ordinary tab composer behavior is unchanged. Source-bound automatic
+timeout, unban, and confirmed ban work with the existing permission checker;
+draft-only custom durations and warnings are deliberately not offered from
+combined/special cards to avoid routing through an unrelated send destination.
+Locked Rust 1.99 desktop tests **117 passed, 5 ignored**; no live moderation
+or natural provider-event acceptance is claimed.
+[Evidence and comparison](EVIDENCE_PARITY_2026-10-15.md).
+
 **2026-10-15 local source correction:** The combined-feed moderation destination
 bug is confirmed in Rust and patched locally: clicked-message actions use their
 own source rather than the pane's selected send target. Shared Chat delete

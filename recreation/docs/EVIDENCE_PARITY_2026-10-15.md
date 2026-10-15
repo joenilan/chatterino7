@@ -15,6 +15,52 @@
 
 ## Shared Chat delete correction — verified 2026-10-15
 
+## Source-bound chatter cards — local follow-on, 2026-10-15
+
+**Confirmed source-level issue:** card rendering previously used the pane's
+`name` and singular `role`, even in a combined feed or Mentions copy.
+`follow_ages` was indexed only by `user_id`, so a user's channel-specific
+follow date could be cached and reused across different broadcaster rooms.
+Card timeout/unban/ban and broadcaster role changes emitted the generic
+`TwitchCommand`, which resolves the pane's `send_to`, not the clicked
+message's channel.
+
+**Implemented and compiled locally:**
+- `combined.rs::chatter_card_channel` validates the clicked Twitch source,
+  rejects unknown/YouTube/special cases instead of guessing the first source;
+  `chatter_card_message` filters retained history to that source
+  (Mentions copies keep their original channel in `presentation.origin`).
+- `message_actions.rs` carries message origin into `chatter_card`, computes
+  moderator/broadcaster controls per source, uses typed
+  `PaneEvent::TwitchMessageCommand` for timeout/unban/ban/role actions, and
+  requires a source-specific ban confirmation. Unrecognized combined-pane
+  command drafts remain unchanged; card `Warn…` and `Other…` draft actions
+  are conservatively hidden there until a source-targeted composer exists.
+- `main.rs`, `workspace.rs`, `workspace/card_window.rs` retain source
+  identity for pinned cards and key follower/subscription caches by
+  `(channel, user_id)`. `WantFollowAge` revalidates actual source membership
+  and role before calling Helix; subscription lookup remains own-channel only.
+- The separate YouTube moderation event and account-global Twitch Block
+  behavior are unchanged; no new OAuth scopes or live actions.
+
+**Reference comparison:** Chatterino7
+`src/widgets/dialogs/UserInfoPopup.cpp:895–976` explicitly distinguishes
+`contextChannel` from `openingChannel`, and uses the underlying channel to
+filter the recent-message display. Twitch's
+[Get Channel Followers](https://dev.twitch.tv/docs/api/reference/#get-channel-followers)
+requires the user to be the broadcaster or an authorized moderator with
+`moderator:read:followers`. The previous pane-only context violated that
+per-broadcaster distinction.
+
+**Validation:** Windows Rust 1.99 desktop unit tests **117 passed,
+0 failed, 5 ignored**, including `chatter_cards_bind_context_to_clicked_source_without_composer_fallback`
+and `chatter_cards_do_not_mix_retained_messages_from_other_sources`.
+A locked Rust 1.99 optimized release build, formatting verification and
+`git diff --check` also passed (the existing `chat_text.rs` dead-code warning
+remains). No connected/native authorization or moderation actions were executed.
+The published preview.16 is provisionally acceptable to the owner in daily
+use as of 2026-10-15; narrower synthetic cases remain unclaimed.
+
 Official Twitch EventSub has both `message_id` for the channel receiving
 a Shared Chat message and `source_message_id` for its originating room.
 These can differ. A normal delete of the copy visible in a receiving room

@@ -8,6 +8,7 @@ pub(super) struct PinnedCard {
     user_id: String,
     name: String,
     login: Option<String>,
+    source: Option<String>,
     channel: SharedString,
     on_top: bool,
     _updates: Option<Subscription>,
@@ -21,6 +22,7 @@ impl Render for PinnedCard {
             self.user_id.clone(),
             self.name.clone(),
             self.login.clone(),
+            self.source.clone(),
             window,
             cx,
         );
@@ -62,7 +64,16 @@ impl Render for PinnedCard {
                                     .overflow_hidden()
                                     .whitespace_nowrap()
                                     .text_ellipsis()
-                                    .child(format!("{} · #{}", frame.title, self.channel)),
+                                    .child(format!(
+                                        "{} · {}",
+                                        frame.title,
+                                        self.source
+                                            .as_ref()
+                                            .map(|source| format!("#{source}"))
+                                            .unwrap_or_else(|| crate::combined::title(
+                                                &self.channel
+                                            )),
+                                    )),
                             ),
                     )
                     .child(
@@ -112,6 +123,7 @@ impl Workbench {
         user_id: String,
         name: String,
         login: Option<String>,
+        source: Option<String>,
         cx: &mut Context<Self>,
     ) {
         let channel: SharedString = pane.read(cx).name.to_string().into();
@@ -137,6 +149,7 @@ impl Workbench {
                     user_id,
                     name,
                     login,
+                    source,
                     channel,
                     on_top,
                     // New messages, badges and moderation in that channel refresh the card.

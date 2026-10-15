@@ -113,6 +113,41 @@ pub fn moderation_origin(
         && chat_core::twitch_login(&source).as_deref() == Some(source.as_str()))
     .then_some(source)
 }
+/// Channel context for a chatter card. Only a clicked message can select a
+/// source of a combined feed or Mentions; there is never a send_to fallback.
+pub fn chatter_card_channel(pane: &str, clicked_source: Option<&str>) -> Option<String> {
+    if is_combined(pane) {
+        let source = clicked_source?;
+        moderation_origin(pane, source, Some(source))
+    } else if pane == MENTIONS {
+        moderation_origin(pane, MENTIONS, clicked_source)
+    } else if is_special(pane) {
+        None
+    } else {
+        moderation_origin(pane, pane, clicked_source)
+    }
+}
+
+/// Does a retained message belong to this card's selected source?
+/// In aggregate/special views the absent source means read-only whole-feed context.
+pub fn chatter_card_message(
+    pane: &str,
+    selected: Option<&str>,
+    message_channel: &str,
+    message_origin: Option<&str>,
+) -> bool {
+    match selected {
+        None => true,
+        Some(source) if pane == MENTIONS => {
+            message_channel == MENTIONS && message_origin == Some(source)
+        }
+        Some(source) if is_combined(pane) => {
+            message_channel == source && message_origin == Some(source)
+        }
+        Some(source) => !is_special(pane) && message_channel == source,
+    }
+}
+
 /// "a + b + c" for headers and tabs.
 pub fn title(name: &str) -> String {
     if is_combined(name) {
@@ -260,6 +295,70 @@ mod tests {
         assert_eq!(moderation_destination("alpha", "alpha", &shared), None);
         assert_eq!(moderation_destination("alpha", "alpha", &shared), None);
         assert_eq!(moderation_destination("alpha", "alpha", &shared), None);
+    }
+
+    #[test]
+    fn chatter_cards_bind_context_to_clicked_source_without_composer_fallback() {
+        assert_eq!(
+            chatter_card_channel("alpha", None).as_deref(),
+            Some("alpha")
+        );
+        assert_eq!(
+            chatter_card_channel("+alpha,beta", Some("beta")).as_deref(),
+            Some("beta")
+        );
+        assert_eq!(chatter_card_channel("+alpha,beta", None), None);
+        assert_eq!(chatter_card_channel("+alpha,beta", Some("gamma")), None);
+        assert_eq!(chatter_card_channel("alpha", Some("beta")), None);
+        assert_eq!(
+            chatter_card_channel("/mentions", Some("beta")).as_deref(),
+            Some("beta")
+        );
+        assert_eq!(chatter_card_channel("/mentions", None), None);
+        assert_eq!(chatter_card_channel("/whispers", Some("beta")), None);
+        assert_eq!(chatter_card_channel("/live", Some("beta")), None);
+        assert_eq!(chatter_card_channel("+alpha,yt:abc", Some("yt:abc")), None);
+    }
+
+    #[test]
+    fn chatter_cards_do_not_mix_retained_messages_from_other_sources() {
+        assert!(chatter_card_message(
+            "+alpha,beta",
+            Some("beta"),
+            "beta",
+            Some("beta")
+        ));
+        assert!(!chatter_card_message(
+            "+alpha,beta",
+            Some("beta"),
+            "alpha",
+            Some("alpha")
+        ));
+        assert!(!chatter_card_message(
+            "+alpha,beta",
+            Some("beta"),
+            "beta",
+            None
+        ));
+        assert!(chatter_card_message("beta", Some("beta"), "beta", None));
+        assert!(chatter_card_message(
+            "/mentions",
+            Some("beta"),
+            "/mentions",
+            Some("beta")
+        ));
+        assert!(!chatter_card_message(
+            "/mentions",
+            Some("beta"),
+            "/mentions",
+            Some("alpha")
+        ));
+        assert!(chatter_card_message(
+            "+alpha,beta",
+            None,
+            "alpha",
+            Some("alpha")
+        ));
     }
 
     #[test]

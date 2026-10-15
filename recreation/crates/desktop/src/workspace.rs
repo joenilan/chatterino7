@@ -2695,39 +2695,54 @@ impl Workbench {
                 }
                 return;
             }
-            if let PaneEvent::WantFollowAge(user_id) = event {
+            if let PaneEvent::WantFollowAge {
+                channel: source,
+                user_id,
+            } = event
+            {
+                // A combined pane never supplies the follower query's broadcaster.
+                if crate::combined::chatter_card_channel(&channel, Some(source)).as_deref()
+                    != Some(source.as_str())
+                    || !matches!(
+                        this.capabilities.role(source),
+                        Some(
+                            crate::capabilities::Role::Moderator
+                                | crate::capabilities::Role::Broadcaster
+                        )
+                    )
+                {
+                    return;
+                }
                 let Some(identity) = this.account.read(cx).identity() else {
                     return;
                 };
-                // Your own channel: the subscription too (Twitch allows only the broadcaster).
-                if this.account.read(cx).login().as_deref() == Some(channel.as_str())
+                let key = (source.clone(), user_id.clone());
+                if this.account.read(cx).login().as_deref() == Some(source.as_str())
                     && identity.has("channel:read:subscriptions")
                 {
-                    let (identity, user_id, pane) =
-                        (identity.clone(), user_id.clone(), pane.clone());
-                    let task = cx.background_spawn({
-                        let user_id = user_id.clone();
-                        async move { crate::twitch_actions::subscription(&identity, &user_id) }
+                    let (identity, user_id, pane, key) =
+                        (identity.clone(), user_id.clone(), pane.clone(), key.clone());
+                    let task = cx.background_spawn(async move {
+                        crate::twitch_actions::subscription(&identity, &user_id)
                     });
                     cx.spawn(async move |_, cx| {
                         if let Ok(sub) = task.await {
                             let _ = pane.update(cx, |p, cx| {
-                                p.sub_status.insert(user_id, sub);
+                                p.sub_status.insert(key, sub);
                                 cx.notify();
                             });
                         }
                     })
                     .detach();
                 }
-                let (channel, user_id, pane) = (channel.clone(), user_id.clone(), pane.clone());
-                let task = cx.background_spawn({
-                    let user_id = user_id.clone();
-                    async move { crate::twitch_actions::followed_at(&identity, &channel, &user_id) }
+                let (target, user_id, pane) = (source.clone(), user_id.clone(), pane.clone());
+                let task = cx.background_spawn(async move {
+                    crate::twitch_actions::followed_at(&identity, &target, &user_id)
                 });
                 cx.spawn(async move |_, cx| {
                     let result = task.await;
                     let _ = pane.update(cx, |p, cx| {
-                        p.follow_ages.insert(user_id, result);
+                        p.follow_ages.insert(key, result);
                         cx.notify();
                     });
                 })
@@ -2845,6 +2860,7 @@ impl Workbench {
                 user_id,
                 name,
                 login,
+                source,
             } = event
             {
                 this.pin_card(
@@ -2852,6 +2868,7 @@ impl Workbench {
                     user_id.clone(),
                     name.clone(),
                     login.clone(),
+                    source.clone(),
                     cx,
                 );
                 return;

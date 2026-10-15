@@ -270,6 +270,7 @@ enum PaneEvent {
         user_id: String,
         name: String,
         login: Option<String>,
+        source: Option<String>,
     },
     /// Delete / time out / ban on YouTube: (YouTube source name, action).
     YouTubeModerate(String, google_auth::Moderation),
@@ -277,7 +278,10 @@ enum PaneEvent {
     EditChatter(chatter_appearance::Target),
     EditChatterNote(chatter_appearance::Target),
     /// The user card wants this chatter's follow age (looked up with your login).
-    WantFollowAge(String),
+    WantFollowAge {
+        channel: String,
+        user_id: String,
+    },
     SearchAll(String),
 }
 impl EventEmitter<PaneEvent> for ChannelPane {}
@@ -328,10 +332,11 @@ struct ChannelPane {
     pub(crate) hidden_sources: Vec<String>,
     /// When each session channel last spoke (its bubble pulses): broadcaster ID → time.
     pub(crate) shared_pulse: std::collections::HashMap<String, Instant>,
-    /// User card: follow dates by user ID (Ok(None) = not following, Err = unavailable).
-    pub(crate) follow_ages: std::collections::HashMap<String, Result<Option<String>, String>>,
-    /// User card in your own channel: subscription by user ID (None = not subscribed).
-    pub(crate) sub_status: std::collections::HashMap<String, Option<String>>,
+    /// Follow dates per (broadcaster, user); combined cards must not mix rooms.
+    pub(crate) follow_ages:
+        std::collections::HashMap<(String, String), Result<Option<String>, String>>,
+    /// Subscription per (broadcaster, user); only the owner can inspect it.
+    pub(crate) sub_status: std::collections::HashMap<(String, String), Option<String>>,
     /// The last message sent here and when, so an identical one can still go through.
     last_sent: Option<(String, Instant)>,
     /// A once-a-second repaint is queued for the slow-mode countdown.

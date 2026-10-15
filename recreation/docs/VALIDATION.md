@@ -1,5 +1,44 @@
 ## Jawjack preview.16 publication — 2026-10-15
 
+## User-card source provenance and cache separation — local 2026-10-15
+
+**Preview.16 field observation:** owner reports it works fine in daily use
+so far. The released UI remains unchanged and should not be retested without
+a concrete regression report; exhaustive edge cases are not thereby proven.
+
+**Source defect and fix:** `chatter_card` previously derived role, labels,
+follow-age and related actions from a combined pane label, and cached follow
+dates only by user ID. The same chatter appearing in two channels could be
+displayed with the wrong broadcaster context; card actions could inherit
+`send_to`. `combined::chatter_card_channel` and
+`chatter_card_message` now resolve and filter per clicked origin, including
+Mentions. `inspect_chatter_for_source` and pinned-card windows retain
+the selected source; ordinary Chatters list and account-global Block remain
+separate. Moderator/broadcaster controls use per-source role knowledge;
+`TwitchMessageCommand` dispatch rechecks permissions on that source.
+Follow-age/subscription caches and the `WantFollowAge` event are keyed by
+(broadcaster, user), with a destination and role check before the Helix read.
+Unknown source and YouTube remain read-only in Twitch cards; `Other…`
+timeout and `Warn…` are suppressed in combined/special cards because their
+legacy draft path uses the composer destination.
+
+**Reference evidence:** original Chatterino7
+`src/widgets/dialogs/UserInfoPopup.cpp:895–976` separates context channel
+from opening channel and filters recent messages against the context.
+Twitch [Get Channel Followers](https://dev.twitch.tv/docs/api/reference/#get-channel-followers)
+requires `moderator:read:followers` and broadcaster/moderator identity for
+user-specific results. No OAuth scopes were added or changed.
+
+**Windows Rust 1.99 test result:** `cargo test -p chat-workbench --bin
+chat-workbench --locked`: **117 passed, 0 failed, 5 ignored**, including two
+new combined/card-source routing/filter tests. `cargo fmt --all` passed.
+Locked Windows Rust 1.99 optimized build (`cargo build -p chat-workbench
+--bin chat-workbench --locked --release`) passed, with the pre-existing
+`chat_text.rs` dead-code warning only. `cargo fmt --all -- --check` and
+`git diff --check` passed. The existing installed preview.16 is untouched;
+this local build was not published or installed.
+No auth changes, sends, bans, timeouts, or other live Twitch actions.
+
 ## Combined-feed moderator origin / Shared Chat ID safety — local 2026-10-15
 
 **Implementation:** `message_actions.rs` now emits message-origin-bound
