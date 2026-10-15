@@ -1,3 +1,39 @@
+## Compact chat wrapping — source/test checkpoint (2026-10-15, unpublished)
+
+**Implementation:** the timestamp, optional moderation tools, channel-origin
+markers, Shared Chat avatar, badges, and deleted marker are rendered as clickable
+first-line-only metadata over the full-width text row. The measured text renderer
+reserves their calculated width on visual line 1 and allows every soft-wrapped
+continuation to begin at normal row padding. Plain messages and emote/Cheers
+messages use the same byte-preserving InlineChat layout, including selection,
+hover, link and emote hitboxes. System/moderation notices also use the shared
+wrap but stay nonselectable, matching their previous interaction behavior.
+No literal line breaks or metadata are inserted into copyable message text.
+
+- **Build/tests:** Rust 1.99 locked Windows desktop tests **111 passed, 5
+  ignored, 0 failed** (four new focused wrapping/geometry tests). `cargo fmt
+  --all` completed. The final locked Windows release build **passed**
+  after the typed-notice changes (1m 04s, exit 0). This is the local
+  development binary; nothing was installed or published.
+- **Native profile:** isolated `--profile qa-wrap-20261015`, control session
+  `jawjackwrap1015a`, started signed out. A native `inspect` returned the
+  independent profile, `control_enabled=true`, and zero visible panes; no
+  credentials were copied and the installed Jawjack was not disturbed.
+  Subsequent UI-control input was blocked before execution. Consequently
+  **no 420–440px transcript with real messages or screenshot was validated**;
+  this is not native visual acceptance.
+- **Still unverified:** actual first-line gap width with all combinations of
+  custom mod controls/source labels/badges, plain and animated media at narrow
+  widths, link hover/click and multi-line selection/copy in the real window,
+  reflow/tail anchor when resizing, CJK/combining/emoji/long tokens, light theme,
+  100%/125% DPI and accessibility. The shared text path changes how plain chat
+  is measured; long-session CPU/memory performance needs real observation.
+- **Restrictions:** no live Twitch actions, send, redemption, raid, app
+  installation, publication, CI, OAuth changes or default-profile edits.
+  Parity register remains open until native visual and interaction checks pass.
+
+---
+
 ## Preview.15 publication and public verification — 2026-10-14
 
 **Published:** `0.1.0-preview.15` from committed source `492d2f28a` on

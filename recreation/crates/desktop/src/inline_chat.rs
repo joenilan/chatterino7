@@ -60,6 +60,9 @@ impl Layout {
         let Some(indices) = self.lines.get(row) else {
             return (0, None);
         };
+        if indices.is_empty() {
+            return (0, None);
+        }
         let Some(first) = self.pieces.get(indices.start) else {
             return (0, None);
         };
@@ -85,6 +88,38 @@ impl Layout {
         (self.pieces[indices.end - 1].range.end, None)
     }
 }
+/// Plan byte-preserving visual wraps: line one has less room because it also
+/// contains timestamp/badges/actions, but every continuation gets full width.
+/// `wrap_from` returns sorted *absolute* byte offsets, never inserted newlines.
+fn plan_line_boundaries<F>(
+    text_len: usize,
+    first_width: Pixels,
+    full_width: Pixels,
+    mut wrap_from: F,
+) -> (usize, Vec<usize>)
+where
+    F: FnMut(usize, Pixels) -> Vec<usize>,
+{
+    let first_end = if first_width > px(14.) {
+        wrap_from(0, first_width)
+            .into_iter()
+            .next()
+            .unwrap_or(text_len)
+    } else {
+        0
+    };
+    let mut boundaries = Vec::new();
+    if first_end > 0 {
+        boundaries.push(first_end);
+    }
+    if first_end < text_len {
+        boundaries.extend(wrap_from(first_end, full_width));
+        boundaries.push(text_len);
+    }
+    boundaries.dedup();
+    (first_end, boundaries)
+}
+
 pub struct InlineChat {
     id: ElementId,
     row: u64,
@@ -94,6 +129,8 @@ pub struct InlineChat {
     name_color: u32,
     paint: Option<crate::name_paint::Request>,
     emote_size: f32,
+    first_line_inset: Pixels,
+    selectable: bool,
     interaction: Option<crate::message_actions::Interaction>,
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
@@ -101,12 +138,6 @@ pub struct InlineChat {
     layout: Rc<RefCell<Layout>>,
 }
 impl InlineChat {
-    pub fn line_height(window: &Window, message: &Message) -> Pixels {
-        window
-            .line_height()
-            .max(px(base_emote_size(message) * emote_scale() + 2.))
-    }
-
     pub fn with_interaction(mut self, interaction: crate::message_actions::Interaction) -> Self {
         self.interaction = Some(interaction);
         self
@@ -115,6 +146,100 @@ impl InlineChat {
     pub fn with_search(mut self, ranges: Vec<std::ops::Range<usize>>) -> Self {
         self.search = ranges;
         self
+    }
+
+    /// Metadata is painted at the row origin. Only the first visual line reserves
+    /// its width; later lines wrap to the ordinary left padding.
+    pub fn with_first_line_inset(mut self, inset: Pixels) -> Self {
+        self.first_line_inset = inset;
+        self
+    }
+
+    pub fn visual_line_height(&self, window: &Window) -> Pixels {
+        window.line_height().max(px(self.emote_size + 2.))
+    }
+
+    /// Plain and rich messages use the same soft-wrap, hit-test and selection
+    /// coordinates. This retains the original copy_line bytes and author offsets.
+    pub fn plain(
+        message: &Message,
+        paint: Option<crate::name_paint::Request>,
+        row: u64,
+        selection: Rc<RefCell<Selection>>,
+        focus: FocusHandle,
+        viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
+    ) -> Self {
+        let text: SharedString = message.copy_line().into();
+        let author_end = message.author_label().len().min(text.len());
+        let mut spans = vec![Span {
+            range: 0..author_end,
+            author: true,
+            media: None,
+        }];
+        if author_end < text.len() {
+            spans.push(Span {
+                range: author_end..text.len(),
+                author: false,
+                media: None,
+            });
+        }
+        Self {
+            id: format!("inline-{}", message.id).into(),
+            row,
+            search: Vec::new(),
+            text,
+            spans,
+            name_color: message.author_color().unwrap_or(crate::theme::muted()),
+            paint,
+            emote_size: 0.,
+            first_line_inset: px(0.),
+            selectable: true,
+            interaction: None,
+            selection,
+            focus,
+            viewport,
+            layout: Rc::default(),
+        }
+    }
+
+    /// Typed notices retain text-only presentation, with the same full-width
+    /// soft wraps. These were not selectable before: avoid mapping their
+    /// notice-local offsets to Message::copy_line's different author prefix.
+    pub fn notice(
+        id: &str,
+        notice: impl Into<SharedString>,
+        row: u64,
+        selection: Rc<RefCell<Selection>>,
+        focus: FocusHandle,
+        viewport: Rc<RefCell<Option<Bounds<Pixels>>>>,
+    ) -> Self {
+        let text = notice.into();
+        let spans = if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![Span {
+                range: 0..text.len(),
+                author: false,
+                media: None,
+            }]
+        };
+        Self {
+            id: format!("inline-notice-{id}").into(),
+            row,
+            search: Vec::new(),
+            text,
+            spans,
+            name_color: crate::theme::muted(),
+            paint: None,
+            emote_size: 0.,
+            first_line_inset: px(0.),
+            selectable: false,
+            interaction: None,
+            selection,
+            focus,
+            viewport,
+            layout: Rc::default(),
+        }
     }
 
     pub fn new(
@@ -241,6 +366,8 @@ impl InlineChat {
             name_color: message.author_color().unwrap_or(crate::theme::muted()),
             paint,
             emote_size: base_emote_size(message) * emote_scale(),
+            first_line_inset: px(0.),
+            selectable: true,
             interaction: None,
             selection,
             focus,
@@ -279,6 +406,7 @@ impl Element for InlineChat {
         let emote_size = self.emote_size;
         let line_height = window.line_height().max(px(emote_size + 2.));
         let name_color = self.name_color;
+        let first_line_inset = self.first_line_inset;
         let id = window.request_measured_layout(
             Default::default(),
             move |known, available, window, cx| {
@@ -300,33 +428,60 @@ impl Element for InlineChat {
                         line_height,
                         ..Default::default()
                     };
+                    // Wrap the first visual line using only the space following the
+                    // timestamp/actions/source/badges. Reflow the remaining text
+                    // against the ENTIRE row width, not a permanent flex gutter.
+                    // The same source spans and byte offsets drive hit testing.
+                    let wrap_from = |start: usize, line_budget: Pixels| {
+                        let fragments: Vec<_> = spans
+                            .iter()
+                            .filter_map(|span| {
+                                let a = start.max(span.range.start);
+                                let b = span.range.end;
+                                if a >= b {
+                                    return None;
+                                }
+                                Some(if let Some(media) = &span.media {
+                                    LineFragment::element(
+                                        px(media_width(media) * emote_size / 28.).min(width),
+                                        b - a,
+                                    )
+                                } else {
+                                    LineFragment::text(&text[a..b])
+                                })
+                            })
+                            .collect();
+                        let mut wrapper = cx.text_system().line_wrapper(style.font(), font_size);
+                        wrapper
+                            .wrap_line(&fragments, line_budget, IndentAdjustment::NoIndent)
+                            .map(|boundary| start + boundary.ix)
+                            .filter(|end| *end > start && *end < text.len())
+                            .collect::<Vec<_>>()
+                    };
+                    let (first_end, boundaries) = plan_line_boundaries(
+                        text.len(),
+                        budget - first_line_inset,
+                        budget,
+                        wrap_from,
+                    );
+
                     let mut actual = px(0.);
-                    let fragments: Vec<_> = spans
-                        .iter()
-                        .map(|s| {
-                            if let Some(media) = &s.media {
-                                LineFragment::element(
-                                    px(media_width(media) * emote_size / 28.).min(width),
-                                    s.range.len(),
-                                )
-                            } else {
-                                LineFragment::text(&text[s.range.clone()])
-                            }
-                        })
-                        .collect();
-                    let mut wrapper = cx.text_system().line_wrapper(style.font(), font_size);
-                    let mut boundaries: Vec<_> = wrapper
-                        .wrap_line(&fragments, budget, IndentAdjustment::NoIndent)
-                        .map(|b| b.ix)
-                        .filter(|i| *i > 0 && *i < text.len())
-                        .collect();
-                    boundaries.push(text.len());
-                    boundaries.dedup();
                     let mut start = 0;
-                    let mut y = px(0.);
+                    // A metadata-heavy row may have no space for the message on
+                    // line 1. Leave that first visual line for its metadata.
+                    let mut y = if first_end == 0 {
+                        result.lines.push(0..0);
+                        line_height
+                    } else {
+                        px(0.)
+                    };
                     for end in boundaries {
                         let begin_piece = result.pieces.len();
-                        let mut x = px(0.);
+                        let mut x = if start == 0 && first_end > 0 {
+                            first_line_inset
+                        } else {
+                            px(0.)
+                        };
                         for span in &spans {
                             let a = start.max(span.range.start);
                             let b = end.min(span.range.end);
@@ -393,7 +548,8 @@ impl Element for InlineChat {
     ) -> crate::media_hover::HoverState {
         self.layout.borrow_mut().origin = bounds.origin;
         let pointer = window.mouse_position();
-        if self.selection.borrow().dragging
+        if self.selectable
+            && self.selection.borrow().dragging
             && self.viewport.borrow().is_some_and(|v| v.contains(&pointer))
             && pointer.y >= bounds.top()
             && pointer.y < bounds.bottom()
@@ -515,7 +671,11 @@ impl Element for InlineChat {
             region.paint(window, cx);
         }
         let hitbox = &mut state.hitbox;
-        let selected = self.selection.borrow().range_for(self.row, &self.text);
+        let selected = if self.selectable {
+            self.selection.borrow().range_for(self.row, &self.text)
+        } else {
+            None
+        };
         if let Some(interaction) = &self.interaction {
             for piece in &self.layout.borrow().pieces {
                 if let Some(text) = &piece.text {
@@ -688,6 +848,9 @@ impl Element for InlineChat {
             }
         }
 
+        if !self.selectable {
+            return;
+        }
         let layout = self.layout.clone();
         let selection = self.selection.clone();
         let text = self.text.clone();
@@ -867,6 +1030,94 @@ fn base_emote_size(message: &Message) -> f32 {
         56.
     } else {
         28.
+    }
+}
+
+#[cfg(test)]
+mod wrapping_tests {
+    use super::{Layout, Piece, plan_line_boundaries};
+    use gpui_kit::{Bounds, Pixels, point, px, size};
+
+    fn ten_pixel_fragments(start: usize, width: Pixels, len: usize) -> Vec<usize> {
+        let per_line = (f32::from(width) / 10.).floor() as usize;
+        ((start + per_line)..len).step_by(per_line).collect()
+    }
+
+    #[test]
+    fn continuation_lines_reclaim_header_gutter() {
+        let text = "abcdefghijklmnopqrstuvwxyz";
+        let (first_end, breaks) =
+            plan_line_boundaries(text.len(), px(36.), px(100.), |start, width| {
+                ten_pixel_fragments(start, width, text.len())
+            });
+        assert_eq!(first_end, 3);
+        assert_eq!(breaks, [3, 13, 23, 26]);
+        // Copy/selection still sees one logical message, without newlines or
+        // metadata strings injected at the visual boundaries.
+        let mut reconstructed = String::new();
+        let mut start = 0;
+        for end in breaks {
+            reconstructed.push_str(&text[start..end]);
+            start = end;
+        }
+        assert_eq!(reconstructed, text);
+    }
+
+    #[test]
+    fn metadata_only_first_line_and_no_metadata_both_wrap_safely() {
+        let len = 26;
+        let wrap = |start, width| ten_pixel_fragments(start, width, len);
+        let (first, breaks) = plan_line_boundaries(len, px(9.), px(100.), wrap);
+        assert_eq!(first, 0);
+        assert_eq!(breaks, [10, 20, 26]);
+        let (first, breaks) = plan_line_boundaries(len, px(100.), px(100.), wrap);
+        assert_eq!(first, 10);
+        assert_eq!(breaks, [10, 20, 26]);
+    }
+
+    #[test]
+    fn hit_testing_uses_each_visual_lines_actual_left_edge() {
+        let layout = Layout {
+            line_height: px(24.),
+            origin: point(px(100.), px(200.)),
+            lines: vec![0..1, 1..2],
+            pieces: vec![
+                Piece {
+                    author: true,
+                    range: 0..5,
+                    bounds: Bounds::new(point(px(68.), px(0.)), size(px(32.), px(24.))),
+                    text: None,
+                    media: Vec::new(),
+                },
+                Piece {
+                    author: false,
+                    range: 5..18,
+                    bounds: Bounds::new(point(px(0.), px(24.)), size(px(100.), px(24.))),
+                    text: None,
+                    media: Vec::new(),
+                },
+            ],
+        };
+        assert_eq!(layout.hit(point(px(132.), px(206.))).0, 0);
+        assert_eq!(layout.hit(point(px(102.), px(230.))).0, 5);
+    }
+
+    #[test]
+    fn metadata_only_visual_line_has_no_fake_text_hit() {
+        let layout = Layout {
+            line_height: px(24.),
+            origin: point(px(10.), px(20.)),
+            lines: vec![0..0, 0..1],
+            pieces: vec![Piece {
+                author: false,
+                range: 0..6,
+                bounds: Bounds::new(point(px(0.), px(24.)), size(px(70.), px(24.))),
+                text: None,
+                media: Vec::new(),
+            }],
+        };
+        assert_eq!(layout.hit(point(px(18.), px(25.))).0, 0);
+        assert_eq!(layout.hit(point(px(11.), px(51.))).0, 0);
     }
 }
 

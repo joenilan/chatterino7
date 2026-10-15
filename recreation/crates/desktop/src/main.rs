@@ -98,7 +98,6 @@ mod youtube;
 use workspace::Workbench;
 
 use chat_core::{Timeline, selection::Selection};
-use chat_text::ChatText;
 use gpui_kit::base::ElementExt as _;
 use gpui_kit::component::menu::DropdownMenu as _;
 use gpui_kit::component::{
@@ -1341,8 +1340,9 @@ impl Render for ChannelPane {
                                     crate::name_paint::Request{paint,cache:catalog.paint_cache.clone(),image}
                                 })
                             };
-                            let inline = inline_chat::InlineChat::new(message, paint.clone(), row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx);
-                            let first_line_height = if inline.is_some() { inline_chat::InlineChat::line_height(window,message) } else { window.line_height() };
+                            let inline = inline_chat::InlineChat::new(message, paint.clone(), row, &mut media.borrow_mut(), selection.clone(), focus.clone(), viewport.clone(), cx)
+                                .unwrap_or_else(|| inline_chat::InlineChat::plain(message, paint.clone(), row, selection.clone(), focus.clone(), viewport.clone()));
+                            let first_line_height = inline.visual_line_height(window);
                             // Roughly how many lines this message wraps to at the pane's width.
                             let collapsed = collapse_lines > 0
                                 && message.presentation.kind != chat_core::MODERATION
@@ -1353,6 +1353,7 @@ impl Render for ChannelPane {
                                     let per_line = width / (f32::from(window.rem_size()) * 0.5);
                                     message.copy_line().chars().count() as f32 / per_line > collapse_lines as f32 + 0.5
                                 });
+                            let show_mod_buttons = mod_buttons && !message.deleted && !message.id.starts_with(automod::LINE_PREFIX) && message.login.is_some() && own_user.as_deref() != Some(message.user_id.as_str());
                             let mut badge_images=message.badges.iter().filter(|badge|theme::badge_shown(theme::badge_kind(&badge.set_id))).filter_map(|badge|{
                                 let custom=if message.presentation.source.is_none(){catalog.borrow().community.channels.get(channel_name.as_ref()).filter(|set|set.ffz_room_id==message.channel_id).and_then(|set|set.roles.get(&badge.set_id)).cloned()}else{None};
                                 if let Some(custom)=custom{
@@ -1375,6 +1376,48 @@ impl Render for ChannelPane {
                             let timestamp=if timestamps>0{message.sent_at.and_then(|time|chrono::DateTime::from_timestamp(time,0)).map(|time|{
                                 let local=time.with_timezone(&chrono::Local);(local.format(match timestamps{2=>"%H:%M:%S",3=>"%-I:%M %p",4=>"%-I:%M:%S %p",_=>"%H:%M"}).to_string(),local.format("%Y-%m-%d %H:%M:%S %:z").to_string())
                             })}else{None};
+                            // The metadata is overlaid on line 1, not kept as a permanent
+                            // flex column. Measure the same fixed-width slots and variable
+                            // labels to reserve its width only for the first text line.
+                            let small_label_width = |label: &str| -> f32 {
+                                if label.is_empty() { return 0.; }
+                                let style = window.text_style();
+                                let shaped = window.text_system().shape_line(label.to_owned().into(), px(10.), &[style.to_run(label.len())], None);
+                                f32::from(shaped.width())
+                            };
+                            let mut prefix_parts = Vec::<f32>::new();
+                            if timestamp.is_some() {
+                                prefix_parts.push(match timestamps { 2 => 55., 3 => 58., 4 => 76., _ => 37. });
+                            }
+                            if show_mod_buttons {
+                                // Three 16px built-in actions, 1px inner gaps, and
+                                // optional icon/text custom moderation buttons.
+                                let mut buttons_width = 3. * 16. + 2.;
+                                for button in custom_buttons.iter() {
+                                    buttons_width += 1. + 6. + if mod_buttons::icon(&button.label).is_some() {
+                                        12.
+                                    } else {
+                                        small_label_width(&button.label)
+                                    };
+                                }
+                                prefix_parts.push(buttons_width);
+                            }
+                            if let Some(origin) = message.presentation.origin.as_deref() {
+                                let origin_label = origin_names && combined::Platform::of(origin) == combined::Platform::Twitch;
+                                prefix_parts.push(12. + if origin_label { 4. + 8. + small_label_width(origin) } else { 0. });
+                            }
+                            if message.presentation.source_id.is_some() {
+                                prefix_parts.push(20.);
+                            }
+                            prefix_parts.extend(std::iter::repeat_n(18., badge_images.len()));
+                            if message.deleted {
+                                prefix_parts.push(8. + small_label_width("deleted"));
+                            }
+                            // Outer .gap(px(4.)) also separates the final metadata
+                            // item from the first text glyph.
+                            let first_line_inset = if prefix_parts.is_empty() { px(0.) } else {
+                                px(prefix_parts.iter().sum::<f32>() + 4. * prefix_parts.len() as f32)
+                            };
                             let pulse=jump_pulse.filter(|(target,at)|*target==row&&at.elapsed()<Duration::from_millis(1200));
                             if pulse.is_some()&&!cx.reduce_motion(){window.request_animation_frame();}
                             let rich_heading=rich_messages::heading(message);
@@ -1446,9 +1489,10 @@ impl Render for ChannelPane {
                                 .children(rich_heading)
                                 .children(automod_controls)
                                 .children(reply_line)
-                                .child(div().h_flex().items_start().min_w_0().gap_1()
+                                 .child(div().relative().v_flex().min_w_0().w_full()
+                                .child(div().absolute().left_0().top_0().h_flex().items_start().gap(px(4.))
                                 .when_some(timestamp,|el,(label,full)|el.child(div().id(SharedString::from(format!("timestamp-{}",message.id))).w(px(match timestamps{2=>55.,3=>58.,4=>76.,_=>37.})).h(first_line_height).flex_shrink_0().flex().items_center().text_size(px(10.)).text_color(rgb(theme::muted())).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(w,cx)).child(label)))
-                                .when(mod_buttons && !message.deleted && !message.id.starts_with(automod::LINE_PREFIX) && message.login.is_some() && own_user.as_deref() != Some(message.user_id.as_str()), |el| {
+                                .when(show_mod_buttons, |el| {
                                     let tool = |id: &'static str, icon: gpui_kit::assets::IconName, tip: &'static str, hover: u32, action: message_actions::Action| {
                                         let (owner, message_id) = (menu_owner.clone(), message.id.clone());
                                         div().id(SharedString::from(format!("{id}-{}", message.id))).size(px(16.)).h(first_line_height).flex_shrink_0().flex().items_center().justify_center()
@@ -1531,7 +1575,8 @@ impl Render for ChannelPane {
                                 }).collect::<Vec<_>>())
                                 .when(message.deleted, |el| el.child(div().h(first_line_height).flex().items_center().flex_shrink_0()
                                     .child(div().px(px(4.)).rounded(px(3.)).bg(rgb(crate::theme::tone(0x3A2328))).text_color(rgb(crate::theme::tone(0xF29D9D))).text_size(px(10.)).child("deleted"))))
-                                .child(div().flex_1().min_w_0().v_flex().child(div().min_w_0()
+                                )
+                                .child(div().w_full().min_w_0().v_flex().child(div().min_w_0()
                                     // Collapsed: only the first lines, with "Show more" under them.
                                     .when(collapsed, |el| el.max_h(first_line_height * collapse_lines as f32).overflow_hidden())
                                     // `/me`: the whole message in the chatter's colour, like Chatterino.
@@ -1539,14 +1584,13 @@ impl Render for ChannelPane {
                                     .child(if message.presentation.kind == chat_core::MODERATION || message.presentation.kind == chat_core::SYSTEM {
                                     let repeats = message.presentation.repeats;
                                     let text = message.presentation.notice.clone().unwrap_or_default();
+                                    let label = if repeats > 0 { format!("{text} ({} times)", repeats + 1) } else { text };
                                     div().text_color(rgb(theme::muted())).italic()
-                                        .child(if repeats > 0 { format!("{text} ({} times)", repeats + 1) } else { text })
+                                        .child(inline_chat::InlineChat::notice(&message.id, label, row, selection.clone(), focus.clone(), viewport.clone())
+                                            .with_first_line_inset(first_line_inset))
                                         .into_any_element()
-                                } else if let Some(inline) = inline {
-                                    inline.with_search(matches).with_interaction(interaction).into_any_element()
                                 } else {
-                                    ChatText::new(SharedString::from(format!("text-{}", message.id)), row, message.copy_line(), selection.clone(), focus.clone(), viewport.clone())
-                                        .with_author(message.author_label(), message.author_color()).with_paint(paint).with_search(matches).with_interaction(interaction).into_any_element()
+                                    inline.with_first_line_inset(first_line_inset).with_search(matches).with_interaction(interaction).into_any_element()
                                 }))
                                 .when(collapsed, |el| {
                                     let (owner, id) = (menu_owner.clone(), message.id.clone());

@@ -47,6 +47,7 @@ a real raid needs separate approval.
 
 ### Chat display
 - [ ] **Full-width soft-wrapped continuation lines (P0, 2026-10-15):** timestamp, badges, and username share the first visual line; subsequent lines start at normal chat-row left padding instead of remaining indented under the metadata column. Preserve both rich emotes and plain text, copy/selection, links, hitboxes, accessibility, compact panes and scrolling. [Owner request and acceptance plan](HANDOFF_2026-10-15.md).
+  - **Source/test slice implemented 2026-10-15, unpublished:** metadata overlaid only on first line, shared plain/media line wrapper plus typed-notice adaptation, and four geometry tests. Windows desktop **111 passed / 5 ignored**; isolated native instance inspected, but narrow-width visual/interaction acceptance was blocked. Keep this unchecked until real UI evidence, selection, link, media, accessibility and resize tests are observed. [Validation notes](VALIDATION.md).
 - [x] Font family / weight choice (S)
 - [x] UI scale separate from chat text — done (Appearance › UI scale, 75–150%; a zoom in the vendored gpui window)
 - [x] Username display: Username / Localized / Both (S)
