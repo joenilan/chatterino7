@@ -139,32 +139,47 @@ fn queue(
     list: &[Reward],
 ) -> Vec<Redemption> {
     let mut out = Vec::new();
-    for reward in list.iter().filter(|r| r.manageable).take(10) {
-        let Some((200, v)) = call(
-            client,
-            identity,
-            client.get(format!("{URL}/redemptions")).query(&[
+    for reward in list.iter().filter(|r| r.manageable) {
+        let mut cursor: Option<String> = None;
+        // Paginate rather than silently dropping redemptions beyond the first
+        // ten rewards or the first 50 queued entries per reward. Bound the
+        // backlog to avoid indefinitely monopolizing the API worker.
+        for _ in 0..20 {
+            let request = client.get(format!("{URL}/redemptions")).query(&[
                 ("broadcaster_id", identity.user_id.as_str()),
                 ("reward_id", reward.id.as_str()),
                 ("status", "UNFULFILLED"),
                 ("first", "50"),
-            ]),
-        ) else {
-            continue;
-        };
-        out.extend(
-            v["data"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(|r| Redemption {
-                    id: text(&r["id"], 64),
-                    reward_id: reward.id.clone(),
-                    reward: reward.title.clone(),
-                    user: text(&r["user_name"], 60),
-                    input: text(&r["user_input"], 200),
-                }),
-        );
+            ]);
+            let request = if let Some(after) = &cursor {
+                request.query(&[("after", after.as_str())])
+            } else {
+                request
+            };
+            let Some((200, v)) = call(client, identity, request) else {
+                break;
+            };
+            let Some(entries) = v["data"].as_array() else {
+                break;
+            };
+            if entries.is_empty() {
+                break;
+            }
+            out.extend(entries.iter().map(|r| Redemption {
+                id: text(&r["id"], 64),
+                reward_id: reward.id.clone(),
+                reward: reward.title.clone(),
+                user: text(&r["user_name"], 60),
+                input: text(&r["user_input"], 200),
+            }));
+            let Some(next) = v["pagination"]["cursor"].as_str().filter(|s| !s.is_empty()) else {
+                break;
+            };
+            if cursor.as_deref() == Some(next) {
+                break;
+            }
+            cursor = Some(next.to_owned());
+        }
     }
     out
 }

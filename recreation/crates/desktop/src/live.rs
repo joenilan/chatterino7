@@ -84,6 +84,15 @@ impl Drop for LiveChat {
         self.cancel.store(true, Ordering::Relaxed);
     }
 }
+fn subscribed_channels(channels: Vec<String>, own: Option<&str>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    own.into_iter()
+        .map(str::to_owned)
+        .chain(channels)
+        .filter(|channel| seen.insert(channel.clone()))
+        .collect()
+}
+
 impl LiveChat {
     pub fn new() -> Self {
         let config = Arc::new(Mutex::new(Config::default()));
@@ -128,11 +137,9 @@ impl LiveChat {
         automod: Vec<String>,
         own: Option<String>,
     ) -> bool {
-        let mut seen = HashSet::new();
-        let channels = channels
-            .into_iter()
-            .filter(|c| seen.insert(c.clone()))
-            .collect();
+        // Keep broadcaster activity subscribed even when their chat tab is closed,
+        // hidden by a workspace filter, or out of the normal channel cap.
+        let channels = subscribed_channels(channels, own.as_deref().filter(|_| identity.is_some()));
         let mut seen = HashSet::new();
         let automod = automod
             .into_iter()
@@ -417,9 +424,13 @@ fn optional_kind(kind: &str) -> bool {
 }
 /// Extra, optional subscriptions for the signed-in broadcaster's own channel,
 /// feeding the Studio activity feed: (type, version).
-const OWN_KINDS: [(&str, &str); 17] = [
+const OWN_KINDS: [(&str, &str); 18] = [
     ("channel.follow", "2"),
     ("channel.channel_points_custom_reward_redemption.add", "1"),
+    (
+        "channel.channel_points_automatic_reward_redemption.add",
+        "2",
+    ),
     // AutoMod queue: held messages and their outcome.
     ("automod.message.hold", "2"),
     ("automod.message.update", "2"),
@@ -466,6 +477,8 @@ pub const MAX_CHANNELS: usize =
 const REQUEST_INTERVAL: Duration = Duration::from_millis(110);
 /// A channel whose required subscription failed is retried after this delay.
 const FAILURE_RETRY: Duration = Duration::from_secs(60);
+/// Back off refused optional EventSub kinds without interrupting working chat.
+const EXTRAS_RETRY: Duration = Duration::from_secs(10 * 60);
 /// A channel login that no longer exists is checked again much later.
 const MISSING_RETRY: Duration = Duration::from_secs(30 * 60);
 
@@ -480,8 +493,8 @@ struct ShardStatus {
     session: Option<String>,
     /// Bumped on every fresh connection; reconnect handoffs keep subscriptions.
     generation: u64,
-    /// Broadcaster IDs (and reasons) whose subscriptions Twitch revoked.
-    revoked: Vec<(String, String)>,
+    /// Broadcaster, subscription kind/id, and reason Twitch revoked it.
+    revoked: Vec<(String, String, String, String)>,
 }
 struct Shard {
     status: Arc<Mutex<ShardStatus>>,
@@ -500,6 +513,9 @@ struct Assignment {
     notices_unavailable: bool,
     /// Own-channel extras Twitch refused (missing scope or role).
     extras_refused: Vec<&'static str>,
+    /// A failed extra can be retried independently of live chat subscriptions.
+    extra_retry_at: Option<Instant>,
+    extra_retry_cursor: usize,
     ready: bool,
     failed_until: Option<Instant>,
 }
@@ -513,6 +529,8 @@ impl Assignment {
             step: 0,
             notices_unavailable: false,
             extras_refused: Vec::new(),
+            extra_retry_at: None,
+            extra_retry_cursor: 0,
             ready: false,
             failed_until: None,
         }
@@ -523,6 +541,8 @@ impl Assignment {
         self.step = 0;
         self.notices_unavailable = false;
         self.extras_refused.clear();
+        self.extra_retry_at = None;
+        self.extra_retry_cursor = 0;
         self.ready = false;
     }
 }
@@ -579,8 +599,19 @@ fn run(
                 names.clear();
             }
         }
-        // Always use the newest token for further requests.
+        // New grants can authorize extras previously refused. Retry only those
+        // subscriptions, keeping all existing chat subscriptions alive.
+        let scopes_changed = identity.as_ref().map(|i| i.scopes.as_ref())
+            != c.identity.as_ref().map(|i| i.scopes.as_ref());
         identity = c.identity.clone();
+        if scopes_changed {
+            for a in assigned.values_mut() {
+                if !a.extras_refused.is_empty() {
+                    a.extra_retry_at = Some(Instant::now());
+                    a.extra_retry_cursor = 0;
+                }
+            }
+        }
         let Some(id) = identity.clone() else {
             std::thread::sleep(Duration::from_millis(200));
             continue;
@@ -699,22 +730,40 @@ fn run(
                     )
                 })
                 .unwrap_or_default();
-            for (broadcaster, reason) in revoked {
+            for (broadcaster, kind, revoked_id, reason) in revoked {
                 if let Some((channel, a)) = assigned
                     .iter_mut()
                     .find(|(_, a)| a.broadcaster.as_deref() == Some(broadcaster.as_str()))
                 {
-                    a.restart(a.generation);
-                    a.failed_until = Some(Instant::now() + FAILURE_RETRY);
-                    state(
-                        &tx,
-                        version,
-                        channel,
-                        &format!(
-                            "Twitch revoked this chat subscription ({reason}). Retrying in a minute."
-                        ),
-                        false,
-                    );
+                    if let Some(extra) = OWN_KINDS
+                        .iter()
+                        .find(|(name, _)| *name == kind)
+                        .map(|(name, _)| *name)
+                    {
+                        // A revoked reward/follow/etc. must not tear down healthy chat.
+                        a.ids.retain(|id| id != &revoked_id);
+                        if !a.extras_refused.contains(&extra) {
+                            a.extras_refused.push(extra);
+                        }
+                        a.extra_retry_cursor = 0;
+                        a.extra_retry_at = Some(Instant::now() + FAILURE_RETRY);
+                        let _ = tx.send((version, Event::OwnExtras(a.extras_refused.clone())));
+                    } else {
+                        // Delete retained IDs before retrying; forgetting their IDs
+                        // causes Twitch 409 conflicts on the next subscription pass.
+                        deletions.extend(a.ids.drain(..));
+                        a.restart(a.generation);
+                        a.failed_until = Some(Instant::now() + FAILURE_RETRY);
+                        state(
+                            &tx,
+                            version,
+                            channel,
+                            &format!(
+                                "Twitch revoked this chat subscription ({reason}). Retrying in a minute."
+                            ),
+                            false,
+                        );
+                    }
                 }
             }
             let online = session.is_some();
@@ -847,6 +896,19 @@ fn run(
             }
         }
         turn = (turn + 1) % MAX_SOCKETS;
+        let extra_job = wanted.iter().find_map(|channel| {
+            let a = assigned.get(*channel)?;
+            if !a.ready || a.extra_retry_at.is_none_or(|when| now < when) {
+                return None;
+            }
+            let kind = *a.extras_refused.get(a.extra_retry_cursor)?;
+            let kind_version = OWN_KINDS.iter().find(|(name, _)| *name == kind)?.1;
+            let (session, generation) = sessions[a.shard].as_ref()?;
+            if *generation != a.generation {
+                return None;
+            }
+            Some(((*channel).clone(), session.clone(), kind, kind_version))
+        });
         if let Some((channel, index)) = job {
             let session = sessions[index]
                 .as_ref()
@@ -928,6 +990,20 @@ fn run(
                     }
                     mod_retry.insert(channel, Instant::now() + MOD_RETRY);
                 }
+            }
+        } else if let Some((channel, session, kind, kind_version)) = extra_job {
+            if let Some(a) = assigned.get_mut(&channel) {
+                next_request = Instant::now() + REQUEST_INTERVAL;
+                let step = Step {
+                    client: &client,
+                    identity: &id,
+                    session: &session,
+                    names: &names,
+                    tx: &tx,
+                    version,
+                    snapshots: &snapshots,
+                };
+                step.retry_extra(a, kind, kind_version);
             }
         } else if let Some(sub) = deletions.pop_front() {
             next_request = Instant::now() + REQUEST_INTERVAL;
@@ -1059,7 +1135,8 @@ impl Step<'_> {
         } else if optional_kind(kind) {
             a.notices_unavailable = true;
         } else {
-            a.restart(a.generation);
+            // Keep successfully-created subscriptions and retry only this step.
+            // Restarting from step 0 without deleting IDs loops on 409 Conflict.
             a.failed_until = Some(Instant::now() + FAILURE_RETRY);
             state(
                 tx,
@@ -1074,6 +1151,9 @@ impl Step<'_> {
         if a.step == total {
             a.ready = true;
             a.failed_until = None;
+            a.extra_retry_cursor = 0;
+            a.extra_retry_at =
+                (!a.extras_refused.is_empty()).then(|| Instant::now() + EXTRAS_RETRY);
             if own {
                 let _ = tx.send((version, Event::OwnExtras(a.extras_refused.clone())));
             }
@@ -1095,6 +1175,64 @@ impl Step<'_> {
                 true,
             );
         }
+    }
+    /// Retry a refused own-channel extra without restarting any chat subscriptions.
+    fn retry_extra(&self, a: &mut Assignment, kind: &'static str, kind_version: &'static str) {
+        let Some(broadcaster) = a.broadcaster.as_deref() else {
+            return;
+        };
+        let condition = if kind == "channel.follow"
+            || kind.starts_with("automod.")
+            || kind.starts_with("channel.suspicious_user.")
+            || kind == "channel.moderate"
+            || kind.starts_with("channel.shield_mode.")
+        {
+            json!({"broadcaster_user_id":broadcaster,"moderator_user_id":self.identity.user_id})
+        } else {
+            json!({"broadcaster_user_id":broadcaster})
+        };
+        let body = json!({"type":kind,"version":kind_version,"condition":condition,
+            "transport":{"method":"websocket","session_id":self.session}});
+        let response = self
+            .client
+            .post("https://api.twitch.tv/helix/eventsub/subscriptions")
+            .header("Client-Id", CLIENT_ID)
+            .bearer_auth(&self.identity.access)
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
+            .send()
+            .ok()
+            .and_then(|r| response_json(r).ok());
+        let accepted = match response {
+            Some((202, value)) if value["data"][0]["status"] == "enabled" => {
+                if let Some(id) = value["data"][0]["id"].as_str() {
+                    a.ids.push(id.to_owned());
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
+        if accepted {
+            a.extras_refused.remove(a.extra_retry_cursor);
+        } else {
+            a.extra_retry_cursor += 1;
+        }
+        if a.extra_retry_cursor >= a.extras_refused.len() {
+            a.extra_retry_cursor = 0;
+            a.extra_retry_at = if a.extras_refused.is_empty() {
+                None
+            } else {
+                Some(Instant::now() + EXTRAS_RETRY)
+            };
+        } else {
+            // Continue this repair round at the regular paced-request interval.
+            a.extra_retry_at = Some(Instant::now());
+        }
+        let _ = self
+            .tx
+            .send((self.version, Event::OwnExtras(a.extras_refused.clone())));
     }
 }
 /// One EventSub WebSocket. Reports its session to the manager and delivers events.
@@ -1192,8 +1330,17 @@ fn socket_loop(
                             status.lock(),
                         ) {
                             let reason = sub["status"].as_str().unwrap_or("revoked");
-                            s.revoked
-                                .push((b.into(), reason.chars().take(40).collect()));
+                            s.revoked.push((
+                                b.into(),
+                                sub["type"]
+                                    .as_str()
+                                    .unwrap_or("")
+                                    .chars()
+                                    .take(100)
+                                    .collect(),
+                                sub["id"].as_str().unwrap_or("").chars().take(128).collect(),
+                                reason.chars().take(40).collect(),
+                            ));
                         }
                     }
                     _ => deliver_one(&v),
@@ -1659,6 +1806,71 @@ fn parse_reply(value: &Value) -> Option<chat_core::Reply> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn custom_and_automatic_redemptions_reach_activity_once() {
+        let names: Arc<Mutex<HashMap<String, String>>> = Default::default();
+        names
+            .lock()
+            .unwrap()
+            .insert("123".into(), "mychannel".into());
+        let (tx, rx) = mpsc::sync_channel(8);
+        let mut seen = HashSet::new();
+        let mut order = VecDeque::new();
+        for (index, kind) in [
+            "channel.channel_points_custom_reward_redemption.add",
+            "channel.channel_points_automatic_reward_redemption.add",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let value = json!({
+                "metadata": {
+                    "message_type": "notification",
+                    "message_id": format!("reward-event-{index}"),
+                },
+                "payload": {
+                    "subscription": {"type": kind},
+                    "event": {
+                        "broadcaster_user_id": "123",
+                        "user_name": "Viewer",
+                        "user_input": "hey",
+                        "reward": {
+                            "title": "Song request",
+                            "cost": 300,
+                            "type": "send_highlighted_message",
+                            "channel_points": 100,
+                        },
+                        "message": {"text": "hello"},
+                    },
+                },
+            });
+            deliver(&value, &names, &tx, &mut seen, &mut order, 7);
+            let (version, event) = rx.try_recv().expect("redemption should be delivered");
+            assert_eq!(version, 7);
+            let Event::Activity(item) = event else {
+                panic!("expected activity item")
+            };
+            assert_eq!(item.kind, crate::activity_feed::Kind::Redemption);
+            assert_eq!(item.who, "Viewer");
+            // Twitch can resend a notification; it must not add a second feed item.
+            deliver(&value, &names, &tx, &mut seen, &mut order, 7);
+            assert!(rx.try_recv().is_err());
+        }
+    }
+    #[test]
+    fn own_channel_is_prioritized_even_if_no_tab_exists() {
+        assert_eq!(
+            subscribed_channels(
+                vec!["other".into(), "me".into(), "other".into()],
+                Some("me")
+            ),
+            vec!["me", "other"]
+        );
+        assert_eq!(
+            subscribed_channels(vec!["other".into()], None),
+            vec!["other"]
+        );
+    }
     #[test]
     fn me_messages_lose_their_action_markers() {
         let event = serde_json::json!({

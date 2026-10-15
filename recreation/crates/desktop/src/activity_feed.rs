@@ -255,6 +255,32 @@ impl Feed {
                     },
                 )
             }
+            "channel.channel_points_automatic_reward_redemption.add" => {
+                // EventSub v2 calls the price channel_points; v1 used cost.
+                // These redemptions never appear in the custom rewards queue.
+                let kind = text(&event["reward"]["type"], 80);
+                let reward = match kind.as_str() {
+                    "send_highlighted_message" => "Highlighted message".to_owned(),
+                    "single_message_bypass_sub_mode" => "Bypass subscribers-only".to_owned(),
+                    "random_sub_emote_unlock" => "Random sub emote".to_owned(),
+                    "chosen_sub_emote_unlock" => "Chosen sub emote".to_owned(),
+                    "" => "Automatic reward".to_owned(),
+                    _ => kind.replace('_', " "),
+                };
+                let cost = event["reward"]["channel_points"]
+                    .as_u64()
+                    .or_else(|| event["reward"]["cost"].as_u64())
+                    .unwrap_or(0);
+                let input = text(&event["message"]["text"], 200);
+                (
+                    Kind::Redemption,
+                    if input.is_empty() {
+                        format!("{reward} ({cost})")
+                    } else {
+                        format!("{reward} ({cost}) · {input}")
+                    },
+                )
+            }
             "channel.moderate" => {
                 return moderation(event).map(|detail| Item {
                     at: chrono::Local::now(),
@@ -405,6 +431,36 @@ mod tests {
         assert_eq!(item.source, "Ko-fi");
         assert_eq!(item.who, "Alice");
         assert_eq!(item.detail, "Donation · 5.00 USD · gl");
+    }
+    #[test]
+    fn automatic_channel_point_reward_from_eventsub_v2() {
+        let value = serde_json::json!({
+            "user_name": "Viewer",
+            "reward": {"type": "send_highlighted_message", "channel_points": 100},
+            "message": {"text": "hello!"}
+        });
+        let item = Feed::from_eventsub(
+            "channel.channel_points_automatic_reward_redemption.add",
+            &value,
+        )
+        .unwrap();
+        assert_eq!(item.kind, Kind::Redemption);
+        assert_eq!(item.who, "Viewer");
+        assert_eq!(item.detail, "Highlighted message (100) · hello!");
+    }
+    #[test]
+    fn custom_channel_point_reward_from_eventsub() {
+        let value = serde_json::json!({
+            "user_name": "Viewer", "user_input": "play it again",
+            "reward": {"title": "Song request", "cost": 300}
+        });
+        let item = Feed::from_eventsub(
+            "channel.channel_points_custom_reward_redemption.add",
+            &value,
+        )
+        .unwrap();
+        assert_eq!(item.kind, Kind::Redemption);
+        assert_eq!(item.detail, "Song request (300) · play it again");
     }
     #[test]
     fn follow_from_eventsub() {
