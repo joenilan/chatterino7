@@ -13,6 +13,15 @@ feature-tracking source; PLAN.md remains the architecture and decision overview.
 
 **Owner's visual priority (2026-10-15):** reclaim chat width on soft-wrapped continuation lines instead of indenting them under timestamp/badge columns. The source/test slice now uses first-line metadata overlay and a shared plain/media measured wrapper (**111 passed, 5 ignored**). [Handoff](HANDOFF_2026-10-15.md) and [validation evidence](VALIDATION.md) track it. **Actual native narrow-width screenshot, full interaction tests, accessibility and performance remain pending**; do not equate source presence with accepted rich-media/selection parity.
 
+**Pre-preview polish (2026-10-15):** visible deleted messages are now
+faded and body-struck instead of carrying a separate `deleted` badge;
+the formerly overwritten deletion opacity is applied last. Timestamp
+widths and metadata gaps are tightened in the same first-line overlay,
+without taking any width from soft-wrapped continuations. Windows
+source/tests and a read-only normal-width native screenshot passed
+(**113 passed, 5 ignored**); actual deleted-line and 420px split
+visual/interaction acceptance remain pending. See [validation](VALIDATION.md).
+
 ## Evidence and status rules
 
 Audit date: 2026-10-10. Original C++ baseline: joenilan/chatterino7 branch

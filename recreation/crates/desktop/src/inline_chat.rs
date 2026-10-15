@@ -88,6 +88,31 @@ impl Layout {
         (self.pieces[indices.end - 1].range.end, None)
     }
 }
+/// Draw deletion markup only across body glyphs/media. The source is still
+/// one unchanged byte string: selection, emote targets and copying never see
+/// the visual strike. Each piece already has its post-wrap x/y coordinates.
+fn deleted_stroke(piece: &Piece, body_start: usize) -> Option<Bounds<Pixels>> {
+    if piece.range.end <= body_start {
+        return None;
+    }
+    let first = piece.range.start.max(body_start);
+    let from_x = piece
+        .text
+        .as_ref()
+        .map_or(px(0.), |text| text.x_for_index(first - piece.range.start));
+    let width = piece.bounds.size.width - from_x;
+    if width <= px(0.) {
+        return None;
+    }
+    Some(Bounds::new(
+        point(
+            piece.bounds.left() + from_x,
+            piece.bounds.top() + piece.bounds.size.height * 0.52,
+        ),
+        size(width, px(1.)),
+    ))
+}
+
 /// Plan byte-preserving visual wraps: line one has less room because it also
 /// contains timestamp/badges/actions, but every continuation gets full width.
 /// `wrap_from` returns sorted *absolute* byte offsets, never inserted newlines.
@@ -131,6 +156,7 @@ pub struct InlineChat {
     emote_size: f32,
     first_line_inset: Pixels,
     selectable: bool,
+    strike_from: Option<usize>,
     interaction: Option<crate::message_actions::Interaction>,
     selection: Rc<RefCell<Selection>>,
     focus: FocusHandle,
@@ -171,6 +197,7 @@ impl InlineChat {
     ) -> Self {
         let text: SharedString = message.copy_line().into();
         let author_end = message.author_label().len().min(text.len());
+        let strike_from = message.deleted.then_some((author_end + 2).min(text.len()));
         let mut spans = vec![Span {
             range: 0..author_end,
             author: true,
@@ -194,6 +221,7 @@ impl InlineChat {
             emote_size: 0.,
             first_line_inset: px(0.),
             selectable: true,
+            strike_from,
             interaction: None,
             selection,
             focus,
@@ -234,6 +262,7 @@ impl InlineChat {
             emote_size: 0.,
             first_line_inset: px(0.),
             selectable: false,
+            strike_from: None,
             interaction: None,
             selection,
             focus,
@@ -357,6 +386,9 @@ impl InlineChat {
         if !spans.iter().any(|s| s.media.is_some()) {
             return None;
         }
+        let strike_from = message
+            .deleted
+            .then_some((message.author_label().len() + 2).min(text.len()));
         Some(Self {
             id: format!("inline-{}", message.id).into(),
             row,
@@ -368,6 +400,7 @@ impl InlineChat {
             emote_size: base_emote_size(message) * emote_scale(),
             first_line_inset: px(0.),
             selectable: true,
+            strike_from,
             interaction: None,
             selection,
             focus,
@@ -848,6 +881,20 @@ impl Element for InlineChat {
             }
         }
 
+        // Paint the strike AFTER media and search/selection overlays so it
+        // stays visible on both static and animated emotes. Only the body gets
+        // crossed out: author, badges, timestamp and metadata stay intact.
+        if let Some(body_start) = self.strike_from {
+            for piece in &self.layout.borrow().pieces {
+                if let Some(stroke) = deleted_stroke(piece, body_start) {
+                    window.paint_quad(fill(
+                        Bounds::new(bounds.origin + stroke.origin, stroke.size),
+                        rgb(crate::theme::text()),
+                    ));
+                }
+            }
+        }
+
         if !self.selectable {
             return;
         }
@@ -1100,6 +1147,28 @@ mod wrapping_tests {
         };
         assert_eq!(layout.hit(point(px(132.), px(206.))).0, 0);
         assert_eq!(layout.hit(point(px(102.), px(230.))).0, 5);
+    }
+
+    #[test]
+    fn deletion_stroke_skips_name_and_prefix_then_uses_wrapped_x_coordinates() {
+        let part = |range: std::ops::Range<usize>, x: f32, y: f32, width: f32| Piece {
+            author: false,
+            range,
+            bounds: Bounds::new(point(px(x), px(y)), size(px(width), px(24.))),
+            text: None,
+            media: Vec::new(),
+        };
+        // "Sery: deleted text here" -- strike after "Sery: ", not over
+        // the author label or the colon, and at x=0 on line two.
+        assert!(super::deleted_stroke(&part(0..4, 40., 0., 24.), 6).is_none());
+        assert!(super::deleted_stroke(&part(4..6, 64., 0., 12.), 6).is_none());
+        let line1 = super::deleted_stroke(&part(6..13, 76., 0., 60.), 6).unwrap();
+        let line2 = super::deleted_stroke(&part(13..24, 0., 24., 110.), 6).unwrap();
+        assert_eq!(line1.left(), px(76.));
+        assert_eq!(line1.size.width, px(60.));
+        assert_eq!(line2.left(), px(0.));
+        assert_eq!(line2.size.width, px(110.));
+        assert!(line2.top() > line1.top());
     }
 
     #[test]

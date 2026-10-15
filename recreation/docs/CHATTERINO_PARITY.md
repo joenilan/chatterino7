@@ -43,6 +43,17 @@ messages from clearing the original draft (unit tested; no live repeat
 attempted). Connected Twitch chat sends and the raid banner remain unverified;
 a real raid needs separate approval.
 
+**2026-10-15 follow-on source polish (unpublished):** Deleted rows now
+fade correctly (the earlier opacity was overridden), use a measured body-only
+strikethrough across wrapped text/media, and no longer reserve space for a
+`deleted` badge. Timestamp slots are measured at their rendered font size
+and first-line metadata gaps are 2px rather than 4px. Locked Windows tests
+**113 passed, 5 ignored**; locked release build passed. Signed-out native
+guest-mode QA viewed 168 historical messages with timestamps at a 1020px
+transcript width. A naturally deleted row, very narrow splits, copied
+selection and media-specific hover were not verified, so **full-width P0
+acceptance stays open**. [Validation](VALIDATION.md).
+
 ## A. Missing
 
 ### Chat display

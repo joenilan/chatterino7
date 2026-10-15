@@ -1,7 +1,52 @@
+## Deleted-message and metadata-density polish — 2026-10-15 (local; before next preview)
+
+**Source behavior:** Removed the space-consuming red `deleted` badge and its
+first-line width budget. Deleted chat now caps the **entire** row
+at 48% opacity after the entrance/historical/similar/Shared Chat factors
+are considered; already-dim lines are not faded a second time.
+Previously an early `.opacity(0.45)` was overridden by the final
+opacity refinement, so deletion dimming was not reliably visible. The shared `InlineChat` renderer draws a 1px strike
+through only the **message body**, following existing measured lines and
+including emote spans; timestamp, sender label and badges remain uncrossed.
+This does not mutate `Message::copy_line()`, original byte ranges,
+search/selection, clickable links or emote hit-testing. Existing
+**Hide deleted messages** behavior remains unchanged.
+
+**Density:** Metadata gap reduced from 4px to 2px and the timestamp's
+previous wide fixed slots replaced by the measured maximum glyph width
+for each supported time format (+2px safety padding). The same width is
+used for visible timestamp and first-line reserved inset, preserving
+stable alignment; continuation lines still begin at full row padding.
+
+- **Windows verification:** locked Rust 1.99 desktop suite **113 passed,
+  5 ignored, 0 failed** (two additional deletion/opacity regressions);
+  `cargo fmt --all` and locked release build passed (58s, exit 0).
+- **Read-only native QA:** ran the built release in isolated profile
+  `qa-delete-1015`, control session `jj-delete1015a`, with no shared
+  credentials. Guest read-only `#dreadedzombie` loaded 168 historical
+  messages. Enabled `13:34` timestamps only inside QA and resized
+  to a 1050×640 requested window; actual OS bounds 1066×648 and
+  transcript viewport 1020×403. A native `PrintWindow` screenshot
+  showed the rows, timestamps and badge/media rendering without
+  obvious text/metadata overlap at that width; `send_pending=false`,
+  draft empty and account remained signed out.
+- **Acceptance gaps:** no actual deleted chat row was present for a
+  before/after native strike/dim assertion. A 420–440px split pane,
+  light theme/DPI variants, hover/link hitboxes, selection over deleted
+  emotes and scrollbar/tail reflow still require owner/native checks.
+  Build/tests and one normal-width screenshot are **not full P0
+  native acceptance**.
+- **No publication or live actions:** no chat sends, paid rewards,
+  moderation, raids, OAuth scope changes, installation, or push. The
+  default installed Jawjack remains untouched. This is preparatory
+  source work for the next preview.
+
+---
+
 ## Compact chat wrapping — source/test checkpoint (2026-10-15, unpublished)
 
 **Implementation:** the timestamp, optional moderation tools, channel-origin
-markers, Shared Chat avatar, badges, and deleted marker are rendered as clickable
+markers, Shared Chat avatar, and badges are rendered as clickable
 first-line-only metadata over the full-width text row. The measured text renderer
 reserves their calculated width on visual line 1 and allows every soft-wrapped
 continuation to begin at normal row padding. Plain messages and emote/Cheers

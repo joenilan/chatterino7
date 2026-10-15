@@ -114,6 +114,27 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Limits visible deleted messages to 48% opacity after the other row
+/// refinements. Avoid multiplying existing history/similarity fades: that
+/// would make already-dim deleted text almost impossible to read.
+fn deleted_row_opacity(base: f32, deleted: bool) -> f32 {
+    if deleted { base.min(0.48) } else { base }
+}
+
+#[cfg(test)]
+mod deleted_row_tests {
+    use super::deleted_row_opacity;
+
+    #[test]
+    fn deleted_fade_survives_existing_row_transparency() {
+        assert_eq!(deleted_row_opacity(1., false), 1.);
+        assert!((deleted_row_opacity(1., true) - 0.48).abs() < f32::EPSILON);
+        assert!((deleted_row_opacity(0.6, true) - 0.48).abs() < 0.0001);
+        assert!((deleted_row_opacity(0.55, true) - 0.48).abs() < 0.0001);
+        assert!((deleted_row_opacity(0.4, true) - 0.4).abs() < 0.0001);
+    }
+}
+
 gpui_kit::actions!(
     chat_workbench,
     [
@@ -1385,9 +1406,20 @@ impl Render for ChannelPane {
                                 let shaped = window.text_system().shape_line(label.to_owned().into(), px(10.), &[style.to_run(label.len())], None);
                                 f32::from(shaped.width())
                             };
+                            // Timestamp glyphs are much narrower than the old fixed 37px
+                            // column (and its wider mode variants). Reserve the width of
+                            // the longest value in each format, measured at the same 10px
+                            // size as the label, to avoid row-to-row jitter.
+                            const METADATA_GAP: f32 = 2.;
+                            let timestamp_width = small_label_width(match timestamps {
+                                2 => "23:59:59",
+                                3 => "12:59 PM",
+                                4 => "12:59:59 PM",
+                                _ => "23:59",
+                            }).ceil() + 2.;
                             let mut prefix_parts = Vec::<f32>::new();
                             if timestamp.is_some() {
-                                prefix_parts.push(match timestamps { 2 => 55., 3 => 58., 4 => 76., _ => 37. });
+                                prefix_parts.push(timestamp_width);
                             }
                             if show_mod_buttons {
                                 // Three 16px built-in actions, 1px inner gaps, and
@@ -1410,13 +1442,11 @@ impl Render for ChannelPane {
                                 prefix_parts.push(20.);
                             }
                             prefix_parts.extend(std::iter::repeat_n(18., badge_images.len()));
-                            if message.deleted {
-                                prefix_parts.push(8. + small_label_width("deleted"));
-                            }
-                            // Outer .gap(px(4.)) also separates the final metadata
-                            // item from the first text glyph.
+                            // Only a 2px separation between inline metadata slots,
+                            // including timestamps and badges. Reserve one more gap
+                            // before the first glyph so the overlay cannot collide.
                             let first_line_inset = if prefix_parts.is_empty() { px(0.) } else {
-                                px(prefix_parts.iter().sum::<f32>() + 4. * prefix_parts.len() as f32)
+                                px(prefix_parts.iter().sum::<f32>() + METADATA_GAP * prefix_parts.len() as f32)
                             };
                             let pulse=jump_pulse.filter(|(target,at)|*target==row&&at.elapsed()<Duration::from_millis(1200));
                             if pulse.is_some()&&!cx.reduce_motion(){window.request_animation_frame();}
@@ -1459,7 +1489,9 @@ impl Render for ChannelPane {
                                 // Every row keeps the same inset so text never touches a highlight edge
                                 // and highlighting a row doesn't shift its text sideways.
                                 .border_l_2().border_color(rgba(0x00000000)).pl(px(6.)).pr(px(4.))
-                                .when(message.deleted, |el| el.opacity(0.45))
+                                // Deleted opacity is applied in the final row opacity
+                                // below. Setting it here gets overwritten by the entrance
+                                // / history / Shared Chat opacity refinement.
                                 // Settings → Appearance → Alternate row backgrounds (Chatterino's option).
                                 .when(theme::alternate_rows() && row % 2 == 1, |el| el.bg(rgba(crate::theme::tone_a(0xFFFFFF07))))
                                 // Shared Chat: a short rounded bar in the guest channel's colour, in the row's left gutter.
@@ -1480,7 +1512,11 @@ impl Render for ChannelPane {
                                 .left(px(12.0 * (1.0 - eased)))
                                 .top(px(6.0 * (1.0 - eased)))
                                 // Recent history is dimmed, as in Chatterino.
-                                .opacity((if message.presentation.similar { 0.4 } else if message.presentation.historical { if theme::is_light() { 0.7 } else { 0.6 } } else { 0.25 + 0.75 * eased }) * if shared_style == 2 && message.presentation.source_id.is_some() { 0.55 } else { 1.0 })
+                                .opacity(deleted_row_opacity(
+                                    (if message.presentation.similar { 0.4 } else if message.presentation.historical { if theme::is_light() { 0.7 } else { 0.6 } } else { 0.25 + 0.75 * eased })
+                                        * if shared_style == 2 && message.presentation.source_id.is_some() { 0.55 } else { 1.0 },
+                                    message.deleted,
+                                ))
                                 .id(SharedString::from(message.id.clone()))
                                 .min_w_0()
                                 .cursor_text()
@@ -1490,8 +1526,8 @@ impl Render for ChannelPane {
                                 .children(automod_controls)
                                 .children(reply_line)
                                  .child(div().relative().v_flex().min_w_0().w_full()
-                                .child(div().absolute().left_0().top_0().h_flex().items_start().gap(px(4.))
-                                .when_some(timestamp,|el,(label,full)|el.child(div().id(SharedString::from(format!("timestamp-{}",message.id))).w(px(match timestamps{2=>55.,3=>58.,4=>76.,_=>37.})).h(first_line_height).flex_shrink_0().flex().items_center().text_size(px(10.)).text_color(rgb(theme::muted())).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(w,cx)).child(label)))
+                                 .child(div().absolute().left_0().top_0().h_flex().items_start().gap(px(METADATA_GAP))
+                                .when_some(timestamp,|el,(label,full)|el.child(div().id(SharedString::from(format!("timestamp-{}",message.id))).w(px(timestamp_width)).h(first_line_height).flex_shrink_0().flex().items_center().text_size(px(10.)).text_color(rgb(theme::muted())).tooltip(move|w,cx|gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(w,cx)).child(label)))
                                 .when(show_mod_buttons, |el| {
                                     let tool = |id: &'static str, icon: gpui_kit::assets::IconName, tip: &'static str, hover: u32, action: message_actions::Action| {
                                         let (owner, message_id) = (menu_owner.clone(), message.id.clone());
@@ -1573,8 +1609,6 @@ impl Render for ChannelPane {
                                 .children(badge_images.into_iter().map(|(badge,image,background)|{
                                     div().id(SharedString::from(badge.key.id.clone())).w(px(18.)).h(first_line_height).flex().items_center().flex_shrink_0().overflow_hidden().tooltip(media_hover::image_card(badge.title.clone(),media_hover::source(badge.key.provider()).to_owned(),image.clone())).child(div().size(px(18.)).when_some(background,|el,color|el.bg(rgb(color))).child(emote_picker::icon(image,String::new(),18.,18.)))
                                 }).collect::<Vec<_>>())
-                                .when(message.deleted, |el| el.child(div().h(first_line_height).flex().items_center().flex_shrink_0()
-                                    .child(div().px(px(4.)).rounded(px(3.)).bg(rgb(crate::theme::tone(0x3A2328))).text_color(rgb(crate::theme::tone(0xF29D9D))).text_size(px(10.)).child("deleted"))))
                                 )
                                 .child(div().w_full().min_w_0().v_flex().child(div().min_w_0()
                                     // Collapsed: only the first lines, with "Show more" under them.
