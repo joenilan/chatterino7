@@ -1,3 +1,37 @@
+## Preview.15 publication and public verification — 2026-10-14
+
+**Published:** `0.1.0-preview.15` from committed source `492d2f28a` on
+`recreation/gpui-foundation` (normal Git push, no force push or CI).
+Changes from preview.14 include Enter/completion and repeated-send reliability,
+optional EventSub/channel-point diagnostics and a raid countdown with
+actual Cancel. The browser-only "Raid Now" shortcut is **not** shipped.
+
+- Tests: Rust 1.99 locked desktop suite **107 passed, 5 ignored**; setup
+  package tests, formatting and `git diff --check` passed.
+- Packaging: `scripts/Build-Release.ps1` exported committed HEAD and
+  successfully built both Windows release binaries. The installer/updater
+  sandbox passed, including atomic upgrade/uninstall, damage refusal, results,
+  wait/relaunch, contention and preservation of the real installed profile.
+- Local release validation passed with the unchanged publisher preflight.
+  Installer `Jawjack-0.1.0-preview.15-setup.exe`: 15,496,064 bytes;
+  SHA-256 `0e16aa02438f7b0d7c12c575e48fd231621d22e184891322618f069610e59a2a`.
+  The portable ZIP and checksum sidecars validated too.
+- Publisher activation reported success, followed by **independent HTTPS
+  verification**: `latest.json` returned preview.15, public installer
+  downloaded with HTTP 200 and the exact declared size and SHA-256,
+  `archive/index.json` listed preview.15 first, and public archived release
+  notes were served successfully.
+- Public feed: https://apps.zombie.digital/downloads/jawjack/latest.json
+  Releases: https://apps.zombie.digital/jawjack/releases
+
+**Not performed:** no local install/restart/kill, Twitch raid, chat send,
+redeeming rewards or OAuth permission changes. The already running installed
+Jawjack was kept intact; its updater follows notify/download/confirm-to-install.
+A genuine live channel-point redemption and raid experience are still
+unverified; publication does not imply those live behaviors passed.
+
+---
+
 ## BTTV / FFZ implementation checkpoint — 2026-10-09
 
 Linux offline locked build passed against the new catalog/renderer integration.
