@@ -33,8 +33,9 @@ See [PARITY_QUEUE_2026-10-14.md](PARITY_QUEUE_2026-10-14.md) and
 inspection, last-delivered reward counters, refused-reward banner, retry/gap
 reporting, and missing-ID rejection. The original unchecked native/live
 redemption case stays unchecked. Slash-command auto-repeat suppression and
-a read-only-to-Twitch raid countdown shortcut were also added. Composer
-Enter was verified in isolated native QA: first Enter executes local
+a raid countdown with actual Cancel were also added. The browser-only
+"Raid Now" shortcut was removed before release because it did not initiate
+early completion. Composer Enter was verified in isolated native QA: first Enter executes local
 `/uptime` despite default suggestions, repeated Enter stays empty, and
 Tab or deliberate Arrow+Enter still completes. A repeat-send audit also
 fixed a wire-only invisible suffix incorrectly preventing acknowledged

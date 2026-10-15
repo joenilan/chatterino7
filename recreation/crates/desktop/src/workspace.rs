@@ -3365,12 +3365,9 @@ impl Workbench {
             return;
         };
         // A successful raid API response queues Twitch's native countdown.
-        // No official Helix endpoint exists for clicking Raid Now; our banner
-        // links to Twitch's own Stream Manager for that action.
+        // Only real actions are exposed: starting or canceling the raid.
         let raid_transition = match &request {
-            crate::twitch_actions::Request::Raid { login } => {
-                Some(Some((login.clone(), channel.clone())))
-            }
+            crate::twitch_actions::Request::Raid { login } => Some(Some(login.clone())),
             crate::twitch_actions::Request::Unraid => Some(None),
             _ => None,
         };
@@ -3390,9 +3387,8 @@ impl Workbench {
                 match result {
                     Ok(done) => {
                         if let Some(change) = raid_transition {
-                            p.raid_pending = change.map(|(target, broadcaster)| {
-                                (target, broadcaster, std::time::Instant::now())
-                            });
+                            p.raid_pending =
+                                change.map(|target| (target, std::time::Instant::now()));
                         }
                         if p.draft.read(cx).value().as_ref() == draft {
                             p.command_draft("", window, cx);

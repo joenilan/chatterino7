@@ -115,9 +115,10 @@ provides:
   downtime are not recoverable from the custom-reward queue.
 - A single Enter keydown send path and an in-flight guard for live slash
   actions; successful chat send no longer emits DraftChanged twice.
-- After `/raid`, a local estimated countdown with Twitch Stream Manager link
-  for Raid Now and an explicit Cancel action; no fictitious Helix
-  "immediate raid" endpoint was used.
+- After `/raid`, a local estimated countdown and an explicit Cancel
+  action; the browser-only "Raid Now on Twitch" shortcut was removed
+  because it did not execute immediate completion. No fictitious Helix
+  instant-raid endpoint is claimed.
 
 Validation: 107 unit tests passed, 5 ignored; locked Rust 1.99 release
 build passed. After initial ephemeral-control failures, a **single owned

@@ -125,6 +125,12 @@ at `C:\Users\ZOMBIEBOX\AppData\Local\Programs\Jawjack\Jawjack.exe`
   Twitch session**, a naturally arriving reward and raid UI/countdown
   acceptance remain unverified.
 
+- Follow-up before release: removed the nonfunctional browser-only
+  `Raid Now on Twitch` shortcut. The source now retains only the
+  estimated countdown and the authorized Cancel action. The unused
+  broadcaster URL state was removed as well. This is a source/compile
+  correction, **not** live raid or Cancel acceptance.
+
 # Current checkpoint: badges and emote composition — 2026-10-09
 
 Linux offline locked build passed against the implementation tree (5.46s).

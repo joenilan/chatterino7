@@ -333,8 +333,8 @@ struct ChannelPane {
     presented_row: Rc<Cell<Option<u64>>>,
     send_status: String,
     /// Locally estimated countdown after a successful POST /helix/raids:
-    /// (target login, broadcaster login, when Twitch accepted the request).
-    pub(crate) raid_pending: Option<(String, String, Instant)>,
+    /// (target login, when Twitch accepted the request).
+    pub(crate) raid_pending: Option<(String, Instant)>,
     raid_tick: bool,
     timeline: Rc<RefCell<Timeline>>,
     media: Rc<RefCell<media::MediaCache>>,
@@ -565,11 +565,10 @@ impl ChannelPane {
         }
         Some(left)
     }
-    /// Twitch's API can queue/cancel raids, but only Twitch's own web UX
-    /// exposes Raid Now. This opens the broadcaster's stream manager, rather
-    /// than misleadingly claiming Jawjack can finish the raid via Helix.
+    /// Twitch's public API can queue or cancel a raid, not complete its
+    /// countdown early. Show status and a real Cancel action only.
     fn render_raid_status(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let Some((target, broadcaster, queued_at)) = self.raid_pending.clone() else {
+        let Some((target, queued_at)) = self.raid_pending.clone() else {
             return Vec::new();
         };
         let remaining = 90_u64.saturating_sub(queued_at.elapsed().as_secs());
@@ -588,7 +587,6 @@ impl ChannelPane {
             })
             .detach();
         }
-        let url = format!("https://dashboard.twitch.tv/u/{broadcaster}/stream-manager");
         vec![
             div()
                 .h_flex()
@@ -602,13 +600,6 @@ impl ChannelPane {
                 .child(div().text_size(px(11.)).child(format!(
                     "Raid queued → @{target} · ~{remaining}s (Twitch countdown)"
                 )))
-                .child(
-                    Button::new("raid-now-twitch")
-                        .xsmall()
-                        .label("Raid Now on Twitch ↗")
-                        .tooltip("Open Twitch Stream Manager. Only Twitch can complete a raid early; this button does not send another raid request.")
-                        .on_click(cx.listener(move |_, _, _, cx| cx.open_url(&url))),
-                )
                 .child(
                     Button::new("raid-cancel")
                         .xsmall()

@@ -131,17 +131,19 @@ for confirmation. Verified: the list shows and a click fills the box (no raid wa
 ## Raid countdown and Twitch control — 2026-10-14 source build
 
 After a successful `/raid target` (or Studio raid request), the originating
-composer shows a **locally estimated** 90-second countdown, a **Raid Now on
-Twitch** button, and **Cancel**. The first button opens the broadcaster's
-Twitch Stream Manager in a browser. It is deliberately *not* a Jawjack
-"raid immediately" API call: the
+composer shows a **locally estimated** 90-second countdown and a **Cancel**
+button. Cancel sends the supported authorized `DELETE /raids`. The banner
+clears on successful cancellation or after the local estimate expires.
+
+**No Raid Now shortcut.** The
 [official Twitch raid API](https://dev.twitch.tv/docs/api/raids)
-exposes queue/start and cancel; only Twitch's own UX offers Raid Now.
-Cancel sends the already-supported authorized `DELETE /raids`.
-The banner clears on a successful cancel or once its local estimate expires.
-This is **not** actual raid confirmation; the official way to confirm a raid
-is the separate `channel.raid` EventSub event, which Jawjack does not
-currently subscribe to for outbound raid completion.
+can queue/start and cancel a raid, but does not expose completing the
+countdown early. An earlier proposed "Raid Now on Twitch" button only opened
+a browser and did not finish the raid. It was removed before release rather
+than presenting an action it cannot perform. There is no automatic redirect.
+
+The estimated countdown is **not** actual raid confirmation. An inbound
+`channel.raid` event is separate from confirming an outbound raid.
 The running installed app has **not** been updated, and no live raid or cancel
 was exercised in testing.
 
