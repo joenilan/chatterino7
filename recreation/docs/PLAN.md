@@ -406,7 +406,7 @@ View offers independent live-only workspace and channel-tab filters. This mirror
 Chatterino's workspace live-or-selected rule and extends it to channel groups.
 The selected tab always remains visible. Unknown/stale status remains visible
 rather than hiding a channel because an HTTP request failed. Hidden workspaces
-remain reachable from the sidebar. Ctrl+Tab skips filtered workspace tabs.
+remain reachable from the sidebar. Ctrl+Alt+PageDown/Up skip filtered workspaces; Ctrl+Tab and Ctrl+Shift+Tab move between channel tabs in the focused split.
 Broadcast status comes from Helix Get Streams, not chat connection state: live,
 offline and unknown have distinct indicators. Existing user authorization is used
 without new scopes. Status refresh is batched up to 100 logins per request every

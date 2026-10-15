@@ -57,7 +57,10 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 
 gpui_kit::actions!(
     workspace,
@@ -141,8 +144,10 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-t", NewTab, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-w", CloseTab, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-shift-t", ReopenTab, Some("ChatWorkspace")),
-        KeyBinding::new("ctrl-tab", NextTab, Some("ChatWorkspace")),
-        KeyBinding::new("ctrl-shift-tab", PreviousTab, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-tab", NextChannel, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-shift-tab", PreviousChannel, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-alt-pagedown", NextTab, Some("ChatWorkspace")),
+        KeyBinding::new("ctrl-alt-pageup", PreviousTab, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-pagedown", NextChannel, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-pageup", PreviousChannel, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-f", crate::FindChat, Some("ChatWorkspace")),
@@ -153,6 +158,80 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-q", Quit, Some("ChatWorkspace")),
         KeyBinding::new("ctrl-u", ToggleTabStrip, Some("ChatWorkspace")),
     ]);
+}
+/// Accumulate precise touchpad motion into one tab per 48 pixels.
+#[derive(Default)]
+struct TabWheel {
+    group: Option<String>,
+    last: Option<Instant>,
+    remainder: f32,
+}
+impl TabWheel {
+    fn steps(&mut self, group: &str, delta: ScrollDelta, now: Instant) -> i32 {
+        if self.group.as_deref() != Some(group)
+            || self
+                .last
+                .is_none_or(|last| now.saturating_duration_since(last) > Duration::from_millis(400))
+        {
+            self.group = Some(group.to_owned());
+            self.remainder = 0.;
+        }
+        self.last = Some(now);
+        let delta = match delta {
+            ScrollDelta::Lines(p) => p.y.signum(),
+            ScrollDelta::Pixels(p) => f32::from(p.y) / 48.,
+        };
+        if !delta.is_finite() {
+            return 0;
+        }
+        self.remainder += delta;
+        let steps = self.remainder.trunc().clamp(-4., 4.);
+        self.remainder -= steps;
+        steps as i32
+    }
+}
+fn relative_tab<'a>(tabs: &'a [String], current: &str, offset: i32) -> Option<&'a str> {
+    if tabs.len() < 2 || offset == 0 {
+        return None;
+    }
+    let at = tabs.iter().position(|name| name == current)?;
+    let next = (at as i64 + i64::from(offset)).rem_euclid(tabs.len() as i64) as usize;
+    Some(tabs[next].as_str())
+}
+#[cfg(test)]
+mod tab_navigation_tests {
+    use super::{ScrollDelta, TabWheel, point, px, relative_tab};
+    use std::time::{Duration, Instant};
+    #[test]
+    fn channel_tabs_wrap_both_directions_and_honor_visible_order() {
+        // The live-only channel filter removes beta before cycling.
+        let visible = vec!["alpha".into(), "gamma".into(), "delta".into()];
+        assert_eq!(relative_tab(&visible, "delta", 1), Some("alpha"));
+        assert_eq!(relative_tab(&visible, "alpha", -1), Some("delta"));
+        assert_eq!(relative_tab(&visible, "alpha", 1), Some("gamma"));
+        assert_eq!(relative_tab(&visible, "gamma", 2), Some("alpha"));
+        assert_eq!(relative_tab(&visible, "beta", 1), None);
+        assert_eq!(relative_tab(&["only".to_owned()], "only", 1), None);
+    }
+    #[test]
+    fn precise_scroll_accumulates_and_resets_between_strips() {
+        let now = Instant::now();
+        let mut wheel = TabWheel::default();
+        let half = ScrollDelta::Pixels(point(px(0.), px(-24.)));
+        assert_eq!(wheel.steps("a", half, now), 0);
+        assert_eq!(wheel.steps("a", half, now), -1);
+        assert_eq!(wheel.steps("b", half, now), 0);
+        assert_eq!(wheel.steps("b", ScrollDelta::Lines(point(0., 1.)), now), 0);
+        assert_eq!(wheel.steps("b", ScrollDelta::Lines(point(0., 1.)), now), 1);
+        assert_eq!(
+            wheel.steps(
+                "b",
+                ScrollDelta::Lines(point(0., -1.)),
+                now + Duration::from_secs(1)
+            ),
+            -1
+        );
+    }
 }
 #[derive(Clone)]
 struct DraggedTab {
@@ -452,6 +531,7 @@ pub struct Workbench {
     custom_commands: crate::custom_commands::Definitions,
     activity_all: bool,
     zoom_accumulator: f32,
+    tab_wheel: TabWheel,
     drafts: BTreeMap<String, String>,
     reply_drafts: BTreeMap<String, Value>,
     save_revision: u64,
@@ -648,6 +728,7 @@ impl Workbench {
             highlight_input,
             activity_all: false,
             zoom_accumulator: 0.,
+            tab_wheel: TabWheel::default(),
             live: crate::live::LiveChat::new(),
             anon: crate::anon_chat::AnonChat::new(),
             guest_reading: false,
@@ -4439,30 +4520,35 @@ impl Workbench {
         let current = focused
             .or_else(|| self.selected_channel.clone().filter(|n| active.contains(n)))
             .or_else(|| active.first().cloned());
-        let Some(current) = current else {
+        if let Some(current) = current {
+            self.cycle_channel_from(&current, if forward { 1 } else { -1 }, window, cx);
+        }
+    }
+    /// Switch within the hovered or focused deck, never a neighboring split.
+    fn cycle_channel_from(
+        &mut self,
+        current: &str,
+        offset: i32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(dock) = &self.tabs[self.active].dock else {
             return;
         };
         let channels = dock
-            .group(&current)
+            .group(current)
             .unwrap_or_default()
             .into_iter()
             .filter(|n| {
                 !self.live_channels
-                    || n == &current
+                    || n == current
                     || self.streams.get(n) != Some(false)
                     || self.is_pinned(n, cx)
             })
             .collect::<Vec<_>>();
-        if channels.len() < 2 {
+        let Some(channel) = relative_tab(&channels, current, offset).map(str::to_owned) else {
             return;
-        }
-        let index = channels.iter().position(|n| n == &current).unwrap_or(0);
-        let index = if forward {
-            (index + 1) % channels.len()
-        } else {
-            (index + channels.len() - 1) % channels.len()
         };
-        let channel = channels[index].clone();
         if let Some(dock) = &mut self.tabs[self.active].dock {
             dock.select(&channel);
         }
@@ -4692,6 +4778,7 @@ impl Workbench {
                 let bounds_name = name.clone();
                 let dock_bounds = self.dock_bounds.clone();
                 let strip_name = name.clone();
+                let wheel_group = name.clone();
                 let strip_bounds = self.strip_bounds.clone();
                 // The Streamer anchor and user-pinned tabs share the pin presentation.
                 let pins: Vec<String> = self
@@ -5481,6 +5568,28 @@ impl Workbench {
                         .on_prepaint(move |bounds, _, _| {
                             strip_bounds.borrow_mut().insert(strip_name.clone(), bounds);
                         })
+                        // Capture wheel gestures only over this channel tab strip.
+                        .on_scroll_wheel(cx.listener(
+                            move |this, event: &ScrollWheelEvent, window, cx| {
+                                // Ctrl+wheel still zooms text; Shift+wheel scrolls tall side strips.
+                                if event.modifiers.control
+                                    || event.modifiers.shift
+                                    || event.modifiers.alt
+                                    || window.has_active_dialog(cx)
+                                {
+                                    return;
+                                }
+                                let steps =
+                                    this.tab_wheel
+                                        .steps(&wheel_group, event.delta, Instant::now());
+                                if steps != 0 {
+                                    // Down: next channel. Up: previous channel.
+                                    this.cycle_channel_from(&wheel_group, -steps, window, cx);
+                                }
+                                window.prevent_default();
+                                cx.stop_propagation();
+                            },
+                        ))
                         .children(tabs)
                         .child(
                             Button::new(SharedString::from(format!("add-tab-{tab_id}-{name}")))

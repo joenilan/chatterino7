@@ -69,8 +69,10 @@ Optional session-only native app control is described in
 - Ctrl+T: new workspace
 - Ctrl+W: close workspace
 - Ctrl+Shift+T: reopen recently closed workspace
-- Ctrl+Tab / Ctrl+Shift+Tab: next / previous workspace
-- Ctrl+PageDown / Ctrl+PageUp: next / previous channel tab
+- Ctrl+Tab / Ctrl+Shift+Tab: next / previous channel tab in the focused split
+- Mouse wheel on a channel tab strip: wheel down / up moves forward / backward
+- Ctrl+PageDown / Ctrl+PageUp: alternate next / previous channel shortcuts
+- Ctrl+Alt+PageDown / Ctrl+Alt+PageUp: next / previous workspace
 - Ctrl+P: search and switch existing channels across workspaces
 - Ctrl+K: add channel
 - Ctrl+I: details for the focused channel

@@ -88,28 +88,28 @@ pub const HOTKEYS: &[Hotkey] = {
         hotkey!(
             "next-workspace",
             "Next workspace",
-            "ctrl-tab",
+            "ctrl-alt-pagedown",
             "ChatWorkspace",
             NextTab
         ),
         hotkey!(
             "previous-workspace",
             "Previous workspace",
-            "ctrl-shift-tab",
+            "ctrl-alt-pageup",
             "ChatWorkspace",
             PreviousTab
         ),
         hotkey!(
             "next-channel",
-            "Next channel",
-            "ctrl-pagedown",
+            "Next channel tab",
+            "ctrl-tab",
             "ChatWorkspace",
             NextChannel
         ),
         hotkey!(
             "previous-channel",
-            "Previous channel",
-            "ctrl-pageup",
+            "Previous channel tab",
+            "ctrl-shift-tab",
             "ChatWorkspace",
             PreviousChannel
         ),
