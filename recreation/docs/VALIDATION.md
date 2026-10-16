@@ -1,3 +1,38 @@
+## Next preview: Settings cog beside updater in sidebar — local 2026-10-15
+
+**Requested layout:** Move the Settings gear out of the crowded top title bar
+and place it in the workspaces sidebar next to the updater/version control.
+
+**Implementation:** `workspace.rs::render_sidebar` now uses a single
+non-scrolling footer row containing the existing version/update stack on
+the left and the small Settings gear on the right. The updater's existing
+`render_updates` button/tooltip, download-state flow, and confirmation
+behavior are unchanged. The gear retains its original
+`Button::new("settings-menu")` identity, selected state, tooltip and
+`toggle_settings` action. The title-bar gear was removed; the title-bar
+sidebar toggle remains available to reveal the new location when the
+sidebar is collapsed.
+
+**Compact layout safety:** The footer remains `flex_shrink_0`, below the
+separately scrolling live-follow list. The update column uses `flex_1`
+plus `min_w_0` and the gear is `xsmall`, so a long available-version
+message can truncate without shoving Settings out of the 190px sidebar.
+The release version itself still appears on the first line.
+
+**Validation:** Windows Rust 1.99
+`cargo test -q -p chat-workbench --bin chat-workbench --locked`:
+**124 passed, 0 failed, 5 ignored**. Formatting and `git diff --check`
+passed. Locked optimized Windows `chat-workbench` build passed, with
+the pre-existing `chat_text.rs` dead-code warning only. Source inspection
+found exactly one Settings button, now within `render_sidebar`, using the
+same action callback. Native narrow-window visual acceptance remains pending.
+
+**Release status:** This is local work queued alongside the unread-tab fix
+for a future preview. No source push, installer publication, live
+moderation, installed-app changes, settings migration, or account actions.
+
+---
+
 ## Next preview: channel tab visits acknowledge unread — local 2026-10-15
 
 **Owner report:** Mouse-wheel cycling across channel tabs and keyboard

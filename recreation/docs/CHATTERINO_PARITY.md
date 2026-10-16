@@ -1,5 +1,15 @@
 # Chatterino parity checklist
 
+**Local layout polish queued for next preview (2026-10-15):** The Settings
+cog has moved from the top title bar into the persistent bottom-left
+sidebar footer, aligned beside the existing version/updater control.
+It retains the same Settings action, title/tooltip, and selected state.
+The footer stays outside the scrollable live-follow list and allocates
+shrinkable width to the updater for compact windows. Rust 1.99 locked
+desktop tests (**124 passed, 5 ignored**) and optimized build passed;
+native visual acceptance remains pending. Preview.18 is unchanged.
+[Validation checkpoint](VALIDATION.md).
+
 **Unpublished fix queued for next preview (2026-10-15):** Visiting a
 channel with mouse-wheel tab cycling, Ctrl+Tab, Ctrl+Shift+Tab or a direct
 tab click now immediately clears that channel's existing unread badge

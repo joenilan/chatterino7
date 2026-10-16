@@ -6254,7 +6254,31 @@ impl Workbench {
                     .border_color(rgb(theme::border()))
                     .text_size(px(11.))
                     .text_color(rgb(theme::muted()))
-                    .child(self.render_updates(cx)),
+                    // The updater and Settings stay in the non-scrolling footer,
+                    // including when the live-follow list needs most of the height.
+                    .child(
+                        div()
+                            .h_flex()
+                            .w_full()
+                            .min_w_0()
+                            .items_end()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(self.render_updates(cx)),
+                            )
+                            .child(
+                                Button::new("settings-menu")
+                                    .ghost()
+                                    .xsmall()
+                                    .icon(IconName::Settings)
+                                    .selected(self.settings)
+                                    .tooltip("Settings")
+                                    .on_click(cx.listener(|this, _, w, cx| this.toggle_settings(w, cx))),
+                            ),
+                    ),
             )
             .into_any_element()
     }
@@ -7164,15 +7188,6 @@ impl Render for Workbench {
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.open_accounts(window, cx)),
                             ),
-                    )
-                    .child(
-                        Button::new("settings-menu")
-                            .ghost()
-                            .small()
-                            .icon(IconName::Settings)
-                            .selected(self.settings)
-                            .tooltip("Settings")
-                            .on_click(cx.listener(|this, _, w, cx| this.toggle_settings(w, cx))),
                     )
                     .when(self.experience == roles::Experience::Streamer, |el| {
                         el.child(
