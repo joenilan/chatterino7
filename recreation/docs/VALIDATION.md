@@ -1,4 +1,10 @@
-## Preview.19 candidate — public media cache, account portraits and truthful recap (2026-10-15)
+## Jawjack preview.19 - published and HTTPS verified (2026-10-15)
+
+Release source `76f298730` was pushed and published to the existing feed. Locked desktop/setup tests passed: **131 passed, 5 ignored**. Release builder, hash preflight, and isolated installer/update sandbox passed without modifying the real profile. Public feed, manifest, archive, releases page and archived notes verified; public setup (15,353,440 bytes; SHA-256 `eda36c162ae1bbdc4417cfd1845251aac7f1dc27d77fdfeea46155a0b6446d26`) and portable ZIP (14,864,117 bytes; SHA-256 `5b300510eef1475a84fc37daf3ad1e8da88dc07bb8c2f471d5605952ae27e881`) matched local artifacts. The installed app still reported preview.18. Live Twitch actions and native visual acceptance were not performed.
+
+---
+
+## Preview.19 shipped — public media cache, account portraits and truthful recap (2026-10-15)
 
 **Owner reports:** Twitch/7TV avatars briefly disappear or finish loading
 late after an update. The top-bar username crowds mentions and account
@@ -15,7 +21,7 @@ not Twitch's actual start of broadcast. `show_recap` used
 so on-screen stats could mix Twitch's proper uptime and a smaller set of
 client-observed events.
 
-**Local fixes, not published:**
+**Released in preview.19:**
 
 - `workspace.rs` now remembers the authenticated broadcaster's actual
   `streams.detail` / Helix `started_at` timestamp, when available.

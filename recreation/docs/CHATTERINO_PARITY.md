@@ -1,6 +1,6 @@
 # Chatterino parity checklist
 
-**Preview.19 local candidate (2026-10-15):** Title-bar Twitch login replaced
+**Published in preview.19 (2026-10-15):** Title-bar Twitch login replaced
 by a bounded linked-account avatar stack (active/permissions rings, hover
 spread, overflow `+N` on narrow windows), retaining the original account
 dialog on click. Shared media now warms linked-account and live-follow
@@ -12,11 +12,10 @@ timestamp where available, rather than Jawjack's connection time. Counts
 not reconstructible from Twitch's current stream endpoint are explicitly
 labeled as observed samples instead of full-stream totals. Locked desktop
 suite **131 passed, 5 ignored**, optimized Windows build passed. Native
-visual and future live recap acceptance are still outstanding. The public
-preview.18 and installed app remain untouched.
+visual and future live recap acceptance are still outstanding. Preview.19 is published; the owner's installed copy remains preview.18.
 [Evidence and limitations](VALIDATION.md).
 
-**Local layout polish queued for next preview (2026-10-15):** The Settings
+**Layout polish shipped in preview.19 (2026-10-15):** The Settings
 cog has moved from the top title bar into the persistent bottom-left
 sidebar footer, aligned beside the existing version/updater control.
 It retains the same Settings action, title/tooltip, and selected state.
@@ -26,7 +25,7 @@ desktop tests (**124 passed, 5 ignored**) and optimized build passed;
 native visual acceptance remains pending. Preview.18 is unchanged.
 [Validation checkpoint](VALIDATION.md).
 
-**Unpublished fix queued for next preview (2026-10-15):** Visiting a
+**Unread badge fix shipped in preview.19 (2026-10-15):** Visiting a
 channel with mouse-wheel tab cycling, Ctrl+Tab, Ctrl+Shift+Tab or a direct
 tab click now immediately clears that channel's existing unread badge
 when the active transcript follows the newest message. This avoids a
@@ -49,7 +48,7 @@ hashes passed release verification; actual native raid behavior still
 needs everyday-use acceptance.
 [Validation notes](VALIDATION.md).
 
-**Current published preview:** `0.1.0-preview.18` from `2d1dc5519`,
+**Current published preview:** `0.1.0-preview.19` from `76f298730`,
 verified in the public HTTPS feed. The next evidence-based parity focus is
 sender-facing `channel.chat.user_message_hold/update` EventSub semantics,
 provider authorization and AutoMod edge cases, without duplicating the
