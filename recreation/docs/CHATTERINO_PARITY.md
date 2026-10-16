@@ -1,5 +1,16 @@
 # Chatterino parity checklist
 
+**Unpublished fix queued for next preview (2026-10-15):** Visiting a
+channel with mouse-wheel tab cycling, Ctrl+Tab, Ctrl+Shift+Tab or a direct
+tab click now immediately clears that channel's existing unread badge
+when the active transcript follows the newest message. This avoids a
+source-proven rapid-navigation race with the ~50 ms painted-row acknowledgement
+pump. Scrolled-up, searching or inactive panes retain unread messages;
+other channels, Mentions history and future arrivals are unaffected.
+Source-level and locked Rust tests passed (**124 passed, 5 ignored**) and
+the optimized build succeeded. Native rapid-tab acceptance is still open.
+[Validation checkpoint](VALIDATION.md). Do not republish preview.18.
+
 **Published in preview.18 (2026-10-15):** Incoming Twitch
 `raid` / `shared_chat_raid` notifications were wrongly shown as a raider's
 authored chat line. Transcript handling now presents a distinct green

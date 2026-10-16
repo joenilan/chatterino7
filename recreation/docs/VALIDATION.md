@@ -1,3 +1,51 @@
+## Next preview: channel tab visits acknowledge unread — local 2026-10-15
+
+**Owner report:** Mouse-wheel cycling across channel tabs and keyboard
+Ctrl+Tab / Ctrl+Shift+Tab leave numeric unread message badges behind after
+a channel has been visited. This behavior should match selecting the tab
+directly; the counter should clear when the user opens a chat at the latest
+messages, including rapid navigation.
+
+**Source-proven cause:** Previously
+`workspace.rs::cycle_channel_from` and the channel-tab click handler changed
+`Dock::select`/`selected_channel`, but did not acknowledge any unread rows.
+`activity.rs::sync_attention`, which runs on a ~50 ms pump, acknowledged only
+after a transcript prepaint in a *previously eligible* reading tick.
+`displayed_attention` hid the badge while a live-tail pane was visible,
+but rapid wheel/keyboard navigation could switch away before that
+acknowledgement, allowing the counter to reappear.
+
+**Implemented locally:** Both mouse click and wheel/keyboard channel navigation
+now use `Workbench::select_channel_tab`. After selecting the target, it
+calls `acknowledge_channel_tab_visit`, which clears the selected pane's
+`Attention::unread` counter and stale read divider immediately when all
+conditions hold: active window, no dialog or settings/add-channel overlay,
+the pane is genuinely visible, its transcript is following the live tail,
+and search is closed. Unread elsewhere (including neighboring splits and
+hidden tabs) is not touched. Scrolled-up or searching panes retain unread
+history. The Mentions timeline remains separate from the unread counter,
+and subsequent arrivals create new unread counts normally. The unread-chip
+"jump to first unread" flow is unchanged.
+
+**Regression tests:** `attention::follow_tests::tab_visits_acknowledge_unread_and_preserve_mention_history`
+and `tab_visit_does_not_clear_scrolled_up_search_or_inactive_chats`
+exercise the real acknowledgement method, read divider, mention retention,
+and a new arrival after acknowledgement. Existing channel-order, wheel
+precision and reverse-wrap tests remain present. Windows Rust 1.99:
+`cargo test -q -p chat-workbench --bin chat-workbench --locked`
+**124 passed, 0 failed, 5 ignored**; `cargo fmt --all` passed.
+Optimized Windows `cargo build -p chat-workbench --bin chat-workbench --locked
+--release` passed (only existing unused-method warning).
+
+**Acceptance still needed:** Native authenticated rapid wheel and
+Ctrl+Tab/Ctrl+Shift+Tab use in at least two channel groups, checking the
+unread counters remain cleared after leaving and returning, while keeping
+unread for a deliberately scrolled-up pane. This is a local source/test
+batch for a future preview; preview.18 stays published and unchanged.
+No real install, login, chat send, moderation, Git push, or release occurred.
+
+---
+
 ## Jawjack preview.18 publication and independent verification — 2026-10-15
 
 **Published:** `0.1.0-preview.18`, committed release source `2d1dc5519`

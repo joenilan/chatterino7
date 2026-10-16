@@ -438,6 +438,22 @@ impl Attention {
         self.read_boundary = None;
         changed
     }
+    /// A newly opened chat at the live tail can immediately acknowledge all
+    /// retained messages, even if the user switches again before the next
+    /// rendered-row acknowledgement tick. Never discard unseen scrolled-up
+    /// history or mark read while the user is searching or the UI is inactive.
+    pub fn acknowledge_tab_visit(
+        &mut self,
+        reading_available: bool,
+        following_tail: bool,
+        searching: bool,
+    ) -> bool {
+        if reading_available && following_tail && !searching {
+            self.mark_all()
+        } else {
+            false
+        }
+    }
     /// The signed-in user's ID, if known.
     pub fn own_user(&self) -> Option<&str> {
         self.identity.as_ref().map(|(user, _)| user.as_str())
@@ -484,6 +500,40 @@ mod follow_tests {
             deleted: false,
         }
     }
+    #[test]
+    fn tab_visits_acknowledge_unread_and_preserve_mention_history() {
+        let mut attention = Attention::default();
+        attention.unread.extend([8, 9, 10]);
+        attention.pinged.insert(9);
+        attention.read_boundary = Some(8);
+        assert_eq!(attention.counts(), (3, 1));
+        assert!(attention.acknowledge_tab_visit(true, true, false));
+        assert_eq!(attention.counts(), (0, 0));
+        assert_eq!(attention.read_boundary, None);
+        // The Mentions timeline is separate from the unread badge.
+        assert!(attention.in_mentions(9));
+        assert!(!attention.acknowledge_tab_visit(true, true, false));
+        attention.unread.insert(11); // New chat after the visit still badges.
+        assert_eq!(attention.counts(), (1, 0));
+    }
+
+    #[test]
+    fn tab_visit_does_not_clear_scrolled_up_search_or_inactive_chats() {
+        for (available, tail, searching) in [
+            (true, false, false),
+            (true, true, true),
+            (false, true, false),
+            (false, false, true),
+        ] {
+            let mut attention = Attention::default();
+            attention.unread.extend([8, 9]);
+            attention.read_boundary = Some(8);
+            assert!(!attention.acknowledge_tab_visit(available, tail, searching));
+            assert_eq!(attention.counts(), (2, 0));
+            assert_eq!(attention.read_boundary, Some(8));
+        }
+    }
+
     #[test]
     fn bell_follows_mentions_tab_not_every_chat_message() {
         let mut a = Attention {

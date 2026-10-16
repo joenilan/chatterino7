@@ -4651,6 +4651,18 @@ impl Workbench {
             self.cycle_channel_from(&current, if forward { 1 } else { -1 }, window, cx);
         }
     }
+    /// Unified channel-tab selection for mouse clicks, wheel gestures and
+    /// Ctrl+Tab in either direction. The selected tail is acknowledged now,
+    /// rather than waiting for the next painted-row attention pump.
+    fn select_channel_tab(&mut self, channel: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(dock) = &mut self.tabs[self.active].dock {
+            dock.select(channel);
+        }
+        self.selected_channel = Some(channel.to_owned());
+        self.acknowledge_channel_tab_visit(channel, window, cx);
+        self.schedule_save(cx);
+        cx.notify();
+    }
     /// Switch within the hovered or focused deck, never a neighboring split.
     fn cycle_channel_from(
         &mut self,
@@ -4676,10 +4688,7 @@ impl Workbench {
         let Some(channel) = relative_tab(&channels, current, offset).map(str::to_owned) else {
             return;
         };
-        if let Some(dock) = &mut self.tabs[self.active].dock {
-            dock.select(&channel);
-        }
-        self.selected_channel = Some(channel.clone());
+        self.select_channel_tab(&channel, window, cx);
         if let Some(pane) = self.tabs[self.active]
             .panes
             .iter()
@@ -4690,8 +4699,6 @@ impl Workbench {
                 .clone()
                 .update(cx, |input, cx| input.focus(window, cx));
         }
-        self.schedule_save(cx);
-        cx.notify();
     }
     /// Tab menu → Close other tabs / Close tabs to the right: one confirmation for
     /// all of them. Pinned tabs (and your own in Streamer setup) are kept.
@@ -5094,13 +5101,8 @@ impl Workbench {
                             .on_click(cx.listener({
                                 let channel = channel.clone();
                                 move |this, _, window, cx| {
-                                    if let Some(d) = &mut this.tabs[this.active].dock {
-                                        d.select(&channel);
-                                    }
-                                    this.selected_channel = Some(channel.clone());
+                                    this.select_channel_tab(&channel, window, cx);
                                     this.focus.focus(window, cx);
-                                    this.schedule_save(cx);
-                                    cx.notify();
                                 }
                             }));
                         let owner = cx.entity().downgrade();

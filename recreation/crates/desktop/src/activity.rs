@@ -45,6 +45,42 @@ mod activity_filter_tests {
     }
 }
 impl Workbench {
+    /// Explicit tab-selection acknowledgement, shared by mouse clicks and
+    /// forward/reverse keyboard or wheel navigation. Without this, a rapid
+    /// visit can finish before the normal painted-row attention pump runs,
+    /// causing the unread badge to return after switching away.
+    pub(super) fn acknowledge_channel_tab_visit(
+        &mut self,
+        channel: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let reading_available = window.is_window_active()
+            && !window.has_active_dialog(cx)
+            && !self.settings
+            && !self.adding;
+        if !reading_available {
+            return;
+        }
+        let pane = self
+            .visible_panes(cx)
+            .into_iter()
+            .find(|pane| pane.read(cx).name.as_ref() == channel);
+        if let Some(pane) = pane {
+            pane.update(cx, |p, cx| {
+                let following_tail = p.scroller.read(cx).is_following_tail();
+                let searching = p.search.open;
+                if p.attention
+                    .acknowledge_tab_visit(reading_available, following_tail, searching)
+                {
+                    p.presented_row.set(None);
+                    p.scroller.update(cx, |scroller, cx| scroller.remeasure(cx));
+                    cx.notify();
+                }
+            });
+        }
+    }
+
     pub(super) fn sync_attention(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let identity = self.account.read(cx).identity().and_then(|i| {
             chat_core::twitch_login(&self.account.read(cx).label()).map(|login| (i.user_id, login))
