@@ -6,9 +6,47 @@ use crate::{
 use chat_core::{Fragment, Message};
 use gpui_kit::{component::StyledExt, prelude::FluentBuilder, *};
 
+/// Twitch sends raids as system notifications, not as chat messages typed
+/// by the raiding broadcaster. The raw notice stays on the Message for Studio,
+/// activity and history; only the transcript wording is adapted to Twitch's
+/// familiar announcement. Both EventSub and IRC USERNOTICE use this path.
+pub fn raid_announcement(message: &Message) -> Option<String> {
+    if !matches!(
+        message.presentation.notice_type.as_deref(),
+        Some("raid" | "shared_chat_raid")
+    ) {
+        return None;
+    }
+    let name = message.display_name.trim();
+    let notice = message.presentation.notice.as_deref().unwrap_or("").trim();
+    let viewers = notice
+        .split_whitespace()
+        .next()
+        .map(|word| word.replace(',', ""))
+        .filter(|word| !word.is_empty() && word.bytes().all(|b| b.is_ascii_digit()))
+        .and_then(|word| word.parse::<u64>().ok());
+    if let Some(viewers) = viewers
+        && !name.is_empty()
+        && name != "Twitch"
+    {
+        return Some(format!("{name} is raiding with a party of {viewers}."));
+    }
+    if !notice.is_empty() {
+        return Some(notice.to_owned());
+    }
+    Some(if name.is_empty() || name == "Twitch" {
+        "A raid has arrived.".into()
+    } else {
+        format!("{name} is raiding.")
+    })
+}
+
 pub fn accent(message: &Message) -> Option<u32> {
     if message.deleted {
         return None;
+    }
+    if raid_announcement(message).is_some() {
+        return Some(0x84CE9A);
     }
     if message.presentation.suspicious.is_some() {
         return Some(0xE8C468);
@@ -27,6 +65,10 @@ pub fn heading(message: &Message) -> Option<AnyElement> {
         return None;
     }
     let p = &message.presentation;
+    if raid_announcement(message).is_some() {
+        // The whole raid is its own notice row; no redundant "raid" heading.
+        return None;
+    }
     let mut labels = Vec::new();
     if let Some(label) = &p.suspicious {
         labels.push(label.clone());
@@ -228,4 +270,70 @@ pub fn inspection(timeline: &chat_core::Timeline) -> serde_json::Value {
         }
     }
     serde_json::json!({"gifs":gifs,"cheermotes":cheers,"unknown_fragments":unknown,"special":special,"notices":notices})
+}
+
+#[cfg(test)]
+mod raid_notice_tests {
+    use super::{accent, heading, raid_announcement};
+
+    #[test]
+    fn raid_is_a_system_announcement_not_a_chat_line_from_raider() {
+        let mut raid = chat_core::system_notice(
+            "room",
+            "raid-1".into(),
+            None,
+            "20 raiders from Smizay have joined!".into(),
+        );
+        raid.display_name = "Smizay".into();
+        raid.login = Some("smizay".into());
+        raid.presentation.notice_type = Some("raid".into());
+        assert_eq!(
+            raid_announcement(&raid).as_deref(),
+            Some("Smizay is raiding with a party of 20.")
+        );
+        assert!(heading(&raid).is_none());
+        assert_eq!(accent(&raid), Some(0x84CE9A));
+        assert_eq!(
+            raid.presentation.notice.as_deref(),
+            Some("20 raiders from Smizay have joined!")
+        );
+        raid.presentation.notice_type = Some("shared_chat_raid".into());
+        assert_eq!(
+            raid_announcement(&raid).as_deref(),
+            Some("Smizay is raiding with a party of 20.")
+        );
+        raid.presentation.notice = Some("Raid from Smizay".into());
+        assert_eq!(
+            raid_announcement(&raid).as_deref(),
+            Some("Raid from Smizay")
+        );
+        raid.presentation.notice_type = None;
+        assert!(raid_announcement(&raid).is_none());
+    }
+
+    #[test]
+    fn raid_count_parsing_is_strict_and_blank_notice_still_announces() {
+        let mut notice = chat_core::system_notice(
+            "room",
+            "raid-2".into(),
+            None,
+            "1,234 raiders from Smizay have joined!".into(),
+        );
+        notice.display_name = "Smizay".into();
+        notice.presentation.notice_type = Some("raid".into());
+        assert_eq!(
+            raid_announcement(&notice).as_deref(),
+            Some("Smizay is raiding with a party of 1234.")
+        );
+        notice.presentation.notice = None;
+        assert_eq!(
+            raid_announcement(&notice).as_deref(),
+            Some("Smizay is raiding.")
+        );
+        notice.display_name = "Twitch".into();
+        assert_eq!(
+            raid_announcement(&notice).as_deref(),
+            Some("A raid has arrived.")
+        );
+    }
 }

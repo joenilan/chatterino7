@@ -717,7 +717,12 @@ pub fn menu(
         )
         .filter(|source| pane.mod_sources.contains(source))
     });
-    let moderates = mod_source.is_some() && message.login.is_some() && !message.user_id.is_empty();
+    // USERNOTICE raids identify a broadcaster but are not a message they
+    // personally sent; never offer Delete/Timeout/Ban against the notice row.
+    let moderates = mod_source.is_some()
+        && message.login.is_some()
+        && !message.user_id.is_empty()
+        && crate::rich_messages::raid_announcement(&message).is_none();
     let youtube = crate::youtube::is_youtube(&message.channel_id)
         && crate::google_auth::SIGNED_IN.load(std::sync::atomic::Ordering::Relaxed)
         && message.user_id.starts_with("yt:")
@@ -1876,19 +1881,21 @@ pub(crate) fn chatter_card(
         .as_ref()
         .and_then(|s| s.avatar.clone())
         .filter(|_| crate::name_paint::paint_option(crate::name_paint::SEVEN_AVATARS));
-    let avatar_key = seven_avatar
-        .clone()
-        .or_else(|| profile.as_ref().and_then(|p| p.avatar.clone()));
-    let avatar = avatar_key
-        .as_ref()
-        .filter(|_| !crate::streamer_mode::hides(crate::streamer_mode::CARD_AVATARS))
-        .and_then(|key| {
-            owner.upgrade().and_then(|pane| {
-                let media = pane.read(cx).media.clone();
-                media.borrow_mut().get(key, cx)
-            })
-        });
-    let avatar_source = if seven_avatar.is_some() {
+    let twitch_avatar = profile.as_ref().and_then(|p| p.avatar.clone());
+    // Public profile pictures remain visible even in Streamer mode. Warm both
+    // sources so a missing/slow 7TV avatar never hides a usable Twitch avatar.
+    let (avatar, using_seven_avatar) = owner
+        .upgrade()
+        .map(|pane| {
+            let media = pane.read(cx).media.clone();
+            let mut media = media.borrow_mut();
+            let twitch = twitch_avatar.as_ref().and_then(|key| media.get(key, cx));
+            let seven = seven_avatar.as_ref().and_then(|key| media.get(key, cx));
+            let using_seven = seven.is_some();
+            (seven.or(twitch), using_seven)
+        })
+        .unwrap_or((None, false));
+    let avatar_source = if using_seven_avatar {
         "7TV profile picture"
     } else {
         "Twitch profile picture"
@@ -1971,7 +1978,28 @@ pub(crate) fn chatter_card(
     };
     dialog.w(px(width)).title(name).child(div().id("chatter-body").v_flex().gap_2().min_w_0().max_h(px(body_height)).overflow_y_scroll()
                         .when_some(profile,|el,profile|el.child(div().h_flex().items_start().gap_2()
-                            .child(div().id("chatter-avatar").flex_shrink_0().tooltip(crate::media_hover::image_card(profile.display_name.clone(),avatar_source.into(),avatar.clone())).child(crate::emote_picker::icon(avatar,String::new(),48.,48.)))
+                            .child(div().id("chatter-avatar").flex_shrink_0().tooltip(crate::media_hover::image_card(profile.display_name.clone(),avatar_source.into(),avatar.clone())).child(match avatar.clone() {
+                                Some(image) => crate::emote_picker::avatar(image, 48.),
+                                None => div()
+                                    .size(px(48.))
+                                    .rounded_full()
+                                    .bg(rgb(crate::theme::tone(0x3A3350)))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_color(rgb(theme::text()))
+                                    .text_size(px(18.))
+                                    .child(
+                                        profile
+                                            .display_name
+                                            .chars()
+                                            .next()
+                                            .unwrap_or('?')
+                                            .to_uppercase()
+                                            .to_string(),
+                                    )
+                                    .into_any_element(),
+                            }))
                             .child(div().v_flex().gap_1().flex_1().min_w_0().child(card_name(&profile.display_name, card_paint.clone(), card_focus.clone()))
                                 .child(div().text_size(px(11.)).text_color(rgb(theme::muted())).child(match followers{
                                     Some(n)=>format!("Created · {} · {} follower{}",created_label(&profile.created),group_digits(n),if n==1{""}else{"s"}),

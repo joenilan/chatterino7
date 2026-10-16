@@ -1944,6 +1944,46 @@ fn parse_reply(value: &Value) -> Option<chat_core::Reply> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn eventsub_raid_is_a_notice_and_followup_chat_is_a_separate_message() {
+        let raid = json!({
+            "message_id": "raid-42",
+            "chatter_user_id": "123",
+            "chatter_user_login": "smizay",
+            "chatter_user_name": "Smizay",
+            "notice_type": "raid",
+            "system_message": "20 raiders from Smizay have joined!",
+            "raid": {"user_name": "Smizay", "viewer_count": 20},
+            "message": {"text": "", "fragments": []}
+        });
+        let notice = chat_message(&raid, "envelope-1", "grimxog", "room-1", None, false);
+        assert!(!notice.replyable);
+        assert_eq!(notice.presentation.notice_type.as_deref(), Some("raid"));
+        assert_eq!(
+            crate::rich_messages::raid_announcement(&notice).as_deref(),
+            Some("Smizay is raiding with a party of 20.")
+        );
+        assert_eq!(
+            notice.presentation.notice.as_deref(),
+            Some("20 raiders from Smizay have joined!")
+        );
+
+        let chat = json!({
+            "message_id": "chat-43",
+            "chatter_user_id": "123",
+            "chatter_user_login": "smizay",
+            "chatter_user_name": "Smizay",
+            "message": {"text": "yoooo!!", "fragments": [{"type": "text", "text": "yoooo!!"}]}
+        });
+        let ordinary = chat_message(&chat, "envelope-2", "grimxog", "room-1", None, true);
+        assert!(ordinary.replyable);
+        assert_eq!(ordinary.body(), "yoooo!!");
+        assert!(ordinary.presentation.notice_type.is_none());
+        assert!(crate::rich_messages::raid_announcement(&ordinary).is_none());
+        assert_ne!(notice.id, ordinary.id);
+    }
+
     #[test]
     fn custom_and_automatic_redemptions_reach_activity_once() {
         let names: Arc<Mutex<HashMap<String, String>>> = Default::default();

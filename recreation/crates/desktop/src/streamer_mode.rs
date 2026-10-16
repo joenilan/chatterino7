@@ -117,6 +117,14 @@ fn scan() -> bool {
 mod tests {
     use super::*;
     #[test]
+    fn public_card_avatars_are_not_a_streamer_privacy_option() {
+        assert!(!OPTIONS.iter().any(|(key, _, _, _)| *key == "card_avatars"));
+        assert_eq!(OPTIONS[MOD_ACTIONS].0, "mod_actions");
+        assert_eq!(OPTIONS[VIEWER_COUNTS].0, "viewer_counts");
+        assert_eq!(OPTIONS[LIVE_ALERTS].0, "live_alerts");
+    }
+
+    #[test]
     fn finds_broadcasting_software() {
         let list = "\"explorer.exe\",\"4\",\"Console\",\"1\",\"9 K\"\r\n\"obs64.exe\",\"88\",\"Console\",\"1\",\"300 K\"";
         assert!(broadcasting(list));
@@ -130,17 +138,11 @@ mod tests {
 /// Whether streamer mode is on right now (set by the workspace).
 pub static LIVE: AtomicBool = AtomicBool::new(false);
 /// What streamer mode hides, as in Chatterino (key, label, detail, default).
-pub const OPTIONS: [(&str, &str, &str, bool); 5] = [
+pub const OPTIONS: [(&str, &str, &str, bool); 4] = [
     (
         "link_previews",
         "Link previews",
         "Hovering a link shows just the address; nothing is loaded.",
-        true,
-    ),
-    (
-        "card_avatars",
-        "User card avatars",
-        "Profile pictures on user cards stay blank.",
         true,
     ),
     (
@@ -163,12 +165,10 @@ pub const OPTIONS: [(&str, &str, &str, bool); 5] = [
     ),
 ];
 pub const LINK_PREVIEWS: usize = 0;
-pub const CARD_AVATARS: usize = 1;
-pub const MOD_ACTIONS: usize = 2;
-pub const VIEWER_COUNTS: usize = 3;
-pub const LIVE_ALERTS: usize = 4;
-pub static HIDE: [AtomicBool; 5] = [
-    AtomicBool::new(true),
+pub const MOD_ACTIONS: usize = 1;
+pub const VIEWER_COUNTS: usize = 2;
+pub const LIVE_ALERTS: usize = 3;
+pub static HIDE: [AtomicBool; 4] = [
     AtomicBool::new(true),
     AtomicBool::new(true),
     AtomicBool::new(false),

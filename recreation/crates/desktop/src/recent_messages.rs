@@ -460,6 +460,28 @@ mod tests {
         assert_eq!(messages[0].sent_at, Some(1_700_000_000));
     }
     #[test]
+    fn irc_raid_notice_is_not_a_raiders_authored_chat_message() {
+        let line = r"@badges=;display-name=Smizay;id=raid-1;login=smizay;msg-id=raid;msg-param-viewerCount=20;room-id=1;system-msg=20\sraiders\sfrom\sSmizay\shave\sjoined!;user-id=123 :tmi.twitch.tv USERNOTICE #grimxog";
+        let (channel, event) = live_line(line).expect("valid Twitch raid USERNOTICE");
+        assert_eq!(channel, "grimxog");
+        let Live::Message(message) = event else {
+            panic!("raid should be a retained chat notice");
+        };
+        assert_eq!(message.login.as_deref(), Some("smizay"));
+        assert_eq!(message.presentation.notice_type.as_deref(), Some("raid"));
+        assert_eq!(
+            message.presentation.notice.as_deref(),
+            Some("20 raiders from Smizay have joined!")
+        );
+        assert!(!message.replyable);
+        assert!(!message.presentation.historical);
+        assert_eq!(
+            crate::rich_messages::raid_announcement(&message).as_deref(),
+            Some("Smizay is raiding with a party of 20.")
+        );
+    }
+
+    #[test]
     fn single_word_without_colon() {
         let lines =
             ["@display-name=K;id=k1;room-id=1;user-id=12 :k!k@k.tmi.twitch.tv PRIVMSG #chan HOT*"];

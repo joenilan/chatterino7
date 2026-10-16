@@ -1397,7 +1397,11 @@ impl Render for ChannelPane {
                                 &message.channel_id,
                                 message.presentation.origin.as_deref(),
                             );
+                            // A raid belongs to Twitch's system announcement stream,
+                            // not to the raider's authored chat messages.
+                            let raid_notice = rich_messages::raid_announcement(message);
                             let show_mod_buttons = mod_buttons
+                                && raid_notice.is_none()
                                 && moderation_source.as_ref().is_some_and(|source| mod_sources.contains(source))
                                 && !message.deleted
                                 && !message.id.starts_with(automod::LINE_PREFIX)
@@ -1422,6 +1426,10 @@ impl Render for ChannelPane {
                             // A definitively failed badge drops its slot instead of leaving a blank gap;
                             // pending art keeps its slot so loading does not reflow the row.
                             badge_images.retain(|(badge,image,_)|image.is_some()||!media.borrow().failed(&badge.key));
+                            if raid_notice.is_some() {
+                                // The raider's chat badges don't belong on a system banner.
+                                badge_images.clear();
+                            }
                             let row_owner=menu_owner.clone();let row_id=message.id.clone();
                             let timestamp=if timestamps>0{message.sent_at.and_then(|time|chrono::DateTime::from_timestamp(time,0)).map(|time|{
                                 let local=time.with_timezone(&chrono::Local);(local.format(match timestamps{2=>"%H:%M:%S",3=>"%-I:%M %p",4=>"%-I:%M:%S %p",_=>"%H:%M"}).to_string(),local.format("%Y-%m-%d %H:%M:%S %:z").to_string())
@@ -1527,6 +1535,7 @@ impl Render for ChannelPane {
                                 .when_some(message.presentation.source_id.as_ref().filter(|_| shared_style == 0 || shared_style == 2).map(|id| shared_colors.get(id).copied().unwrap_or_else(|| shared_chat::color_of(id))), |el, color| el.child(div().absolute().left(px(1.)).top(px(4.)).bottom(px(4.)).w(px(3.)).rounded_full().bg(rgb(color))))
                                 .when(theme::flag(&theme::SEPARATORS), |el| el.child(div().absolute().left_0().right_0().bottom_0().h(px(1.)).bg(rgb(theme::border()))))
                                 .when_some(rich_messages::accent(message),|el,color|el.border_color(rgb(color)).bg(rgba(crate::theme::tone_a(0xA99CF40D))).py(px(2.)).rounded_r(px(4.)))
+                                .when(raid_notice.is_some(), |el| el.border_color(rgb(crate::theme::tone(0x84CE9A))).bg(rgba(crate::theme::tone_a(0x84CE9A18))).py(px(3.)).rounded_r(px(4.)))
                                 .when(highlight_rows.contains(&row),|el|{let (accent,background)=highlight_rules::colors(highlight_colors.get(&row).copied().unwrap_or(0));el.bg(rgb(background)).border_color(rgb(accent)).py(px(2.)).rounded_r(px(4.))})
                                 .on_prepaint(move|bounds,window,cx|{
                                     let clip=window.content_mask().bounds;
@@ -1644,7 +1653,14 @@ impl Render for ChannelPane {
                                     .when(collapsed, |el| el.max_h(first_line_height * collapse_lines as f32).overflow_hidden())
                                     // `/me`: the whole message in the chatter's colour, like Chatterino.
                                     .when(message.presentation.kind == "action", |el| el.text_color(rgb(message.author_color().unwrap_or(theme::text()))).italic())
-                                    .child(if message.presentation.kind == chat_core::MODERATION || message.presentation.kind == chat_core::SYSTEM {
+                                    .child(if let Some(raid) = raid_notice.clone() {
+                                    // Raid notifications are not messages authored by the raider:
+                                    // no "Smizay:" prefix, badges, or duplicate "raid" header.
+                                    div().text_color(rgb(crate::theme::tone(0x84CE9A)))
+                                        .child(inline_chat::InlineChat::notice(&message.id, raid, row, selection.clone(), focus.clone(), viewport.clone())
+                                            .with_first_line_inset(first_line_inset))
+                                        .into_any_element()
+                                } else if message.presentation.kind == chat_core::MODERATION || message.presentation.kind == chat_core::SYSTEM {
                                     let repeats = message.presentation.repeats;
                                     let text = message.presentation.notice.clone().unwrap_or_default();
                                     let label = if repeats > 0 { format!("{text} ({} times)", repeats + 1) } else { text };

@@ -1,3 +1,58 @@
+## Preview.17 follow-up — incoming raid announcement and public avatars (LOCAL, 2026-10-15)
+
+**Owner-observed defects:** An incoming Twitch raid showed as a generic
+`raid` heading followed by a normal `Smizay: 20 raiders from Smizay have
+joined!` chat line, visually implying the raider typed the notice. The
+owner also questioned why Streamer mode blanks public Twitch/7TV viewer-card
+avatars; the installed user's workspace had `streamer_mode=automatic`
+and the former `hide.card_avatars=true` option.
+
+**Source evidence:** Twitch
+[IRC USERNOTICE](https://dev.twitch.tv/docs/chat/irc/) identifies incoming
+raids with `msg-id=raid`, `system-msg` and
+`msg-param-viewerCount`. Its
+[EventSub channel.chat.notification](https://dev.twitch.tv/docs/eventsub/eventsub-reference/)
+provides `notice_type=raid`, a Twitch-authored `system_message` and typed
+raid count. Jawjack's prior `Message::copy_line` prepended the raider's
+name for all notices and `rich_messages::heading` printed the bare
+`raid` label. The existing Streamer mode explicitly hid profile pictures,
+while empty-label image placeholders could appear blank.
+
+**Local correction, not yet released:** `rich_messages::raid_announcement`
+provides the announcement wording without a chatter prefix, e.g.
+`Smizay is raiding with a party of 20.`. Transcript rows for
+`raid` and `shared_chat_raid` render a distinct muted-green event notice:
+no raider badges, redundant raid heading, or inline moderator actions.
+The underlying EventSub/IRC `Message` stays intact for the activity feed,
+shoutout card, timestamp, deduplication and subsequent raider chat, which
+remains a separate normal message. Raid right-click moderation controls
+are likewise suppressed. We do not start/cancel raids or send any chat.
+
+`streamer_mode.rs` no longer offers or enforces the
+`card_avatars` hiding flag. Public Twitch/7TV profile pictures are
+displayed regardless of Streamer mode. The card prefetches both avatar
+sources and prefers 7TV when present, falling back to Twitch when unavailable,
+then to a visible circular initial during loading/failure. Other Streamer
+mode settings retain their original keys, defaults and effective meanings.
+No user settings were modified; a legacy `hide.card_avatars` key is
+ignored until the regular workspace save updates preferences.
+
+**Locked verification:** Windows Rust 1.99
+`cargo test -q -p chat-workbench --bin chat-workbench --locked`
+**122 passed, 0 failed, 5 ignored**. New regressions cover literal
+IRC USERNOTICE, synthetic EventSub raid versus a separate raider PRIVMSG,
+notice presentation/fallback behavior, and the removal of the avatar-hide
+setting. `cargo fmt --all` passed; locked optimized Windows app build
+also passed with only the existing `chat_text.rs` dead-code warning.
+
+**Remaining gate:** A signed-out isolated native visual check and then
+normal streamer use after a new preview is published; no actual incoming
+live raid or native avatar was simulated as passing. This commit is local
+only; preview.17 remains the published and installed version until the
+owner approves a newer release.
+
+---
+
 ## Jawjack preview.17 publication and independent verification — 2026-10-15
 
 **Published:** `0.1.0-preview.17` from committed source `d24071832`
