@@ -1,4 +1,61 @@
-## Preview.17 follow-up — incoming raid announcement and public avatars (LOCAL, 2026-10-15)
+## Jawjack preview.18 publication and independent verification — 2026-10-15
+
+**Published:** `0.1.0-preview.18`, committed release source `2d1dc5519`
+on `recreation/gpui-foundation`, including raid and avatar fix
+`1f758ac77`. Normal Git push (`39fdcaa70..2d1dc5519`),
+no force push or CI request. Preview.17 remains immutable.
+
+**What's fixed:** Incoming Twitch raid notifications now render as distinct
+green system announcements, not authored chat from the raider. Actual chat
+from the raider and existing highlights/Studio raid metadata remain intact.
+Public Twitch and 7TV user-card avatars remain visible in Streamer mode;
+Twitch replaces missing/slow 7TV art, with a visible initial as last fallback.
+Other streamer privacy settings, combined-feed moderation fixes and
+preview.16 chat layout are unchanged.
+
+**Windows Rust 1.99 gates:** Locked desktop/setup suite
+`cargo test -q -p chat-workbench --bin chat-workbench -p jawjack-setup --locked`:
+**122 passed, 0 failed, 5 ignored**. `cargo fmt --all -- --check`
+and `git diff --check` passed. `scripts/Build-Release.ps1` exported
+committed HEAD to the release source folder, compiled optimized Jawjack and
+setup binaries and packaged the unsigned Windows releases with checksums.
+Only the existing `chat_text.rs` dead-code warning was emitted.
+
+**Isolated installer smoke test:** `scripts/Test-InstallerSandbox.py --fresh-setup`
+passed damage refusal, installation, upgrade with data retained, uninstall
+with and without data removal, in-app updater wait/result/relaunch/failure
+paths, and single-setup locking. Before/after snapshots confirmed the
+**real installed profile remained unchanged**. The optional
+`--with-app` step was skipped to avoid a second signed-in app.
+
+**Publisher:** Offline `.local-release/Publish-Release.py` preflight
+verified both artifacts, hashes and release metadata. The owner-approved
+SFTP publisher activated the immutable version archive and public pointer.
+Independent **public HTTPS** verification confirmed `latest.json` and
+`manifest.json` report preview.18, `archive/index.json` lists preview.18
+first (18 releases), the releases page and archived notes returned HTTP 200,
+and full independent downloads of both binaries matched the local artifact
+sizes and SHA-256 values:
+
+- Installer: `Jawjack-0.1.0-preview.18-setup.exe` —
+  **15,477,592 bytes**,
+  SHA-256 `b57d96e91a8dca257aaf5a41b81da5bde942f244b72766e1b5bb966ce17674a8`
+- Portable: `Jawjack-0.1.0-preview.18-x64-portable.zip` —
+  **14,988,631 bytes**,
+  SHA-256 `550b5c1bd30b38532b65f9eb1482c3841e48b5989113fae87e0fb48eb6259042`
+
+**Links:** https://apps.zombie.digital/downloads/jawjack/latest.json
+and https://apps.zombie.digital/jawjack/releases
+
+**Not performed:** No assistant-initiated installation, restart or change
+to the real Twitch profile, credentials, OAuth scopes, raids or moderation.
+The registry still reported the owner's installed version as
+`0.1.0-preview.17` after publication. The native visual result and an
+actual incoming raid still need everyday-use acceptance.
+
+---
+
+## Preview.17 follow-up — incoming raid announcement and public avatars (shipped in preview.18)
 
 **Owner-observed defects:** An incoming Twitch raid showed as a generic
 `raid` heading followed by a normal `Smizay: 20 raiders from Smizay have
@@ -18,7 +75,7 @@ name for all notices and `rich_messages::heading` printed the bare
 `raid` label. The existing Streamer mode explicitly hid profile pictures,
 while empty-label image placeholders could appear blank.
 
-**Local correction, not yet released:** `rich_messages::raid_announcement`
+**Source correction (shipped in preview.18):** `rich_messages::raid_announcement`
 provides the announcement wording without a chatter prefix, e.g.
 `Smizay is raiding with a party of 20.`. Transcript rows for
 `raid` and `shared_chat_raid` render a distinct muted-green event notice:
@@ -46,10 +103,9 @@ setting. `cargo fmt --all` passed; locked optimized Windows app build
 also passed with only the existing `chat_text.rs` dead-code warning.
 
 **Remaining gate:** A signed-out isolated native visual check and then
-normal streamer use after a new preview is published; no actual incoming
-live raid or native avatar was simulated as passing. This commit is local
-only; preview.17 remains the published and installed version until the
-owner approves a newer release.
+normal streamer use after preview.18 is installed; no actual incoming
+live raid or native avatar was simulated as passing. Preview.18 is published;
+preview.17 was still the owner's installed version at publication time.
 
 ---
 

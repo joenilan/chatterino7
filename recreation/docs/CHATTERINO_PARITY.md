@@ -1,17 +1,18 @@
-**Current local fixes awaiting next preview (2026-10-15):** Incoming Twitch
+# Chatterino parity checklist
+
+**Published in preview.18 (2026-10-15):** Incoming Twitch
 `raid` / `shared_chat_raid` notifications were wrongly shown as a raider's
 authored chat line. Transcript handling now presents a distinct green
 system notice with Twitch-style wording, retaining raid metadata and
 separate real chat. Streamer mode no longer hides public viewer-card avatars;
 7TV/Twitch fallback and an initial placeholder were added. This is backed
 by Twitch's official IRC/EventSub notification contracts and locked Rust tests
-(**122 passed, 5 ignored**), not yet by a live native raid. **Do not
-re-publish preview.17**; this is intended for a subsequent version.
+(**122 passed, 5 ignored**), not yet by a live native raid. Preview.18 packages and public download
+hashes passed release verification; actual native raid behavior still
+needs everyday-use acceptance.
 [Validation notes](VALIDATION.md).
 
-# Chatterino parity checklist
-
-**Current published preview:** `0.1.0-preview.17` from `d24071832`,
+**Current published preview:** `0.1.0-preview.18` from `2d1dc5519`,
 verified in the public HTTPS feed. The next evidence-based parity focus is
 sender-facing `channel.chat.user_message_hold/update` EventSub semantics,
 provider authorization and AutoMod edge cases, without duplicating the
