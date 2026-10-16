@@ -1979,7 +1979,7 @@ pub(crate) fn chatter_card(
     dialog.w(px(width)).title(name).child(div().id("chatter-body").v_flex().gap_2().min_w_0().max_h(px(body_height)).overflow_y_scroll()
                         .when_some(profile,|el,profile|el.child(div().h_flex().items_start().gap_2()
                             .child(div().id("chatter-avatar").flex_shrink_0().tooltip(crate::media_hover::image_card(profile.display_name.clone(),avatar_source.into(),avatar.clone())).child(match avatar.clone() {
-                                Some(image) => crate::emote_picker::avatar(image, 48.),
+                                Some(image) => crate::emote_picker::avatar_fade(image, 48., cx.reduce_motion()),
                                 None => div()
                                     .size(px(48.))
                                     .rounded_full()

@@ -36,6 +36,174 @@ impl Workbench {
             "active_account": self.account.read(cx).vault().to_string(),
         })
     }
+    /// Small title-bar avatar stack. Each linked account uses its own Twitch
+    /// user ID; never show the current account's picture for a secondary login.
+    /// Click anywhere to open the existing account selector.
+    pub(super) fn render_account_stack(
+        &self,
+        spacing: f32,
+        viewport_width: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let active_vault = self.account.read(cx).vault().clone();
+        let mut accounts = self
+            .accounts
+            .iter()
+            .filter_map(|account| {
+                let account = account.read(cx);
+                let login = account.login()?;
+                let user_id = account.identity().map(|i| i.user_id);
+                Some((
+                    account.vault().clone(),
+                    login,
+                    user_id,
+                    !account.missing_scopes().is_empty(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        accounts.sort_by_key(|(vault, _, _, _)| *vault != active_vault);
+        if accounts.is_empty() {
+            return Button::new("account-menu")
+                .xsmall()
+                .when(self.account.read(cx).signed_out_reason().is_some(), |b| {
+                    b.primary()
+                })
+                .label(if self.account.read(cx).restoring() {
+                    "Signing in…"
+                } else {
+                    "Sign in to Twitch"
+                })
+                .tooltip("Open Twitch accounts")
+                .on_click(cx.listener(|this, _, window, cx| this.open_accounts(window, cx)))
+                .into_any_element();
+        }
+        let count = accounts.len();
+        // Keep caption/window controls accessible on narrow layouts. The
+        // existing account dialog always exposes every linked account.
+        let visible = if viewport_width < 450. {
+            1
+        } else if viewport_width < 650. {
+            2
+        } else if viewport_width < 900. {
+            4
+        } else {
+            8
+        };
+        accounts.truncate(visible);
+        let hidden = count.saturating_sub(accounts.len());
+        let mut avatars = Vec::with_capacity(accounts.len() + usize::from(hidden > 0));
+        for (index, (vault, login, user_id, missing_permissions)) in
+            accounts.into_iter().enumerate()
+        {
+            let active = vault == active_vault;
+            let image = user_id
+                .as_ref()
+                .filter(|id| !id.is_empty())
+                .and_then(|id| {
+                    let mut catalog = self.catalog.borrow_mut();
+                    catalog.profiles.request(id);
+                    catalog.profiles.get(id).and_then(|p| p.avatar.clone())
+                })
+                .and_then(|key| self.media.borrow_mut().get(&key, cx));
+            let fallback = login
+                .chars()
+                .next()
+                .unwrap_or('?')
+                .to_uppercase()
+                .to_string();
+            let tooltip = format!(
+                "{}{}{} · click to manage accounts",
+                login,
+                if active { " · Active" } else { "" },
+                if missing_permissions {
+                    " · Permissions need updating"
+                } else {
+                    ""
+                }
+            );
+            avatars.push(
+                div()
+                    .id(("linked-account-avatar", index))
+                    .ml(px(if index == 0 { 0. } else { spacing }))
+                    .size(px(26.))
+                    .flex_shrink_0()
+                    .rounded_full()
+                    .border_2()
+                    .border_color(rgb(if missing_permissions {
+                        crate::theme::tone(0xE8C468)
+                    } else if active {
+                        theme::accent()
+                    } else {
+                        theme::border()
+                    }))
+                    .bg(rgb(theme::panel()))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .tooltip(move |w, cx| {
+                        gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(w, cx)
+                    })
+                    .child(match image {
+                        Some(image) => {
+                            crate::emote_picker::avatar_fade(image, 22., cx.reduce_motion())
+                        }
+                        None => div()
+                            .size(px(22.))
+                            .rounded_full()
+                            .bg(rgb(crate::theme::tone(0x3A3350)))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(11.))
+                            .text_color(rgb(theme::text()))
+                            .child(fallback)
+                            .into_any_element(),
+                    }),
+            );
+        }
+        if hidden > 0 {
+            avatars.push(
+                div()
+                    .id("linked-account-overflow")
+                    .ml(px(spacing))
+                    .size(px(24.))
+                    .flex_shrink_0()
+                    .rounded_full()
+                    .bg(rgb(theme::control()))
+                    .border_1()
+                    .border_color(rgb(theme::border()))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(rgb(theme::text()))
+                    .text_size(px(10.))
+                    .child(format!("+{hidden}")),
+            );
+        }
+        div()
+            .id("account-menu")
+            .h_flex()
+            .flex_shrink_0()
+            .items_center()
+            .cursor_pointer()
+            .tooltip(move |w, cx| {
+                gpui_kit::component::tooltip::Tooltip::new(format!(
+                    "{count} linked Twitch account{}",
+                    if count == 1 { "" } else { "s" }
+                ))
+                .build(w, cx)
+            })
+            .on_hover(cx.listener(|this, over: &bool, _, cx| {
+                if this.account_stack_hovered != *over {
+                    this.account_stack_hovered = *over;
+                    cx.notify();
+                }
+            }))
+            .on_click(cx.listener(|this, _, window, cx| this.open_accounts(window, cx)))
+            .children(avatars)
+            .into_any_element()
+    }
+
     /// Signed-in accounts as (vault, login), active first.
     pub(super) fn send_as_options(&self, cx: &App) -> Vec<(SharedString, String)> {
         let mut options: Vec<(SharedString, String)> = self

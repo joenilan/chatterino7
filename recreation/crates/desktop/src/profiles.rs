@@ -184,12 +184,34 @@ impl Profiles {
     pub fn pump(&mut self, identity: Option<Identity>) -> bool {
         let mut changed = false;
         if self.identity != identity {
+            // Public Twitch profiles are keyed by user ID and stay valid when
+            // the *same* account renews its token. Clearing them here flashed
+            // every avatar and interrupted the pending batch until restart.
+            let changed_user = self.identity.as_ref().map(|i| i.user_id.as_str())
+                != identity.as_ref().map(|i| i.user_id.as_str());
             self.identity = identity;
             self.epoch += 1;
-            self.requested.clear();
+            self.in_flight = false; // Retire any response from the prior epoch.
             self.pending.clear();
-            self.values.clear();
-            self.followers.clear();
+            if changed_user {
+                self.requested.clear();
+                self.values.clear();
+                self.followers.clear();
+            } else {
+                // Old-epoch responses cannot be used. Resubmit the unresolved
+                // profiles with the renewed token instead of waiting ten minutes.
+                let retry: Vec<String> = self
+                    .requested
+                    .keys()
+                    .filter(|id| !self.values.contains_key(*id))
+                    .take(PENDING)
+                    .cloned()
+                    .collect();
+                for id in retry {
+                    self.requested.remove(&id);
+                    self.pending.push_back(id);
+                }
+            }
             changed = true;
         }
         while let Ok((id, account)) = self.seven_rx.try_recv() {
@@ -403,5 +425,100 @@ mod seven_tests {
         let none = serde_json::json!({"id":"123","user":{"id":"01ABC","avatar_url":"https://evil.example/x.webp"}});
         assert!(parse_seven(&none).unwrap().avatar.is_none());
         assert!(parse_seven(&serde_json::json!({"error":"not found"})).is_none());
+    }
+}
+
+#[cfg(test)]
+mod profile_cache_lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn renewal_preserves_public_portraits_and_does_not_deadlock_lookup_queue() {
+        use std::sync::Arc;
+        let old = Identity {
+            user_id: "123".into(),
+            access: "old-token".into(),
+            can_read_emotes: true,
+            scopes: Arc::from(vec!["user:read:chat".to_owned()]),
+        };
+        let mut new = old.clone();
+        new.access = "renewed-token".into();
+        let mut profiles = Profiles::new();
+        profiles.identity = Some(old);
+        profiles.epoch = 5;
+        profiles.in_flight = true;
+        profiles.requested.insert("456".into(), Instant::now());
+        profiles.values.insert(
+            "456".into(),
+            Profile {
+                display_name: "Viewer".into(),
+                created: String::new(),
+                description: String::new(),
+                role: String::new(),
+                avatar: crate::media::EmoteKey::avatar(
+                    "https://static-cdn.jtvnw.net/jtv_user_pictures/viewer-profile_image-70x70.png",
+                ),
+            },
+        );
+        assert!(profiles.pump(Some(new)));
+        assert_eq!(profiles.epoch, 6);
+        assert!(!profiles.in_flight);
+        assert!(
+            profiles
+                .get("456")
+                .and_then(|p| p.avatar.as_ref())
+                .is_some()
+        );
+        assert!(profiles.requested.contains_key("456"));
+    }
+
+    #[test]
+    fn token_renewal_reschedules_profile_requests_from_old_epoch() {
+        use std::sync::Arc;
+        let account = |access: &str| Identity {
+            user_id: "123".into(),
+            access: access.into(),
+            can_read_emotes: false,
+            scopes: Arc::from(Vec::<String>::new()),
+        };
+        let mut profiles = Profiles::new();
+        profiles.identity = Some(account("old"));
+        profiles.epoch = 1;
+        profiles.in_flight = true;
+        profiles.requested.insert("987".into(), Instant::now());
+        // Close the synthetic sender, so this test cannot make any network
+        // request. Failed enqueue must keep the user queued for later.
+        let (tx, rx) = mpsc::sync_channel(1);
+        drop(rx);
+        profiles.tx = tx;
+        assert!(profiles.pump(Some(account("new"))));
+        assert_eq!(profiles.epoch, 2);
+        assert!(!profiles.in_flight);
+        assert!(profiles.pending.contains(&"987".to_owned()));
+    }
+
+    #[test]
+    fn changing_accounts_retains_no_prior_account_public_profile_cache() {
+        use std::sync::Arc;
+        let identity = |user: &str| Identity {
+            user_id: user.into(),
+            access: String::new(),
+            can_read_emotes: false,
+            scopes: Arc::from(Vec::<String>::new()),
+        };
+        let mut profiles = Profiles::new();
+        profiles.identity = Some(identity("123"));
+        profiles.values.insert(
+            "456".into(),
+            Profile {
+                display_name: "Viewer".into(),
+                created: String::new(),
+                description: String::new(),
+                role: String::new(),
+                avatar: None,
+            },
+        );
+        assert!(profiles.pump(Some(identity("other"))));
+        assert!(profiles.values.is_empty());
     }
 }

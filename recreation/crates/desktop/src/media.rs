@@ -1,12 +1,149 @@
 //! Anonymous, bounded emote downloads. Never uses the Twitch credentialed client.
 use gpui_kit::*;
 use image::{AnimationDecoder, ImageDecoder, ImageFormat};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     io::{Cursor, Read},
-    sync::{Arc, Condvar, Mutex, mpsc},
-    time::{Duration, Instant},
+    path::PathBuf,
+    sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    },
+    time::{Duration, Instant, SystemTime},
 };
+
+/// Small profile-local disk cache for anonymous PUBLIC artwork only.
+const DISK_CACHE_BUDGET: u64 = 96 * 1024 * 1024;
+const DISK_CACHE_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
+static DISK_WRITES: AtomicUsize = AtomicUsize::new(0);
+
+/// The media key is hashed into a private filename; no chat text, account
+/// names, authentication tokens, or image URLs are ever written as metadata.
+/// Arbitrary link thumbnails, GIPHY message GIFs, and live preview images are
+/// deliberately excluded.
+fn cache_key(key: &EmoteKey) -> Option<String> {
+    if key.id.starts_with("thumb:") || key.id.starts_with("gif:") || key.id.starts_with("preview:")
+    {
+        return None;
+    }
+    if let Some(asset) = &key.external {
+        let valid_public_url = |text: &str| {
+            reqwest::Url::parse(text).ok().is_some_and(|url| {
+                url.scheme() == "https"
+                    && matches!(
+                        url.host_str(),
+                        Some(
+                            "static-cdn.jtvnw.net"
+                                | "cdn.7tv.app"
+                                | "cdn.betterttv.net"
+                                | "cdn.frankerfacez.com"
+                                | "cdn.jsdelivr.net"
+                                | "d3aqoihi2n8ty8.cloudfront.net"
+                        )
+                    )
+                    && url.username().is_empty()
+                    && url.password().is_none()
+                    && url.query().is_none()
+                    && url.fragment().is_none()
+            })
+        };
+        if !valid_public_url(&asset.url) || !valid_public_url(&asset.static_url) {
+            return None;
+        }
+    }
+    let mut hash = Sha256::new();
+    hash.update(key.id.as_bytes());
+    hash.update([u8::from(key.animated)]);
+    if let Some(asset) = &key.external {
+        hash.update(asset.url.as_bytes());
+        hash.update([0]);
+        hash.update(asset.static_url.as_bytes());
+    }
+    Some(format!("{:x}.img", hash.finalize()))
+}
+fn cache_file(key: &EmoteKey) -> Option<PathBuf> {
+    Some(
+        crate::profile::data_root()?
+            .join("public-media-v1")
+            .join(cache_key(key)?),
+    )
+}
+fn cached_bytes(path: &std::path::Path, max_wire: usize) -> Option<Vec<u8>> {
+    let metadata = std::fs::metadata(path).ok()?;
+    let stale = metadata.modified().ok()?.elapsed().ok()? > DISK_CACHE_TTL;
+    if stale || metadata.len() == 0 || metadata.len() > max_wire as u64 {
+        let _ = std::fs::remove_file(path);
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    if bytes.len() > max_wire || image::guess_format(&bytes).is_err() {
+        let _ = std::fs::remove_file(path);
+        return None;
+    }
+    Some(bytes)
+}
+fn prune_cache(folder: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return;
+    };
+    let mut files = Vec::new();
+    let mut total = 0_u64;
+    for item in entries.flatten().take(4096) {
+        let path = item.path();
+        if path.extension().is_none_or(|e| e != "img") {
+            continue;
+        }
+        let Ok(meta) = item.metadata() else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let modified = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+        if modified.elapsed().is_ok_and(|age| age > DISK_CACHE_TTL) {
+            let _ = std::fs::remove_file(&path);
+            continue;
+        }
+        total = total.saturating_add(meta.len());
+        files.push((modified, path, meta.len()));
+    }
+    files.sort_by_key(|entry| entry.0);
+    let mut excess = files.len().saturating_sub(1500);
+    for (_, path, size) in files {
+        if total <= DISK_CACHE_BUDGET && excess == 0 {
+            break;
+        }
+        if std::fs::remove_file(path).is_ok() {
+            total = total.saturating_sub(size);
+            excess = excess.saturating_sub(1);
+        }
+    }
+}
+fn store_cached_image(path: &std::path::Path, bytes: &[u8]) {
+    if bytes.len() > 2 * 1024 * 1024 || path.exists() {
+        return;
+    }
+    let Some(folder) = path.parent() else {
+        return;
+    };
+    if std::fs::create_dir_all(folder).is_err() {
+        return;
+    }
+    // A per-process staging file never exposes a partially downloaded image.
+    let temporary = path.with_extension(format!("{}.part", std::process::id()));
+    if std::fs::write(&temporary, bytes).is_ok() {
+        let _ = std::fs::rename(&temporary, path);
+    }
+    let _ = std::fs::remove_file(temporary);
+    if DISK_WRITES
+        .fetch_add(1, Ordering::Relaxed)
+        .is_multiple_of(32)
+    {
+        prune_cache(folder);
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct EmoteKey {
@@ -1022,16 +1159,6 @@ fn download(
                 key.id
             )
         });
-    let response = client.get(url).send().map_err(|e| {
-        if e.is_timeout() {
-            MediaFailure::Timeout
-        } else {
-            MediaFailure::Transport
-        }
-    })?;
-    if !response.status().is_success() {
-        return Err(MediaFailure::Http(response.status().as_u16()));
-    }
     let rich_gif = key.id.starts_with("gif:");
     // Link thumbnails are often 1200x630; they're scaled down to card size.
     let thumb = key.id.starts_with("thumb:");
@@ -1046,7 +1173,10 @@ fn download(
         1024
     } else if thumb {
         2560
-    } else if key.id.starts_with("avatar:") || key.id.starts_with("preview:") {
+    } else if key.id.starts_with("avatar:")
+        || key.id.starts_with("7tv-avatar:")
+        || key.id.starts_with("preview:")
+    {
         512
     } else {
         256
@@ -1056,6 +1186,30 @@ fn download(
     } else {
         8 * 1024 * 1024
     };
+    // Cache hits avoid the network, including after reopening Jawjack.
+    // Both warm and cold reads still pass through the exact same bounded
+    // decoder and dimension checks below.
+    // If cached bytes fail the bounded decoder, discard and recover from
+    // the network once, rather than persisting a blank avatar until the TTL.
+    let cache_path = cache_file(key);
+    if let Some(path) = cache_path.as_deref()
+        && let Some(bytes) = cached_bytes(path, max_wire)
+    {
+        if let Ok(image) = decode_bytes(&bytes, key, rich_gif, thumb, max_dimension, max_decoded) {
+            return Ok(image);
+        }
+        let _ = std::fs::remove_file(path);
+    }
+    let response = client.get(url).send().map_err(|e| {
+        if e.is_timeout() {
+            MediaFailure::Timeout
+        } else {
+            MediaFailure::Transport
+        }
+    })?;
+    if !response.status().is_success() {
+        return Err(MediaFailure::Http(response.status().as_u16()));
+    }
     if response
         .content_length()
         .is_some_and(|n| n > max_wire as u64)
@@ -1070,7 +1224,24 @@ fn download(
     if bytes.len() > max_wire {
         return Err(MediaFailure::WireLimit);
     }
-    let format = image::guess_format(&bytes).map_err(|_| MediaFailure::Format)?;
+    let decoded = decode_bytes(&bytes, key, rich_gif, thumb, max_dimension, max_decoded)?;
+    // Persist only successfully decoded public artwork, never private
+    // previews or unvalidated remote bytes. Disk work stays on workers.
+    if let Some(path) = cache_path.as_deref() {
+        store_cached_image(path, &bytes);
+    }
+    Ok(decoded)
+}
+/// Identical bounded validation and sampling for warm and cold image bytes.
+fn decode_bytes(
+    bytes: &[u8],
+    key: &EmoteKey,
+    rich_gif: bool,
+    thumb: bool,
+    max_dimension: u32,
+    max_decoded: usize,
+) -> Result<(Arc<DecodedMedia>, usize), MediaFailure> {
+    let format = image::guess_format(bytes).map_err(|_| MediaFailure::Format)?;
     // Rich GIF cards are downscaled; inline media keeps native size. Both thin
     // long animations instead of failing at a frame ceiling.
     let mut sampler = crate::frame_sampler::Frames::new(crate::frame_sampler::Limits {
@@ -1081,6 +1252,10 @@ fn download(
             Some((192, 128))
         } else if thumb {
             Some((320, 180))
+        } else if key.id.starts_with("avatar:") || key.id.starts_with("7tv-avatar:") {
+            // Source portraits can be 512px, but Jawjack only displays
+            // them at 22-48px; downscaling keeps hundreds resident.
+            Some((96, 96))
         } else {
             None
         },
@@ -1099,7 +1274,7 @@ fn download(
     };
     match format {
         ImageFormat::Gif => {
-            let mut decoder = image::codecs::gif::GifDecoder::new(Cursor::new(&bytes))
+            let mut decoder = image::codecs::gif::GifDecoder::new(Cursor::new(bytes))
                 .map_err(|_| MediaFailure::Decode)?;
             let (w, h) = decoder.dimensions();
             if w > max_dimension || h > max_dimension {
@@ -1117,7 +1292,7 @@ fn download(
             }
         }
         ImageFormat::WebP if key.animated => {
-            let mut decoder = image::codecs::webp::WebPDecoder::new(Cursor::new(&bytes))
+            let mut decoder = image::codecs::webp::WebPDecoder::new(Cursor::new(bytes))
                 .map_err(|_| MediaFailure::Decode)?;
             let (w, h) = decoder.dimensions();
             if w > max_dimension || h > max_dimension {
@@ -1135,7 +1310,7 @@ fn download(
             }
         }
         ImageFormat::Png | ImageFormat::WebP | ImageFormat::Jpeg => {
-            let mut reader = image::ImageReader::with_format(Cursor::new(&bytes), format);
+            let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format);
             let mut limits = image::Limits::default();
             limits.max_image_width = Some(max_dimension);
             limits.max_image_height = Some(max_dimension);
@@ -1183,4 +1358,63 @@ fn download(
         }),
         decoded,
     ))
+}
+
+#[cfg(test)]
+mod public_media_cache_tests {
+    use super::{EmoteKey, cache_key, cached_bytes};
+
+    #[test]
+    fn cache_only_known_public_assets_and_hashes_names() {
+        let url = "https://static-cdn.jtvnw.net/jtv_user_pictures/example-profile_image-70x70.png";
+        let key = EmoteKey::avatar(url).expect("valid public Twitch avatar");
+        let hashed = cache_key(&key).expect("public avatar can be cached");
+        assert!(hashed.ends_with(".img"));
+        assert!(!hashed.contains("example"));
+        assert!(!hashed.contains("jtv_user_pictures"));
+        assert_eq!(hashed, cache_key(&key).unwrap());
+
+        let mut different = key.clone();
+        different.animated = true;
+        assert_ne!(hashed, cache_key(&different).unwrap());
+        different.id = "thumb:private-page-preview".into();
+        assert_eq!(cache_key(&different), None);
+        different.id = "gif:twitch-message-gif".into();
+        assert_eq!(cache_key(&different), None);
+        different.id = "preview:streamer:1234".into();
+        assert_eq!(cache_key(&different), None);
+        different.id = "avatar:bad-host".into();
+        if let Some(asset) = &mut different.external {
+            asset.url = "https://example.com/someone/private.png".into();
+            asset.static_url = asset.url.clone();
+        }
+        assert_eq!(cache_key(&different), None);
+    }
+
+    #[test]
+    fn valid_magic_but_invalid_png_is_rejected_by_the_cache_decoder() {
+        // A truncated cached image can pass the file signature check but must
+        // not get stuck as a permanently unusable cached avatar.
+        let png_magic = b"\x89PNG\r\n\x1a\n";
+        assert_eq!(
+            image::guess_format(png_magic).ok(),
+            Some(image::ImageFormat::Png)
+        );
+        let key = EmoteKey::avatar(
+            "https://static-cdn.jtvnw.net/jtv_user_pictures/a-profile_image-70x70.png",
+        )
+        .unwrap();
+        assert!(super::decode_bytes(png_magic, &key, false, false, 512, 8 * 1024 * 1024).is_err());
+    }
+
+    #[test]
+    fn a_corrupt_disk_asset_is_rejected_and_deleted() {
+        let path = std::env::temp_dir().join(format!(
+            "jawjack-media-cache-invalid-{}.img",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"not an image").unwrap();
+        assert!(cached_bytes(&path, 1024).is_none());
+        assert!(!path.exists());
+    }
 }

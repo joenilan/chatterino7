@@ -1,5 +1,21 @@
 # Chatterino parity checklist
 
+**Preview.19 local candidate (2026-10-15):** Title-bar Twitch login replaced
+by a bounded linked-account avatar stack (active/permissions rings, hover
+spread, overflow `+N` on narrow windows), retaining the original account
+dialog on click. Shared media now warms linked-account and live-follow
+avatars before rendering, preserves public profile metadata over routine
+token refreshes, fades in new avatar images, and uses a bounded profile-local
+public-artwork disk cache with hashed names and corruption recovery.
+Incoming stream recap duration is anchored to Twitch's broadcast-start
+timestamp where available, rather than Jawjack's connection time. Counts
+not reconstructible from Twitch's current stream endpoint are explicitly
+labeled as observed samples instead of full-stream totals. Locked desktop
+suite **131 passed, 5 ignored**, optimized Windows build passed. Native
+visual and future live recap acceptance are still outstanding. The public
+preview.18 and installed app remain untouched.
+[Evidence and limitations](VALIDATION.md).
+
 **Local layout polish queued for next preview (2026-10-15):** The Settings
 cog has moved from the top title bar into the persistent bottom-left
 sidebar footer, aligned beside the existing version/updater control.

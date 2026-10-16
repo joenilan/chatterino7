@@ -130,6 +130,28 @@ pub fn avatar(media: Arc<DecodedMedia>, size: f32) -> AnyElement {
     .h(px(size))
     .into_any_element()
 }
+/// A soft reveal for public profile pictures. The surrounding user-initial
+/// placeholder stays in place until the image is decoded. The fade is keyed by
+/// decoded image identity, so cached images don't flash on every redraw.
+pub fn avatar_fade(media: Arc<DecodedMedia>, size: f32, reduced_motion: bool) -> AnyElement {
+    let id = media.image.id.0;
+    let image = avatar(media, size);
+    if reduced_motion {
+        image
+    } else {
+        div()
+            .size(px(size))
+            .rounded_full()
+            .child(image)
+            .with_animation(
+                ("avatar-arrival", id),
+                Animation::new(Duration::from_millis(180)),
+                |el, progress| el.opacity(progress),
+            )
+            .into_any_element()
+    }
+}
+
 fn loading_icon(index: usize, reduced: bool) -> AnyElement {
     let placeholder = div()
         .size(px(34.))

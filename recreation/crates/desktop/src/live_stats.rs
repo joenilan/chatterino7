@@ -51,9 +51,18 @@ impl Workbench {
             .unwrap_or_else(|| vec![0; 30]);
         let now_pace = pace.last().copied().unwrap_or(0);
         let peak_pace = pace.iter().copied().max().unwrap_or(0).max(1);
-        let since = self.went_live_at.map(|t| {
-            chrono::Local::now() - chrono::Duration::from_std(t.elapsed()).unwrap_or_default()
-        });
+        // Prefer Twitch's actual broadcast start for event boundaries. The
+        // local detection clock can lag an already-live stream by hours.
+        let since = self
+            .own_stream_started
+            .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
+            .map(|d| d.with_timezone(&chrono::Local))
+            .or_else(|| {
+                self.went_live_at.map(|t| {
+                    chrono::Local::now()
+                        - chrono::Duration::from_std(t.elapsed()).unwrap_or_default()
+                })
+            });
         let count = |kind: crate::activity_feed::Kind| {
             self.feed
                 .items
@@ -91,9 +100,9 @@ impl Workbench {
                     )
                 })
         };
-        let uptime = info
-            .as_ref()
-            .and_then(|i| i.uptime())
+        let twitch_uptime = info.as_ref().and_then(|i| i.uptime());
+        let uptime_from_twitch = twitch_uptime.is_some();
+        let uptime = twitch_uptime
             .or_else(|| {
                 self.obs
                     .uptime()
@@ -139,11 +148,29 @@ impl Workbench {
                             viewers
                                 .map(crate::follows_live::viewers)
                                 .unwrap_or_else(|| "—".into()),
-                            (self.peak_viewers > 0).then(|| {
-                                format!("peak {}", crate::follows_live::viewers(self.peak_viewers))
-                            }),
+                            (self.peak_viewers > 0)
+                                .then(|| {
+                                    format!(
+                                        "peak seen {}",
+                                        crate::follows_live::viewers(self.peak_viewers)
+                                    )
+                                })
+                                .or(Some("Twitch · sampled every 60s".into())),
                         ))
-                        .child(tile("UPTIME", uptime, None))
+                        .child(tile(
+                            "UPTIME",
+                            uptime,
+                            Some(
+                                if uptime_from_twitch {
+                                    "Twitch broadcast clock"
+                                } else if self.obs.state.streaming {
+                                    "OBS stream clock"
+                                } else {
+                                    "Waiting for Twitch"
+                                }
+                                .into(),
+                            ),
+                        ))
                         .child(tile(
                             "CHAT / MIN",
                             now_pace.to_string(),
@@ -163,7 +190,7 @@ impl Workbench {
                         .text_size(px(11.))
                         .text_color(rgb(theme::muted()))
                         .child(format!(
-                            "This stream: {} follows · {} subs · {} Bits events · {} raids",
+                            "Observed by Jawjack: {} follows · {} subs · {} Bits events · {} raids",
                             count(crate::activity_feed::Kind::Follow),
                             count(crate::activity_feed::Kind::Subscription),
                             count(crate::activity_feed::Kind::Bits),

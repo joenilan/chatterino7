@@ -2,6 +2,19 @@
 use super::*;
 use std::collections::BTreeMap;
 
+/// Prefer the actual broadcast timestamp over when this client first saw it.
+/// Fall back gracefully to the local session clock when Twitch is unavailable.
+pub(super) fn stream_duration(
+    broadcast_started: Option<i64>,
+    now: i64,
+    observed: Duration,
+) -> Duration {
+    broadcast_started
+        .filter(|at| *at > 0 && *at <= now)
+        .map(|at| Duration::from_secs((now - at) as u64))
+        .unwrap_or(observed)
+}
+
 #[derive(Clone, Default)]
 pub(super) struct Recap {
     pub duration: Duration,
@@ -20,24 +33,25 @@ impl Recap {
         let mut lines = vec![
             format!("Stream recap · {}h {:02}m", s / 3600, s / 60 % 60),
             format!("{} · {}", self.title, self.category),
-            format!("Peak viewers: {}", self.peak_viewers),
+            format!("Peak viewers observed: {}", self.peak_viewers),
             format!(
-                "Chat: {} messages from {} chatters",
+                "Chat observed: {} retained messages from {} chatters",
                 self.messages, self.chatters
             ),
         ];
         if !self.events.is_empty() {
-            lines.push(
+            lines.push(format!(
+                "Events observed by Jawjack: {}",
                 self.events
                     .iter()
                     .map(|(k, n)| format!("{k}s: {n}"))
                     .collect::<Vec<_>>()
-                    .join(" · "),
-            );
+                    .join(" · ")
+            ));
         }
         if !self.top.is_empty() {
             lines.push(format!(
-                "Top chatters: {}",
+                "Top chatters seen: {}",
                 self.top
                     .iter()
                     .map(|(n, c)| format!("{n} ({c})"))
@@ -67,8 +81,15 @@ impl Workbench {
         let Some(started) = self.went_live_at else {
             return;
         };
-        let duration = started.elapsed();
-        // Very short "streams" are usually a test or a dropped connection.
+        // Twitch's started_at is authoritative when Jawjack connected after
+        // the stream was already live. A local Instant only measures how long
+        // this app instance has observed it, not the complete broadcast.
+        let duration = stream_duration(
+            self.own_stream_started,
+            chrono::Utc::now().timestamp(),
+            started.elapsed(),
+        );
+        // Very short streams are usually tests or dropped connections.
         if duration < Duration::from_secs(300) {
             return;
         }
@@ -159,15 +180,21 @@ impl Workbench {
                                 .flex_wrap()
                                 .gap_2()
                                 .child(stat("Length", format!("{}h {:02}m", s / 3600, s / 60 % 60)))
-                                .child(stat("Peak viewers", recap.peak_viewers.to_string()))
-                                .child(stat("Messages", recap.messages.to_string()))
-                                .child(stat("Chatters", recap.chatters.to_string()))
+                                .child(stat("Peak seen", recap.peak_viewers.to_string()))
+                                .child(stat("Msgs seen", recap.messages.to_string()))
+                                .child(stat("Chatters seen", recap.chatters.to_string()))
                                 .children(
                                     recap
                                         .events
                                         .iter()
-                                        .map(|(k, n)| stat(&format!("{k}s"), n.to_string())),
+                                        .map(|(k, n)| stat(&format!("{k}s seen"), n.to_string())),
                                 ),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(10.))
+                                .text_color(rgb(theme::muted()))
+                                .child("Length uses Twitch's broadcast clock where available; other totals cover only data observed or retained by Jawjack."),
                         )
                         .when(!recap.top.is_empty(), |el| {
                             el.child(
@@ -175,7 +202,7 @@ impl Workbench {
                                     .text_size(px(11.))
                                     .text_color(rgb(theme::muted()))
                                     .child(format!(
-                                        "Top chatters: {}",
+                                        "Top chatters seen: {}",
                                         recap
                                             .top
                                             .iter()
@@ -225,5 +252,31 @@ mod tests {
         let t = r.text();
         assert!(t.starts_with("Stream recap · 3h 05m"));
         assert!(t.contains("Follows: 7") && t.contains("Bob (30)"));
+    }
+}
+
+#[cfg(test)]
+mod broadcast_clock_tests {
+    use super::stream_duration;
+    use std::time::Duration;
+
+    #[test]
+    fn broadcast_started_before_jawjack_does_not_shorten_the_recap() {
+        let now = 1_800_000_000_i64;
+        let since_client_opened = Duration::from_secs(9 * 60);
+        // The Twitch stream began around three hours ago, not nine minutes ago.
+        assert_eq!(
+            stream_duration(Some(now - 3 * 3600), now, since_client_opened),
+            Duration::from_secs(3 * 3600)
+        );
+        // Bad or future Twitch timestamps never inflate the duration.
+        assert_eq!(
+            stream_duration(Some(now + 3600), now, since_client_opened),
+            since_client_opened
+        );
+        assert_eq!(
+            stream_duration(None, now, since_client_opened),
+            since_client_opened
+        );
     }
 }

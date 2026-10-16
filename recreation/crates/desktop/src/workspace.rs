@@ -282,6 +282,8 @@ pub struct Workbench {
     /// Every signed-in or signing-in account; `account` is the active one.
     accounts: Vec<Entity<crate::auth::TwitchAccount>>,
     account_focus: Option<usize>,
+    /// Expand linked-account portraits while hovered, not a persisted preference.
+    account_stack_hovered: bool,
     /// "Send as" choice per channel: the chosen account's vault entry.
     send_as: std::collections::HashMap<String, SharedString>,
     /// Held AutoMod messages per channel (session only).
@@ -376,6 +378,8 @@ pub struct Workbench {
     checklist_input: Option<Entity<InputState>>,
     /// When the own channel was last seen going live (for the 10-minute window).
     went_live_at: Option<std::time::Instant>,
+    /// Twitch broadcast start in UTC epoch seconds, not when Jawjack launched.
+    own_stream_started: Option<i64>,
     was_live: bool,
     peak_viewers: u64,
     stats_tick: u64,
@@ -833,6 +837,7 @@ impl Workbench {
             account: accounts[active_account].clone(),
             accounts,
             account_focus: None,
+            account_stack_hovered: false,
             automod: Default::default(),
             own_extras_refused: None,
             own_kind_statuses: Vec::new(),
@@ -938,6 +943,7 @@ impl Workbench {
             checklist_dismissed: false,
             checklist_input: None,
             went_live_at: None,
+            own_stream_started: None,
             was_live: false,
             peak_viewers: 0,
             stats_tick: 0,
@@ -1569,8 +1575,18 @@ impl Workbench {
         let live = self.own_live(cx);
         if live && !self.was_live {
             self.went_live_at = Some(std::time::Instant::now());
+            self.own_stream_started = None;
         }
         if live {
+            // Helix started_at is the actual broadcast clock. A local
+            // 'went live' tick can occur hours after the broadcast began.
+            if let Some(own) = self.account.read(cx).login()
+                && let Some((info, _)) = self.streams.detail(&own)
+                && info.live
+                && let Ok(start) = chrono::DateTime::parse_from_rfc3339(&info.started_at)
+            {
+                self.own_stream_started = Some(start.timestamp());
+            }
             self.track_stream(cx);
             // Live stats refresh every few seconds while Studio is open.
             let tick = self.went_live_at.map_or(0, |t| t.elapsed().as_secs() / 5);
@@ -1581,6 +1597,7 @@ impl Workbench {
         }
         if !live && self.was_live {
             self.show_recap(window, cx);
+            self.own_stream_started = None;
             self.checklist_done.clear();
             self.checklist_dismissed = false;
         }
@@ -1743,6 +1760,34 @@ impl Workbench {
                     cx.notify();
                 });
             }
+        }
+        // Warm linked-account and followed-stream portraits even when the
+        // sidebar is collapsed. Shared media workers keep this nonblocking.
+        let profile_ids = self
+            .accounts
+            .iter()
+            .filter_map(|a| a.read(cx).identity().map(|i| i.user_id))
+            .chain(
+                self.follows_live
+                    .list
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(|list| list.iter().take(80).map(|follow| follow.user_id.clone())),
+            )
+            .filter(|id| !id.is_empty())
+            .collect::<Vec<_>>();
+        let avatar_keys = {
+            let mut catalog = self.catalog.borrow_mut();
+            for id in &profile_ids {
+                catalog.profiles.request(id);
+            }
+            profile_ids
+                .iter()
+                .filter_map(|id| catalog.profiles.get(id).and_then(|p| p.avatar.clone()))
+                .collect::<Vec<_>>()
+        };
+        for key in avatar_keys {
+            self.media.borrow_mut().prefetch(&key, cx);
         }
         let profiles_changed = self.catalog.borrow_mut().profiles.pump(identity.clone());
         if profiles_changed {
@@ -6376,7 +6421,9 @@ impl Workbench {
                             .size(px(22.))
                             .flex_shrink_0()
                             .child(match avatar {
-                                Some(image) => crate::emote_picker::avatar(image, 22.),
+                                Some(image) => {
+                                    crate::emote_picker::avatar_fade(image, 22., cx.reduce_motion())
+                                }
                                 None => div()
                                     .size(px(22.))
                                     .rounded_full()
@@ -6707,6 +6754,17 @@ impl Render for Workbench {
         let sidebar_width = gpui_kit::base::motion::transition(
             "jawjack-sidebar-width",
             if self.sidebar { 190.0_f32 } else { 0.0_f32 },
+            gpui_kit::base::motion::Transition::new(Duration::from_millis(180)),
+            window,
+            cx,
+        );
+        let account_spacing = gpui_kit::base::motion::transition(
+            "jawjack-account-avatar-spacing",
+            if self.account_stack_hovered {
+                3.0_f32
+            } else {
+                -10.0_f32
+            },
             gpui_kit::base::motion::Transition::new(Duration::from_millis(180)),
             window,
             cx,
@@ -7164,31 +7222,7 @@ impl Render for Workbench {
                             .tooltip("Mentions, replies to you and opted-in highlights. Ctrl+Shift+M opens all activity.")
                             .on_click(cx.listener(|this, _, w, cx| this.open_mentions(w, cx))),
                     )
-                    .child(
-                        Button::new("account-menu")
-                            .xsmall()
-                            .when(self.account.read(cx).signed_out_reason().is_some(), |b| {
-                                b.primary()
-                            })
-                            .when(self.account.read(cx).signed_out_reason().is_none(), |b| {
-                                b.ghost()
-                            })
-                            .label(if self.account.read(cx).signed_out_reason().is_some() {
-                                "Sign in to Twitch".to_owned()
-                            } else if self.account.read(cx).missing_scopes().is_empty() {
-                                self.account.read(cx).label()
-                            } else {
-                                format!("{} •", self.account.read(cx).label())
-                            })
-                            .tooltip(if self.account.read(cx).missing_scopes().is_empty() {
-                                "Twitch account"
-                            } else {
-                                "Twitch account · permissions can be updated"
-                            })
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.open_accounts(window, cx)),
-                            ),
-                    )
+                    .child(self.render_account_stack(account_spacing, f32::from(window.viewport_size().width), cx))
                     .when(self.experience == roles::Experience::Streamer, |el| {
                         el.child(
                             Button::new("studio-toggle")

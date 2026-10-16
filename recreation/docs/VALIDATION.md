@@ -1,3 +1,87 @@
+## Preview.19 candidate — public media cache, account portraits and truthful recap (2026-10-15)
+
+**Owner reports:** Twitch/7TV avatars briefly disappear or finish loading
+late after an update. The top-bar username crowds mentions and account
+controls; owner wants a compact avatar stack which expands on hover as more
+accounts are linked. The completed-stream recap displayed approximately
+14 minutes of stream time even though the owner had streamed closer to
+three hours.
+
+**Root cause of duration:** The prior `workspace.rs::went_live_at`
+was set to `Instant::now()` the first moment *Jawjack* noticed streaming,
+not Twitch's actual start of broadcast. `show_recap` used
+`went_live_at.elapsed()`; after joining an ongoing stream, it undercounted.
+`live_stats.rs` used the same local observation for event boundaries,
+so on-screen stats could mix Twitch's proper uptime and a smaller set of
+client-observed events.
+
+**Local fixes, not published:**
+
+- `workspace.rs` now remembers the authenticated broadcaster's actual
+  `streams.detail` / Helix `started_at` timestamp, when available.
+  `recap::stream_duration` calculates time since that broadcast start,
+  with a guarded fallback to the local observation clock if no reliable
+  Twitch start can be obtained. `live_stats.rs` prefers the broadcast
+  timestamp for event boundaries and labels its source as Twitch/OBS.
+- **Limits disclosed:** Twitch's live stream endpoint does not reconstruct
+  events or the complete viewer peak from before Jawjack observed them.
+  Studio therefore labels follow/sub/Bits/raid counts **Observed by
+  Jawjack**, peak **seen**, and the recap distinguishes **retained messages
+  observed** from true full-stream totals. A footnote makes the distinction
+  clear in the recap. Values are not fabricated from incomplete samples.
+- Titlebar `account-menu` is now a row of round profile avatars in
+  `accounts_ui.rs`, active identity ordered first with an accent ring,
+  other linked signed-in accounts stacked behind it. Hover smoothly increases
+  avatar spacing over 180ms; a narrow window limits visible accounts and
+  shows `+N` to preserve window controls. Clicking the stack opens the
+  existing Twitch-account dialog (no automatic account switch).
+  Missing account scopes still show an amber ring/tooltip. Signed-out
+  state retains an explicit sign-in button. Existing account vault entries,
+  permissions, and actions are unchanged.
+- `profiles.rs` keeps public profile metadata when the *same* Twitch
+  account refreshes its token, retires stale worker epochs, and resubmits
+  unresolved IDs instead of leaving avatars stranded until restart.
+  Changing accounts still clears the previous account's profile values.
+  `workspace.rs` warms profile/avatar requests for linked accounts and
+  up to 80 followed streams before opening the relevant UI.
+- `media.rs` shares its existing four-worker queue and in-memory LRU
+  with a **profile-local, bounded 96 MiB / 7-day disk cache** for
+  public Twitch/7TV/BTTV/FFZ badge, emote and avatar artwork from approved
+  hosts. Hashed filenames avoid storing account names or image URLs as
+  filesystem names; link previews, chat GIF embeds and volatile live
+  thumbnails are never persisted. Decoding keeps wire, dimension and
+  decoded-memory bounds. Failed cached-image decoding evicts the bad copy
+  and fetches the public source once. Untrusted or invalid files fail closed.
+  The disk cache does not contain OAuth tokens or message bodies.
+- Source portraits are decoded down to 96×96px (while preserving their
+  aspect ratio) rather than retaining giant source images for 22–48px UI.
+  Account/titlebar, live-follow sidebar and user-card avatars use a brief
+  180ms reveal, honoring reduced-motion settings. Text initials remain the
+  fallback while images are missing or loading; usable decoded artwork
+  is not intentionally cleared on a routine refresh.
+
+**Tests and build:** Windows Rust 1.99 locked desktop suite:
+`cargo test -q -p chat-workbench --bin chat-workbench --locked` =
+**131 passed, 0 failed, 5 ignored**. New deterministic tests cover
+public-media allowlists/hash keys, rejection of a corrupt cache file,
+malformed PNG payloads with valid format signatures, token renewal preserving
+profiles and resubmitting unresolved lookups, account changes clearing
+session values, and recap duration based on a broadcast which began
+three hours before the client connected.
+`cargo fmt --all -- --check` and `git diff --check` passed;
+optimized `cargo build -p chat-workbench --bin chat-workbench
+--locked --release` passed with the pre-existing
+`chat_text.rs` unused-method warning only. No live account actions,
+upload, publication, install, or Twitch message/moderation operation.
+
+**Native acceptance pending:** Visually verify hover spread and account
+selection at 420px and normal window widths, avatar placeholder/fade in
+signed-out isolated profiles, repeat opening with warm disk cache,
+and a future true live-stream/recap lifecycle. Tests do not establish a
+native screenshot or reproduce the exact previous stream.
+
+---
+
 ## Next preview: Settings cog beside updater in sidebar — local 2026-10-15
 
 **Requested layout:** Move the Settings gear out of the crowded top title bar
